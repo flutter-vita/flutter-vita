@@ -1,0 +1,22 @@
+# FVM — the pinned Flutter version lives in .fvmrc (committed);
+# the SDK itself is a symlink into the shared ~/fvm/versions cache.
+.fvm/
+.dart_tool/
+build/
+*.dill
+*.snapshot
+
+# Phase 0.5 spike outputs — regenerate with the scripts, don't commit binaries
+spikes/**/out/
+
+# Vendored third-party trees (Phase 2). Pinned in VERSIONS.md, patched via patches/.
+# These are large; they are checked out by tooling, not committed.
+third_party/
+
+# Vita build artifacts
+*.velf
+*.self
+eboot.bin
+*.vpk
+
+.DS_Store

@@ -51,14 +51,78 @@ artifact to size and to link against later.
 counter app, and for something mid-complexity. Compare against 16 MiB
 (exit criterion 3).
 
-**B3. Build the engine for `linux-arm` and measure it** — replaces the
-provisional 11 MB with a real number, and is a dry run for the far harder
-VitaSDK toolchain work (exit criterion 3).
+**B3. Build the engine for `linux-arm` and measure it** (exit criterion 3).
+
+*Vita does not run Linux, and B3 produces nothing that ships on a Vita.* It is a
+**measurement and a baseline**, not an artifact. Three reasons it earns its time:
+
+1. **It gives a real armv7 size number.** How large Skia + Dart + libtxt +
+   HarfBuzz compile to for armv7 barely depends on which OS they call into — the
+   platform layer is a rounding error against the total. So `linux-arm` answers
+   "how big is the engine on 32-bit ARM" without any VitaSDK work.
+2. **It is a supported GN configuration that builds *today*.** No toolchain
+   authoring, no newlib patches. That isolates variables: if `linux-arm` fails,
+   the problem is your checkout or your host setup. On the Vita target,
+   everything fails at once and you cannot tell which failure is which.
+3. **It is the bisection baseline for Phase 2.** The Vita build differs from
+   `linux-arm` in exactly two dimensions: the C library (glibc → newlib) and the
+   OS API layer. With a known-good `linux-arm` build in hand, every Vita build
+   failure can be diffed against a working configuration. Without one, Phase 2
+   starts with no reference point at all.
+
+**Why `linux-arm` and not `android-arm`,** which is also armv7 and also
+supported: the `linux-arm` embedder configuration produces
+`libflutter_engine.so` — the `embedder.h` API library — which is precisely the
+class of artifact the Vita build must eventually produce. `android-arm` builds
+the Android platform shell instead, which we will never use. flutter-pi is a
+`linux-arm` embedder, so this is also the configuration with the most prior art
+and a prebuilt binary to compare against.
+
+> **The same discipline as [Vita3K](vita3k-as-a-target.md) applies here.** A
+> green `linux-arm` build does **not** mean "the engine builds fine". It will
+> not surface a single newlib gap, `sceKernel` threading problem, or memory-budget
+> issue — those are the actual hard parts of Phase 2, and they are all in the two
+> dimensions `linux-arm` holds constant. Use B3 for a number and a baseline.
+> Never quote it as evidence that the Vita build will work.
 
 **B4. Raster throughput number** on any armv7 board (exit criterion 2).
 
 **B5. Float ABI check** (exit criterion 5) — can be reasoned about from the
 Dart build flags plus VitaSDK's defaults before anything is compiled.
+
+### ✅ B1 result — done 2026-08-06
+
+**The host half of M1 works.** Reproducible via
+[`spikes/b1-aot-snapshot/build.sh`](../spikes/b1-aot-snapshot/build.sh).
+
+```
+out/hello-armv7.elf: ELF 32-bit LSB shared object, ARM, EABI5 version 1 (SYSV)
+```
+
+| Section | Size | Meaning |
+|---|---|---|
+| `.text` | **352.1 KiB** (360,592 B) | AOT machine code — the part needing executable memory |
+| `.rodata` | **261.9 KiB** (268,208 B) | Snapshot heap image — ordinary read-only data |
+| total ELF | 825,688 B | unstripped, with debug info |
+
+Findings:
+
+- **Real armv7 code, generated on an Apple Silicon Mac.** ardera's
+  `gen_snapshot_macos_x64_release` is an x86_64 Mach-O running under Rosetta;
+  host architecture is irrelevant to the output, as expected of a cross compiler.
+- **The pinned version is confirmed correct.** FVM's 3.44.8 reports revision
+  `0cd610717b`, matching [VERSIONS.md](../VERSIONS.md) exactly, and ardera's
+  `gen_snapshot` reports Dart 3.12.2 — the same Dart the SDK ships. The kernel
+  format matched on the first attempt, so the version-pin reasoning holds.
+- **A pure-Dart floor uses 2.15% of the 16 MiB VM-block cap.** Pure Dart is
+  nowhere near the ceiling. This says nothing yet about Flutter, which pulls in
+  the whole framework — that is B2.
+- **We did not have to build the Dart SDK.** Phase 1 can begin against a real
+  armv7 snapshot instead of a hypothetical one, exactly as
+  [VERSIONS.md](../VERSIONS.md) predicted.
+
+Note: the ELF form was used here only because it is the easiest to inspect.
+Which form ships on Vita is still [ADR-0005](adr/0005-aot-snapshot-delivery.md).
 
 ### Why this order
 
@@ -91,9 +155,10 @@ budget it requests in `param.sfo`.*
 
 | Item | Provisional size | Basis |
 |---|---|---|
-| Engine code (Skia + Dart runtime + libtxt + HarfBuzz + platform) | **~11 MB** | `libflutter.so` armv7 release measured at 11.1 MB on Flutter 3.29.3. Static link with dead-code elimination should be the same order. |
-| `icudtl.dat` (full) | **~10.3 MB** | The file shipped in `ardera/flutter-engine-binaries-for-arm`. Reducible — upstream has an open thread on exactly this. |
-| AOT snapshot, counter app | a few MB | Unmeasured. Must be measured; see [ADR-0005](adr/0005-aot-snapshot-delivery.md). |
+| Engine code (Skia + Dart runtime + libtxt + HarfBuzz + platform) | **~11 MB** | `libflutter.so` armv7 release measured at 11.1 MB on Flutter 3.29.3. Static link with dead-code elimination should be the same order. ardera's arm `libflutter_engine.so.release` for 3.44.8 is 18 MB unstripped. |
+| `icudtl.dat` (full) | **10 MB** | The file shipped in `ardera/flutter-engine-binaries-for-arm`. Reducible — upstream has an open thread on exactly this. |
+| AOT snapshot, **pure-Dart hello world** | **352 KiB instructions + 262 KiB data** | ✅ **Measured** — see B1 results below. |
+| AOT snapshot, counter app | a few MB | Unmeasured — this is B2, and it is the number that actually decides [ADR-0005](adr/0005-aot-snapshot-delivery.md). |
 | AOT snapshot, mid-complexity app | ~10 MB order | Unmeasured, and constrained by the 16 MiB VM-block cap under Option B. |
 | Framebuffers | **~6.3 MB** | 960×544×4 B = 2.09 MB, triple-buffered; less if double. |
 | Skia raster surface + layer surfaces | tens of MB | Workload dependent. |
