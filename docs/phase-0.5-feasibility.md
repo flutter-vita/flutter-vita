@@ -38,6 +38,29 @@ Deliverables from that one program:
 - the real largest allocatable VM block, and the real largest contiguous
   `sceKernelAllocMemBlock` by type (exit criteria 1 and 4)
 
+**A2. Fold a raster micro-benchmark into the same program** (exit criterion 2).
+
+B4 established that bandwidth is not the limit and *compute* is, but the
+per-pixel cost cannot be measured without a real Cortex-A9. You have a Vita, and
+A1 is already a C program running on it — so measure it there rather than buying
+a Raspberry Pi to approximate a machine you own.
+
+Measure at 960×544, at both 333 MHz and 500 MHz:
+
+- [ ] `memcpy` of a 2.09 MB framebuffer — the floor for the present blit, and
+      the sanity check on the 3.2 GB/s theoretical figure
+- [ ] solid-colour fill of the same buffer
+- [ ] a naive per-pixel alpha blend over the whole buffer — a crude stand-in for
+      what Skia does when compositing layers
+- [ ] the same three at 720×408, to price the downscale-and-upscale fallback
+
+This does not give a Skia number, but it brackets one: if a plain `memcpy` of
+the framebuffer already costs 10 ms, full-screen 60 fps is arithmetically dead
+and [ADR-0007](adr/0007-enable-partial-repaint-in-software-path.md) is promoted
+from Proposed to required. Cheap to write, and it turns
+[ADR-0006](adr/0006-performance-bar-set-from-measurement.md) from a placeholder
+into a real bar.
+
 *Then, and only then, is Track A's information worth acting on.*
 
 ### Track B — host only, needs no Vita, start today
@@ -85,7 +108,10 @@ and a prebuilt binary to compare against.
 > dimensions `linux-arm` holds constant. Use B3 for a number and a baseline.
 > Never quote it as evidence that the Vita build will work.
 
-**B4. Raster throughput number** on any armv7 board (exit criterion 2).
+**B4. Raster throughput number** (exit criterion 2). *Partially done — the
+source-level half is complete and produced [ADR-0007](adr/0007-enable-partial-repaint-in-software-path.md);
+see B4 results below. The remaining half is a per-pixel cost measurement, which
+needs a real Cortex-A9 and has therefore moved into Track A.*
 
 **B5. Float ABI check** (exit criterion 5) — can be reasoned about from the
 Dart build flags plus VitaSDK's defaults before anything is compiled.
@@ -158,6 +184,41 @@ Findings:
 Caveat: these are unstripped snapshots, but `.text` and `.rodata` are the real
 code and data sections — DWARF lives in separate `.debug_*` sections and is not
 counted above. Shipping builds would additionally pass `--strip`.
+
+### 🟡 B4 result (partial) — done 2026-08-06
+
+Went looking for a timing number, found a structural problem worth more than one.
+
+**The Flutter software path re-rasterises the whole screen every frame.**
+`gpu_surface_software.cc` sets only `supports_readback = true` on its
+`FramebufferInfo`, and `supports_partial_repaint` defaults to `false` in
+`flow/surface_frame.h`. Meanwhile `embedder_surface_software.cc` *does* retain
+`sk_surface_` between frames — so the prerequisite for partial repaint exists
+and is simply unused. The `embedder.h` damage API
+(`FlutterDamage`, `populate_existing_damage`) is built around an FBO ID and is
+the OpenGL path's facility; software has no equivalent.
+
+This invalidates the DoD's implicit assumption that a near-static UI is nearly
+free. At rest a counter app costs nothing, because Flutter emits no frames when
+nothing changes — but a single Material ink-splash tap is 12–18 **full-screen**
+rasters for a change confined to a small region.
+→ [ADR-0007](adr/0007-enable-partial-repaint-in-software-path.md).
+
+**Bandwidth arithmetic says compute, not bandwidth, is the limit.** Vita main
+memory is 2×256 MB LPDDR2 @ 400 MHz, 3.2 GB/s theoretical:
+
+| | per frame | at 60 Hz | at 30 Hz |
+|---|---|---|---|
+| Skia rasterises the surface (write) | 2.09 MB | 125 MB/s | 63 MB/s |
+| Present blit (read + write) | 4.18 MB | 251 MB/s | 125 MB/s |
+| **Minimum total** | **6.27 MB** | **376 MB/s** | **188 MB/s** |
+
+~12% of theoretical at 60 Hz, but realistically 30–40% of what a Cortex-A9 class
+memory system actually achieves — and that is *before* Skia blends, fills, or
+draws a glyph. At 30 Hz it is comfortable.
+
+**Still open:** the per-pixel raster cost. It needs a real Cortex-A9, so it has
+moved to Track A2 rather than being approximated on hardware you do not have.
 
 ### Why this order
 
