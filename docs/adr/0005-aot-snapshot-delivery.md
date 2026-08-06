@@ -44,13 +44,17 @@ one prebuilt `libflutter_engine`/`eboot.bin` that any app's assets drop into.
 
 Cost and risk:
 
-- **16 MiB hard cap per VM block** (documented in VitaSDK). This becomes a
-  ceiling on `isolate_snapshot_instructions`, i.e. on how much Dart code a Vita
-  Flutter app may contain. Order-of-magnitude expectation: a counter app is a
-  few MiB; a mid-complexity app may approach the cap. **Unverified.**
+- ~~**16 MiB hard cap per VM block**~~ — **measured 2026-08-06 and largely
+  resolved.** A stock Flutter counter app's armv7 AOT instructions are
+  **2.11 MiB**, i.e. 13.2% of the cap, leaving 13.89 MiB of headroom. The
+  framework is a fixed ~1.8 MiB and dominates; app code is the only variable
+  above that. A mid-complexity app should land around 4–6 MiB. The cap is a real
+  ceiling but not a near-term constraint. See
+  [Phase 0.5 B2](../phase-0.5-feasibility.md).
 - Whether multiple VM blocks can back one logically contiguous instructions
-  region — almost certainly not, since Dart expects one mapping. So the cap is
-  likely a genuine app-size limit, not an allocation detail.
+  region — almost certainly not, since Dart expects one mapping. Now moot in
+  practice given the measured sizes, but it is why the cap is a genuine app-size
+  limit rather than an allocation detail.
 - Whether `sceKernelOpenVMDomain` has side effects on the rest of the process.
 - Whether Vita3K emulates this path faithfully (assume not; hardware is ground truth).
 

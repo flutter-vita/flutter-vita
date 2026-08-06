@@ -124,6 +124,41 @@ Findings:
 Note: the ELF form was used here only because it is the easiest to inspect.
 Which form ships on Vita is still [ADR-0005](adr/0005-aot-snapshot-delivery.md).
 
+### ✅ B2 result — done 2026-08-06
+
+**The 16 MiB cap is not a problem.** A stock Flutter counter app, compiled to
+armv7 AOT with `--target=flutter --aot --tfa` against the Flutter patched
+product SDK. Reproducible via
+[`spikes/b2-flutter-snapshot/build.sh`](../spikes/b2-flutter-snapshot/build.sh).
+
+| | `.text` (instructions) | `.rodata` (heap image) |
+|---|---|---|
+| Pure-Dart hello world (B1) | 352 KiB | 262 KiB |
+| **Flutter counter app (B2)** | **2.11 MiB** | **1.40 MiB** |
+| *The Flutter framework tax* | *~1.8 MiB* | *~1.1 MiB* |
+
+**13.2% of the 16 MiB VM block cap. 13.89 MiB of headroom.**
+
+Findings:
+
+- **The framework is a fixed cost of roughly 1.8 MiB of instructions**, and it
+  dominates the counter app. App code is the only variable above that floor, so
+  a mid-complexity app should land somewhere around 4–6 MiB — comfortably inside
+  the cap. The counter app is effectively the floor for *any* Flutter app, which
+  is why this single measurement resolves most of the question.
+- **[ADR-0005](adr/0005-aot-snapshot-delivery.md) Option B is no longer
+  size-constrained.** The only remaining blocker on it is whether VM-domain
+  executable memory actually works on hardware — which is Track A, and which
+  Vita3K cannot answer.
+- Combined with B1's total, the entire Dart side of a Flutter app costs about
+  **3.5 MiB** against a memory budget in the hundreds of MB. As with the engine
+  binary, memory is not the binding constraint. **CPU throughput is** — see
+  [ADR-0006](adr/0006-performance-bar-set-from-measurement.md), still unmeasured.
+
+Caveat: these are unstripped snapshots, but `.text` and `.rodata` are the real
+code and data sections — DWARF lives in separate `.debug_*` sections and is not
+counted above. Shipping builds would additionally pass `--strip`.
+
 ### Why this order
 
 Track B needs no hardware, so nothing blocks on shipping, borrowing, or setting
@@ -158,8 +193,8 @@ budget it requests in `param.sfo`.*
 | Engine code (Skia + Dart runtime + libtxt + HarfBuzz + platform) | **~11 MB** | `libflutter.so` armv7 release measured at 11.1 MB on Flutter 3.29.3. Static link with dead-code elimination should be the same order. ardera's arm `libflutter_engine.so.release` for 3.44.8 is 18 MB unstripped. |
 | `icudtl.dat` (full) | **10 MB** | The file shipped in `ardera/flutter-engine-binaries-for-arm`. Reducible — upstream has an open thread on exactly this. |
 | AOT snapshot, **pure-Dart hello world** | **352 KiB instructions + 262 KiB data** | ✅ **Measured** — see B1 results below. |
-| AOT snapshot, counter app | a few MB | Unmeasured — this is B2, and it is the number that actually decides [ADR-0005](adr/0005-aot-snapshot-delivery.md). |
-| AOT snapshot, mid-complexity app | ~10 MB order | Unmeasured, and constrained by the 16 MiB VM-block cap under Option B. |
+| AOT snapshot, **Flutter counter app** | **2.11 MiB instructions + 1.40 MiB data** | ✅ **Measured** — see B2 results below. |
+| AOT snapshot, mid-complexity app | ~4–6 MiB instructions, extrapolated | The framework costs a fixed ~1.8 MiB; app code is the only variable. Still unmeasured, but the shape is now known. |
 | Framebuffers | **~6.3 MB** | 960×544×4 B = 2.09 MB, triple-buffered; less if double. |
 | Skia raster surface + layer surfaces | tens of MB | Workload dependent. |
 | Dart heap | tens of MB | Tunable via isolate heap caps. |
