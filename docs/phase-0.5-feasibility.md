@@ -65,7 +65,7 @@ into a real bar.
 
 ### Track B — host only, needs no Vita, start today
 
-**B1. Fetch ardera's `arm/gen_snapshot_linux_x64_release` and produce an armv7
+**B1. Fetch ardera's `arm/gen_snapshot_<host>_x64_release` and produce an armv7
 AOT snapshot of a pure-Dart hello world.** No Vita, no VitaSDK, no engine build.
 This proves the entire host half of M1 in an afternoon and gives you a real
 artifact to size and to link against later.
@@ -75,6 +75,8 @@ counter app, and for something mid-complexity. Compare against 16 MiB
 (exit criterion 3).
 
 **B3. Build the engine for `linux-arm` and measure it** (exit criterion 3).
+✅ **B3a (measurement) done — 12.41 MiB of code.** 🔜 B3b (the build itself)
+needs a Linux host and is deferred to the Docker work; it is not blocking.
 
 *Vita does not run Linux, and B3 produces nothing that ships on a Vita.* It is a
 **measurement and a baseline**, not an artifact. Three reasons it earns its time:
@@ -113,8 +115,8 @@ source-level half is complete and produced [ADR-0007](adr/0007-enable-partial-re
 see B4 results below. The remaining half is a per-pixel cost measurement, which
 needs a real Cortex-A9 and has therefore moved into Track A.*
 
-**B5. Float ABI check** (exit criterion 5) — can be reasoned about from the
-Dart build flags plus VitaSDK's defaults before anything is compiled.
+**B5. Float ABI check** (exit criterion 5). ✅ **Done — hard float on both
+sides, no mismatch.** See B5 results below.
 
 ### ✅ B1 result — done 2026-08-06
 
@@ -220,6 +222,71 @@ draws a glyph. At 30 Hz it is comfortable.
 **Still open:** the per-pixel raster cost. It needs a real Cortex-A9, so it has
 moved to Track A2 rather than being approximated on hardware you do not have.
 
+### ✅ B3a result — done 2026-08-06 (and a re-scoping of B3)
+
+**B3 as originally written cannot run on macOS.** Flutter's engine build for
+`linux-arm` needs a Linux host — the sysroot and toolchain are fetched only on
+Linux. That requires the Docker image Phase 0 already calls for. So B3 splits:
+
+- **B3a — measure the engine (done).** ardera already ships the artifact, so the
+  size number needed no build at all.
+- **B3b — build it ourselves (deferred to the Docker work).** Only the
+  *bisection baseline* half genuinely requires compiling, and it is not blocking.
+
+Measured on ardera's `arm/libflutter_engine.so.release` at the pinned 3.44.8:
+
+| section | size |
+|---|---|
+| `.text` (Skia + Dart runtime + libtxt + HarfBuzz + shell) | **12.41 MiB** |
+| `.rodata` | 1.59 MiB |
+| `.symtab` + `.strtab` (not resident) | 4.11 MiB |
+| **approx resident** | **~14.5 MiB** |
+
+The provisional ~11 MB estimate was close; 12.4 MiB is the real figure. Note
+this is a Linux shared library — a Vita static link with dead-code elimination
+against a single embedder should be somewhat smaller, not larger.
+
+### ✅ B5 result — done 2026-08-06: no float ABI mismatch
+
+The cheap check that would have been catastrophic to skip. Answered empirically
+rather than by reasoning, using artifacts we already had.
+
+Every ARM ELF in play carries the same `e_flags`:
+
+| artifact | `e_flags` | float ABI |
+|---|---|---|
+| ardera `libflutter_engine.so` (arm, 3.44.8) | `0x05000400` | **hard** |
+| B1 pure-Dart snapshot | `0x05000400` | **hard** |
+| B2 Flutter counter snapshot | `0x05000400` | **hard** |
+
+`EF_ARM_ABI_FLOAT_HARD` is `0x400`; EABI version 5.
+
+And VitaSDK's compiler, from `vitasdk/buildscripts/CMakeLists.txt`:
+
+```
+--with-arch=armv7-a  --with-tune=cortex-a9  --with-fpu=neon
+--with-float=hard    --with-mode=thumb      --disable-multilib
+```
+
+**Hard float on both sides. They match.** Exit criterion 5 is closed, and the
+"silently passes garbage doubles across the Dart↔C boundary" failure mode is off
+the table.
+
+Two things worth carrying forward:
+
+- **`--disable-multilib`** means there is no softfp variant of the VitaSDK
+  libraries. Had the ABIs differed, there would have been no easy fallback. The
+  match is fortunate rather than negotiated.
+- **`--with-mode=thumb`** is VitaSDK's default, but Dart's armv7 backend emits
+  ARM (A32) code, not Thumb. ARM/Thumb interworking is standard under EABI v5
+  and the linker inserts veneers, so this should be a non-issue — but it is an
+  assumption, and it belongs on the M1 checklist rather than in the "obviously
+  fine" pile.
+
+Also noted: the `gen_snapshot` ELF output has **no `.ARM.attributes` section**,
+so the linker cannot automatically diagnose an ABI mismatch involving the
+snapshot. That is precisely why this had to be checked by hand.
+
 ### Why this order
 
 Track B needs no hardware, so nothing blocks on shipping, borrowing, or setting
@@ -251,7 +318,7 @@ budget it requests in `param.sfo`.*
 
 | Item | Provisional size | Basis |
 |---|---|---|
-| Engine code (Skia + Dart runtime + libtxt + HarfBuzz + platform) | **~11 MB** | `libflutter.so` armv7 release measured at 11.1 MB on Flutter 3.29.3. Static link with dead-code elimination should be the same order. ardera's arm `libflutter_engine.so.release` for 3.44.8 is 18 MB unstripped. |
+| Engine code (Skia + Dart runtime + libtxt + HarfBuzz + platform) | **12.41 MiB `.text` + 1.59 MiB `.rodata`; ~14.5 MiB resident** | ✅ **Measured** on ardera's arm `libflutter_engine.so.release` for the pinned 3.44.8 — see B3a below. |
 | `icudtl.dat` (full) | **10 MB** | The file shipped in `ardera/flutter-engine-binaries-for-arm`. Reducible — upstream has an open thread on exactly this. |
 | AOT snapshot, **pure-Dart hello world** | **352 KiB instructions + 262 KiB data** | ✅ **Measured** — see B1 results below. |
 | AOT snapshot, **Flutter counter app** | **2.11 MiB instructions + 1.40 MiB data** | ✅ **Measured** — see B2 results below. |
@@ -305,12 +372,14 @@ A plain C `.vpk`, no Dart, on **real hardware**, that:
 
 ### 3. Real size numbers
 
-- [ ] Build the engine for `linux-arm` with the intended flags; read `size` off
-      the archive. Replaces the 11 MB estimate with a measured figure.
+- [x] ~~Build the engine for `linux-arm`~~ — measured ardera's prebuilt arm
+      engine instead: **12.41 MiB `.text`**. Building it ourselves (B3b) is
+      deferred to the Docker work.
 - [ ] Determine how small `icudtl.dat` can get while keeping line breaking and
       word segmentation correct for Latin + the scripts v1 claims to support.
-- [ ] `gen_snapshot` a counter app and a mid-complexity app for armv7; record
-      `isolate_snapshot_instructions` size for both. Compare against 16 MiB.
+- [x] `gen_snapshot` a counter app for armv7 — **2.11 MiB**, 13.2% of the
+      16 MiB cap. Mid-complexity app still unmeasured but bounded by the fixed
+      ~1.8 MiB framework cost.
 
 ### 4. Memory budget confirmation
 
@@ -323,10 +392,13 @@ A plain C `.vpk`, no Dart, on **real hardware**, that:
 
 ### 5. Float ABI confirmation — *cheap to check, catastrophic to get wrong*
 
-- [ ] Confirm Dart's armv7 codegen emits calling conventions matching VitaSDK's
-      hard-float NEON/VFPv3 default. A softfp/hardfp mismatch links cleanly and
-      silently passes garbage doubles across the Dart↔C boundary. Debugging that
-      inside M1 would cost weeks.
+- [x] Confirm Dart's armv7 codegen emits calling conventions matching VitaSDK's
+      hard-float NEON/VFPv3 default. **Confirmed: both sides `0x05000400`,
+      hard float.** The risk being closed here: a softfp/hardfp mismatch links
+      cleanly and silently passes garbage doubles across the Dart↔C boundary,
+      which would have cost weeks to find inside M1.
+- [ ] Carried forward: VitaSDK defaults to `--with-mode=thumb` while Dart emits
+      ARM (A32). Interworking is standard under EABI v5, but verify at M1.
 
 ### 6. Thread budget
 
