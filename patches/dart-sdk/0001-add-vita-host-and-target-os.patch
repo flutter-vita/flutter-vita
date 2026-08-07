@@ -1,0 +1,126 @@
+diff --git a/runtime/platform/globals.h b/runtime/platform/globals.h
+index 66c3f273..d543a69f 100644
+--- a/runtime/platform/globals.h
++++ b/runtime/platform/globals.h
+@@ -138,6 +138,11 @@
+ #elif defined(__Fuchsia__)
+ #define DART_HOST_OS_FUCHSIA
+ 
++#elif defined(__vita__)
++
++// PlayStation Vita (homebrew, VitaSDK / arm-vita-eabi, newlib).
++#define DART_HOST_OS_VITA 1
++
+ #elif !defined(DART_HOST_OS_FUCHSIA)
+ #error Automatic target os detection failed.
+ #endif
+@@ -418,7 +423,8 @@ struct simd128_value_t {
+ 
+ #if !defined(DART_TARGET_OS_ANDROID) && !defined(DART_TARGET_OS_FUCHSIA) &&    \
+     !defined(DART_TARGET_OS_MACOS_IOS) && !defined(DART_TARGET_OS_LINUX) &&    \
+-    !defined(DART_TARGET_OS_MACOS) && !defined(DART_TARGET_OS_WINDOWS)
++    !defined(DART_TARGET_OS_MACOS) && !defined(DART_TARGET_OS_WINDOWS) &&      \
++    !defined(DART_TARGET_OS_VITA)
+ // No target OS specified; pick the one matching the host OS.
+ #if defined(DART_HOST_OS_ANDROID)
+ #define DART_TARGET_OS_ANDROID 1
+@@ -433,6 +439,8 @@ struct simd128_value_t {
+ #define DART_TARGET_OS_MACOS 1
+ #elif defined(DART_HOST_OS_WINDOWS)
+ #define DART_TARGET_OS_WINDOWS 1
++#elif defined(DART_HOST_OS_VITA)
++#define DART_TARGET_OS_VITA 1
+ #else
+ #error Automatic target OS detection failed.
+ #endif
+@@ -717,6 +725,8 @@ DART_FORCE_INLINE D bit_copy(const S& source) {
+ #define kHostOperatingSystemName "macos"
+ #elif defined(DART_HOST_OS_WINDOWS)
+ #define kHostOperatingSystemName "windows"
++#elif defined(DART_HOST_OS_VITA)
++#define kHostOperatingSystemName "vita"
+ #else
+ #error Host operating system detection failed.
+ #endif
+@@ -769,6 +779,8 @@ DART_FORCE_INLINE D bit_copy(const S& source) {
+ #define kTargetOperatingSystemName "macos"
+ #elif defined(DART_TARGET_OS_WINDOWS)
+ #define kTargetOperatingSystemName "windows"
++#elif defined(DART_TARGET_OS_VITA)
++#define kTargetOperatingSystemName "vita"
+ #else
+ #error Target operating system detection failed.
+ #endif
+diff --git a/runtime/platform/utils.h b/runtime/platform/utils.h
+index 1ea942d0..d7589bf7 100644
+--- a/runtime/platform/utils.h
++++ b/runtime/platform/utils.h
+@@ -606,6 +606,8 @@ class Utils {
+ #include "platform/utils_macos.h"
+ #elif defined(DART_HOST_OS_WINDOWS)
+ #include "platform/utils_win.h"
++#elif defined(DART_HOST_OS_VITA)
++#include "platform/utils_vita.h"
+ #else
+ #error Unknown target os.
+ #endif
+diff --git a/runtime/platform/utils_vita.h b/runtime/platform/utils_vita.h
+new file mode 100644
+index 00000000..b83cf801
+--- /dev/null
++++ b/runtime/platform/utils_vita.h
+@@ -0,0 +1,54 @@
++// Copyright (c) 2012, the Dart project authors.  Please see the AUTHORS file
++// for details. All rights reserved. Use of this source code is governed by a
++// BSD-style license that can be found in the LICENSE file.
++
++#ifndef RUNTIME_PLATFORM_UTILS_VITA_H_
++#define RUNTIME_PLATFORM_UTILS_VITA_H_
++
++#if !defined(RUNTIME_PLATFORM_UTILS_H_)
++#error Do not include utils_vita.h directly; use utils.h instead.
++#endif
++
++#include <stdio.h>
++#include <string.h>
++
++// Unlike utils_linux.h, this does not include <endian.h>: newlib does not
++// provide it. The Vita is little-endian ARMv7, so the little-endian conversions
++// are the identity and the big-endian ones are byte swaps.
++
++namespace dart {
++
++inline uint16_t Utils::HostToBigEndian16(uint16_t value) {
++  return __builtin_bswap16(value);
++}
++
++inline uint32_t Utils::HostToBigEndian32(uint32_t value) {
++  return __builtin_bswap32(value);
++}
++
++inline uint64_t Utils::HostToBigEndian64(uint64_t value) {
++  return __builtin_bswap64(value);
++}
++
++inline uint16_t Utils::HostToLittleEndian16(uint16_t value) {
++  return value;
++}
++
++inline uint32_t Utils::HostToLittleEndian32(uint32_t value) {
++  return value;
++}
++
++inline uint64_t Utils::HostToLittleEndian64(uint64_t value) {
++  return value;
++}
++
++inline char* Utils::StrError(int err, char* buffer, size_t bufsize) {
++  // newlib does not expose the POSIX strerror_r under VitaSDK's feature-test
++  // defaults, so copy out of strerror(). Only used on error paths.
++  snprintf(buffer, bufsize, "%s", strerror(err));
++  return buffer;
++}
++
++}  // namespace dart
++
++#endif  // RUNTIME_PLATFORM_UTILS_VITA_H_

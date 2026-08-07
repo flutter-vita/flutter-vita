@@ -62,10 +62,47 @@ already out of scope** (no DevTools — see the non-goals):
 `thread_interrupter_vita.cc` is likewise a **stub** — the thread interrupter is
 the sampling profiler, and it needs POSIX signals the Vita does not have.
 
+## Build reality, and what the compiler found that this inventory missed
+
+**A full Dart build needs `depot_tools` and a multi-gigabyte `gclient sync`.**
+None of `gclient`, `gn` or `ninja` is installed, and standing all that up is
+really Phase 2 work. So Phase 1 uses a lighter loop:
+[`spikes/p1-compile-check/check.sh`](../spikes/p1-compile-check/check.sh)
+compiles individual runtime sources with `arm-vita-eabi-g++` against the real
+headers. It does not link and is no substitute for the GN build, but it catches
+most mistakes immediately instead of after a multi-GB bring-up.
+
+The tree is a shallow checkout at the pinned commit (486 MB), gitignored;
+edits are captured as an ordered series in
+[`patches/dart-sdk/`](../../patches/dart-sdk/README.md).
+
+**Within minutes the compiler found three things this inventory did not:**
+
+1. **`runtime/platform/globals.h` must be patched.** Dart detects its host OS
+   from compiler predefines and hard-errors on anything unrecognised. VitaSDK's
+   GCC defines **`__vita__`**, so the chain gains a branch — plus three
+   dependent switches (`DART_TARGET_OS_*`, `kTargetOperatingSystemName`,
+   `kHostOperatingSystemName`) that each hard-error independently.
+2. **A sixth file: `runtime/platform/utils_vita.h`.** `utils_linux.h` includes
+   `<endian.h>`, which newlib does not have. Also `strerror_r` is not exposed
+   under VitaSDK's feature-test defaults.
+3. **C++20 is mandatory** — Dart uses `std::bit_cast`, `std::has_single_bit`
+   and `std::bit_ceil`. Building with C++17 produces a wall of unrelated-looking
+   errors that would be easy to misdiagnose.
+
+None of these were visible from reading interfaces and diffing symbol tables.
+That is the argument for standing up a compile loop before writing the files
+rather than after.
+
+**Status: patch 0001 applied and verified — Dart runtime headers now compile for
+`arm-vita-eabi` with a real `vita` target OS.**
+
 ## What must actually be written
 
 | file | difficulty | notes |
 |---|---|---|
+| `platform/utils_vita.h` | ✅ **done** | patch 0001 — no `endian.h`, no `strerror_r` |
+| `platform/globals.h` patch | ✅ **done** | patch 0001 — `__vita__` detection |
 | `virtual_memory_vita.cc` | **straightforward** (revised down twice — see below) | allocate aligned memory and free it; no protection, no reserve/commit |
 | `os_thread_vita.cc` + `.h` | moderate | `os_thread_linux.cc` with four substitutions |
 | `os_vita.cc` | moderate | time and sleep map cleanly; stub the code observers |
