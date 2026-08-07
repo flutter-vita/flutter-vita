@@ -1,0 +1,160 @@
+diff --git a/build/config/BUILDCONFIG.gn b/build/config/BUILDCONFIG.gn
+index cfb06870..125a80dc 100644
+--- a/build/config/BUILDCONFIG.gn
++++ b/build/config/BUILDCONFIG.gn
+@@ -168,6 +168,10 @@ declare_args() {
+ # aix or one of the BSDs. If you need to check these, just check the
+ # current_os value directly.
+ 
++# Not part of the upstream is_* set; declared here so every branch below can be
++# written without touching each one.
++is_vita = current_os == "vita"
++
+ if (current_os == "win") {
+   is_android = false
+   is_chromeos = false
+@@ -212,6 +216,20 @@ if (current_os == "win") {
+   is_posix = true
+   is_watchos = false
+   is_win = false
++} else if (current_os == "vita") {
++  # PlayStation Vita homebrew (VitaSDK, arm-vita-eabi, newlib).
++  # Deliberately not is_posix: newlib plus sceKernel is not POSIX, and claiming
++  # otherwise pulls in *_posix.cc sources that cannot build here.
++  is_android = false
++  is_chromeos = false
++  is_fuchsia = false
++  is_ios = false
++  is_linux = false
++  is_mac = false
++  is_nacl = false
++  is_posix = false
++  is_watchos = false
++  is_win = false
+ } else if (current_os == "fuchsia") {
+   is_android = false
+   is_chromeos = false
+@@ -484,6 +502,16 @@ if (is_win) {
+     toolchain_target = "${toolchain_target}_sim"
+   }
+   set_default_toolchain("//build/toolchain/mac:$toolchain_target")
++} else if (is_vita) {
++  assert(current_cpu == "arm", "Vita is armv7 only")
++  if (host_os == "mac") {
++    host_toolchain = "//build/toolchain/mac:clang_$host_cpu"
++  } else if (host_os == "linux") {
++    host_toolchain = "//build/toolchain/linux:clang_$host_cpu"
++  } else {
++    assert(false, "Unknown host for vita cross compile")
++  }
++  set_default_toolchain("//build/toolchain/vita:arm")
+ } else if (is_fuchsia) {
+   assert(host_cpu == "x64")
+   if (host_os == "linux") {
+diff --git a/build/config/arm.gni b/build/config/arm.gni
+index fbce649c..6b1036dc 100644
+--- a/build/config/arm.gni
++++ b/build/config/arm.gni
+@@ -55,11 +55,24 @@ if (current_cpu == "arm" || current_cpu == "arm64") {
+   } else if (arm_version == 7) {
+     arm_arch = "armv7-a"
+     if (arm_tune == "") {
+-      arm_tune = "generic-armv7-a"
++      if (current_os == "vita") {
++        arm_tune = "cortex-a9"
++      } else {
++        arm_tune = "generic-armv7-a"
++      }
+     }
+ 
+     if (arm_float_abi == "") {
+-      arm_float_abi = "softfp"
++      if (current_os == "vita") {
++        # VitaSDK's GCC is built --with-float=hard. Defaulting to softfp here
++        # would link Dart against hard-float VitaSDK libraries with no error
++        # from the linker -- doubles would silently arrive as garbage across
++        # every Dart/C boundary. Verified in Phase 0.5 B5: both sides carry
++        # e_flags 0x05000400. This must not depend on remembering a gn arg.
++        arm_float_abi = "hard"
++      } else {
++        arm_float_abi = "softfp"
++      }
+     }
+ 
+     arm_use_thumb = true
+diff --git a/build/toolchain/vita/BUILD.gn b/build/toolchain/vita/BUILD.gn
+new file mode 100644
+index 00000000..ac6afe9c
+--- /dev/null
++++ b/build/toolchain/vita/BUILD.gn
+@@ -0,0 +1,57 @@
++# Copyright (c) 2024, the Dart project authors.  Please see the AUTHORS file
++# for details. All rights reserved. Use of this source code is governed by a
++# BSD-style license that can be found in the LICENSE file.
++
++# Toolchain for PlayStation Vita homebrew: VitaSDK's arm-vita-eabi GCC.
++#
++# This is modelled directly on the "arm" toolchain in ../linux/BUILD.gn, since
++# VitaSDK is GCC and Dart's gcc_toolchain template is exactly the supported way
++# to plug one in. Two differences from Linux:
++#
++#   * The prefix comes from $VITASDK rather than being on PATH by default.
++#   * is_clang is false, so the build takes Dart's GCC path throughout.
++
++import("//build/toolchain/ccache.gni")
++import("//build/toolchain/gcc_toolchain.gni")
++import("//build/toolchain/toolchain_suite.gni")
++
++declare_args() {
++  # Absolute path to the VitaSDK installation. Defaults to the conventional
++  # location; override with `gn gen --args='vitasdk_root="/path/to/vitasdk"'`.
++  vitasdk_root = getenv("VITASDK")
++}
++
++assert(vitasdk_root != "",
++       "vitasdk_root is empty: set the VITASDK environment variable or pass " +
++           "--args='vitasdk_root=\"/path/to/vitasdk\"'. See docs/dev-environment.md")
++
++template("gcc_toolchain_suite") {
++  toolchain_suite(target_name) {
++    toolchain_template = "gcc_toolchain"
++    forward_variables_from(invoker, "*")
++  }
++}
++
++if (use_ccache) {
++  compiler_prefix = "ccache "
++} else {
++  compiler_prefix = ""
++}
++
++gcc_toolchain_suite("arm") {
++  prefix = "$vitasdk_root/bin/arm-vita-eabi-"
++
++  cc = "${compiler_prefix}${prefix}gcc"
++  cxx = "${compiler_prefix}${prefix}g++"
++  asm = "${compiler_prefix}${prefix}gcc"
++
++  ar = "${prefix}ar"
++  ld = "${prefix}g++"
++  readelf = "${prefix}readelf"
++  nm = "${prefix}nm"
++  strip = "${prefix}strip"
++
++  toolchain_cpu = "arm"
++  toolchain_os = "vita"
++  is_clang = false
++}
+diff --git a/runtime/BUILD.gn b/runtime/BUILD.gn
+index 8cd05ff4..77a14c1e 100644
+--- a/runtime/BUILD.gn
++++ b/runtime/BUILD.gn
+@@ -143,6 +143,8 @@ config("dart_os_config") {
+     defines += [ "DART_TARGET_OS_LINUX" ]
+   } else if (target_os == "mac") {
+     defines += [ "DART_TARGET_OS_MACOS" ]
++  } else if (target_os == "vita") {
++    defines += [ "DART_TARGET_OS_VITA" ]
+   } else if (target_os == "win") {
+     defines += [ "DART_TARGET_OS_WINDOWS" ]
+   } else if (target_os == "winuwp") {

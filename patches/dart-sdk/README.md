@@ -12,6 +12,8 @@ disposable; these patches are the real artifact.
 | 0001 | [add-vita-host-and-target-os](0001-add-vita-host-and-target-os.patch) | Teaches Dart that `vita` is a platform |
 | 0002 | [route-vita-through-platform-dispatch](0002-route-vita-through-platform-dispatch.patch) | Adds `vita` to every per-OS `#if` chain that hard-errors |
 | 0003 | [vita-platform-implementations](0003-vita-platform-implementations.patch) | The Vita platform files themselves |
+| 0004 | [gn-vita-toolchain](0004-gn-vita-toolchain.patch) | Teaches the GN build about `vita` |
+| 0005 | [zlib-no-armv8-on-vita](0005-zlib-no-armv8-on-vita.patch) | **Applies to `third_party/zlib`, a separate repo** |
 
 All three are verified to compile with
 [`spikes/p1-compile-check/check.sh`](../../spikes/p1-compile-check/check.sh).
@@ -39,8 +41,13 @@ revision and `managed: True`, so one command does everything:
 ```bash
 cd third_party
 PATH="$HOME/depot_tools:$PATH" gclient sync --nohooks --no-history --shallow
-cd sdk && git apply ../../patches/dart-sdk/000*.patch
+cd sdk
+git apply ../../patches/dart-sdk/000[1-4]*.patch
+git -C third_party/zlib apply ../../../../patches/dart-sdk/0005-zlib-no-armv8-on-vita.patch
 ```
+
+**0005 applies to a different repo.** `third_party/zlib` is its own DEPS-managed
+git checkout, so it is not covered by a diff taken at the sdk root.
 
 ~7.8 GB and slow, but deterministic. It brings `buildtools/gn`, `buildtools/ninja`
 and clang, which a plain `git clone` does not — those come from DEPS.
@@ -157,3 +164,42 @@ Two Vita APIs made it simpler than expected:
   wrinkle the work plan had flagged.
 - **`sceKernelFindMemBlockByAddr`** recovers the `SceUID` at free time, so the
   destructor needs no side table keyed on address.
+
+
+---
+
+## 0004 — GN vita toolchain
+
+Makes `gn gen` work for `target_os="vita"`. Four edits:
+
+| file | |
+|---|---|
+| `build/config/BUILDCONFIG.gn` | a `vita` branch in the `current_os` chain, an `is_vita` variable, and `set_default_toolchain` |
+| `build/toolchain/vita/BUILD.gn` | new — `gcc_toolchain_suite("arm")` with the `arm-vita-eabi-` prefix from `$VITASDK` |
+| `build/config/arm.gni` | **hard float and `cortex-a9` by default on vita** |
+| `runtime/BUILD.gn` | `dart_os_config` defines `DART_TARGET_OS_VITA` |
+
+Two decisions worth their own note:
+
+**`is_posix = false`.** Tempting to set it true — Vita has pthreads, after all —
+but newlib plus `sceKernel` is not POSIX, and claiming otherwise pulls in
+`*_posix.cc` sources that cannot build.
+
+**`arm_float_abi` defaults to `"hard"` on vita.** Upstream defaults to `softfp`.
+Getting this wrong links cleanly and then passes garbage doubles across every
+Dart/C boundary — the failure mode Phase 0.5 B5 exists to prevent. Making it a
+default rather than a `gn` argument means it cannot be forgotten.
+
+The toolchain itself is a near-copy of the Linux `arm` toolchain, because
+`gcc_toolchain` is the supported way to plug in a GCC cross compiler and
+VitaSDK is GCC. **The foreign-toolchain risk the plan rated High did not
+materialise:** `gn gen` produced 682 targets from a macOS host on the first
+configuration that got that far.
+
+## 0005 — zlib: no ARMv8 on vita
+
+zlib enables `use_arm_neon_optimizations` for any `arm`/`arm64` target, but the
+code behind it is the **ARMv8 CRC32 and crypto extensions**. The Vita is an
+ARMv7 Cortex-A9: it has NEON, but not those. Enabling them would emit
+instructions that fault on the device — the same class of error as the
+`integer_division_supported_` question in patch 0002.
