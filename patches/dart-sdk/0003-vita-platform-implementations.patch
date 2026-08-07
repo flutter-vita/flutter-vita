@@ -73,6 +73,437 @@ index 00000000..95617c90
 +}  // namespace dart
 +
 +#endif  // defined(DART_HOST_OS_VITA)
+diff --git a/runtime/vm/os_thread_vita.cc b/runtime/vm/os_thread_vita.cc
+new file mode 100644
+index 00000000..84f25ae5
+--- /dev/null
++++ b/runtime/vm/os_thread_vita.cc
+@@ -0,0 +1,203 @@
++// Copyright (c) 2012, the Dart project authors.  Please see the AUTHORS file
++// for details. All rights reserved. Use of this source code is governed by a
++// BSD-style license that can be found in the LICENSE file.
++
++#include "platform/globals.h"  // NOLINT
++#if defined(DART_HOST_OS_VITA) && !defined(DART_USE_ABSL)
++
++#include "vm/os_thread.h"
++
++#include <errno.h>
++#include <stdio.h>
++#include <string.h>
++
++#include <psp2/kernel/threadmgr.h>
++
++#include "platform/address_sanitizer.h"
++#include "platform/assert.h"
++#include "platform/safe_stack.h"
++#include "platform/utils.h"
++#include "vm/flags.h"
++
++// Threading on Vita is pthreads, because VitaSDK ships a real libpthread over
++// sceKernel threads. This file is therefore os_thread_linux.cc with four
++// substitutions, all of them GNU or Linux extensions with no newlib equivalent:
++//
++//   pthread_getattr_np   -> sceKernelGetThreadInfo (stack bounds)
++//   pthread_setname_np   -> dropped; sceKernel names threads at creation
++//   pthread_getname_np   -> sceKernelGetThreadInfo (thread name)
++//   syscall(__NR_gettid) -> sceKernelGetThreadId
++//
++// Plus SIGPROF handling is removed: the Vita has no POSIX signals and the
++// sampling profiler is stubbed out in thread_interrupter_vita.cc.
++
++namespace dart {
++
++DEFINE_FLAG(int,
++            worker_thread_priority,
++            kMinInt,
++            "The thread priority the VM should use for new worker threads.");
++
++class ThreadStartData {
++ public:
++  ThreadStartData(const char* name,
++                  OSThread::ThreadStartFunction function,
++                  uword parameter)
++      : name_(name), function_(function), parameter_(parameter) {}
++
++  const char* name() const { return name_; }
++  OSThread::ThreadStartFunction function() const { return function_; }
++  uword parameter() const { return parameter_; }
++
++ private:
++  const char* name_;
++  OSThread::ThreadStartFunction function_;
++  uword parameter_;
++
++  DISALLOW_COPY_AND_ASSIGN(ThreadStartData);
++};
++
++static void* ThreadStart(void* data_ptr) {
++  if (FLAG_worker_thread_priority != kMinInt) {
++    // Deliberately not honoured. Vita thread priorities run on a different
++    // scale to POSIX nice values (lower is higher, roughly 64..191), so
++    // forwarding the flag would silently mean something else. If worker
++    // priorities are ever wanted, map them explicitly to
++    // sceKernelChangeThreadPriority rather than passing the number through.
++  }
++
++  ThreadStartData* data = reinterpret_cast<ThreadStartData*>(data_ptr);
++  const char* name = data->name();
++  OSThread::ThreadStartFunction function = data->function();
++  uword parameter = data->parameter();
++  delete data;
++
++  // No pthread_setname_np under newlib. sceKernel takes a thread name at
++  // creation time, which pthread_create does not expose, so the OS-level name
++  // is whatever libpthread chose. OSThread::SetName below still records the
++  // real name for Dart's own reporting.
++
++  OSThread* thread = OSThread::CreateOSThread();
++  if (thread != nullptr) {
++    OSThread::SetCurrent(thread);
++    thread->SetName(name);
++    function(parameter);
++  }
++  return nullptr;
++}
++
++int OSThread::TryStart(const char* name,
++                       ThreadStartFunction function,
++                       uword parameter) {
++  pthread_attr_t attr;
++  int result = pthread_attr_init(&attr);
++  RETURN_ON_PTHREAD_FAILURE(result);
++
++  result = pthread_attr_setstacksize(&attr, OSThread::GetMaxStackSize());
++  RETURN_ON_PTHREAD_FAILURE(result);
++
++  ThreadStartData* data = new ThreadStartData(name, function, parameter);
++
++  pthread_t tid;
++  result = pthread_create(&tid, &attr, ThreadStart, data);
++  RETURN_ON_PTHREAD_FAILURE(result);
++
++  result = pthread_attr_destroy(&attr);
++  RETURN_ON_PTHREAD_FAILURE(result);
++
++  return 0;
++}
++
++const ThreadJoinId OSThread::kInvalidThreadJoinId =
++    static_cast<ThreadJoinId>(0);
++
++intptr_t OSThread::GetMaxStackSize() {
++  // Matches the other platforms: 512 KiB on a 32-bit target. Every Vita thread
++  // stack is committed up front, so this multiplies by the thread count --
++  // worth revisiting once the steady-state thread count is known (Phase 0.5
++  // exit criterion 6).
++  const int kStackSize = (128 * kWordSize * KB);
++  return kStackSize;
++}
++
++#ifdef SUPPORT_TIMELINE
++ThreadId OSThread::GetCurrentThreadTraceId() {
++  return static_cast<ThreadId>(sceKernelGetThreadId());
++}
++#endif  // SUPPORT_TIMELINE
++
++char* OSThread::GetCurrentThreadName() {
++  SceKernelThreadInfo info;
++  memset(&info, 0, sizeof(info));
++  info.size = sizeof(info);
++  if (sceKernelGetThreadInfo(sceKernelGetThreadId(), &info) == 0) {
++    return strdup(info.name);
++  }
++  return strdup("");
++}
++
++ThreadJoinId OSThread::GetCurrentThreadJoinId(OSThread* thread) {
++  ASSERT(thread != nullptr);
++  ASSERT(thread->id() == GetCurrentThreadId());
++  DEBUG_ASSERT(thread->join_id_ == kInvalidThreadJoinId);
++  pthread_t id = pthread_self();
++#if defined(DEBUG)
++  thread->join_id_ = id;
++#endif
++  return id;
++}
++
++void OSThread::Join(ThreadJoinId id) {
++  int result = pthread_join(id, nullptr);
++  VALIDATE_PTHREAD_RESULT(result);
++}
++
++void OSThread::Detach(ThreadJoinId id) {
++  int result = pthread_detach(id);  // NOLINT
++  VALIDATE_PTHREAD_RESULT(result);
++}
++
++intptr_t OSThread::ThreadIdToIntPtr(ThreadId id) {
++  COMPILE_ASSERT(sizeof(id) <= sizeof(intptr_t));
++  return static_cast<intptr_t>(id);
++}
++
++ThreadId OSThread::ThreadIdFromIntPtr(intptr_t id) {
++  return static_cast<ThreadId>(id);
++}
++
++bool OSThread::GetCurrentStackBounds(uword* lower, uword* upper) {
++  // newlib has no pthread_getattr_np, so ask the kernel instead. This works for
++  // the main thread too, which is where the POSIX version is least reliable.
++  SceKernelThreadInfo info;
++  memset(&info, 0, sizeof(info));
++  info.size = sizeof(info);
++  if (sceKernelGetThreadInfo(sceKernelGetThreadId(), &info) != 0) {
++    return false;
++  }
++  if (info.stack == nullptr || info.stackSize <= 0) {
++    return false;
++  }
++  *lower = reinterpret_cast<uword>(info.stack);
++  *upper = *lower + static_cast<uword>(info.stackSize);
++  return true;
++}
++
++#if defined(USING_SAFE_STACK)
++NO_SANITIZE_ADDRESS
++NO_SANITIZE_SAFE_STACK
++uword OSThread::GetCurrentSafestackPointer() {
++#error "SAFE_STACK is unsupported on this platform"
++  return 0;
++}
++
++NO_SANITIZE_ADDRESS
++NO_SANITIZE_SAFE_STACK
++void OSThread::SetCurrentSafestackPointer(uword ssp) {
++#error "SAFE_STACK is unsupported on this platform"
++}
++#endif
++
++}  // namespace dart
++
++#endif  // defined(DART_HOST_OS_VITA) && !defined(DART_USE_ABSL)
+diff --git a/runtime/vm/os_vita.cc b/runtime/vm/os_vita.cc
+new file mode 100644
+index 00000000..4b52599c
+--- /dev/null
++++ b/runtime/vm/os_vita.cc
+@@ -0,0 +1,216 @@
++// Copyright (c) 2012, the Dart project authors.  Please see the AUTHORS file
++// for details. All rights reserved. Use of this source code is governed by a
++// BSD-style license that can be found in the LICENSE file.
++
++#include "vm/globals.h"
++#if defined(DART_HOST_OS_VITA)
++
++#include "vm/os.h"
++
++#include <errno.h>
++#include <stdio.h>
++#include <stdlib.h>
++#include <string.h>
++#include <sys/time.h>
++#include <time.h>
++
++#include <psp2/kernel/processmgr.h>
++#include <psp2/kernel/threadmgr.h>
++
++#include "platform/assert.h"
++#include "vm/image_snapshot.h"
++#include "vm/zone.h"
++
++// Time, sleep and printing for Vita.
++//
++// Most of this maps cleanly: newlib provides gettimeofday and clock_gettime,
++// and sceKernel provides a monotonic microsecond clock and a thread delay.
++// Two things are deliberately stubbed:
++//
++//   RegisterCodeObservers  -- the Linux implementation writes a perf jitdump
++//                             via mmap(PROT_EXEC) on a file descriptor. There
++//                             is no perf on Vita and nothing consumes it.
++//   GetCurrentThreadCPUMicros -- no per-thread CPU clock; returns -1, which is
++//                             the documented "unsupported" value.
++
++namespace dart {
++
++intptr_t OS::ProcessId() {
++  return static_cast<intptr_t>(sceKernelGetProcessId());
++}
++
++const char* OS::GetTimeZoneName(int64_t seconds_since_epoch) {
++  // The Vita exposes a timezone offset through SceAppUtil, but not an IANA
++  // name. Reporting UTC is honest; the offset below is the useful part.
++  return "UTC";
++}
++
++int OS::GetTimeZoneOffsetInSeconds(int64_t seconds_since_epoch) {
++  // newlib's localtime honours the TZ environment variable, which the Vita does
++  // not set. Without SceAppUtil (which would drag in a system-config dependency
++  // the runtime should not have), UTC is the truthful answer.
++  return 0;
++}
++
++int64_t OS::GetCurrentTimeMillis() {
++  return GetCurrentTimeMicros() / 1000;
++}
++
++int64_t OS::GetCurrentTimeMicros() {
++  struct timeval tv;
++  if (gettimeofday(&tv, nullptr) < 0) {
++    FATAL("gettimeofday returned an error (%s)", strerror(errno));
++    return 0;
++  }
++  return (static_cast<int64_t>(tv.tv_sec) * 1000000) + tv.tv_usec;
++}
++
++int64_t OS::GetCurrentMonotonicTicks() {
++  // sceKernelGetProcessTimeWide is already microseconds, so ticks and micros
++  // share a unit and GetCurrentMonotonicFrequency is 1000000.
++  return static_cast<int64_t>(sceKernelGetProcessTimeWide());
++}
++
++int64_t OS::GetCurrentMonotonicFrequency() {
++  return 1000000;
++}
++
++int64_t OS::GetCurrentMonotonicMicros() {
++  ASSERT(GetCurrentMonotonicFrequency() == 1000000);
++  return GetCurrentMonotonicTicks();
++}
++
++int64_t OS::GetCurrentThreadCPUMicros() {
++  // No per-thread CPU clock; -1 is the "unsupported" contract.
++  return -1;
++}
++
++int64_t OS::GetCurrentMonotonicMicrosForTimeline() {
++#if defined(SUPPORT_TIMELINE)
++  return GetCurrentMonotonicMicros();
++#else
++  return -1;
++#endif
++}
++
++intptr_t OS::ActivationFrameAlignment() {
++  // AAPCS requires 8-byte stack alignment at public interfaces, and VitaSDK
++  // follows the standard ARM EABI here.
++  return 8;
++}
++
++uintptr_t OS::CurrentRSS() {
++  // No process memory accounting exposed to homebrew. 0 means "unknown"; it is
++  // only used for reporting.
++  return 0;
++}
++
++void OS::Sleep(int64_t millis) {
++  SleepMicros(millis * 1000);
++}
++
++void OS::SleepMicros(int64_t micros) {
++  ASSERT(micros >= 0);
++  sceKernelDelayThread(static_cast<SceUInt>(micros));
++}
++
++void OS::DebugBreak() {
++  UNIMPLEMENTED();
++}
++
++void OS::NotifyBeforeGC() {}
++void OS::NotifyAfterGC() {}
++
++DART_NOINLINE uintptr_t OS::GetProgramCounter() {
++  return reinterpret_cast<uintptr_t>(
++      __builtin_extract_return_addr(__builtin_return_address(0)));
++}
++
++void OS::Print(const char* format, ...) {
++  va_list args;
++  va_start(args, format);
++  VFPrint(stdout, format, args);
++  va_end(args);
++}
++
++void OS::VFPrint(FILE* stream, const char* format, va_list args) {
++  vfprintf(stream, format, args);
++  fflush(stream);
++}
++
++char* OS::SCreate(Zone* zone, const char* format, ...) {
++  va_list args;
++  va_start(args, format);
++  char* buffer = VSCreate(zone, format, args);
++  va_end(args);
++  return buffer;
++}
++
++char* OS::VSCreate(Zone* zone, const char* format, va_list args) {
++  // Measure with a copy: vsnprintf consumes the va_list.
++  va_list measure_args;
++  va_copy(measure_args, args);
++  intptr_t len = vsnprintf(nullptr, 0, format, measure_args);
++  va_end(measure_args);
++
++  char* buffer;
++  if (zone != nullptr) {
++    buffer = zone->Alloc<char>(len + 1);
++  } else {
++    buffer = reinterpret_cast<char*>(malloc(len + 1));
++  }
++  ASSERT(buffer != nullptr);
++
++  va_list print_args;
++  va_copy(print_args, args);
++  vsnprintf(buffer, len + 1, format, print_args);
++  va_end(print_args);
++  return buffer;
++}
++
++void OS::PrintErr(const char* format, ...) {
++  va_list args;
++  va_start(args, format);
++  VFPrint(stderr, format, args);
++  va_end(args);
++}
++
++void OS::Init() {}
++
++void OS::Cleanup() {}
++
++void OS::PrepareToAbort() {}
++
++void OS::Abort() {
++  PrepareToAbort();
++  abort();
++}
++
++void OS::Exit(int code) {
++  sceKernelExitProcess(code);
++}
++
++void OS::RegisterCodeObservers() {
++  // The Linux implementation registers a perf jitdump writer, which needs
++  // mmap(PROT_EXEC) on a file descriptor. There is no perf on Vita and nothing
++  // would read the output, so there are no observers to register.
++}
++
++OS::BuildId OS::GetAppBuildId(const uint8_t* snapshot_instructions) {
++  // Only the build id carried inside the instructions image is available.
++  //
++  // The Linux implementation falls back to walking the host ELF's PT_NOTE
++  // headers for NT_GNU_BUILD_ID. That has no analogue here: the running program
++  // is a Sony SELF, not an ELF mapped at a walkable base, and there is no
++  // dl_iterate_phdr. Under ADR-0005 the snapshot is loaded from app0: into a VM
++  // domain block by the embedder, so if a build id exists it is in the image.
++  const Image instructions_image(snapshot_instructions);
++  if (auto* const image_build_id = instructions_image.build_id()) {
++    return {instructions_image.build_id_length(), image_build_id};
++  }
++  return {0, nullptr};
++}
++
++}  // namespace dart
++
++#endif  // defined(DART_HOST_OS_VITA)
 diff --git a/runtime/vm/thread_interrupter_vita.cc b/runtime/vm/thread_interrupter_vita.cc
 new file mode 100644
 index 00000000..682a0d8a

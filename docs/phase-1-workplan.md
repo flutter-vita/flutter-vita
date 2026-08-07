@@ -104,10 +104,28 @@ rather than after.
 | `platform/utils_vita.h` | ✅ **done** | patch 0001 — no `endian.h`, no `strerror_r` |
 | `platform/globals.h` patch | ✅ **done** | patch 0001 — `__vita__` detection |
 | `virtual_memory_vita.cc` | **straightforward** (revised down twice — see below) | allocate aligned memory and free it; no protection, no reserve/commit |
-| `os_thread_vita.cc` + `.h` | moderate | `os_thread_linux.cc` with four substitutions |
-| `os_vita.cc` | moderate | time and sleep map cleanly; stub the code observers |
-| `cpuinfo_vita.cc` | easy | fixed answers — Cortex-A9, 4 cores |
-| `thread_interrupter_vita.cc` | trivial | stub it |
+| `os_thread_vita.cc` + `.h` | ✅ **done** | patch 0003 — pthreads plus four substitutions |
+| `os_vita.cc` | ✅ **done** | patch 0003 — time, sleep, print |
+| `cpuinfo_vita.cc` | ✅ **done** | patch 0003 — fixed answers |
+| `thread_interrupter_vita.cc` | ✅ **done** | patch 0003 — stubs |
+
+**All seven Vita files compile.** Verified by
+[`spikes/p1-compile-check/check.sh`](../spikes/p1-compile-check/check.sh):
+
+```
+  probe.cc                           OK
+  cpuinfo_vita.cc                    OK
+  thread_interrupter_vita.cc         OK
+  virtual_memory_vita.cc             OK
+  os_thread_vita.cc                  OK
+  os_vita.cc                         OK
+  cpu_arm.cc                         OK
+```
+
+**Compiling is not working.** Nothing here has been linked or run. The next gate
+is GN — `depot_tools`, `gclient sync`, and a toolchain definition for
+`arm-vita-eabi` — and that is where Phase 2's unknown about foreign toolchains
+on a macOS host arrives.
 
 ### `virtual_memory_vita.cc`: what it actually has to do
 

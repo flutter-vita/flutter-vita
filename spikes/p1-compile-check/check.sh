@@ -48,6 +48,8 @@ else
     "$SDK/runtime/vm/cpuinfo_vita.cc"
     "$SDK/runtime/vm/thread_interrupter_vita.cc"
     "$SDK/runtime/vm/virtual_memory_vita.cc"
+    "$SDK/runtime/vm/os_thread_vita.cc"
+    "$SDK/runtime/vm/os_vita.cc"
     "$SDK/runtime/vm/cpu_arm.cc"
   )
 fi
