@@ -505,10 +505,10 @@ index 00000000..84f25ae5
 +#endif  // defined(DART_HOST_OS_VITA) && !defined(DART_USE_ABSL)
 diff --git a/runtime/vm/os_vita.cc b/runtime/vm/os_vita.cc
 new file mode 100644
-index 00000000..7346f8e2
+index 00000000..a7bf359f
 --- /dev/null
 +++ b/runtime/vm/os_vita.cc
-@@ -0,0 +1,248 @@
+@@ -0,0 +1,270 @@
 +// Copyright (c) 2012, the Dart project authors.  Please see the AUTHORS file
 +// for details. All rights reserved. Use of this source code is governed by a
 +// BSD-style license that can be found in the LICENSE file.
@@ -529,6 +529,7 @@ index 00000000..7346f8e2
 +#include <psp2/kernel/threadmgr.h>
 +
 +#include "platform/assert.h"
++#include "vm/flags.h"
 +#include "vm/image_snapshot.h"
 +#include "vm/zone.h"
 +
@@ -713,7 +714,28 @@ index 00000000..7346f8e2
 +  va_end(args);
 +}
 +
-+void OS::Init() {}
++DECLARE_FLAG(bool, write_protect_code);
++DECLARE_FLAG(bool, write_protect_vm_isolate);
++
++void OS::Init() {
++  // The Vita fixes page protection at allocation via the memblock type and has
++  // no runtime equivalent of mprotect, so anything that toggles protection has
++  // to be switched off rather than emulated.
++  //
++  // write_protect_vm_isolate defaults to true and is what M1 run 3 tripped over:
++  // WritableVMIsolateScope -> Heap::WriteProtect -> Page::WriteProtect ->
++  // VirtualMemory::Protect, during Dart_Initialize. Note this is the
++  // *non-executable* branch, so it fires regardless of is_executable.
++  //
++  // os_linux.cc does exactly this when writing a perf jitdump, for the same
++  // reason -- calling mprotect there is unhelpful -- so the mechanism is
++  // upstream-sanctioned rather than invented here.
++  //
++  // Both flags are debugging aids: they catch stray writes to memory that
++  // should be read-only. Losing them costs a safety net, not correctness.
++  FLAG_write_protect_code = false;
++  FLAG_write_protect_vm_isolate = false;
++}
 +
 +void OS::Cleanup() {}
 +
@@ -811,10 +833,10 @@ index 00000000..682a0d8a
 +#endif  // defined(DART_HOST_OS_VITA)
 diff --git a/runtime/vm/virtual_memory_vita.cc b/runtime/vm/virtual_memory_vita.cc
 new file mode 100644
-index 00000000..ed36165f
+index 00000000..d8a55f20
 --- /dev/null
 +++ b/runtime/vm/virtual_memory_vita.cc
-@@ -0,0 +1,165 @@
+@@ -0,0 +1,174 @@
 +// Copyright (c) 2012, the Dart project authors.  Please see the AUTHORS file
 +// for details. All rights reserved. Use of this source code is governed by a
 +// BSD-style license that can be found in the LICENSE file.
@@ -958,10 +980,19 @@ index 00000000..ed36165f
 +}
 +
 +void VirtualMemory::Protect(void* address, intptr_t size, Protection mode) {
-+  // Protection is fixed at allocation by the memblock type. Unreachable on this
-+  // target -- see the file comment. If this ever fires, the analysis in
-+  // docs/phase-1-workplan.md has gone stale and needs redoing.
-+  UNREACHABLE();
++  // A no-op, not an error.
++  //
++  // This was UNREACHABLE() until M1 run 3, on the analysis that its three known
++  // callers were all unreachable here. That analysis missed a fourth: the VM
++  // isolate's heap write-protection, reached during Dart_Initialize via
++  // WritableVMIsolateScope -> Heap::WriteProtect -> Page::WriteProtect, gated on
++  // FLAG_write_protect_vm_isolate rather than FLAG_write_protect_code. I checked
++  // one flag and concluded about both.
++  //
++  // OS::Init now clears both flags, so this should not be called. Keeping it a
++  // no-op rather than UNREACHABLE() is the defensive choice: the Vita cannot
++  // change protection at all, so quietly not doing so is always closer to right
++  // than aborting, and any remaining caller is one this analysis has not found.
 +}
 +
 +VirtualMemory* VirtualMemory::Reserve(intptr_t size, intptr_t alignment) {
