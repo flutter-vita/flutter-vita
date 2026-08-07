@@ -54,6 +54,7 @@ project-invented and should be used consistently in code and PRs.
 | **Vsync callback** | The engine-driven frame pacing hook. The embedder answers with `FlutterEngineOnVsync`, supplying the frame start and target times. |
 | **Platform channel** | Named async message pipe between Dart and the embedder. We implement `flutter/textinput`, `flutter/platform`, `flutter/lifecycle`, `flutter/settings`, and our own gamepad channel. |
 | **Platform view** | Embedding native UI inside the Flutter scene. Not supported here and not planned. |
+| **Blit** | "Block image transfer" — copying a rectangle of pixels between memory regions. Here: copying Skia's CPU-rasterised buffer into the GXM framebuffer the display scans out. Literally a `memcpy` of 960×544×4 = 2.09 MB, measured at **8.06 ms** on hardware. It is the **hard floor** of a software frame because it happens regardless of what changed — `FlutterSoftwareRendererConfig` hands the embedder the whole buffer with no damage information. On a GPU platform this cost does not exist; the renderer draws straight into the scanout buffer. See [ADR-0006](adr/0006-performance-bar-set-from-measurement.md). |
 
 ## Project-specific **(ours)**
 
