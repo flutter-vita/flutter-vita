@@ -40,7 +40,7 @@ Every POSIX call the Dart platform layer makes that VitaSDK does not define:
 
 | symbol | needed by | verdict |
 |---|---|---|
-| `mmap`, `munmap`, `mprotect`, `madvise`, `getpagesize`, `prctl` | `virtual_memory_posix.cc` | **real work** — the one hard file |
+| `mmap`, `munmap`, `mprotect`, `madvise`, `getpagesize`, `prctl` | `virtual_memory_posix.cc` | **the only real work** — but far less than the symbol list suggests; `mprotect`/`madvise`/`prctl` serve paths unreachable on ARM AOT |
 | `mmap`, `munmap`, `getpagesize`, `syscall` | `os_linux.cc` | **out of scope** — only used by the `perf` jitdump code observer |
 | `pthread_getattr_np` | `os_thread_linux.cc` | **real, small** — stack bounds |
 | `pthread_setname_np`, `pthread_getname_np` | `os_thread_linux.cc` | trivial — thread naming, or a no-op |
@@ -66,7 +66,7 @@ the sampling profiler, and it needs POSIX signals the Vita does not have.
 
 | file | difficulty | notes |
 |---|---|---|
-| `virtual_memory_vita.cc` | **moderate** (revised down — see below) | an aligned allocator with reserve/commit semantics; no protection semantics needed |
+| `virtual_memory_vita.cc` | **straightforward** (revised down twice — see below) | allocate aligned memory and free it; no protection, no reserve/commit |
 | `os_thread_vita.cc` + `.h` | moderate | `os_thread_linux.cc` with four substitutions |
 | `os_vita.cc` | moderate | time and sleep map cleanly; stub the code observers |
 | `cpuinfo_vita.cc` | easy | fixed answers — Cortex-A9, 4 cores |
@@ -74,7 +74,7 @@ the sampling profiler, and it needs POSIX signals the Vita does not have.
 
 ### `virtual_memory_vita.cc`: what it actually has to do
 
-`virtual_memory.h` demands more than "give me memory":
+`virtual_memory.h` looks, at first, like it demands much more than "give me memory":
 
 ```
 static VirtualMemory* Reserve(intptr_t size, intptr_t alignment);
@@ -84,18 +84,53 @@ static VirtualMemory* AllocateAligned(size, alignment, is_executable, ...);
 bool Protect(...);
 ```
 
-**Reserve-then-commit is the problem.** Dart wants to reserve a large aligned
-address range without backing it, then commit pages into it on demand. Vita's
-`sceKernelAllocMemBlock` commits immediately and picks the address itself. There
-is no `mmap(PROT_NONE)` equivalent to reserve with.
+### ✅ Reserve/Commit resolved: never called on 32-bit ARM
 
-Options, none free:
-- Reserve by allocating the full range up front and treating `Commit` as a
-  no-op. Simple, but the heap's peak reservation becomes its resident size.
-  With **188 MiB contiguous measured available**, this may simply be affordable —
-  and that measurement makes it far more attractive than it would otherwise be.
-- Emulate a reservation with a bump allocator over one big block.
-- ~~`Protect()` has no runtime equivalent~~ — resolved, it is never called. See below.
+This looked like the one genuinely hard problem in Phase 1 — Dart reserving
+address space without backing it, against a `sceKernelAllocMemBlock` that
+commits immediately at an address of its choosing, with no `mmap(PROT_NONE)` to
+reserve with.
+
+**It does not arise.** Three facts, checked at the pinned commit:
+
+1. **`Reserve`, `Commit` and `Decommit` are `private`** in `virtual_memory.h` —
+   internal helpers of `VirtualMemory`, not part of the interface a platform
+   port exposes to the rest of the VM.
+2. **Every call site is inside `#if defined(DART_COMPRESSED_POINTERS)`** —
+   `Reserve` for the compressed heap reservation, `Commit` in the
+   `is_compressed` branch of `AllocateAligned`, `Decommit` in the destructor's
+   compressed-heap path. There are no others.
+3. **Compressed pointers are off.** `TARGET_ARCH_ARM` maps to
+   `TARGET_ARCH_IS_32_BIT` in `platform/globals.h`, the feature exists only to
+   compress 64-bit pointers, and `runtime_args.gni` defaults
+   `dart_use_compressed_pointers = false` — a GN arg we control.
+
+So `Reserve`/`Commit`/`Decommit` can be `UNREACHABLE()` alongside `Protect()`.
+
+### What is actually left in the file
+
+| | |
+|---|---|
+| `Init` / `Cleanup` / `PageSize` / `CalculatePageSize` | trivial |
+| `AllocateAligned` (non-executable, uncompressed) | the substance |
+| `Free` (destructor) / `FreeSubSegment` | see wrinkle below |
+| `Protect`, `Reserve`, `Commit`, `Decommit` | `UNREACHABLE()` |
+| `ForImagePage`, `DuplicateRX`, dual-mapping | shared code or out of scope |
+
+**Allocate aligned memory and free it.** That is the whole file.
+
+#### The one remaining wrinkle: `FreeSubSegment`
+
+POSIX `AllocateAligned` over-allocates by `alignment - PageSize()` and trims the
+excess with `FreeSubSegment`. **Vita cannot trim a memblock** — `sceKernelFreeMemBlock`
+frees the whole allocation, not part of one. Two ways out:
+
+- Use `SceKernelAllocMemBlockOpt` to request the alignment directly, so no trim
+  is needed. Cleanest if the option behaves.
+- Over-allocate and simply not reclaim the slack. Wasteful, but with **188 MiB
+  contiguous measured** the waste is affordable.
+
+This is a detail to settle while writing the file, not a design risk.
 
 Two things that reduce the difficulty:
 
@@ -205,8 +240,8 @@ The scope above is derived. These are not, and they are where the risk actually
 sits:
 
 - ~~**Does Dart tolerate a no-op `Protect()`?**~~ Closed — it is never called.
-- **Does the reserve-as-full-allocation strategy fit real Dart heap behaviour**,
-  or does the heap reserve far more than it commits?
+- ~~**Does the reserve-as-full-allocation strategy fit real Dart heap behaviour?**~~
+  Closed — reserve/commit is compressed-pointers-only and never runs on 32-bit ARM.
 - **Thread count and stack commitment.** How many OS threads Dart plus the
   engine want at steady state, against Vita's limits. Still open —
   exit criterion 6 of [Phase 0.5](phase-0.5-feasibility.md), deliberately left
