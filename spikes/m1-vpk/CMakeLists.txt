@@ -15,7 +15,10 @@ set(VITA_APP_NAME "Flutter Vita M1")
 set(VITA_TITLEID  "FVTA00002")
 set(VITA_VERSION  "01.00")
 
-set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -std=gnu11 -Wall -Wextra -O2")
+# -g even in Release: the debug info never reaches the device (eboot.bin is a
+# stripped SELF) but vita-parse-core needs it in build/flutter_vita_m1 to
+# symbolicate crash dumps. See analyse-crash.sh.
+set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -std=gnu11 -Wall -Wextra -O2 -g")
 
 set(DART_SDK   "${CMAKE_SOURCE_DIR}/../../third_party/sdk")
 set(DART_OUT   "${DART_SDK}/out/vita")
