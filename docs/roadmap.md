@@ -11,9 +11,9 @@ by comparison.
 flowchart TD
     A["Phase 0.5 measurements<br/><i>sizes, ABI, toolchain proven</i>"]:::done
     B["Track A hardware spike<br/><i>days — decides the architecture</i>"]:::todo
-    C["Phase 1 — Dart runtime port<br/><i>2–4 months → M1</i>"]:::todo
-    D["Phase 2 — engine cross-compile<br/><i>1–2 months → M2</i>"]:::todo
-    E["Phase 3 — embedder<br/><i>1–2 months → M3</i>"]:::todo
+    C["Phase 1 — Dart runtime port<br/><i>5 files → M1</i>"]:::todo
+    D["Phase 2 — engine cross-compile<br/><i>GN toolchain → M2</i>"]:::todo
+    E["Phase 3 — embedder<br/><i>renderer + input → M3</i>"]:::todo
     F["vpk with Flutter hello world"]:::goal
 
     A --> B --> C --> D --> E --> F
@@ -23,20 +23,25 @@ flowchart TD
     classDef goal fill:#E1F5EE,stroke:#0F6E56,color:#04342C,stroke-width:3px
 ```
 
-**Roughly 5–8 months** at the plan's own estimates. The ordering is forced —
-each stage consumes the previous stage's output.
+The ordering is forced — each stage consumes the previous stage's output.
+
+**Deliberately no timeframes.** The plan's "2–4 months" for Phase 1 was
+inherited with no derivation behind it, and every other number in this project
+is measured. Scope is documented instead: see
+[the Phase 1 work plan](phase-1-workplan.md), derived from the Dart SDK source
+at the pinned commit.
 
 ---
 
 ## The chain, with what each stage actually needs
 
-| # | Stage | Cost | Blocking? |
-|---|---|---|---|
-| 1 | VitaSDK installed | hours | trivial |
-| 2 | `.vpk` packaging pipeline — `vita-mksfoex` → `vita-make-fself` → `vita-pack-vpk` | days | **not on the critical path** |
-| 3 | **Dart runtime ported** — threads, TLS, mutexes, condvars, virtual memory, time | **2–4 months** | yes — everything downstream needs it |
-| 4 | **Engine cross-compiled** — GN toolchain for `arm-vita-eabi`; zlib, libpng, HarfBuzz, ICU, Skia (raster only), libtxt, engine core, all through newlib | **1–2 months** | yes |
-| 5 | **Embedder** — `FlutterEngineRun`, software present → GXM blit, vsync, task runners, touch | **1–2 months** | yes |
+| # | Stage | Blocking? |
+|---|---|---|
+| 1 | ~~VitaSDK installed~~ | ✅ done |
+| 2 | ~~`.vpk` packaging pipeline~~ | ✅ done — the Track A probe is a working `.vpk` |
+| 3 | **Dart runtime ported** — 5 platform files; `virtual_memory_vita.cc` is the hard one. [Full scope](phase-1-workplan.md) | yes — everything downstream needs it |
+| 4 | **Engine cross-compiled** — GN toolchain for `arm-vita-eabi`; zlib, libpng, HarfBuzz, ICU, Skia (raster only), libtxt, engine core, all through newlib | yes |
+| 5 | **Embedder** — `FlutterEngineRun`, software present → GXM blit, vsync, task runners, touch | yes |
 
 Stages 3 and 4 overlap in practice: the usual porting pattern is to get the
 engine *linking* against a stubbed platform layer first (that is exactly what
@@ -79,9 +84,10 @@ worth showing to someone.
 Both are rated High in the plan's risk register, and neither has prior art on
 Vita:
 
-- **Phase 1** — nobody has mapped Dart's threading, TLS, and virtual-memory
-  assumptions onto `sceKernel*` and newlib. The one-line plan entry
-  `os_thread_vita.cc — threads, mutex, condvar, TLS` is a heroic understatement.
+- ~~**Phase 1**~~ — now mapped, see [the work plan](phase-1-workplan.md). It came
+  out **easier than feared**: VitaSDK ships real pthreads, and most of the
+  apparent POSIX gaps are profiler plumbing that is already out of scope. The
+  residual risk concentrates in one file, `virtual_memory_vita.cc`.
 - **Phase 2** — nobody has run a foreign toolchain through the Flutter engine's
   GN build. Whether it even works on a macOS host is unknown; that is one reason
   Docker exists in the plan.

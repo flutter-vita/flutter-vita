@@ -3,7 +3,8 @@
 | Document | What it is |
 |---|---|
 | [roadmap.md](roadmap.md) | What stands between today and a `.vpk` with Flutter inside, and how long each stage costs |
-| [phase-0.5-feasibility.md](phase-0.5-feasibility.md) | The current gate. Every measurement taken so far, and the exit criteria still open |
+| [phase-1-workplan.md](phase-1-workplan.md) | What Phase 1 actually requires, derived from the Dart SDK source |
+| [phase-0.5-feasibility.md](phase-0.5-feasibility.md) | The completed gate. Every measurement taken so far, and the exit criteria still open |
 | [adr/](adr/README.md) | Architecture decision records, with an index and the open questions |
 | [glossary.md](glossary.md) | Shared vocabulary across the Vita homebrew and Flutter halves |
 | [dev-environment.md](dev-environment.md) | Toolchain and IDE setup, including the three-index clangd arrangement |
