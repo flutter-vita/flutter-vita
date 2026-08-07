@@ -325,6 +325,80 @@ Also noted: the `gen_snapshot` ELF output has **no `.ARM.attributes` section**,
 so the linker cannot automatically diagnose an ABI mismatch involving the
 snapshot. That is precisely why this had to be checked by hand.
 
+### 🟡 Track A run 1 — 2026-08-07, real hardware
+
+First run on a physical Vita. Two of my measurements were buggy; the rest are
+solid and decisive.
+
+#### A1 — allocation limits ✅
+
+| pool | largest contiguous |
+|---|---|
+| VM block | **exactly 16.00 MiB** (16,777,216 B) |
+| `USER_MAIN_RW` | **188 MiB** |
+| `USER_CDRAM_RW` | 110 MiB |
+| `USER_MAIN_PHYCONT_RW` | 26 MiB |
+
+- The documented 16 MiB VM cap is **exact**, confirmed empirically.
+- **188 MiB contiguous in main RAM closes exit criterion 4 outright.** Dart's
+  heap can take a single large region; `virtual_memory_vita.cc` does **not**
+  need to become a multi-block allocator. That was flagged as a "much harder
+  file" risk and it is now retired.
+
+#### A1 — VM domain execution ❌ not answered (my bug)
+
+The run printed `FAIL sceKernelAllocMemBlockForVM -> 0x80024B05` and concluded
+Option B was dead. **That conclusion is wrong.** `0x80024B05` is
+`SCE_KERNEL_ERROR_ILLEGAL_MEMBLOCK_SIZE`: the harness asked for 4096 B, and VM
+blocks have a minimum/granularity larger than one page that is documented
+nowhere. The probe immediately afterwards allocated 16 MiB successfully, so
+allocation plainly works.
+
+**[ADR-0005](adr/0005-aot-snapshot-delivery.md) remains open, not decided.**
+Run 2 probes the minimum legal size first, then executes.
+
+#### A2 — raster cost ✅ (except `fill`)
+
+960×544, ms per full-screen frame:
+
+| | 333 MHz | 444 MHz | scales with clock? |
+|---|---|---|---|
+| `memcpy` (present blit) | 8.72 ms | **8.04 ms** | **no** — +33% clock buys 8% |
+| naive alpha blend | 19.56 ms | **15.20 ms** | **yes** — near-linear |
+| `fill` | ~~0.25 ms~~ | ~~0.19 ms~~ | **invalid, see below** |
+
+720×408: `memcpy` 2.95 ms, blend 8.08 ms at 444 MHz.
+
+**The single most important number: the present blit costs ~8 ms.** A 60 fps
+frame budget is 16.7 ms, so **the blit alone consumes half of it before Skia
+draws anything.** Full-screen 60 fps is arithmetically dead. At 30 fps the same
+blit is 24% of budget, leaving ~25 ms for rasterisation — plausible but tight.
+
+**The blit is bandwidth-bound; rasterisation is compute-bound.** `memcpy` barely
+moves with clock while blend scales nearly linearly. Two consequences:
+overclocking helps rasterisation and not the blit, and the blit's ~460–500 MB/s
+(against 3.2 GB/s theoretical, ~15%) suggests a NEON-optimised blit is worth
+real effort.
+
+**720×408 is disproportionately cheaper** — 2.7× faster memcpy for only 1.78×
+fewer pixels. Superlinear, and not fully explained; likely DRAM page or TLB
+locality. Whatever the cause, the downscale-and-upscale fallback in
+[ADR-0003](adr/0003-software-rendering-first.md) is more attractive than pixel
+count alone suggests.
+
+> **`fill` is invalid.** It reported 1.99 MB in 0.25 ms = 7.96 GB/s, above the
+> Vita's 3.2 GB/s theoretical bandwidth — 0.16 cycles per word at 333 MHz, which
+> is impossible. `-O2` collapsed ten identical fills into one. Real fill is
+> roughly 2.5 ms. Fixed in run 2 with a varying value and a memory barrier;
+> barriers added to the other loops too. `memcpy` and blend were not affected —
+> both land at physically plausible rates.
+
+#### Method lesson
+
+Both bugs shipped because the harness was written to *report* rather than to
+*check itself*. A benchmark that can print a number faster than the memory bus
+allows should say so. Sanity bounds are now part of what a spike must include.
+
 ### Why this order
 
 Track B needs no hardware, so nothing blocks on shipping, borrowing, or setting

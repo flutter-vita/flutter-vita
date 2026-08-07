@@ -77,17 +77,43 @@ static const uint16_t thumb_code[] = {
     0x4770,  // bx   lr
 };
 
+// Run 1 asked for 4096 B and got SCE_KERNEL_ERROR_ILLEGAL_MEMBLOCK_SIZE
+// (0x80024B05) — VM blocks have a minimum/granularity larger than a page, which
+// is documented nowhere. Find it, then use a legal size for the real test.
+static SceSize find_min_vm_size(void) {
+  static const SceSize candidates[] = {
+      4096, 16384, 65536, 262144, 1048576, 4194304,
+  };
+  for (unsigned i = 0; i < sizeof candidates / sizeof *candidates; i++) {
+    SceUID u = sceKernelAllocMemBlockForVM("probe_min", candidates[i]);
+    lg("    %8u B -> %s\n", candidates[i],
+       u >= 0 ? "ok" : (u == (SceUID)0x80024B05 ? "ILLEGAL_MEMBLOCK_SIZE" : "error"));
+    if (u >= 0) {
+      sceKernelFreeMemBlock(u);
+      return candidates[i];
+    }
+  }
+  return 0;
+}
+
 static void test_vm_domain(void) {
   lg("\n== A1: VM domain executable memory ==\n");
 
-  const SceSize size = 4096;
+  lg("  minimum legal VM block size:\n");
+  SceSize size = find_min_vm_size();
+  if (size == 0) {
+    lg("  FAIL  no legal VM block size found up to 4 MiB\n");
+    return;
+  }
+  lg("  using %u B for the execution test\n", size);
+
   SceUID uid = sceKernelAllocMemBlockForVM("spike_vm", size);
   if (uid < 0) {
     lg("  FAIL  sceKernelAllocMemBlockForVM -> 0x%08X\n", uid);
-    lg("  ADR-0005 Option B is dead; the snapshot must be baked into eboot.\n");
+    lg("  (0x80024B05 = ILLEGAL_MEMBLOCK_SIZE, anything else is a real failure)\n");
     return;
   }
-  lg("  alloc 4096 B                  ok (uid 0x%08X)\n", uid);
+  lg("  alloc %u B                    ok (uid 0x%08X)\n", size, uid);
 
   void *base = NULL;
   int r = sceKernelGetMemBlockBase(uid, &base);
@@ -187,8 +213,15 @@ static void test_limits(void) {
 
 // -------------------------------------------------------------- A2: raster cost
 
-static void bench_fill(uint32_t *dst, size_t px) {
-  for (size_t i = 0; i < px; i++) dst[i] = 0xFF2050C0u;
+// Run 1 reported fill at 7.96 GB/s — above the Vita's 3.2 GB/s theoretical
+// bandwidth, i.e. impossible. -O2 collapsed ten identical fills into one.
+// The value now varies per call and a memory barrier sits between reps, so the
+// compiler cannot prove the stores are redundant.
+#define BARRIER() __asm__ __volatile__("" ::: "memory")
+
+static void bench_fill(uint32_t *dst, size_t px, uint32_t v) {
+  for (size_t i = 0; i < px; i++) dst[i] = v;
+  BARRIER();
 }
 
 static void bench_blend(uint32_t *dst, const uint32_t *src, size_t px) {
@@ -201,6 +234,7 @@ static void bench_blend(uint32_t *dst, const uint32_t *src, size_t px) {
     uint32_t g  = ((((s & 0x0000FF00u) * a) + ((d & 0x0000FF00u) * ia)) >> 8) & 0x0000FF00u;
     dst[i] = 0xFF000000u | rb | g;
   }
+  BARRIER();
 }
 
 #define REPS 10
@@ -213,14 +247,14 @@ static void bench_at(int w, int h, uint32_t *a, uint32_t *b) {
   lg("  %dx%d  (%.2f MB/frame)\n", w, h, bytes / 1048576.0);
 
   t0 = now_us();
-  for (int i = 0; i < REPS; i++) memcpy(b, a, bytes);
+  for (int i = 0; i < REPS; i++) { memcpy(b, a, bytes); BARRIER(); }
   dt = now_us() - t0;
   double memcpy_ms = dt / 1000.0 / REPS;
   lg("    memcpy   %7.2f ms/frame   %6.1f fps   %5.0f MB/s\n", memcpy_ms,
      1000.0 / memcpy_ms, (bytes * 2 / 1048576.0) / (memcpy_ms / 1000.0));
 
   t0 = now_us();
-  for (int i = 0; i < REPS; i++) bench_fill(b, px);
+  for (int i = 0; i < REPS; i++) bench_fill(b, px, 0xFF2050C0u + (uint32_t)i);
   dt = now_us() - t0;
   double fill_ms = dt / 1000.0 / REPS;
   lg("    fill     %7.2f ms/frame   %6.1f fps\n", fill_ms, 1000.0 / fill_ms);

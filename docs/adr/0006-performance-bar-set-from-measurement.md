@@ -36,6 +36,35 @@ Until then the honest v1 bar is the goal statement's: *runs, is usable, is
 laggy.* That is a falsifiable bar — "a user can operate the counter app without
 input feeling dropped" — and it does not pretend to precision we have not earned.
 
+## The measurement arrived — 2026-08-07
+
+Track A run 1, real hardware, 960×544 at 444 MHz: present blit 8.04 ms
+(bandwidth-bound), naive full-screen alpha blend 15.20 ms (compute-bound).
+
+**The bar this sets:**
+
+| target | verdict |
+|---|---|
+| 60 fps, full-screen repaint | **impossible** — the 8 ms blit is half the 16.7 ms budget before Skia runs |
+| 30 fps, full-screen repaint | **plausible** — 8 ms blit leaves ~25 ms for raster |
+| 60 fps with damage-limited repaint | **plausible** for small damage — the counter-app case |
+
+So the honest v1 bar is: **30 fps floor for full-screen work; 60 fps only where
+damage is small.** That is falsifiable, it is derived from hardware rather than
+asserted, and it makes [ADR-0007](0007-enable-partial-repaint-in-software-path.md)
+load-bearing rather than optional.
+
+The Definition of Done's "counter app: 60 fps" is reachable **only** with
+partial repaint. Without it the same app is a 30 fps proposition.
+
+Two further findings worth carrying into Phase 3:
+
+- Overclocking helps rasterisation and does essentially nothing for the blit,
+  so PSVshell is not a general answer to slowness.
+- The blit achieves ~460–500 MB/s against 3.2 GB/s theoretical (~15%). A
+  NEON-optimised blit is worth real effort — possibly the cheapest large win
+  available in the embedder.
+
 ## How the number gets set (Phase 0.5)
 
 Measure Skia CPU raster throughput for representative Flutter scenes at

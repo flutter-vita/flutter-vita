@@ -1,7 +1,30 @@
 # ADR-0007: Patch the engine to enable partial repaint in the software path
 
-**Status:** Proposed — needs a hardware raster measurement to size the payoff
-**Date:** 2026-08-06
+**Status:** **Accepted** — hardware measurement taken 2026-08-07; the payoff is decisive
+**Date:** 2026-08-06, promoted 2026-08-07
+
+## Update: the measurement arrived
+
+Track A run 1 on real hardware, 960×544 at 444 MHz:
+
+- **present blit (`memcpy`): 8.04 ms** — bandwidth-bound, does not improve with clock
+- **naive full-screen alpha blend: 15.20 ms** — compute-bound, scales with clock
+
+A 60 fps budget is 16.7 ms. **The blit alone eats half of it**, and that is
+before Skia rasterises anything. Full-screen-every-frame is therefore ~30 fps at
+absolute best, with nothing left over.
+
+With damage-limited repaint, both costs shrink with the damaged area. A counter
+app touching perhaps 5% of the screen would pay ~0.4 ms of blit instead of 8 ms.
+
+**This is the difference between a counter app at 30 fps and a counter app at
+60 fps.** It is no longer an optimisation, and the ADR is accepted.
+
+One addition the measurement forces: **damage must reach the embedder, not just
+the rasteriser.** Cutting Skia's work while still blitting all 522,240 pixels
+every frame would leave the 8 ms on the table. The patch therefore has two halves —
+report `supports_partial_repaint`, *and* plumb the damage rect out through the
+software present callback so the embedder can blit only what changed.
 
 ## Context
 
