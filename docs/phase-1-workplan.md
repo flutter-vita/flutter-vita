@@ -66,13 +66,13 @@ the sampling profiler, and it needs POSIX signals the Vita does not have.
 
 | file | difficulty | notes |
 |---|---|---|
-| `virtual_memory_vita.cc` | **hard — the whole phase lives here** | see below |
+| `virtual_memory_vita.cc` | **moderate** (revised down — see below) | an aligned allocator with reserve/commit semantics; no protection semantics needed |
 | `os_thread_vita.cc` + `.h` | moderate | `os_thread_linux.cc` with four substitutions |
 | `os_vita.cc` | moderate | time and sleep map cleanly; stub the code observers |
 | `cpuinfo_vita.cc` | easy | fixed answers — Cortex-A9, 4 cores |
 | `thread_interrupter_vita.cc` | trivial | stub it |
 
-### Why `virtual_memory_vita.cc` is the hard one
+### `virtual_memory_vita.cc`: what it actually has to do
 
 `virtual_memory.h` demands more than "give me memory":
 
@@ -95,8 +95,7 @@ Options, none free:
   With **188 MiB contiguous measured available**, this may simply be affordable —
   and that measurement makes it far more attractive than it would otherwise be.
 - Emulate a reservation with a bump allocator over one big block.
-- `Protect()` has no runtime equivalent: Vita fixes protection at allocation via
-  the memblock type. Likely a no-op, but Dart's assumptions need checking.
+- ~~`Protect()` has no runtime equivalent~~ — resolved, it is never called. See below.
 
 Two things that reduce the difficulty:
 
@@ -136,24 +135,57 @@ ignore the parameter. `DuplicateRX`, `ShouldDualMapExecutablePages` and
 purely the Reserve/Commit semantics above — real, but a much smaller and better
 understood problem than "implement W^X without `mprotect`".
 
-### The one question this opened
+### ✅ And the follow-up question is closed too: `Protect` is unreachable
 
-`VirtualMemory::Protect` is still called from `code_patcher.cc` and
-`heap/freelist.cc`. In the freelist it is guarded by an `is_protected` member
-that tracks the code space, which AOT should never populate — but that is
-inference, not yet verified.
+Vita fixes page protection at allocation via the memblock type and offers no
+runtime change, so `VirtualMemory::Protect` was the last thing that could have
+forced an awkward design. **It is never called on ARM AOT.** All three call
+paths, checked:
 
-**This matters because Vita fixes page protection at allocation time via the
-memblock type; there is no runtime protection change.** If AOT genuinely never
-protects, `Protect()` becomes a no-op and the file is straightforward. If it
-does, we need a strategy. Worth resolving before writing the file.
+1. **`code_patcher.cc`** — its `WritableInstructionsScope`, the only `Protect`
+   caller in the file, is inside `#if defined(TARGET_ARCH_IA32)`. **Not compiled
+   on ARM at all.**
+2. **`heap/freelist.cc`** — reached only when the freelist `is_protected`, and
+   `pages.h` defines that as:
+   ```cpp
+   bool is_protected = (is_executable) && FLAG_write_protect_code;
+   ```
+   Step 1 established `is_executable` is always false under AOT, so this is
+   false regardless of the flag. Note also the flag's own description —
+   *"Write protect **jitted** code"*. It is a JIT concept.
+3. **`ffi_callback_metadata.cc`** — its `WriteProtectCode` and `Protect` calls
+   sit inside `if (should_remap_stub_page)`, and on non-macOS that is
+   `const bool should_remap_stub_page = false;  // No support for remapping.`
+   A compile-time constant, with a `static_assert(!should_remap_stub_page, ...)`
+   in the same branch confirming it.
+
+**Consequence:** `Protect()` can be `UNREACHABLE()` in `virtual_memory_vita.cc`.
+No protection semantics are needed anywhere in the file.
+
+### Revised difficulty
+
+With both questions closed, `virtual_memory_vita.cc` is **not** the exotic file
+it looked like. Its entire remaining surface is:
+
+| | |
+|---|---|
+| `Init` / `Cleanup` / `PageSize` / `CalculatePageSize` | trivial |
+| `AllocateAligned` (non-executable only) | ordinary |
+| `Reserve` / `Commit` / `Decommit` | **the one real problem** |
+| `Free` / `FreeSubSegment` | ordinary |
+| `Protect` | `UNREACHABLE()` |
+| `ForImagePage` | shared code, nothing to write |
+| `DuplicateRX`, dual-mapping | out of scope |
+
+That is an aligned allocator with reserve/commit semantics on top of
+`sceKernelAllocMemBlock` — **moderate, not hard.** The difficulty rating in the
+table above is revised accordingly.
 
 ## Ordered steps
 
-1. ~~**Confirm the `is_executable` assumption.**~~ ✅ **Done — no executable
-   allocation is required.** See above. Superseded by a narrower question:
-   confirm that AOT never sets the freelist's `is_protected`, so
-   `VirtualMemory::Protect` can be a no-op.
+1. ~~**Confirm the `is_executable` assumption**, and the `Protect` question it
+   opened.~~ ✅ **Both done.** No executable allocation is required, and
+   `Protect` is unreachable on ARM AOT through all three call paths. See above.
 2. **`cpuinfo_vita.cc` and `thread_interrupter_vita.cc`** — stubs. Gets the file
    set complete so the build can be attempted early.
 3. **`virtual_memory_vita.cc`** — decide the Reserve/Commit strategy against the
@@ -172,9 +204,7 @@ does, we need a strategy. Worth resolving before writing the file.
 The scope above is derived. These are not, and they are where the risk actually
 sits:
 
-- **Does Dart tolerate a no-op `Protect()`?** Narrowed but not closed — the
-  remaining callers are `code_patcher.cc` and the code-space freelist. Vita
-  fixes protection at allocation, so this is the next thing to resolve.
+- ~~**Does Dart tolerate a no-op `Protect()`?**~~ Closed — it is never called.
 - **Does the reserve-as-full-allocation strategy fit real Dart heap behaviour**,
   or does the heap reserve far more than it commits?
 - **Thread count and stack commitment.** How many OS threads Dart plus the
