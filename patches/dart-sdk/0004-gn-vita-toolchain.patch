@@ -169,7 +169,7 @@ index 00000000..ac6afe9c
 +  is_clang = false
 +}
 diff --git a/runtime/BUILD.gn b/runtime/BUILD.gn
-index 8cd05ff4..77a14c1e 100644
+index 8cd05ff4..1b77a930 100644
 --- a/runtime/BUILD.gn
 +++ b/runtime/BUILD.gn
 @@ -143,6 +143,8 @@ config("dart_os_config") {
@@ -181,6 +181,107 @@ index 8cd05ff4..77a14c1e 100644
    } else if (target_os == "win") {
      defines += [ "DART_TARGET_OS_WINDOWS" ]
    } else if (target_os == "winuwp") {
+@@ -181,6 +183,13 @@ config("dart_linux_arm_config") {
+   ]
+ }
+ 
++config("dart_vita_arm_config") {
++  defines = [
++    "DART_TARGET_OS_VITA",
++    "TARGET_ARCH_ARM",
++  ]
++}
++
+ config("dart_linux_riscv64_config") {
+   defines = [
+     "DART_TARGET_OS_LINUX",
+diff --git a/runtime/bin/BUILD.gn b/runtime/bin/BUILD.gn
+index 0eedc427..f7aa0df4 100644
+--- a/runtime/bin/BUILD.gn
++++ b/runtime/bin/BUILD.gn
+@@ -119,6 +119,13 @@ build_libdart_builtin("libdart_builtin_product_linux_arm") {
+   ]
+ }
+ 
++build_libdart_builtin("libdart_builtin_product_vita_arm") {
++  extra_configs = [
++    "..:dart_product_config",
++    "..:dart_vita_arm_config",
++  ]
++}
++
+ build_libdart_builtin("libdart_builtin_product_linux_riscv64") {
+   extra_configs = [
+     "..:dart_product_config",
+@@ -397,6 +404,23 @@ build_gen_snapshot("gen_snapshot_product_linux_arm") {
+   ]
+ }
+ 
++# A gen_snapshot that runs on the host and emits armv7 AOT snapshots whose
++# features string says "vita". Dart validates that string when loading a
++# snapshot, so a linux-arm gen_snapshot's output is rejected by a vita runtime
++# -- this target is what makes M1 possible at all.
++build_gen_snapshot("gen_snapshot_product_vita_arm") {
++  extra_configs = [
++    "..:dart_product_config",
++    "..:dart_vita_arm_config",
++  ]
++  extra_deps = [
++    ":gen_snapshot_dart_io_product_vita_arm",
++    ":libdart_builtin_product_vita_arm",
++    "..:libdart_precompiler_product_vita_arm",
++    "../platform:libdart_platform_precompiler_product_vita_arm",
++  ]
++}
++
+ build_gen_snapshot("gen_snapshot_product_linux_riscv64") {
+   extra_configs = [
+     "..:dart_product_config",
+@@ -518,6 +542,13 @@ build_gen_snapshot_dart_io("gen_snapshot_dart_io_product_linux_arm") {
+   ]
+ }
+ 
++build_gen_snapshot_dart_io("gen_snapshot_dart_io_product_vita_arm") {
++  extra_configs = [
++    "..:dart_product_config",
++    "..:dart_vita_arm_config",
++  ]
++}
++
+ build_gen_snapshot_dart_io("gen_snapshot_dart_io_product_linux_riscv64") {
+   extra_configs = [
+     "..:dart_product_config",
+diff --git a/runtime/configs.gni b/runtime/configs.gni
+index 6233cf8d..a7db53c8 100644
+--- a/runtime/configs.gni
++++ b/runtime/configs.gni
+@@ -69,6 +69,12 @@ _precompiler_product_linux_arm_config =
+       "$_dart_runtime:dart_linux_arm_config",
+     ] + _product + _precompiler_base
+ 
++_precompiler_product_vita_arm_config =
++    [
++      "$_dart_runtime:dart_config",
++      "$_dart_runtime:dart_vita_arm_config",
++    ] + _product + _precompiler_base
++
+ _precompiler_product_linux_riscv64_config =
+     [
+       "$_dart_runtime:dart_config",
+@@ -167,6 +173,13 @@ _all_configs = [
+     compiler = true
+     is_product = true
+   },
++  {
++    suffix = "_precompiler_product_vita_arm"
++    configs = _precompiler_product_vita_arm_config
++    snapshot = false
++    compiler = true
++    is_product = true
++  },
+   {
+     suffix = "_precompiler_product_linux_riscv64"
+     configs = _precompiler_product_linux_riscv64_config
 diff --git a/runtime/platform/platform_sources.gni b/runtime/platform/platform_sources.gni
 index 62007a99..de1d53a5 100644
 --- a/runtime/platform/platform_sources.gni

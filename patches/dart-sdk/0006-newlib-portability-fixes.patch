@@ -82,6 +82,33 @@ index 9ecd17d9..096541aa 100644
    // Not handled for these operating systems.
    return nullptr;
  #else
+diff --git a/runtime/vm/compiler/ffi/abi.cc b/runtime/vm/compiler/ffi/abi.cc
+index 66fa5a8d..8807cc7e 100644
+--- a/runtime/vm/compiler/ffi/abi.cc
++++ b/runtime/vm/compiler/ffi/abi.cc
+@@ -61,6 +61,22 @@ static_assert(offsetof(AbiAlignmentUint64, i) == 8,
+ #endif
+ #elif defined(DART_TARGET_OS_WINDOWS)
+ #define DART_TARGET_OS_NAME Windows
++#elif defined(DART_TARGET_OS_VITA)
++// Deliberately reuses the Linux ARM ABI rather than adding an Abi::kVitaArm.
++//
++// Abi describes struct layout and alignment for dart:ffi, and the Vita follows
++// the standard ARM EABI/AAPCS that arm-linux-gnueabihf does, so the layout
++// rules are the same. Adding a new enumerator would also mean changing the
++// Dart-side mirror of this enum in the dart:ffi library, which is a much larger
++// change than the situation warrants.
++//
++// This is an approximation, and it is only safe because **dart:ffi is out of
++// scope for v1** -- ADR-0004 links everything statically, DynamicLibrary is
++// already stubbed to throw, and no native plugins are supported. If FFI is ever
++// wanted on Vita, revisit this properly: verify argument passing against
++// VitaSDK's hard-float AAPCS-VFP convention before trusting it, since Dart
++// builds linux-arm softfp by default and the two differ at call boundaries.
++#define DART_TARGET_OS_NAME Linux
+ #else
+ #error Unknown OS
+ #endif
 diff --git a/runtime/vm/dart.cc b/runtime/vm/dart.cc
 index 54f2c7f8..a9b8a31e 100644
 --- a/runtime/vm/dart.cc

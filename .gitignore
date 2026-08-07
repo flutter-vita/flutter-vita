@@ -26,3 +26,4 @@ spikes/**/build/
 
 # Link-check outputs
 spikes/p1-link-check/out/
+spikes/m1-snapshot/out/
