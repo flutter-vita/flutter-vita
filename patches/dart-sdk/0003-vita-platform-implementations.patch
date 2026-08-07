@@ -866,10 +866,10 @@ index 00000000..682a0d8a
 +#endif  // defined(DART_HOST_OS_VITA)
 diff --git a/runtime/vm/virtual_memory_vita.cc b/runtime/vm/virtual_memory_vita.cc
 new file mode 100644
-index 00000000..cd04abb8
+index 00000000..18768363
 --- /dev/null
 +++ b/runtime/vm/virtual_memory_vita.cc
-@@ -0,0 +1,180 @@
+@@ -0,0 +1,222 @@
 +// Copyright (c) 2012, the Dart project authors.  Please see the AUTHORS file
 +// for details. All rights reserved. Use of this source code is governed by a
 +// BSD-style license that can be found in the LICENSE file.
@@ -981,7 +981,49 @@ index 00000000..cd04abb8
 +    sceKernelFreeMemBlock(uid);
 +    return nullptr;
 +  }
-+  ASSERT(Utils::IsAligned(reinterpret_cast<uword>(base), alignment));
++  VitaTrace("[vita]   -> base %p aligned=%d\n", base,
++            Utils::IsAligned(reinterpret_cast<uword>(base), alignment) ? 1 : 0);
++
++  // SceKernelAllocMemBlockOpt.alignment is a request, not a guarantee, and the
++  // kernel does not report having ignored it -- the allocation simply succeeds
++  // at whatever address it liked. That is silently fatal for Dart: heap pages
++  // are found by masking an object address with ~(kPageSize - 1), so a page
++  // that is not truly kPageSize-aligned makes every object-to-page lookup
++  // return garbage. The ASSERT that would have caught it is compiled out in
++  // PRODUCT builds.
++  //
++  // If the kernel did not honour the request, fall back to over-allocating by
++  // one alignment and using an aligned address inside the block. A memblock
++  // cannot be partially freed, so the slack is simply carried; with 188 MiB
++  // contiguous available (Phase 0.5 Track A) that is affordable.
++  if (!Utils::IsAligned(reinterpret_cast<uword>(base), alignment)) {
++    VitaTrace("[vita]   alignment not honoured, retrying over-allocated\n");
++    sceKernelFreeMemBlock(uid);
++
++    const SceSize padded = static_cast<SceSize>(size + alignment);
++    const SceUID uid2 = sceKernelAllocMemBlock(
++        name, SCE_KERNEL_MEMBLOCK_TYPE_USER_MAIN_RW, padded, nullptr);
++    if (uid2 < 0) {
++      Syslog::PrintErr("virtual_memory_vita: padded alloc failed -> 0x%08X\n",
++                       uid2);
++      return nullptr;
++    }
++    void* raw = nullptr;
++    if (sceKernelGetMemBlockBase(uid2, &raw) < 0 || raw == nullptr) {
++      sceKernelFreeMemBlock(uid2);
++      return nullptr;
++    }
++    const uword aligned =
++        Utils::RoundUp(reinterpret_cast<uword>(raw), alignment);
++    VitaTrace("[vita]   raw %p -> aligned 0x%08x\n", raw,
++              static_cast<unsigned>(aligned));
++
++    // region_ is the aligned window Dart uses; reserved_ is the whole block so
++    // the destructor's sceKernelFindMemBlockByAddr frees all of it.
++    MemoryRegion region(reinterpret_cast<void*>(aligned), size);
++    MemoryRegion reserved(raw, padded);
++    return new VirtualMemory(region, reserved);
++  }
 +
 +  MemoryRegion region(base, size);
 +  // reserved_ == region means vm_owns_region() is true, so the destructor frees
