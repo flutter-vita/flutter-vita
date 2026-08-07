@@ -26,7 +26,7 @@
 set -euo pipefail
 cd "$(dirname "$0")"
 
-: "${VITA_IP:?set VITA_IP to your Vita's address, e.g. VITA_IP=192.168.1.42}"
+: "${VITA_IP:?set VITA_IP to the address of your Vita, e.g. VITA_IP=192.168.1.42}"
 TITLEID=FVTA00002
 FTP="ftp://$VITA_IP:1337"
 CMD_PORT=1338
