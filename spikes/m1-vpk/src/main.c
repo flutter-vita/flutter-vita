@@ -119,6 +119,9 @@ int main(void) {
   psvDebugScreenInit();
   sceIoMkdir("ux0:data", 0777);
   sceIoMkdir("ux0:data/flutter-vita", 0777);
+  // SCE_O_TRUNC did not truncate on Vita3K -- run 5's log still carried the
+  // tail of run 4 ("igned" from "misaligned"), which is worse than no log.
+  sceIoRemove("ux0:data/flutter-vita/m1.log");
   g_log = sceIoOpen("ux0:data/flutter-vita/m1.log",
                     SCE_O_WRONLY | SCE_O_CREAT | SCE_O_TRUNC, 0777);
 
@@ -140,10 +143,26 @@ int main(void) {
 
   // ------------------------------------------------------------ VM domain
   lg("\n== VM domain (ADR-0005 option B) ==\n");
+  // The two instruction images must keep the exact relative distance they had
+  // in the snapshot ELF, because code in one makes PC-relative calls into the
+  // other. In gen_snapshot's output they are contiguous --
+  // _kDartVmSnapshotInstructions at .text start and
+  // _kDartIsolateSnapshotInstructions immediately after it -- so the isolate
+  // image goes at exactly vm_instr_size, with no padding.
+  //
+  // M1 run 5 rounded this up to a 4096 boundary and inserted 3,904 bytes that
+  // do not belong, which showed up as
+  //   instructions_arm.cc: expected: pattern.IsValid()
+  // when Dart decoded a call site and found something else there.
   const size_t vm_off = 0;
-  const size_t iso_off = align_up(vm_instr_size, INSTR_ALIGN);
+  const size_t iso_off = vm_instr_size;
   const size_t needed = iso_off + iso_instr_size;
   lg("  need %u B of %u B block\n", (unsigned)needed, (unsigned)VM_BLOCK_SIZE);
+  if ((iso_off % SNAPSHOT_ALIGN) != 0) {
+    lg("  FAIL: isolate instructions at +%u, not %u-byte aligned\n",
+       (unsigned)iso_off, SNAPSHOT_ALIGN);
+    wait_and_exit(1);
+  }
   if (needed > VM_BLOCK_SIZE) {
     lg("  FAIL: instructions exceed the block\n");
     wait_and_exit(1);

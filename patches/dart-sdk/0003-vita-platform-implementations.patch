@@ -1,9 +1,9 @@
 diff --git a/runtime/platform/syslog_vita.cc b/runtime/platform/syslog_vita.cc
 new file mode 100644
-index 00000000..39e46e86
+index 00000000..f01ef373
 --- /dev/null
 +++ b/runtime/platform/syslog_vita.cc
-@@ -0,0 +1,75 @@
+@@ -0,0 +1,78 @@
 +// Copyright (c) 2012, the Dart project authors.  Please see the AUTHORS file
 +// for details. All rights reserved. Use of this source code is governed by a
 +// BSD-style license that can be found in the LICENSE file.
@@ -46,6 +46,9 @@ index 00000000..39e46e86
 +    g_dart_log_tried = true;
 +    sceIoMkdir("ux0:data", 0777);
 +    sceIoMkdir("ux0:data/flutter-vita", 0777);
++    // SCE_O_TRUNC is not honoured on Vita3K; stale tail text from a previous
++    // run is worse than no log at all.
++    sceIoRemove("ux0:data/flutter-vita/dart.log");
 +    g_dart_log = sceIoOpen("ux0:data/flutter-vita/dart.log",
 +                           SCE_O_WRONLY | SCE_O_CREAT | SCE_O_TRUNC, 0777);
 +  }
