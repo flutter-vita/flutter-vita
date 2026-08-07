@@ -54,6 +54,30 @@ So the work is:
 
 **None of that is novel.** It is the same category of work as patch 0002.
 
+## GCC vs Clang — where the residual risk actually sits
+
+Worth stating plainly, because it is easy to miss:
+
+- **VitaSDK is GCC.** Its libraries, headers and `sce*` stubs were all built with
+  `arm-vita-eabi-gcc` (15.2.0 here).
+- **Dart and Chromium default to Clang.** That is what `buildtools/<platform>/clang`
+  is in DEPS, and why `BUILDCONFIG.gn` reads
+  `is_clang = current_os == "mac" || current_os == "linux"`.
+
+A Vita build must therefore set `is_clang = false` and go through
+`gcc_toolchain.gni`. That path exists and is maintained — Dart's Linux GCC builds
+use it — but it is **less travelled than the Clang path**, and that is where the
+"moderate" in the assessment above really lives. The risk is not "will GN accept
+a foreign toolchain" (it is designed to); it is "how well-exercised is Dart's GCC
+path for a cross-compiled target."
+
+**The alternative, if the GCC path fights us:** Clang can target `arm-none-eabi`
+directly, and ARM EABI is standardised enough that Clang-built objects generally
+link against GCC-built libraries. That keeps Dart on its default toolchain, at
+the cost of mixing compilers across the VitaSDK boundary — new risk traded for
+old. Not worth attempting first, but worth remembering as an escape hatch, and
+we would find out quickly either way.
+
 ## What remains genuinely unknown
 
 - Whether the build works with a **macOS host** and an `arm-vita-eabi` target.
