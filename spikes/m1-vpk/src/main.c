@@ -173,6 +173,18 @@ int main(void) {
 
   // ------------------------------------------------------------ Dart_Initialize
   lg("\n== starting the Dart VM ==\n");
+
+  // Must precede Dart_Initialize -- without it the VM reports
+  // "VM initialization failed-VM Flags not initialized." Passing no flags is
+  // fine; the call itself is what initialises the flag table.
+  lg("  [checkpoint] Dart_SetVMFlags\n");
+  char* flag_err = Dart_SetVMFlags(0, NULL);
+  if (flag_err != NULL) {
+    lg("  FAIL Dart_SetVMFlags: %s\n", flag_err);
+    wait_and_exit(1);
+  }
+  lg("  Dart_SetVMFlags ok\n");
+
   lg("  [checkpoint] Dart_Initialize\n");
 
   Dart_InitializeParams params;
