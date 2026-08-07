@@ -284,10 +284,10 @@ index 00000000..84f25ae5
 +#endif  // defined(DART_HOST_OS_VITA) && !defined(DART_USE_ABSL)
 diff --git a/runtime/vm/os_vita.cc b/runtime/vm/os_vita.cc
 new file mode 100644
-index 00000000..4b52599c
+index 00000000..e47df242
 --- /dev/null
 +++ b/runtime/vm/os_vita.cc
-@@ -0,0 +1,216 @@
+@@ -0,0 +1,221 @@
 +// Copyright (c) 2012, the Dart project authors.  Please see the AUTHORS file
 +// for details. All rights reserved. Use of this source code is governed by a
 +// BSD-style license that can be found in the LICENSE file.
@@ -478,6 +478,11 @@ index 00000000..4b52599c
 +
 +void OS::Exit(int code) {
 +  sceKernelExitProcess(code);
++  // OS::Exit is declared [[noreturn]], but sceKernelExitProcess is not marked
++  // as such in the VitaSDK headers, so the compiler cannot see that control
++  // never reaches here. UNREACHABLE() satisfies it without inventing control
++  // flow -- if the kernel ever did return, aborting is the right answer.
++  UNREACHABLE();
 +}
 +
 +void OS::RegisterCodeObservers() {

@@ -82,6 +82,29 @@ index fbce649c..6b1036dc 100644
      }
  
      arm_use_thumb = true
+diff --git a/build/config/compiler/BUILD.gn b/build/config/compiler/BUILD.gn
+index 4af98d44..02be851a 100644
+--- a/build/config/compiler/BUILD.gn
++++ b/build/config/compiler/BUILD.gn
+@@ -626,6 +626,18 @@ config("runtime_library") {
+       "dl",
+       "pthread",
+     ]
++  } else if (is_vita) {
++    # newlib gates its POSIX and BSD extensions behind feature-test macros, and
++    # -std=c++20 defines __STRICT_ANSI__, which hides them. Dart assumes glibc,
++    # where they are visible by default. Without this, functions like strdup and
++    # strtok_r come back "not declared in this scope" one file at a time, and
++    # patching each call site would be endless and wrong -- they do exist.
++    defines += [ "_DEFAULT_SOURCE" ]
++
++    # ICU picks its file-mapping implementation from U_HAVE_MMAP. There is no
++    # mmap on Vita, so force the stdio fallback; newlib's file IO is sceIo
++    # backed and works fine for reading icudtl.dat.
++    defines += [ "U_HAVE_MMAP=0" ]
+   } else if (is_android) {
+     # Android standard library setup.
+ 
 diff --git a/build/toolchain/vita/BUILD.gn b/build/toolchain/vita/BUILD.gn
 new file mode 100644
 index 00000000..ac6afe9c
@@ -158,3 +181,48 @@ index 8cd05ff4..77a14c1e 100644
    } else if (target_os == "win") {
      defines += [ "DART_TARGET_OS_WINDOWS" ]
    } else if (target_os == "winuwp") {
+diff --git a/runtime/vm/vm_sources.gni b/runtime/vm/vm_sources.gni
+index 2241123e..ace10c0f 100644
+--- a/runtime/vm/vm_sources.gni
++++ b/runtime/vm/vm_sources.gni
+@@ -72,6 +72,7 @@ vm_sources = [
+   "cpuinfo_fuchsia.cc",
+   "cpuinfo_linux.cc",
+   "cpuinfo_macos.cc",
++  "cpuinfo_vita.cc",
+   "cpuinfo_win.cc",
+   "dart.cc",
+   "dart.h",
+@@ -213,6 +214,7 @@ vm_sources = [
+   "os_fuchsia.cc",
+   "os_linux.cc",
+   "os_macos.cc",
++  "os_vita.cc",
+   "os_thread.cc",
+   "os_thread.h",
+   "os_thread_absl.cc",
+@@ -225,6 +227,8 @@ vm_sources = [
+   "os_thread_linux.h",
+   "os_thread_macos.cc",
+   "os_thread_macos.h",
++  "os_thread_vita.cc",
++  "os_thread_vita.h",
+   "os_thread_win.cc",
+   "os_thread_win.h",
+   "os_win.cc",
+@@ -330,6 +334,7 @@ vm_sources = [
+   "thread_interrupter_fuchsia.cc",
+   "thread_interrupter_linux.cc",
+   "thread_interrupter_macos.cc",
++  "thread_interrupter_vita.cc",
+   "thread_interrupter_win.cc",
+   "thread_pool.cc",
+   "thread_pool.h",
+@@ -368,6 +373,7 @@ vm_sources = [
+   "virtual_memory_compressed.h",
+   "virtual_memory_fuchsia.cc",
+   "virtual_memory_posix.cc",
++  "virtual_memory_vita.cc",
+   "virtual_memory_win.cc",
+   "visitor.cc",
+   "visitor.h",

@@ -20,11 +20,18 @@ Matching that pin buys four concrete things:
 1. **Proof that the engine builds for armv7 at this commit.** A third party has
    already done it. That converts "will the engine cross-compile to 32-bit ARM?"
    from an open risk into a solved problem — for a Linux target, at least.
-2. **A known-good `gen_snapshot` targeting arm.** Their `arm/` directory contains
-   `gen_snapshot_linux_x64_release`, i.e. a host tool producing armv7 AOT
-   snapshots. **M1 does not require building the Dart SDK first.** You can
-   generate a real armv7 AOT snapshot on day one and spend M1 solely on the
-   Vita-side runtime port, which is the actual hard part.
+2. **A `gen_snapshot` targeting arm, useful for measurement.** Their `arm/`
+   directory contains `gen_snapshot_linux_x64_release`, a host tool producing
+   armv7 AOT snapshots.
+
+   > **Corrected 2026-08-07.** This section previously claimed "M1 does not
+   > require building the Dart SDK first." **That is wrong.** Dart's
+   > `FeaturesString()` embeds the target OS and validates it when loading a
+   > snapshot, so a snapshot from this `linux-arm` tool will be *rejected* by a
+   > `vita` runtime. What it genuinely bought: proof that armv7 codegen works,
+   > accurate size measurements (the OS name is metadata, not code), and
+   > confirmation that the version pin and kernel format are right. M1 needs a
+   > `gen_snapshot` built to target vita.
 3. **A reference `libflutter_engine.so.release` for arm32 and a working
    `icudtl.dat`** to diff your own build against when it inevitably misbehaves.
 4. **A shared version to ask questions about.** ardera is the flutter-pi author

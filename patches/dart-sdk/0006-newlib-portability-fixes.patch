@@ -1,0 +1,97 @@
+diff --git a/runtime/lib/ffi_dynamic_library.cc b/runtime/lib/ffi_dynamic_library.cc
+index 0aefcee4..4065b5c5 100644
+--- a/runtime/lib/ffi_dynamic_library.cc
++++ b/runtime/lib/ffi_dynamic_library.cc
+@@ -6,6 +6,13 @@
+ 
+ #include "platform/globals.h"
+ #include "platform/utils.h"
++#if defined(DART_HOST_OS_VITA)
++// The Vita links statically and has no dynamic loader, so there is no
++// "current process" handle to hand out and no symbol table to search. dart:ffi
++// DynamicLibrary is unsupported here by design -- see ADR-0004.
++#define DART_VITA_NO_DYNAMIC_LIBRARY 1
++#endif
++
+ #if defined(DART_HOST_OS_WINDOWS)
+ #include <Psapi.h>
+ #include <Windows.h>
+@@ -178,6 +185,9 @@ DEFINE_NATIVE_ENTRY(Ffi_dl_processLibrary, 0, 0) {
+ #if defined(DART_HOST_OS_LINUX) || defined(DART_HOST_OS_MACOS) ||              \
+     defined(DART_HOST_OS_ANDROID) || defined(DART_HOST_OS_FUCHSIA)
+   return DynamicLibrary::New(RTLD_DEFAULT, false);
++#elif defined(DART_VITA_NO_DYNAMIC_LIBRARY)
++  Exceptions::ThrowUnsupportedError(
++      "DynamicLibrary.process is not supported on this platform");
+ #else
+   return DynamicLibrary::New(kWindowsDynamicLibraryProcessPtr, false);
+ #endif
+@@ -458,7 +468,11 @@ intptr_t FfiResolveInternal(const String& asset,
+   }
+ 
+   // Resolution in current process.
+-#if !defined(DART_HOST_OS_WINDOWS)
++#if defined(DART_VITA_NO_DYNAMIC_LIBRARY)
++  void* const result = nullptr;
++  *error = Utils::StrDup(
++      "symbol lookup in the running process is not supported on this platform");
++#elif !defined(DART_HOST_OS_WINDOWS)
+   void* const result = Utils::ResolveSymbolInDynamicLibrary(
+       RTLD_DEFAULT, symbol.ToCString(), error);
+ #else
+diff --git a/runtime/lib/integers.cc b/runtime/lib/integers.cc
+index 8df26e4f..00c6fa6c 100644
+--- a/runtime/lib/integers.cc
++++ b/runtime/lib/integers.cc
+@@ -3,6 +3,11 @@
+ // BSD-style license that can be found in the LICENSE file.
+ 
+ #include "lib/integers.h"
++
++// LLONG_MAX / LLONG_MIN. glibc pulls <limits.h> in transitively; newlib under
++// -std=c++20 does not, so include it explicitly.
++#include <climits>
++
+ #include "vm/bootstrap_natives.h"
+ 
+ #include "include/dart_api.h"
+diff --git a/runtime/platform/utils.cc b/runtime/platform/utils.cc
+index 9ecd17d9..096541aa 100644
+--- a/runtime/platform/utils.cc
++++ b/runtime/platform/utils.cc
+@@ -375,6 +375,12 @@ void* Utils::ResolveSymbolInDynamicLibrary(void* library_handle,
+     GetLastErrorAsString(error);
+   }
+   return result;
++#else
++  // The Vita links statically and has no dynamic loader, so there is nothing
++  // to resolve against. Reporting an error beats falling off the end of a
++  // non-void function.
++  *error = Utils::StrDup("dynamic libraries are not supported on this platform");
++  return nullptr;
+ #endif
+ }
+ 
+@@ -396,7 +402,8 @@ void Utils::UnloadDynamicLibrary(void* library_handle, char** error) {
+ }
+ 
+ char* Utils::Basename(const char* path) {
+-#if defined(DART_HOST_OS_FUCHSIA) || defined(DART_HOST_OS_WINDOWS)
++#if defined(DART_HOST_OS_FUCHSIA) || defined(DART_HOST_OS_WINDOWS) ||          \
++    defined(DART_HOST_OS_VITA)
+   // Not handled for these operating systems.
+   return nullptr;
+ #else
+diff --git a/runtime/vm/dart.cc b/runtime/vm/dart.cc
+index 54f2c7f8..a9b8a31e 100644
+--- a/runtime/vm/dart.cc
++++ b/runtime/vm/dart.cc
+@@ -1131,6 +1131,8 @@ char* Dart::FeaturesString(IsolateGroup* isolate_group,
+     buffer.AddString(" linux");
+ #elif defined(DART_TARGET_OS_WINDOWS)
+     buffer.AddString(" windows");
++#elif defined(DART_TARGET_OS_VITA)
++    buffer.AddString(" vita");
+ #else
+ #error What operating system?
+ #endif

@@ -14,6 +14,7 @@ disposable; these patches are the real artifact.
 | 0003 | [vita-platform-implementations](0003-vita-platform-implementations.patch) | The Vita platform files themselves |
 | 0004 | [gn-vita-toolchain](0004-gn-vita-toolchain.patch) | Teaches the GN build about `vita` |
 | 0005 | [zlib-no-armv8-on-vita](0005-zlib-no-armv8-on-vita.patch) | **Applies to `third_party/zlib`, a separate repo** |
+| 0006 | [newlib-portability-fixes](0006-newlib-portability-fixes.patch) | Shared Dart sources that assume glibc or "not POSIX means Windows" |
 
 All three are verified to compile with
 [`spikes/p1-compile-check/check.sh`](../../spikes/p1-compile-check/check.sh).
@@ -42,7 +43,7 @@ revision and `managed: True`, so one command does everything:
 cd third_party
 PATH="$HOME/depot_tools:$PATH" gclient sync --nohooks --no-history --shallow
 cd sdk
-git apply ../../patches/dart-sdk/000[1-4]*.patch
+git apply ../../patches/dart-sdk/000[1-46]*.patch
 git -C third_party/zlib apply ../../../../patches/dart-sdk/0005-zlib-no-armv8-on-vita.patch
 ```
 
@@ -203,3 +204,40 @@ code behind it is the **ARMv8 CRC32 and crypto extensions**. The Vita is an
 ARMv7 Cortex-A9: it has NEON, but not those. Enabling them would emit
 instructions that fault on the device — the same class of error as the
 `integer_division_supported_` question in patch 0002.
+
+
+---
+
+## 0006 — newlib portability fixes
+
+Found by actually building, not by reading. Four shared Dart sources that
+cannot compile against newlib as written:
+
+| file | problem |
+|---|---|
+| `platform/utils.cc` | `ResolveSymbolInDynamicLibrary` falls off the end of a non-void function — no branch matches. `Basename` needs `basename()`, which newlib lacks. |
+| `lib/integers.cc` | `LLONG_MAX`/`LLONG_MIN` — glibc pulls `<limits.h>` in transitively, newlib does not. |
+| `lib/ffi_dynamic_library.cc` | `RTLD_DEFAULT` with a Windows-only `#else`. |
+| `vm/dart.cc` | the features string had no `vita` case. |
+
+Two recurring shapes are worth naming, because more will surface:
+
+**"Not POSIX means Windows."** Several files branch on POSIX and then `#else`
+straight into Win32. A target that is neither has nowhere to land. This is
+genuinely novel territory for the codebase, not an oversight.
+
+**glibc leaks headers; newlib does not.** Dart relies on transitive includes
+that only work because glibc is generous. Each has to be made explicit.
+
+### The `dart.cc` change has a consequence
+
+`Dart::FeaturesString()` embeds the target OS, and it is **checked when loading
+a snapshot** — upstream's comment calls the OS match a deliberate "strong
+condition" so `Platform.isAndroid` can be a compile-time constant.
+
+**So a snapshot built by a `linux` `gen_snapshot` will be rejected by a `vita`
+runtime.** The armv7 snapshot from [Phase 0.5 B1](../../docs/phase-0.5-feasibility.md)
+proves codegen, sizes and kernel-format pinning — but it is **not** a valid M1
+input. M1 additionally needs a `gen_snapshot` that targets vita, which Dart
+supports as a host-run cross-precompiler (see `libdart_precompiler_product_linux_arm`
+for the shape).
