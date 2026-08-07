@@ -22,6 +22,7 @@
 #include <stdarg.h>
 #include <stdint.h>
 #include <stdio.h>
+#include <malloc.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -37,6 +38,11 @@ unsigned int _newlib_heap_size_user = 192 * 1024 * 1024;
 // granularity (Track A run 3); the blobs total ~362 KB, so one block is plenty.
 #define VM_BLOCK_SIZE (1 * 1024 * 1024)
 #define INSTR_ALIGN 4096
+
+// Dart requires kObjectStartAlignment (runtime/vm/pointer_tagging.h) for every
+// snapshot image it is handed. 4096 already satisfies it for the instruction
+// blobs inside the VM block; the data blobs need it explicitly.
+#define SNAPSHOT_ALIGN 64
 
 static SceUID g_log = -1;
 
@@ -64,6 +70,13 @@ static void wait_and_exit(int code) {
     sceKernelDelayThread(50 * 1000);
   }
   sceKernelExitProcess(code);
+  // sceKernelExitProcess is not marked noreturn, and on Vita3K it returned --
+  // run 4 carried on into Dart_EnterScope after a failure had already been
+  // reported, producing a confusing second error in dart.log. Do not let
+  // execution continue past a fatal path.
+  for (;;) {
+    sceKernelDelayThread(1000 * 1000);
+  }
 }
 
 // Reads a whole file from app0:. Returns NULL on failure.
@@ -77,7 +90,10 @@ static void* read_blob(const char* name, size_t* out_size) {
   }
   const SceOff size = sceIoLseek(fd, 0, SCE_SEEK_END);
   sceIoLseek(fd, 0, SCE_SEEK_SET);
-  void* buf = malloc((size_t)size);
+  // Dart's ImageReader::VerifyAlignment requires kObjectStartAlignment (64) for
+  // both the data and instruction images. malloc gives 8 on 32-bit newlib, which
+  // is what M1 run 4 tripped over: "Snapshot is misaligned".
+  void* buf = memalign(SNAPSHOT_ALIGN, (size_t)size);
   if (buf == NULL) {
     lg("  FAIL malloc %lld for %s\n", (long long)size, name);
     sceIoClose(fd);
