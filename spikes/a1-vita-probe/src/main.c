@@ -51,7 +51,13 @@ static void lg(const char *fmt, ...) {
   vsnprintf(buf, sizeof buf, fmt, ap);
   va_end(ap);
   psvDebugScreenPuts(buf);
-  if (g_log >= 0) sceIoWrite(g_log, buf, strlen(buf));
+  if (g_log >= 0) {
+    sceIoWrite(g_log, buf, strlen(buf));
+    // Run 2 died mid-test and the log stopped at the last line written, which
+    // was luck rather than design. Sync every line: a probe that can crash must
+    // leave behind the record of where it crashed.
+    sceIoSyncByFd(g_log, 0);
+  }
 }
 
 static void log_open(void) {
@@ -81,8 +87,10 @@ static const uint16_t thumb_code[] = {
 // (0x80024B05) — VM blocks have a minimum/granularity larger than a page, which
 // is documented nowhere. Find it, then use a legal size for the real test.
 static SceSize find_min_vm_size(void) {
+  // Run 2: 4K/16K/64K/256K all rejected, 1 MiB accepted. 512 KiB added to pin
+  // down whether the granularity is 512 KiB or a round 1 MiB.
   static const SceSize candidates[] = {
-      4096, 16384, 65536, 262144, 1048576, 4194304,
+      262144, 524288, 1048576,
   };
   for (unsigned i = 0; i < sizeof candidates / sizeof *candidates; i++) {
     SceUID u = sceKernelAllocMemBlockForVM("probe_min", candidates[i]);
@@ -123,27 +131,40 @@ static void test_vm_domain(void) {
   }
   lg("  base                          %p\n", base);
 
-  // Domain closed: the block should be writable here.
-  memcpy(base, arm_code, sizeof arm_code);
-  memcpy((uint8_t *)base + 64, thumb_code, sizeof thumb_code);
-  lg("  wrote code while domain closed ok\n");
-
+  // Run 2 faulted here, writing to the block with the domain closed. So the
+  // block is NOT writable by default, and the header's one-line summary
+  // ("Open makes memblocks executeable") is misleading. The JIT example in the
+  // VitaSDK docs has it right: Open puts the domain in the WRITABLE state,
+  // Close puts it in the EXECUTABLE state. Classic W^X, and exactly the
+  // load-once-then-run shape ADR-0005 Option B needs.
+  lg("  [checkpoint] opening domain for write\n");
   r = sceKernelOpenVMDomain();
   lg("  sceKernelOpenVMDomain         0x%08X\n", r);
 
+  lg("  [checkpoint] writing code\n");
+  memcpy(base, arm_code, sizeof arm_code);
+  memcpy((uint8_t *)base + 64, thumb_code, sizeof thumb_code);
+  lg("  wrote code with domain open   ok\n");
+
+  lg("  [checkpoint] closing domain for execute\n");
+  r = sceKernelCloseVMDomain();
+  lg("  sceKernelCloseVMDomain        0x%08X\n", r);
+
+  lg("  [checkpoint] syncing icache\n");
   r = sceKernelSyncVMDomain(uid, base, size);
   lg("  sceKernelSyncVMDomain         0x%08X\n", r);
+  lg("  [checkpoint] about to execute ARM\n");
 
   // Bit 0 clear -> ARM state. Bit 0 set -> Thumb state. BLX honours it.
   int (*fn_arm)(void) = (int (*)(void))(uintptr_t)base;
   int a = fn_arm();
   lg("  call ARM   code -> %d %s\n", a, a == 42 ? "(expected 42) PASS" : "MISMATCH");
 
+  lg("  [checkpoint] about to execute Thumb\n");
   int (*fn_thumb)(void) = (int (*)(void))(((uintptr_t)base + 64) | 1u);
   int t = fn_thumb();
   lg("  call Thumb code -> %d %s\n", t, t == 37 ? "(expected 37) PASS" : "MISMATCH");
 
-  sceKernelCloseVMDomain();
   sceKernelFreeMemBlock(uid);
 
   if (a == 42 && t == 37)

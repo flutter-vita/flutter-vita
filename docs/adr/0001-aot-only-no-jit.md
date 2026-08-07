@@ -11,9 +11,20 @@ user-mode W^X mechanism in `psp2/kernel/sysmem.h`, requiring no taiHEN kernel
 plugin:
 
 - `sceKernelAllocMemBlockForVM(name, size)` — allocate a VM-domain block
-- `sceKernelOpenVMDomain()` — make **all** VM-domain blocks executable
-- `sceKernelCloseVMDomain()` — make **all** VM-domain blocks non-executable
+- `sceKernelOpenVMDomain()` — put all VM-domain blocks in the **writable** state
+- `sceKernelCloseVMDomain()` — put them in the **executable** state
 - `sceKernelSyncVMDomain(uid, data, size)` — flush I-cache for the region
+
+> **Corrected 2026-08-07 by hardware.** The VitaSDK header summarises these as
+> "makes memblocks executeable" / "non executeable", and this ADR originally
+> repeated that. It is misleading: Track A run 2 faulted writing to a VM block
+> with the domain closed, proving the block is not writable by default. The JIT
+> example in the VitaSDK docs had it right all along — Open is the *write*
+> state, Close is the *execute* state. Plain W^X.
+>
+> Measured limits: VM blocks have a **1 MiB minimum** (4 KiB, 16 KiB, 64 KiB and
+> 256 KiB are all rejected with `SCE_KERNEL_ERROR_ILLEGAL_MEMBLOCK_SIZE`) and a
+> **16 MiB maximum**, confirmed exactly.
 
 This is the documented mechanism Vita dynarecs and emulator ports use. Userland
 JIT on Vita is possible.
@@ -30,11 +41,13 @@ as opposed to merely inconvenient:
 1. **`sceKernelAllocMemBlockForVM` is capped at 16 MiB per block** (documented in
    VitaSDK). Dart's JIT code heap for a Flutter app would exceed this, and the
    blocks are not guaranteed contiguous.
-2. **`Open`/`CloseVMDomain` are process-global toggles, not per-page
+2. **`Open`/`CloseVMDomain` are process-global W^X toggles, not per-page
    protections.** Dart's JIT writes new code on a compiler thread while other
-   threads are executing existing code. A global flip to non-executable in
-   order to write one method would stall or crash every executing thread. This
-   is a structural mismatch, not a tuning problem.
+   threads execute existing code. Flipping the whole domain to writable in
+   order to compile one method makes *all* JIT code non-executable for that
+   window — every running thread would fault. This is a structural mismatch,
+   not a tuning problem, and hardware confirms the states are genuinely
+   exclusive rather than additive.
 3. The Dart JIT also needs the Dart *compiler* on device, roughly doubling the
    binary and the memory footprint, on a device where both are scarce.
 
