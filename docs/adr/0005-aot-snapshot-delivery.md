@@ -1,9 +1,55 @@
 # ADR-0005: How the Dart AOT snapshot gets into the process
 
-**Status:** **Accepted — Option B.** Proven on hardware 2026-08-07.
-**Date:** 2026-08-06, decided 2026-08-07
+**Status:** **Superseded — Option A.** Option B was accepted on hardware evidence,
+then defeated by a requirement nobody had tested. See the reversal below.
+**Date:** 2026-08-06, decided 2026-08-07, reversed 2026-08-07
 
-## Decision: Option B, load the snapshot at runtime
+## Reversal: Option B cannot work, take Option A
+
+M1 run 9 faulted with a data abort, and the crash dump named it exactly:
+
+```
+PC: dart::BSS::Initialize(Thread*, uword* bss_start, bool vm)
+faulting instruction:  strex ip, r3, [r1]        <- a store
+called from: dart::FullSnapshotReader::ReadVMSnapshot()
+```
+
+`Image::bss()` places the BSS at a fixed offset **inside the instructions
+image**, and Dart writes to it during startup. Its own comment states the
+assumption:
+
+> *"Returning a non-const uword\* is safe because we're translating from the
+> start of the instructions (read-only) to the start of the BSS (read-write)."*
+
+Every other platform's ELF loader satisfies that by mapping `.text` as `R-X` and
+`.bss` as `RW-` — different protections within one image. **The Vita's VM domain
+is all-or-nothing:** `Open` is writable, `Close` is executable, and there is no
+state where instructions execute while the BSS inside them stays writable.
+
+The three hardware results together make the picture complete, and each was
+necessary:
+
+| tested | result |
+|---|---|
+| Track A: does VM-domain memory execute? | yes |
+| M1 run 9: is it readable after `Close`? | yes |
+| M1 run 9 crash dump: is it **writable** after `Close`? | **no — and Dart needs it to be** |
+
+Nobody thought to test writability, because the mechanism is described as W^X
+and "executable" sounded like the whole requirement. The snapshot format quietly
+needs both at once.
+
+**So the decision reverses to Option A.** The remaining alternative — patching
+`Image::bss()` to redirect the BSS into a separate RW allocation — keeps Option
+B alive but means diverging from an assumption baked into the snapshot format
+itself. Not worth it to reach M1; revisit if M4's relink cost ever justifies it.
+
+The VM-domain mechanism is *not* discredited: allocation, W^X flipping, cache
+sync and execution all work on hardware. It is defeated by one specific
+requirement, and that is worth recording precisely rather than as "Option B
+failed".
+
+## Superseded: Option B, load the snapshot at runtime
 
 Track A run 3 on a physical Vita:
 

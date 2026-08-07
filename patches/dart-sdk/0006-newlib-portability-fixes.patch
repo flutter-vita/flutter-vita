@@ -122,3 +122,79 @@ index 54f2c7f8..a9b8a31e 100644
  #else
  #error What operating system?
  #endif
+diff --git a/runtime/vm/image_snapshot.cc b/runtime/vm/image_snapshot.cc
+index b9363078..9652ccde 100644
+--- a/runtime/vm/image_snapshot.cc
++++ b/runtime/vm/image_snapshot.cc
+@@ -1153,7 +1153,7 @@ class DwarfAssemblyStream : public DwarfWriteStream {
+ #if defined(DART_TARGET_OS_MACOS) || defined(DART_TARGET_OS_MACOS_IOS)
+     stream_->WriteString(".section __DWARF,__debug_abbrev,regular,debug\n");
+ #elif defined(DART_TARGET_OS_LINUX) || defined(DART_TARGET_OS_ANDROID) ||      \
+-    defined(DART_TARGET_OS_FUCHSIA)
++    defined(DART_TARGET_OS_FUCHSIA) || defined(DART_TARGET_OS_VITA)
+     stream_->WriteString(".section .debug_abbrev,\"\"\n");
+ #else
+     UNIMPLEMENTED();
+@@ -1163,7 +1163,7 @@ class DwarfAssemblyStream : public DwarfWriteStream {
+ #if defined(DART_TARGET_OS_MACOS) || defined(DART_TARGET_OS_MACOS_IOS)
+     stream_->WriteString(".section __DWARF,__debug_info,regular,debug\n");
+ #elif defined(DART_TARGET_OS_LINUX) || defined(DART_TARGET_OS_ANDROID) ||      \
+-    defined(DART_TARGET_OS_FUCHSIA)
++    defined(DART_TARGET_OS_FUCHSIA) || defined(DART_TARGET_OS_VITA)
+     stream_->WriteString(".section .debug_info,\"\"\n");
+ #else
+     UNIMPLEMENTED();
+@@ -1175,7 +1175,7 @@ class DwarfAssemblyStream : public DwarfWriteStream {
+ #if defined(DART_TARGET_OS_MACOS) || defined(DART_TARGET_OS_MACOS_IOS)
+     stream_->WriteString(".section __DWARF,__debug_line,regular,debug\n");
+ #elif defined(DART_TARGET_OS_LINUX) || defined(DART_TARGET_OS_ANDROID) ||      \
+-    defined(DART_TARGET_OS_FUCHSIA)
++    defined(DART_TARGET_OS_FUCHSIA) || defined(DART_TARGET_OS_VITA)
+     stream_->WriteString(".section .debug_line,\"\"\n");
+ #else
+     UNIMPLEMENTED();
+@@ -1276,7 +1276,7 @@ void AssemblyImageWriter::Finalize() {
+   }
+ 
+ #if defined(DART_TARGET_OS_LINUX) || defined(DART_TARGET_OS_ANDROID) ||        \
+-    defined(DART_TARGET_OS_FUCHSIA)
++    defined(DART_TARGET_OS_FUCHSIA) || defined(DART_TARGET_OS_VITA)
+   // Non-executable stack.
+ #if defined(TARGET_ARCH_ARM)
+   assembly_stream_->WriteString(".section .note.GNU-stack,\"\",%progbits\n");
+@@ -1538,7 +1538,7 @@ void AssemblyImageWriter::WriteROData(NonStreamingWriteStream* clustered_stream,
+     WriteBytes(bytes + last_position, symbol.offset - last_position);
+     assembly_stream_->Printf("\"%s\":\n", symbol.name);
+ #if defined(DART_TARGET_OS_LINUX) || defined(DART_TARGET_OS_ANDROID) ||        \
+-    defined(DART_TARGET_OS_FUCHSIA)
++    defined(DART_TARGET_OS_FUCHSIA) || defined(DART_TARGET_OS_VITA)
+     // Output size and type of the read-only data symbol to the assembly stream.
+     assembly_stream_->Printf(".size \"%s\", %zu\n", symbol.name, symbol.size);
+     assembly_stream_->Printf(".type \"%s\", %%object\n", symbol.name);
+@@ -1582,7 +1582,7 @@ bool AssemblyImageWriter::EnterSection(ProgramSection section,
+       current_symbols_ =
+           new (zone_) SharedObjectWriter::SymbolDataArray(zone_, 0);
+ #if defined(DART_TARGET_OS_LINUX) || defined(DART_TARGET_OS_ANDROID) ||        \
+-    defined(DART_TARGET_OS_FUCHSIA) || defined(DART_TARGET_OS_WINDOWS)
++    defined(DART_TARGET_OS_FUCHSIA) || defined(DART_TARGET_OS_VITA) || defined(DART_TARGET_OS_WINDOWS)
+       assembly_stream_->WriteString(".section .rodata\n");
+ #elif defined(DART_TARGET_OS_MACOS) || defined(DART_TARGET_OS_MACOS_IOS)
+       assembly_stream_->WriteString(".const\n");
+@@ -1639,7 +1639,7 @@ void AssemblyImageWriter::ExitSection(ProgramSection name,
+   // We should still be in the same section as the last EnterSection.
+   ASSERT_EQUAL(current_section_label_, SectionLabel(name, vm));
+ #if defined(DART_TARGET_OS_LINUX) || defined(DART_TARGET_OS_ANDROID) ||        \
+-    defined(DART_TARGET_OS_FUCHSIA)
++    defined(DART_TARGET_OS_FUCHSIA) || defined(DART_TARGET_OS_VITA)
+   // Output the size of the section symbol to the assembly stream.
+   assembly_stream_->Printf(".size %s, %zu\n", SectionSymbol(name, vm), size);
+   assembly_stream_->Printf(".type %s, %%object\n", SectionSymbol(name, vm));
+@@ -1738,7 +1738,7 @@ void AssemblyImageWriter::AddCodeSymbol(const Code& code,
+   }
+   assembly_stream_->Printf("\"%s\":\n", symbol);
+ #if defined(DART_TARGET_OS_LINUX) || defined(DART_TARGET_OS_ANDROID) ||        \
+-    defined(DART_TARGET_OS_FUCHSIA)
++    defined(DART_TARGET_OS_FUCHSIA) || defined(DART_TARGET_OS_VITA)
+   // Output the size of the code symbol to the assembly stream.
+   assembly_stream_->Printf(".size \"%s\", %zu\n", symbol, code.Size());
+   assembly_stream_->Printf(".type \"%s\", %%function\n", symbol);

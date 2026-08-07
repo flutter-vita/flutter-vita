@@ -8,7 +8,7 @@ if(NOT DEFINED CMAKE_TOOLCHAIN_FILE)
   endif()
 endif()
 
-project(flutter_vita_m1 C CXX)
+project(flutter_vita_m1 C CXX ASM)
 include("${VITASDK}/share/vita.cmake" REQUIRED)
 
 set(VITA_APP_NAME "Flutter Vita M1")
@@ -22,7 +22,7 @@ set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -std=gnu11 -Wall -Wextra -O2 -g")
 
 set(DART_SDK   "${CMAKE_SOURCE_DIR}/../../third_party/sdk")
 set(DART_OUT   "${DART_SDK}/out/vita")
-set(SNAP_BLOBS "${CMAKE_SOURCE_DIR}/../m1-snapshot/out/blobs")
+set(SNAPSHOT_S "${CMAKE_SOURCE_DIR}/../m1-snapshot/out/snapshot.S")
 set(VITA_SAMPLES_COMMON "$ENV{VITASDK}/share/gcc-arm-vita-eabi/samples/common")
 
 if(NOT EXISTS "${DART_OUT}/obj")
@@ -37,8 +37,18 @@ include_directories(
   ${VITA_SAMPLES_COMMON}
 )
 
+if(NOT EXISTS "${SNAPSHOT_S}")
+  message(FATAL_ERROR
+    "No snapshot at ${SNAPSHOT_S}. Generate it first:\n"
+    "  spikes/m1-snapshot/build.sh")
+endif()
+
+# ADR-0005 option A: the snapshot is assembled and linked in, rather than loaded
+# at runtime. This is what gives .text read-execute and .bss read-write -- the
+# split the VM domain cannot express, and the reason option B failed.
 add_executable(${PROJECT_NAME}
   src/main.c
+  ${SNAPSHOT_S}
   ${VITA_SAMPLES_COMMON}/debugScreen.c
 )
 
@@ -75,8 +85,4 @@ vita_create_self(${PROJECT_NAME}.self ${PROJECT_NAME})
 vita_create_vpk(${PROJECT_NAME}.vpk ${VITA_TITLEID} ${PROJECT_NAME}.self
   VERSION ${VITA_VERSION}
   NAME ${VITA_APP_NAME}
-  FILE ${SNAP_BLOBS}/vm_snapshot_data.bin vm_snapshot_data.bin
-  FILE ${SNAP_BLOBS}/isolate_snapshot_data.bin isolate_snapshot_data.bin
-  FILE ${SNAP_BLOBS}/vm_snapshot_instructions.bin vm_snapshot_instructions.bin
-  FILE ${SNAP_BLOBS}/isolate_snapshot_instructions.bin isolate_snapshot_instructions.bin
 )
