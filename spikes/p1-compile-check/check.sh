@@ -24,19 +24,43 @@ if [[ ! -d "$SDK/runtime" ]]; then
   exit 1
 fi
 
-# C++20 is required: Dart uses std::bit_cast, std::has_single_bit, std::bit_ceil.
-# Under C++17 the failure looks like dozens of unrelated errors.
+# gnu++20, not c++20, and both halves matter:
+#   C++20  -- Dart uses std::bit_cast, std::has_single_bit, std::bit_ceil.
+#             Under C++17 the failure is dozens of unrelated-looking errors.
+#   gnu    -- strict ISO mode sets __STRICT_ANSI__, which makes newlib hide its
+#             POSIX extensions. Without this, strdup is "not declared".
 FLAGS=(
-  -std=c++20 -c -O2 -Wall
+  -std=gnu++20 -c -O2 -Wall
   -I"$SDK" -I"$SDK/runtime" -I"$SDK/runtime/include"
   -DDART_PRECOMPILED_RUNTIME   # AOT runtime only, no JIT -- ADR-0001
   -DTARGET_ARCH_ARM            # armv7
   -DPRODUCT -DNDEBUG
 )
 
-SRC="${1:-probe.cc}"
 mkdir -p out
-echo "==> arm-vita-eabi-g++ $SRC"
-arm-vita-eabi-g++ "${FLAGS[@]}" "$SRC" -o "out/$(basename "${SRC%.*}").o"
-echo "==> ok: out/$(basename "${SRC%.*}").o"
-ls -la "out/$(basename "${SRC%.*}").o"
+
+# With no argument, check every Vita platform file plus the header probe.
+if [[ $# -gt 0 ]]; then
+  SOURCES=("$1")
+else
+  SOURCES=(
+    probe.cc
+    "$SDK/runtime/vm/cpuinfo_vita.cc"
+    "$SDK/runtime/vm/thread_interrupter_vita.cc"
+    "$SDK/runtime/vm/virtual_memory_vita.cc"
+    "$SDK/runtime/vm/cpu_arm.cc"
+  )
+fi
+
+fail=0
+for src in "${SOURCES[@]}"; do
+  printf '  %-34s ' "$(basename "$src")"
+  if arm-vita-eabi-g++ "${FLAGS[@]}" "$src" -o "out/$(basename "${src%.*}").o" 2>out/last-error.txt; then
+    echo "OK"
+  else
+    echo "FAIL"
+    grep -E "error" out/last-error.txt | head -5 | sed 's/^/      /'
+    fail=1
+  fi
+done
+exit $fail

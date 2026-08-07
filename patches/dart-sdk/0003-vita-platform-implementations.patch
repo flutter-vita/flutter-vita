@@ -1,0 +1,290 @@
+diff --git a/runtime/vm/cpuinfo_vita.cc b/runtime/vm/cpuinfo_vita.cc
+new file mode 100644
+index 00000000..95617c90
+--- /dev/null
++++ b/runtime/vm/cpuinfo_vita.cc
+@@ -0,0 +1,69 @@
++// Copyright (c) 2012, the Dart project authors.  Please see the AUTHORS file
++// for details. All rights reserved. Use of this source code is governed by a
++// BSD-style license that can be found in the LICENSE file.
++
++#include "vm/globals.h"
++#if defined(DART_HOST_OS_VITA)
++
++#include "platform/assert.h"
++#include "vm/cpuinfo.h"
++
++#include <string.h>
++
++// The Vita is a single fixed device: a Sony CXD5315GG with four ARM Cortex-A9
++// cores (ARMv7-A), VFPv3 and NEON. There is nothing to probe -- no /proc, no
++// cpuid, no auxv -- so the answers are constants.
++
++namespace dart {
++
++CpuInfoMethod CpuInfo::method_ = kCpuInfoNone;
++const char* CpuInfo::fields_[kCpuInfoMax] = {};
++
++void CpuInfo::Init() {
++  method_ = kCpuInfoNone;
++  fields_[kCpuInfoProcessor] = "Processor";
++  fields_[kCpuInfoModel] = "model name";
++  fields_[kCpuInfoHardware] = "Hardware";
++  fields_[kCpuInfoFeatures] = "Features";
++  fields_[kCpuInfoArchitecture] = "CPU architecture";
++}
++
++void CpuInfo::Cleanup() {}
++
++bool CpuInfo::FieldContains(CpuInfoIndices idx, const char* search_string) {
++  const char* value = ExtractField(idx);
++  const bool result = strstr(value, search_string) != nullptr;
++  free(const_cast<char*>(value));
++  return result;
++}
++
++const char* CpuInfo::ExtractField(CpuInfoIndices idx) {
++  // Callers own the result -- see CpuInfo::GetCpuModel.
++  switch (idx) {
++    case kCpuInfoProcessor:
++      return strdup("ARMv7 Processor rev 10 (v7l)");
++    case kCpuInfoModel:
++    case kCpuInfoHardware:
++      return strdup("Sony PlayStation Vita (Cortex-A9)");
++    case kCpuInfoFeatures:
++      // Deliberately no "idiva"/"idivt": Cortex-A9 does not implement the
++      // ARMv7-A integer divide instructions. See cpu_arm.cc.
++      return strdup("half thumb fastmult vfp edsp neon vfpv3 tls");
++    case kCpuInfoArchitecture:
++      return strdup("7");
++    default:
++      return strdup("");
++  }
++}
++
++bool CpuInfo::HasField(const char* field) {
++  return (strcmp(field, fields_[kCpuInfoProcessor]) == 0) ||
++         (strcmp(field, fields_[kCpuInfoModel]) == 0) ||
++         (strcmp(field, fields_[kCpuInfoHardware]) == 0) ||
++         (strcmp(field, fields_[kCpuInfoFeatures]) == 0) ||
++         (strcmp(field, fields_[kCpuInfoArchitecture]) == 0);
++}
++
++}  // namespace dart
++
++#endif  // defined(DART_HOST_OS_VITA)
+diff --git a/runtime/vm/thread_interrupter_vita.cc b/runtime/vm/thread_interrupter_vita.cc
+new file mode 100644
+index 00000000..682a0d8a
+--- /dev/null
++++ b/runtime/vm/thread_interrupter_vita.cc
+@@ -0,0 +1,46 @@
++// Copyright (c) 2016, the Dart project authors.  Please see the AUTHORS file
++// for details. All rights reserved. Use of this source code is governed by a
++// BSD-style license that can be found in the LICENSE file.
++
++#include "vm/globals.h"
++#if defined(DART_HOST_OS_VITA)
++
++#include "vm/thread_interrupter.h"
++
++#include "vm/flags.h"
++#include "vm/os.h"
++
++// The thread interrupter is the sampling CPU profiler's mechanism for stopping
++// a running thread to capture its stack. Every existing implementation relies
++// on something the Vita does not offer:
++//
++//   Linux/Android/macOS  POSIX signals (SIGPROF) -- the Vita has no signals
++//   Windows              SuspendThread/GetThreadContext
++//   Fuchsia              zx_task_suspend
++//
++// The profiler is out of scope for this port -- there is no DevTools and no
++// observatory, so nothing consumes the samples. These are therefore no-ops
++// rather than UNREACHABLE(): a profiler that silently collects nothing is a
++// far better failure mode than one that aborts the process, and the engine may
++// call in on paths we have not audited.
++//
++// If profiling is ever wanted, the mechanism to build on is sceKernelSuspendThread
++// plus sceKernelGetThreadCpuRegisters.
++
++namespace dart {
++
++void ThreadInterrupter::InterruptThread(OSThread* thread) {
++  // No sampling profiler on Vita; nothing to interrupt.
++}
++
++void ThreadInterrupter::InstallSignalHandler() {
++  // No POSIX signals on Vita.
++}
++
++void ThreadInterrupter::RemoveSignalHandler() {
++  // No POSIX signals on Vita.
++}
++
++}  // namespace dart
++
++#endif  // defined(DART_HOST_OS_VITA)
+diff --git a/runtime/vm/virtual_memory_vita.cc b/runtime/vm/virtual_memory_vita.cc
+new file mode 100644
+index 00000000..a62c6534
+--- /dev/null
++++ b/runtime/vm/virtual_memory_vita.cc
+@@ -0,0 +1,157 @@
++// Copyright (c) 2012, the Dart project authors.  Please see the AUTHORS file
++// for details. All rights reserved. Use of this source code is governed by a
++// BSD-style license that can be found in the LICENSE file.
++
++#include "vm/globals.h"
++#if defined(DART_HOST_OS_VITA)
++
++#include "vm/virtual_memory.h"
++
++#include <psp2/kernel/sysmem.h>
++
++#include "platform/assert.h"
++#include "vm/os.h"
++
++// Vita virtual memory, on sceKernelAllocMemBlock.
++//
++// This file is far smaller than virtual_memory_posix.cc because most of that
++// file serves paths that do not exist under AOT on 32-bit ARM. Established by
++// source analysis before writing it -- see docs/phase-1-workplan.md:
++//
++//   * No executable memory. Fresh executable pages come only from the heap's
++//     code space, which AOT never allocates into: code lives in the snapshot
++//     image, wrapped by the shared VirtualMemory::ForImagePage without any
++//     allocation. DuplicateRX is Mac-only and dual mapping is iOS-only.
++//
++//   * No Protect. Its three callers are all unreachable here -- code_patcher.cc
++//     is #if TARGET_ARCH_IA32, the freelist path needs is_executable which is
++//     always false, and the FFI path is behind a compile-time-false const on
++//     non-macOS. The Vita fixes protection at allocation via the memblock type
++//     and offers no runtime change, so this is fortunate rather than merely
++//     convenient.
++//
++//   * No Reserve/Commit/Decommit. They are private helpers, and every call site
++//     is inside #if defined(DART_COMPRESSED_POINTERS). Compressed pointers are
++//     a 64-bit-only feature and dart_use_compressed_pointers defaults to false.
++//
++// What is left is an aligned allocator. sceKernelAllocMemBlock commits
++// immediately and chooses its own address, which is exactly enough.
++
++namespace dart {
++
++// Vita memory blocks are allocated in 4 KiB pages.
++static constexpr intptr_t kVitaPageSize = 4096;
++
++uword VirtualMemory::page_size_ = 0;
++
++intptr_t VirtualMemory::CalculatePageSize() {
++  return kVitaPageSize;
++}
++
++void VirtualMemory::Init() {
++  if (page_size_ == 0) {
++    page_size_ = CalculatePageSize();
++  }
++}
++
++void VirtualMemory::Cleanup() {
++  page_size_ = 0;
++}
++
++VirtualMemory* VirtualMemory::AllocateAligned(intptr_t size,
++                                              intptr_t alignment,
++                                              bool is_executable,
++                                              bool is_compressed,
++                                              const char* name) {
++  ASSERT(Utils::IsAligned(size, PageSize()));
++  ASSERT(Utils::IsPowerOfTwo(alignment));
++  ASSERT(Utils::IsAligned(alignment, PageSize()));
++  // Both are unreachable on this target; see the file comment. Asserting rather
++  // than silently ignoring means a future change upstream shows up here.
++  ASSERT(!is_executable);
++  ASSERT(!is_compressed);
++  if (name == nullptr) {
++    name = "dart-heap";
++  }
++
++  // Ask the kernel for the alignment directly rather than over-allocating and
++  // trimming the excess: sceKernelFreeMemBlock frees a whole block, so the
++  // POSIX trick of releasing the unaligned head and tail is not available.
++  SceKernelAllocMemBlockOpt opt;
++  memset(&opt, 0, sizeof(opt));
++  opt.size = sizeof(opt);
++  opt.attr = SCE_KERNEL_ALLOC_MEMBLOCK_ATTR_HAS_ALIGNMENT;
++  opt.alignment = static_cast<SceSize>(alignment);
++
++  const SceUID uid =
++      sceKernelAllocMemBlock(name, SCE_KERNEL_MEMBLOCK_TYPE_USER_MAIN_RW,
++                             static_cast<SceSize>(size), &opt);
++  if (uid < 0) {
++    return nullptr;
++  }
++
++  void* base = nullptr;
++  if (sceKernelGetMemBlockBase(uid, &base) < 0 || base == nullptr) {
++    sceKernelFreeMemBlock(uid);
++    return nullptr;
++  }
++  ASSERT(Utils::IsAligned(reinterpret_cast<uword>(base), alignment));
++
++  MemoryRegion region(base, size);
++  // reserved_ == region means vm_owns_region() is true, so the destructor frees
++  // it. The SceUID is not stored: it is recovered with
++  // sceKernelFindMemBlockByAddr, which avoids a side table keyed on address.
++  return new VirtualMemory(region, region);
++}
++
++VirtualMemory::~VirtualMemory() {
++  if (!vm_owns_region()) {
++    return;  // An image page owned by the embedder; see ForImagePage.
++  }
++  const SceUID uid = sceKernelFindMemBlockByAddr(
++      reinterpret_cast<void*>(reserved_.start()), reserved_.size());
++  if (uid < 0) {
++    FATAL("Failed to find memblock for %p", reserved_.pointer());
++  }
++  const int result = sceKernelFreeMemBlock(uid);
++  if (result < 0) {
++    FATAL("Failed to free memblock: 0x%08X", result);
++  }
++}
++
++bool VirtualMemory::FreeSubSegment(void* address, intptr_t size) {
++  // A memblock is freed whole or not at all. AllocateAligned asks the kernel
++  // for alignment instead of trimming, so nothing here needs partial frees.
++  // Returning false means "could not give it back", which callers tolerate.
++  return false;
++}
++
++void VirtualMemory::DontNeed(void* address, intptr_t size) {
++  // madvise(MADV_DONTNEED) has no Vita equivalent. It is purely an advisory
++  // hint to release physical pages, so ignoring it is correct, just less
++  // memory-efficient.
++}
++
++void VirtualMemory::Protect(void* address, intptr_t size, Protection mode) {
++  // Protection is fixed at allocation by the memblock type. Unreachable on this
++  // target -- see the file comment. If this ever fires, the analysis in
++  // docs/phase-1-workplan.md has gone stale and needs redoing.
++  UNREACHABLE();
++}
++
++VirtualMemory* VirtualMemory::Reserve(intptr_t size, intptr_t alignment) {
++  UNREACHABLE();  // DART_COMPRESSED_POINTERS only.
++  return nullptr;
++}
++
++void VirtualMemory::Commit(void* address, intptr_t size) {
++  UNREACHABLE();  // DART_COMPRESSED_POINTERS only.
++}
++
++void VirtualMemory::Decommit(void* address, intptr_t size) {
++  UNREACHABLE();  // DART_COMPRESSED_POINTERS only.
++}
++
++}  // namespace dart
++
++#endif  // defined(DART_HOST_OS_VITA)

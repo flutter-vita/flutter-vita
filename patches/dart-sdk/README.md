@@ -10,12 +10,17 @@ disposable; these patches are the real artifact.
 | # | Patch | What it does |
 |---|---|---|
 | 0001 | [add-vita-host-and-target-os](0001-add-vita-host-and-target-os.patch) | Teaches Dart that `vita` is a platform |
+| 0002 | [route-vita-through-platform-dispatch](0002-route-vita-through-platform-dispatch.patch) | Adds `vita` to every per-OS `#if` chain that hard-errors |
+| 0003 | [vita-platform-implementations](0003-vita-platform-implementations.patch) | The Vita platform files themselves |
+
+All three are verified to compile with
+[`spikes/p1-compile-check/check.sh`](../../spikes/p1-compile-check/check.sh).
 
 ## Applying
 
 ```bash
 cd third_party/dart-sdk
-git apply ../../patches/dart-sdk/*.patch
+git apply ../../patches/dart-sdk/000*.patch
 ```
 
 ## Regenerating after edits
@@ -82,3 +87,67 @@ with [`spikes/p1-compile-check/check.sh`](../../spikes/p1-compile-check/check.sh
 
 **Note C++20 is required** — Dart uses `std::bit_cast`, `std::has_single_bit`
 and `std::bit_ceil`. C++17 fails with a wall of unrelated-looking errors.
+
+
+---
+
+## 0002 — route vita through platform dispatch
+
+Dart has **six** independent per-OS `#if` chains that each hard-error on an
+unknown platform, and they only reveal themselves one compile at a time:
+
+| file | what it selects |
+|---|---|
+| `platform/threads.h` | `ThreadId` — 5 separate pthread-platform lists |
+| `platform/synchronization.h` | `MutexImpl` / `ConditionVariableImpl` |
+| `platform/synchronization_posix.cc` | whether the POSIX implementation compiles at all |
+| `vm/os_thread.h` | which `os_thread_<os>.h` to include |
+| `vm/constants_arm.h` | VFPv3-D16 vs D32 |
+| `vm/signal_handler.h` | the `siginfo_t` / `mcontext_t` includes |
+
+Vita joins the pthread group everywhere, because **VitaSDK ships a real
+`libpthread`** over `sceKernel` threads. `os_thread_vita.h` is consequently
+identical to `os_thread_linux.h`: a single `typedef pthread_t ThreadJoinId`.
+
+Two are not routine:
+
+- **`constants_arm.h` → `VFPv3_D32`.** Cortex-A9 with the NEON media engine has
+  all 32 double registers, and VitaSDK builds `-mfpu=neon`. Choosing D16 would
+  silently halve the register file the compiler believes it has.
+- **`signal_handler.h`** declares its API in terms of `mcontext_t`, which newlib
+  does not define. Under Vita the class is reduced to an empty shell rather than
+  faked with dummy types, so anything genuinely needing signals fails loudly at
+  compile time instead of linking against a silent stub.
+
+It also adds a Vita branch to `cpu_arm.cc`'s `HostCPUFeatures::Init`, which
+elsewhere reads `getauxval(AT_HWCAP)`. The Vita is one fixed device, so the
+values are constants — and one of them matters a great deal:
+
+**`integer_division_supported_ = false`.** Cortex-A9 does *not* implement the
+ARMv7-A integer divide instructions; those arrive with Cortex-A7/A15. VitaSDK's
+compiler agrees — it does not define `__ARM_FEATURE_IDIV`. Claiming support
+would make Dart emit `SDIV`/`UDIV` that fault on the device.
+
+## 0003 — vita platform implementations
+
+| file | |
+|---|---|
+| `cpuinfo_vita.cc` | Fixed answers. One known device, nothing to probe: no `/proc`, no cpuid, no auxv. |
+| `thread_interrupter_vita.cc` | No-ops. The sampling profiler needs signals the Vita lacks, and nothing consumes samples without DevTools. No-ops rather than `UNREACHABLE()`, because a profiler that collects nothing beats one that aborts. |
+| `virtual_memory_vita.cc` | An aligned allocator over `sceKernelAllocMemBlock`. |
+
+`virtual_memory_vita.cc` is short because source analysis established, before a
+line was written, that most of `virtual_memory_posix.cc` serves paths that
+cannot be reached here — no executable memory, no `Protect`, no
+`Reserve`/`Commit`/`Decommit`. Those are `UNREACHABLE()`, so if the analysis
+ever goes stale it fails loudly. See
+[the Phase 1 work plan](../../docs/phase-1-workplan.md).
+
+Two Vita APIs made it simpler than expected:
+
+- **`SceKernelAllocMemBlockOpt.alignment`** asks the kernel for alignment
+  directly. POSIX over-allocates and trims with `FreeSubSegment`, which is
+  impossible here because a memblock frees whole — so this sidesteps the one
+  wrinkle the work plan had flagged.
+- **`sceKernelFindMemBlockByAddr`** recovers the `SceUID` at free time, so the
+  destructor needs no side table keyed on address.
