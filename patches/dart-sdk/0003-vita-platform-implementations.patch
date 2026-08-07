@@ -1,3 +1,115 @@
+diff --git a/runtime/platform/syslog_vita.cc b/runtime/platform/syslog_vita.cc
+new file mode 100644
+index 00000000..0c8e5aef
+--- /dev/null
++++ b/runtime/platform/syslog_vita.cc
+@@ -0,0 +1,36 @@
++// Copyright (c) 2012, the Dart project authors.  Please see the AUTHORS file
++// for details. All rights reserved. Use of this source code is governed by a
++// BSD-style license that can be found in the LICENSE file.
++
++#include "platform/globals.h"
++#if defined(DART_HOST_OS_VITA)
++
++#include <stdio.h>
++
++#include "platform/syslog.h"
++
++// The Vita has no system log. stdout and stderr do exist through newlib, but
++// nothing is attached to them on a retail device -- output is only visible
++// under a debugger or a logging plugin such as psp2shell.
++//
++// Routing to stdio anyway is the right default: it costs nothing, it works in
++// every development configuration, and the embedder can redirect these streams
++// if it wants the VM's diagnostics on screen or in a file. See
++// docs/vita3k-as-a-target.md on why "prints nothing visible" is a real hazard
++// for this project.
++
++namespace dart {
++
++void Syslog::VPrint(const char* format, va_list args) {
++  vfprintf(stdout, format, args);
++  fflush(stdout);
++}
++
++void Syslog::VPrintErr(const char* format, va_list args) {
++  vfprintf(stderr, format, args);
++  fflush(stderr);
++}
++
++}  // namespace dart
++
++#endif  // defined(DART_HOST_OS_VITA)
+diff --git a/runtime/platform/utils_vita.cc b/runtime/platform/utils_vita.cc
+new file mode 100644
+index 00000000..c770316c
+--- /dev/null
++++ b/runtime/platform/utils_vita.cc
+@@ -0,0 +1,64 @@
++// Copyright (c) 2012, the Dart project authors.  Please see the AUTHORS file
++// for details. All rights reserved. Use of this source code is governed by a
++// BSD-style license that can be found in the LICENSE file.
++
++#include "platform/globals.h"
++#if defined(DART_HOST_OS_VITA)
++
++#include <stdio.h>
++#include <string.h>
++#include <unistd.h>
++
++#include "platform/utils.h"
++#include "platform/utils_vita.h"
++
++// Identical to utils_linux.cc, minus IsWindowsSubsystemForLinux -- that one is
++// declared in utils_linux.h rather than the shared utils.h, so it is genuinely
++// Linux-only and must not be defined here. All of these are plain libc; the
++// POSIX ones are visible because the Vita build defines _DEFAULT_SOURCE.
++
++namespace dart {
++
++char* Utils::StrNDup(const char* s, intptr_t n) {
++  return strndup(s, n);
++}
++
++char* Utils::StrDup(const char* s) {
++  return strdup(s);
++}
++
++intptr_t Utils::StrNLen(const char* s, intptr_t n) {
++  return strnlen(s, n);
++}
++
++int Utils::SNPrint(char* str, size_t size, const char* format, ...) {
++  va_list args;
++  va_start(args, format);
++  int retval = VSNPrint(str, size, format, args);
++  va_end(args);
++  return retval;
++}
++
++int Utils::VSNPrint(char* str, size_t size, const char* format, va_list args) {
++  int retval = vsnprintf(str, size, format, args);
++  if (retval < 0) {
++    FATAL("Fatal error in Utils::VSNPrint with format '%s'", format);
++  }
++  return retval;
++}
++
++int Utils::Close(int fildes) {
++  return close(fildes);
++}
++
++size_t Utils::Read(int filedes, void* buf, size_t nbyte) {
++  return read(filedes, buf, nbyte);
++}
++
++int Utils::Unlink(const char* path) {
++  return unlink(path);
++}
++
++}  // namespace dart
++
++#endif  // defined(DART_HOST_OS_VITA)
 diff --git a/runtime/vm/cpuinfo_vita.cc b/runtime/vm/cpuinfo_vita.cc
 new file mode 100644
 index 00000000..95617c90
@@ -68,6 +180,76 @@ index 00000000..95617c90
 +         (strcmp(field, fields_[kCpuInfoHardware]) == 0) ||
 +         (strcmp(field, fields_[kCpuInfoFeatures]) == 0) ||
 +         (strcmp(field, fields_[kCpuInfoArchitecture]) == 0);
++}
++
++}  // namespace dart
++
++#endif  // defined(DART_HOST_OS_VITA)
+diff --git a/runtime/vm/native_symbol_vita.cc b/runtime/vm/native_symbol_vita.cc
+new file mode 100644
+index 00000000..aebcdab2
+--- /dev/null
++++ b/runtime/vm/native_symbol_vita.cc
+@@ -0,0 +1,64 @@
++// Copyright (c) 2012, the Dart project authors.  Please see the AUTHORS file
++// for details. All rights reserved. Use of this source code is governed by a
++// BSD-style license that can be found in the LICENSE file.
++
++#include "vm/globals.h"
++#if defined(DART_HOST_OS_VITA)
++
++#include "vm/native_symbol.h"
++
++#include "platform/assert.h"
++
++// Native symbol resolution on Vita.
++//
++// Every other implementation is built on the dynamic linker: the POSIX one uses
++// dladdr(), Windows uses DbgHelp. The Vita links statically (ADR-0004), has no
++// dynamic loader, and ships stripped SELFs, so there is no symbol table to
++// consult at runtime and nothing to resolve an address against.
++//
++// This matters in exactly one place worth understanding. OS::GetAppDSOBase()
++// tries two routes:
++//
++//   1. Image::shared_object_start() -- the base recorded inside the snapshot
++//      itself, needing no help from the OS.
++//   2. NativeSymbolResolver::LookupSharedObject() -- ask the loader.
++//
++// Under ADR-0005 the embedder loads the snapshot into a VM domain block and
++// knows exactly where it put it, so route 1 is expected to succeed and these
++// stubs never to be consulted. They exist so the link resolves, and so that
++// route 2 fails honestly rather than returning a plausible-looking wrong
++// address.
++//
++// The visible cost is symbolised native stack traces: crash dumps will carry
++// raw addresses. Dart-level stack traces are unaffected -- those come from the
++// snapshot's own metadata, not from here.
++
++namespace dart {
++
++void NativeSymbolResolver::Init() {}
++
++void NativeSymbolResolver::Cleanup() {}
++
++const char* NativeSymbolResolver::LookupSymbolName(uword pc, uword* start) {
++  return nullptr;
++}
++
++void NativeSymbolResolver::FreeSymbolName(const char* name) {
++  ASSERT(name == nullptr);
++}
++
++bool NativeSymbolResolver::LookupSharedObject(uword pc,
++                                              uword* dso_base,
++                                              const char** dso_name) {
++  return false;
++}
++
++void NativeSymbolResolver::AddSymbols(const char* dso_name,
++                                      void* buffer,
++                                      size_t size) {
++  UNIMPLEMENTED();
 +}
 +
 +}  // namespace dart
@@ -284,10 +466,10 @@ index 00000000..84f25ae5
 +#endif  // defined(DART_HOST_OS_VITA) && !defined(DART_USE_ABSL)
 diff --git a/runtime/vm/os_vita.cc b/runtime/vm/os_vita.cc
 new file mode 100644
-index 00000000..e47df242
+index 00000000..7346f8e2
 --- /dev/null
 +++ b/runtime/vm/os_vita.cc
-@@ -0,0 +1,221 @@
+@@ -0,0 +1,248 @@
 +// Copyright (c) 2012, the Dart project authors.  Please see the AUTHORS file
 +// for details. All rights reserved. Use of this source code is governed by a
 +// BSD-style license that can be found in the LICENSE file.
@@ -324,6 +506,33 @@ index 00000000..e47df242
 +//                             the documented "unsupported" value.
 +
 +namespace dart {
++
++// Verbatim from os_linux.cc: pure string parsing with no OS dependency, but
++// Dart declares it per-platform so every port carries its own copy.
++bool OS::ParseInitialInt64(const char* str, int64_t* value, char** end) {
++  ASSERT(str != nullptr && strlen(str) > 0 && value != nullptr &&
++         end != nullptr);
++  int32_t base = 10;
++  int i = 0;
++  if (str[0] == '-') {
++    i = 1;
++  } else if (str[0] == '+') {
++    i = 1;
++  }
++  if ((str[i] == '0') && (str[i + 1] == 'x' || str[i + 1] == 'X') &&
++      (str[i + 2] != '\0')) {
++    base = 16;
++  }
++  errno = 0;
++  if (base == 16) {
++    // Unsigned 64-bit hexadecimal integer literals are allowed but
++    // immediately interpreted as signed 64-bit integers.
++    *value = static_cast<int64_t>(strtoull(str, end, base));
++  } else {
++    *value = strtoll(str, end, base);
++  }
++  return (errno == 0) && (*end != str);
++}
 +
 +intptr_t OS::ProcessId() {
 +  return static_cast<intptr_t>(sceKernelGetProcessId());

@@ -23,3 +23,6 @@ eboot.bin
 
 # CMake build trees inside spikes
 spikes/**/build/
+
+# Link-check outputs
+spikes/p1-link-check/out/

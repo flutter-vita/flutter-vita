@@ -181,8 +181,28 @@ index 8cd05ff4..77a14c1e 100644
    } else if (target_os == "win") {
      defines += [ "DART_TARGET_OS_WINDOWS" ]
    } else if (target_os == "winuwp") {
+diff --git a/runtime/platform/platform_sources.gni b/runtime/platform/platform_sources.gni
+index 62007a99..de1d53a5 100644
+--- a/runtime/platform/platform_sources.gni
++++ b/runtime/platform/platform_sources.gni
+@@ -32,6 +32,7 @@ platform_sources = [
+   "syslog_android.cc",
+   "syslog_fuchsia.cc",
+   "syslog_linux.cc",
++  "syslog_vita.cc",
+   "syslog_macos.cc",
+   "syslog_win.cc",
+   "text_buffer.cc",
+@@ -47,6 +48,7 @@ platform_sources = [
+   "utils_android.cc",
+   "utils_fuchsia.cc",
+   "utils_linux.cc",
++  "utils_vita.cc",
+   "utils_macos.cc",
+   "utils_win.cc",
+ ]
 diff --git a/runtime/vm/vm_sources.gni b/runtime/vm/vm_sources.gni
-index 2241123e..ace10c0f 100644
+index 2241123e..0945c001 100644
 --- a/runtime/vm/vm_sources.gni
 +++ b/runtime/vm/vm_sources.gni
 @@ -72,6 +72,7 @@ vm_sources = [
@@ -193,7 +213,15 @@ index 2241123e..ace10c0f 100644
    "cpuinfo_win.cc",
    "dart.cc",
    "dart.h",
-@@ -213,6 +214,7 @@ vm_sources = [
+@@ -193,6 +194,7 @@ vm_sources = [
+   "native_message_handler.h",
+   "native_symbol.h",
+   "native_symbol_posix.cc",
++  "native_symbol_vita.cc",
+   "native_symbol_win.cc",
+   "object.cc",
+   "object.h",
+@@ -213,6 +215,7 @@ vm_sources = [
    "os_fuchsia.cc",
    "os_linux.cc",
    "os_macos.cc",
@@ -201,7 +229,7 @@ index 2241123e..ace10c0f 100644
    "os_thread.cc",
    "os_thread.h",
    "os_thread_absl.cc",
-@@ -225,6 +227,8 @@ vm_sources = [
+@@ -225,6 +228,8 @@ vm_sources = [
    "os_thread_linux.h",
    "os_thread_macos.cc",
    "os_thread_macos.h",
@@ -210,7 +238,7 @@ index 2241123e..ace10c0f 100644
    "os_thread_win.cc",
    "os_thread_win.h",
    "os_win.cc",
-@@ -330,6 +334,7 @@ vm_sources = [
+@@ -330,6 +335,7 @@ vm_sources = [
    "thread_interrupter_fuchsia.cc",
    "thread_interrupter_linux.cc",
    "thread_interrupter_macos.cc",
@@ -218,7 +246,7 @@ index 2241123e..ace10c0f 100644
    "thread_interrupter_win.cc",
    "thread_pool.cc",
    "thread_pool.h",
-@@ -368,6 +373,7 @@ vm_sources = [
+@@ -368,6 +374,7 @@ vm_sources = [
    "virtual_memory_compressed.h",
    "virtual_memory_fuchsia.cc",
    "virtual_memory_posix.cc",
