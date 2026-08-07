@@ -1,9 +1,9 @@
 diff --git a/runtime/platform/syslog_vita.cc b/runtime/platform/syslog_vita.cc
 new file mode 100644
-index 00000000..f01ef373
+index 00000000..076ded20
 --- /dev/null
 +++ b/runtime/platform/syslog_vita.cc
-@@ -0,0 +1,78 @@
+@@ -0,0 +1,97 @@
 +// Copyright (c) 2012, the Dart project authors.  Please see the AUTHORS file
 +// for details. All rights reserved. Use of this source code is governed by a
 +// BSD-style license that can be found in the LICENSE file.
@@ -56,6 +56,25 @@ index 00000000..f01ef373
 +    sceIoWrite(g_dart_log, buf, len);
 +    sceIoSyncByFd(g_dart_log, 0);
 +  }
++}
++
++// Tracing for the platform layer itself.
++//
++// Dart's own diagnostics only appear once the VM is far enough along to call
++// Syslog. M1 on real hardware faulted inside Dart_Initialize before that ever
++// happened, leaving no dart.log at all -- so the port needs a channel that
++// works from the very first platform call, with no VM state behind it.
++//
++// Writes straight to sceIo and syncs every line. Slow and deliberately dumb:
++// there is no debugger on this device, and a trace that survives a hard fault
++// is worth more than a fast one that does not.
++void VitaTrace(const char* format, ...) {
++  char buf[512];
++  va_list ap;
++  va_start(ap, format);
++  const int len = vsnprintf(buf, sizeof(buf), format, ap);
++  va_end(ap);
++  DartLogWrite(buf, len < (int)sizeof(buf) ? len : (int)sizeof(buf) - 1);
 +}
 +
 +static void DartLogVPrint(const char* format, va_list args) {
@@ -154,10 +173,10 @@ index 00000000..c770316c
 +#endif  // defined(DART_HOST_OS_VITA)
 diff --git a/runtime/vm/cpuinfo_vita.cc b/runtime/vm/cpuinfo_vita.cc
 new file mode 100644
-index 00000000..95617c90
+index 00000000..a5b2c794
 --- /dev/null
 +++ b/runtime/vm/cpuinfo_vita.cc
-@@ -0,0 +1,69 @@
+@@ -0,0 +1,72 @@
 +// Copyright (c) 2012, the Dart project authors.  Please see the AUTHORS file
 +// for details. All rights reserved. Use of this source code is governed by a
 +// BSD-style license that can be found in the LICENSE file.
@@ -176,10 +195,13 @@ index 00000000..95617c90
 +
 +namespace dart {
 +
++extern void VitaTrace(const char* format, ...);
++
 +CpuInfoMethod CpuInfo::method_ = kCpuInfoNone;
 +const char* CpuInfo::fields_[kCpuInfoMax] = {};
 +
 +void CpuInfo::Init() {
++  VitaTrace("[vita] CpuInfo::Init\n");
 +  method_ = kCpuInfoNone;
 +  fields_[kCpuInfoProcessor] = "Processor";
 +  fields_[kCpuInfoModel] = "model name";
@@ -299,10 +321,10 @@ index 00000000..aebcdab2
 +#endif  // defined(DART_HOST_OS_VITA)
 diff --git a/runtime/vm/os_thread_vita.cc b/runtime/vm/os_thread_vita.cc
 new file mode 100644
-index 00000000..84f25ae5
+index 00000000..9b464ca9
 --- /dev/null
 +++ b/runtime/vm/os_thread_vita.cc
-@@ -0,0 +1,203 @@
+@@ -0,0 +1,208 @@
 +// Copyright (c) 2012, the Dart project authors.  Please see the AUTHORS file
 +// for details. All rights reserved. Use of this source code is governed by a
 +// BSD-style license that can be found in the LICENSE file.
@@ -337,6 +359,8 @@ index 00000000..84f25ae5
 +// sampling profiler is stubbed out in thread_interrupter_vita.cc.
 +
 +namespace dart {
++
++extern void VitaTrace(const char* format, ...);
 +
 +DEFINE_FLAG(int,
 +            worker_thread_priority,
@@ -403,8 +427,11 @@ index 00000000..84f25ae5
 +
 +  ThreadStartData* data = new ThreadStartData(name, function, parameter);
 +
++  VitaTrace("[vita] pthread_create '%s' stack=%ld\n", name,
++            static_cast<long>(OSThread::GetMaxStackSize()));
 +  pthread_t tid;
 +  result = pthread_create(&tid, &attr, ThreadStart, data);
++  VitaTrace("[vita]   -> %d\n", result);
 +  RETURN_ON_PTHREAD_FAILURE(result);
 +
 +  result = pthread_attr_destroy(&attr);
@@ -508,10 +535,10 @@ index 00000000..84f25ae5
 +#endif  // defined(DART_HOST_OS_VITA) && !defined(DART_USE_ABSL)
 diff --git a/runtime/vm/os_vita.cc b/runtime/vm/os_vita.cc
 new file mode 100644
-index 00000000..a7bf359f
+index 00000000..ab89e460
 --- /dev/null
 +++ b/runtime/vm/os_vita.cc
-@@ -0,0 +1,270 @@
+@@ -0,0 +1,273 @@
 +// Copyright (c) 2012, the Dart project authors.  Please see the AUTHORS file
 +// for details. All rights reserved. Use of this source code is governed by a
 +// BSD-style license that can be found in the LICENSE file.
@@ -549,6 +576,8 @@ index 00000000..a7bf359f
 +//                             the documented "unsupported" value.
 +
 +namespace dart {
++
++extern void VitaTrace(const char* format, ...);
 +
 +// Verbatim from os_linux.cc: pure string parsing with no OS dependency, but
 +// Dart declares it per-platform so every port carries its own copy.
@@ -721,6 +750,7 @@ index 00000000..a7bf359f
 +DECLARE_FLAG(bool, write_protect_vm_isolate);
 +
 +void OS::Init() {
++  VitaTrace("[vita] OS::Init\n");
 +  // The Vita fixes page protection at allocation via the memblock type and has
 +  // no runtime equivalent of mprotect, so anything that toggles protection has
 +  // to be switched off rather than emulated.
@@ -836,10 +866,10 @@ index 00000000..682a0d8a
 +#endif  // defined(DART_HOST_OS_VITA)
 diff --git a/runtime/vm/virtual_memory_vita.cc b/runtime/vm/virtual_memory_vita.cc
 new file mode 100644
-index 00000000..d8a55f20
+index 00000000..cd04abb8
 --- /dev/null
 +++ b/runtime/vm/virtual_memory_vita.cc
-@@ -0,0 +1,174 @@
+@@ -0,0 +1,180 @@
 +// Copyright (c) 2012, the Dart project authors.  Please see the AUTHORS file
 +// for details. All rights reserved. Use of this source code is governed by a
 +// BSD-style license that can be found in the LICENSE file.
@@ -882,6 +912,8 @@ index 00000000..d8a55f20
 +
 +namespace dart {
 +
++extern void VitaTrace(const char* format, ...);
++
 +// Vita memory blocks are allocated in 4 KiB pages.
 +static constexpr intptr_t kVitaPageSize = 4096;
 +
@@ -892,6 +924,7 @@ index 00000000..d8a55f20
 +}
 +
 +void VirtualMemory::Init() {
++  VitaTrace("[vita] VirtualMemory::Init\n");
 +  if (page_size_ == 0) {
 +    page_size_ = CalculatePageSize();
 +  }
@@ -926,9 +959,12 @@ index 00000000..d8a55f20
 +  opt.attr = SCE_KERNEL_ALLOC_MEMBLOCK_ATTR_HAS_ALIGNMENT;
 +  opt.alignment = static_cast<SceSize>(alignment);
 +
++  VitaTrace("[vita] alloc '%s' size=%ld align=%ld\n", name,
++            static_cast<long>(size), static_cast<long>(alignment));
 +  const SceUID uid =
 +      sceKernelAllocMemBlock(name, SCE_KERNEL_MEMBLOCK_TYPE_USER_MAIN_RW,
 +                             static_cast<SceSize>(size), &opt);
++  VitaTrace("[vita]   -> uid 0x%08X\n", uid);
 +  if (uid < 0) {
 +    // Loud on failure. Returning nullptr silently would surface far away as a
 +    // crash inside whichever allocation happened to need it, and there is no
