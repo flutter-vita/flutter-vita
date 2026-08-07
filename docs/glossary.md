@@ -66,3 +66,6 @@ project-invented and should be used consistently in code and PRs.
 | **M1–M4** | The four milestone gates. M1 = pure-Dart AOT hello world on hardware. M2 = engine links clean. M3 = counter app on hardware. M4 = third party can reproduce the build. |
 | **Ground truth** | Real hardware. Any claim about behaviour or performance sourced from Vita3K must say so explicitly. |
 | **Vertical slice** | A thin end-to-end path through every layer, built before any layer is complete. M1 is the canonical one. |
+| **Spike** | A time-boxed throwaway experiment run to answer one specific technical question. You are buying information, not building product; the code is expected to be discarded. From XP. |
+| **Harness** | The scaffolding around an experiment that runs it and reports results, as in "test harness". |
+| **Spike harness** | Here specifically: the single C program packaged as a `.vpk` that answers [Track A](phase-0.5-feasibility.md#sequencing) — VM-domain execution, allocation limits, and raster timings — and prints the numbers to a log. Its *code* is disposable, but the build script, packaging, deploy, and logging around it are not: they become the permanent inner loop, which is why it doubles as the Phase 0 hello-world. |

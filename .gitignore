@@ -20,3 +20,6 @@ eboot.bin
 *.vpk
 
 .DS_Store
+
+# CMake build trees inside spikes
+spikes/**/build/

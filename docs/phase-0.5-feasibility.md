@@ -283,16 +283,32 @@ Every ARM ELF in play carries the same `e_flags`:
 
 `EF_ARM_ABI_FLOAT_HARD` is `0x400`; EABI version 5.
 
-And VitaSDK's compiler, from `vitasdk/buildscripts/CMakeLists.txt`:
+And VitaSDK's compiler — confirmed twice, first from
+`vitasdk/buildscripts/CMakeLists.txt` and then from the **actually installed
+toolchain** (`arm-vita-eabi-gcc -v`, GCC 15.2.0):
 
 ```
 --with-arch=armv7-a  --with-tune=cortex-a9  --with-fpu=neon
 --with-float=hard    --with-mode=thumb      --disable-multilib
 ```
 
-**Hard float on both sides. They match.** Exit criterion 5 is closed, and the
-"silently passes garbage doubles across the Dart↔C boundary" failure mode is off
-the table.
+Then verified end-to-end by compiling and linking a function that passes and
+returns doubles:
+
+```
+VitaSDK linked executable  e_flags = 0x05000400  -> HARD float
+Dart/engine snapshots      e_flags = 0x05000400  -> HARD float
+Tag_FP_arch: VFPv3    Tag_ABI_VFP_args: VFP registers
+```
+
+**Hard float on both sides, byte-identical `e_flags`.** Exit criterion 5 is
+closed on real evidence rather than inference, and the "silently passes garbage
+doubles across the Dart↔C boundary" failure mode is off the table.
+
+> Method note: the float-ABI bit is set by the **linker** on final images, not
+> on relocatable `.o` files — object files carry the information in
+> `.ARM.attributes` (`Tag_ABI_VFP_args`) instead. Checking a `.o`'s `e_flags`
+> reports "unspecified" and looks alarmingly like a mismatch. Link first.
 
 Two things worth carrying forward:
 

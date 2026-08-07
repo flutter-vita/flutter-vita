@@ -8,6 +8,35 @@ repo rather than in someone's head.
 **Install VitaSDK natively on macOS via `vdpm`.** It is supported, and it is all
 Track A needs. Do not reach for Docker yet.
 
+### Installed setup on this machine
+
+```bash
+brew install cmake
+git clone https://github.com/vitasdk/vdpm ~/vdpm
+cd ~/vdpm
+export VITASDK="$HOME/vitasdk"
+export PATH="$VITASDK/bin:$PATH"
+./bootstrap-vitasdk.sh
+./install-all.sh
+```
+
+Add the two `export` lines to your shell profile.
+
+Three things worth knowing, learned the hard way:
+
+- **Install to `$HOME/vitasdk`, not the default `/usr/local/vitasdk`.**
+  `bootstrap-vitasdk.sh` honours `${VITASDK:-/usr/local/vitasdk}`, and a home
+  install needs no `sudo` at any point.
+- **CMake 4 breaks some library ports.** CMake 4.x hard-errors on projects
+  declaring `cmake_minimum_required(VERSION <3.5)`, and several VitaSDK ports
+  still do. Export `CMAKE_POLICY_VERSION_MINIMUM=3.5` before `install-all.sh`.
+- **The toolchain brings the ELF tools macOS lacks.** `arm-vita-eabi-readelf`,
+  `-objdump`, `-nm`, and `-size` all work on any ARM ELF, including Dart's AOT
+  snapshots. Before this, section sizes had to be pulled with `objdump` and
+  hand-parsed in Python; use the cross tools now.
+
+Toolchain versions installed: GCC 15.2.0, target `arm-vita-eabi`.
+
 Docker does earn its place, but for three separate purposes that are easy to
 conflate:
 
