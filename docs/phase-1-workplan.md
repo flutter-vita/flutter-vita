@@ -102,16 +102,58 @@ Two things that reduce the difficulty:
 
 - **Compressed pointers are off on 32-bit ARM**, so the huge aligned reservation
   that `is_compressed` normally forces does not apply.
-- **`is_executable` may never be needed.** Under [ADR-0005](adr/0005-aot-snapshot-delivery.md)
-  the only executable memory is the AOT snapshot, and that goes through the VM
-  domain, not `VirtualMemory`. Worth confirming, because it removes
-  `DuplicateRX` / `ShouldDualMapExecutablePages` from scope entirely.
+- **`is_executable` is not needed — confirmed 2026-08-07.** See below.
+
+### ✅ Step 1 resolved: no executable allocation required
+
+The question was whether `virtual_memory_vita.cc` must ever hand back
+executable memory. **It does not.** Four independent lines of evidence at the
+pinned commit:
+
+1. **Fresh executable pages come only from the heap's code space.**
+   `Page::Allocate` sets `kExecutable` from an `is_exec` flag that flows from
+   `PageSpace` allocations into code space. Under AOT, code lives in the
+   snapshot image, not in freshly allocated heap pages.
+2. **`ForImagePage` allocates nothing at all**, and it lives in the shared
+   `virtual_memory.cc`, not the platform file. Its comment states the
+   architecture outright:
+   > *"Memory for precompilated instructions was allocated by the embedder, so
+   > create a VirtualMemory without allocating."*
+
+   That is precisely [ADR-0005](adr/0005-aot-snapshot-delivery.md): the embedder
+   allocates the VM-domain block, writes the snapshot, flips it executable, and
+   hands over the pointer. `ForImagePage` wraps it. **The two designs already
+   agree — Dart expects exactly what we intend to do.**
+3. **`DuplicateRX` is Mac-only** — its body is Mach `vm_remap`, present because
+   iOS forbids allocating new executable memory.
+4. **`ShouldDualMapExecutablePages` is gated on `DART_ENABLE_RX_WORKAROUNDS`**,
+   which is iOS-only, and `ffi_callback_metadata.cc` sets `is_executable = false`
+   on every non-macOS host.
+
+**Consequence:** `virtual_memory_vita.cc` can `ASSERT(!is_executable)` and
+ignore the parameter. `DuplicateRX`, `ShouldDualMapExecutablePages` and
+`OffsetToExecutableAlias` all leave scope. The file's remaining problem is
+purely the Reserve/Commit semantics above — real, but a much smaller and better
+understood problem than "implement W^X without `mprotect`".
+
+### The one question this opened
+
+`VirtualMemory::Protect` is still called from `code_patcher.cc` and
+`heap/freelist.cc`. In the freelist it is guarded by an `is_protected` member
+that tracks the code space, which AOT should never populate — but that is
+inference, not yet verified.
+
+**This matters because Vita fixes page protection at allocation time via the
+memblock type; there is no runtime protection change.** If AOT genuinely never
+protects, `Protect()` becomes a no-op and the file is straightforward. If it
+does, we need a strategy. Worth resolving before writing the file.
 
 ## Ordered steps
 
-1. **Confirm the `is_executable` assumption.** If `VirtualMemory` never needs
-   executable pages under AOT, the hardest sub-problem disappears. Cheap to
-   check, and it reshapes step 3.
+1. ~~**Confirm the `is_executable` assumption.**~~ ✅ **Done — no executable
+   allocation is required.** See above. Superseded by a narrower question:
+   confirm that AOT never sets the freelist's `is_protected`, so
+   `VirtualMemory::Protect` can be a no-op.
 2. **`cpuinfo_vita.cc` and `thread_interrupter_vita.cc`** — stubs. Gets the file
    set complete so the build can be attempted early.
 3. **`virtual_memory_vita.cc`** — decide the Reserve/Commit strategy against the
@@ -130,7 +172,9 @@ Two things that reduce the difficulty:
 The scope above is derived. These are not, and they are where the risk actually
 sits:
 
-- **Does Dart tolerate a no-op `Protect()`?** Unknown until tried.
+- **Does Dart tolerate a no-op `Protect()`?** Narrowed but not closed — the
+  remaining callers are `code_patcher.cc` and the code-space freelist. Vita
+  fixes protection at allocation, so this is the next thing to resolve.
 - **Does the reserve-as-full-allocation strategy fit real Dart heap behaviour**,
   or does the heap reserve far more than it commits?
 - **Thread count and stack commitment.** How many OS threads Dart plus the
