@@ -4,7 +4,7 @@ Ordered patch series against the pinned Dart SDK commit in
 [VERSIONS.md](../../VERSIONS.md) (`d684a576`, the one Flutter 3.44.8 ships).
 
 Per the project's working agreement: **never edit the vendored tree without
-producing a patch file.** The tree at `third_party/dart-sdk` is gitignored and
+producing a patch file.** The tree at `third_party/sdk` is gitignored and
 disposable; these patches are the real artifact.
 
 | # | Patch | What it does |
@@ -19,32 +19,38 @@ All three are verified to compile with
 ## Applying
 
 ```bash
-cd third_party/dart-sdk
+cd third_party/sdk
 git apply ../../patches/dart-sdk/000*.patch
 ```
 
 ## Regenerating after edits
 
 ```bash
-cd third_party/dart-sdk
+cd third_party/sdk
 git add -N .                       # so new files appear in the diff
 git diff > ../../patches/dart-sdk/0001-add-vita-host-and-target-os.patch
 ```
 
 ## Checking out the tree from scratch
 
+**Let `gclient` own the whole checkout.** `third_party/.gclient` pins the
+revision and `managed: True`, so one command does everything:
+
 ```bash
-mkdir -p third_party/dart-sdk && cd third_party/dart-sdk
-git init -q
-git remote add origin https://dart.googlesource.com/sdk.git
-git fetch --depth 1 origin d684a576a6aa954ae107a03b2b4e1d61c3bebe93
-git checkout FETCH_HEAD
+cd third_party
+PATH="$HOME/depot_tools:$PATH" gclient sync --nohooks --no-history --shallow
+cd sdk && git apply ../../patches/dart-sdk/000*.patch
 ```
 
-A shallow fetch is ~486 MB. Note this is **not** a `gclient sync` — no DEPS are
-fetched, so this tree is enough to read, edit and *compile* runtime sources
-against, but not yet to run the full GN build. See
-[the Phase 1 work plan](../../docs/phase-1-workplan.md).
+~7.8 GB and slow, but deterministic. It brings `buildtools/gn`, `buildtools/ninja`
+and clang, which a plain `git clone` does not — those come from DEPS.
+
+> **Do not hand-assemble this checkout, and never `rsync` into it.** DEPS
+> sub-repos are recorded with gitlinks that a file copy silently corrupts; the
+> failures surface later as *"not a git repository"* on a different directory
+> each sync, and are not worth repairing piecemeal. This was learned the hard
+> way: the tree was rebuilt from scratch, and the patch series restored the
+> entire port in one command. That is exactly what the patch discipline is for.
 
 ---
 

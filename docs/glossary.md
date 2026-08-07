@@ -12,6 +12,7 @@ project-invented and should be used consistently in code and PRs.
 | **VitaSDK** | The community toolchain for PS Vita homebrew. Target triple `arm-vita-eabi`, C library is newlib. Ships headers and stub libraries for Sony's `sce*` APIs. |
 | **HENkaku / h-encore** | Homebrew enablers for retail Vita firmware. They are what makes an unsigned title runnable at all. Assumed present on any target device. |
 | **taiHEN** | The plugin framework HENkaku installs. Kernel plugins run through it. Explicitly *not* a dependency of this project ([ADR-0001](adr/0001-aot-only-no-jit.md)). |
+| **ELF** | Executable and Linkable Format — the standard Unix binary container. Header (`e_machine`, `e_flags` — how the float ABI was verified), sections (`.text`, `.rodata` — the source of every size number here, plus `.ARM.attributes`), and segments (`PT_NOTE`, where `NT_GNU_BUILD_ID` lives). The Vita's SELF is an ELF variant, which is why the whole build pipeline composes: `.elf` → `.velf` → `eboot.bin` → `.vpk` is a chain of transformations on one format, not conversions between formats. |
 | **SELF** | Signed ELF. The executable format the Vita loads. Produced from a plain ELF by `vita-make-fself`. Homebrew uses a "fake" self signature. |
 | **eboot.bin** | The main SELF of a title, at `app0:/eboot.bin`. Our single statically linked binary ([ADR-0004](adr/0004-static-single-binary.md)). |
 | **suprx** | A Vita shared module (dynamic library equivalent). Avoided by ADR-0004. |

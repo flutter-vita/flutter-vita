@@ -13,7 +13,7 @@ set -euo pipefail
 
 cd "$(dirname "$0")"
 REPO=$(cd ../.. && pwd)
-SDK="$REPO/third_party/dart-sdk"
+SDK="$REPO/third_party/sdk"
 
 : "${VITASDK:=$HOME/vitasdk}"
 export PATH="$VITASDK/bin:$PATH"
