@@ -28,3 +28,4 @@ spikes/**/build/
 spikes/p1-link-check/out/
 spikes/m1-snapshot/out/
 spikes/m1-vpk/build/
+spikes/m1-vpk/out/
