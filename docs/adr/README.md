@@ -14,7 +14,7 @@ ADR-0001 through ADR-0004 are back-filled from §1 of `Flutter Vita Plan.md`
 | [0002](0002-skia-not-impeller.md) | Skia renderer on a frozen engine, not Impeller | Accepted |
 | [0003](0003-software-rendering-first.md) | Software raster first, vitaGL/GLES2 second | Accepted |
 | [0004](0004-static-single-binary.md) | Static linking into a single ELF | Accepted |
-| [0005](0005-aot-snapshot-delivery.md) | How the Dart AOT snapshot gets into the process | Proposed — blocked on spike |
+| [0005](0005-aot-snapshot-delivery.md) | How the Dart AOT snapshot gets into the process | **Accepted — Option B**, proven on hardware |
 | [0006](0006-performance-bar-set-from-measurement.md) | Performance bar set from measurement, not asserted | Accepted |
 | [0007](0007-enable-partial-repaint-in-software-path.md) | Patch the engine to enable partial repaint in the software path | **Accepted** — measurement makes it load-bearing |
 

@@ -12,8 +12,9 @@
 
 ## Where the project stands
 
-**Phase 0.5**, the paper-feasibility gate. Track B (host-only) is complete;
-Track A (hardware) has not started and holds every remaining blocker.
+**Phase 0.5 is complete and the verdict is go.** Both tracks are done; nothing
+measured says stop. Five of six exit criteria are closed — the sixth, the thread
+budget, is Phase 1's central problem rather than a feasibility gate.
 
 Measured so far, all against the pinned Flutter 3.44.8:
 
@@ -24,9 +25,13 @@ Measured so far, all against the pinned Flutter 3.44.8:
 | Pure-Dart AOT snapshot | 352 KiB instructions + 262 KiB data |
 | `icudtl.dat` | 10 MB, reducible |
 | Float ABI | hard float on both sides — match |
+| VM domain execution | works, ARM and Thumb, no kernel plugin |
+| Largest contiguous main RAM | 188 MiB |
+| Present blit, 960×544 @ 444 MHz | 8.06 ms — the hard floor per frame |
 
-**Memory is not the binding constraint.** CPU throughput for software
-rasterisation is, and it is still unmeasured.
+**Memory is not the binding constraint** — it is slack by an order of magnitude.
+CPU throughput is: 60 fps at native 960×544 is arithmetically impossible, 30 fps
+is marginal, and 720×408 upscaled reaches 68 fps for the same work.
 
 ## Reading order for someone new
 

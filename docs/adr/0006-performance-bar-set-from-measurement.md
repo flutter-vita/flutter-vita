@@ -36,23 +36,40 @@ Until then the honest v1 bar is the goal statement's: *runs, is usable, is
 laggy.* That is a falsifiable bar — "a user can operate the counter app without
 input feeling dropped" — and it does not pretend to precision we have not earned.
 
-## The measurement arrived — 2026-08-07
+## The measurement arrived — Track A run 3, 2026-08-07
 
-Track A run 1, real hardware, 960×544 at 444 MHz: present blit 8.04 ms
-(bandwidth-bound), naive full-screen alpha blend 15.20 ms (compute-bound).
+Trustworthy numbers, with compiler barriers in place. Run 1's figures were
+optimistic — `blend` was partially elided by `-O2` too, not just `fill`, so run
+1 understated it by ~70%. These supersede them.
+
+**444 MHz, ms per frame:**
+
+| | 960×544 | 720×408 |
+|---|---|---|
+| present blit (`memcpy`) | 8.06 | 3.07 |
+| solid fill | 1.74 | 0.94 |
+| naive alpha blend | 25.77 | 11.52 |
+| **blit + one full blend** | **33.83 → 29.6 fps** | **14.59 → 68.5 fps** |
 
 **The bar this sets:**
 
 | target | verdict |
 |---|---|
-| 60 fps, full-screen repaint | **impossible** — the 8 ms blit is half the 16.7 ms budget before Skia runs |
-| 30 fps, full-screen repaint | **plausible** — 8 ms blit leaves ~25 ms for raster |
-| 60 fps with damage-limited repaint | **plausible** for small damage — the counter-app case |
+| 60 fps, full-screen 960×544 | **impossible** — the 8 ms blit alone is 48% of the 16.7 ms budget |
+| 30 fps, full-screen 960×544 | **marginal, not comfortable** — one blend-equivalent pass lands at 29.6 fps with zero margin |
+| 60 fps, 720×408 upscaled | **plausible** — 68.5 fps for the same work |
+| 60 fps with damage-limited repaint | **plausible** — the counter-app case |
 
-So the honest v1 bar is: **30 fps floor for full-screen work; 60 fps only where
-damage is small.** That is falsifiable, it is derived from hardware rather than
-asserted, and it makes [ADR-0007](0007-enable-partial-repaint-in-software-path.md)
-load-bearing rather than optional.
+So the honest v1 bar is: **30 fps floor at native resolution, 60 fps only at
+reduced resolution or where damage is small.** Derived from hardware, not
+asserted. It makes [ADR-0007](0007-enable-partial-repaint-in-software-path.md)
+load-bearing rather than optional, and it promotes the reduced-resolution
+fallback in [ADR-0003](0003-software-rendering-first.md) from contingency to
+likely default.
+
+Caveat in our favour: the naive C blend is a pessimistic stand-in. Skia's raster
+pipeline is NEON-optimised and will beat it on equivalent work. The **8 ms blit
+is the hard floor**; the raster figure is an upper bound on that class of work.
 
 The Definition of Done's "counter app: 60 fps" is reachable **only** with
 partial repaint. Without it the same app is a 30 fps proposition.

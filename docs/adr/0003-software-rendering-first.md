@@ -36,6 +36,25 @@ wholesale.
 - The fallback of rasterising at reduced resolution (e.g. 720×408) and upscaling
   via GXM is available and cheap, because the blit path already exists.
 
+## Update 2026-08-07: the reduced-resolution fallback is now the likely default
+
+The plan listed "render at 720×408 and scale via GXM" as a contingency. Hardware
+measurement makes it the front-runner. At 444 MHz, blit plus one full-screen
+blend costs **33.83 ms (29.6 fps) at 960×544** but only **14.59 ms (68.5 fps) at
+720×408**.
+
+That is a 2.3× improvement for 1.78× fewer pixels — superlinear, and not fully
+explained; likely DRAM page or TLB locality. Whatever the cause, it is the
+difference between "marginal at 30 fps" and "comfortable at 60 fps", and the
+GXM upscale is free because the blit path exists regardless.
+
+Also measured: the blit is **bandwidth-bound** (8.83 ms at 333 MHz vs 8.06 ms at
+444 MHz — a 33% clock increase buys 8%) while rasterisation is **compute-bound**
+(blend 30.77 → 25.77 ms, near-linear). Two consequences: overclocking via
+PSVshell helps rasterisation and does almost nothing for the blit, and at
+~495 MB/s against 3.2 GB/s theoretical the blit is achieving ~15% of the memory
+system — **a NEON-optimised blit may be the cheapest large win in the embedder.**
+
 ## Revisit trigger
 
 If the M3 baseline measurement shows the software path cannot reach the

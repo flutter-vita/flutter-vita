@@ -399,6 +399,72 @@ Both bugs shipped because the harness was written to *report* rather than to
 *check itself*. A benchmark that can print a number faster than the memory bus
 allows should say so. Sanity bounds are now part of what a spike must include.
 
+### ✅ Track A run 3 — 2026-08-07: Phase 0.5 closed
+
+**VM domain execution works.**
+
+```
+sceKernelOpenVMDomain      0x00000000     <- writable state
+wrote code with domain open   ok
+sceKernelCloseVMDomain     0x00000000     <- executable state
+sceKernelSyncVMDomain      0x00000000
+call ARM   code -> 42 PASS
+call Thumb code -> 37 PASS
+```
+
+[ADR-0005](adr/0005-aot-snapshot-delivery.md) is **decided: Option B.** The
+snapshot ships as data in `app0:` and loads into a VM block at startup; third
+parties never relink the engine.
+
+**VM block sizing, measured:** 1 MiB minimum (256 KiB and 512 KiB both rejected),
+16 MiB maximum. But the ceiling is not dependable — run 1 got 16.00 MiB on a
+clean process, run 3 got only **8.00 MiB** after two earlier 1 MiB
+allocate/free cycles. An exact halving, consistent with the VM region
+fragmenting without coalescing. **Allocate the snapshot block once, early.**
+
+#### Corrected raster numbers (these supersede run 1)
+
+Run 1 understated `blend` by ~70% — `-O2` was eliding it across reps, not just
+`fill`. My note last round that "memcpy and blend were unaffected" was wrong;
+only `memcpy` was. With barriers in place, at 444 MHz:
+
+| | 960×544 | 720×408 |
+|---|---|---|
+| present blit (`memcpy`) | 8.06 ms | 3.07 ms |
+| solid fill | 1.74 ms | 0.94 ms |
+| naive alpha blend | 25.77 ms | 11.52 ms |
+| **blit + one full blend** | **33.83 ms → 29.6 fps** | **14.59 ms → 68.5 fps** |
+
+Three conclusions:
+
+1. **60 fps at native resolution is dead.** The 8 ms blit alone is 48% of a
+   16.7 ms budget. 30 fps is *marginal, not comfortable* — one blend-equivalent
+   pass lands at 29.6 fps with no margin.
+2. **720×408 changes the verdict entirely** — 68.5 fps for identical work. The
+   reduced-resolution fallback moves from contingency to likely default
+   ([ADR-0003](adr/0003-software-rendering-first.md)).
+3. **Blit is bandwidth-bound, raster is compute-bound.** 333→444 MHz buys 8% on
+   the blit and ~19% on blend. Overclocking is not a general answer, and at ~15%
+   of theoretical bandwidth a NEON blit is likely the cheapest large win.
+
+The naive C blend is a pessimistic stand-in — Skia is NEON-optimised and will
+beat it. The **8 ms blit is the hard floor**; the blend figure bounds that class
+of work from above.
+
+#### Phase 0.5 exit status
+
+| criterion | |
+|---|---|
+| 1. VM domain spike | ✅ works, ARM and Thumb |
+| 2. Raster throughput | ✅ measured, bar set in [ADR-0006](adr/0006-performance-bar-set-from-measurement.md) |
+| 3. Real size numbers | ✅ engine 12.41 MiB, counter app 2.11 MiB |
+| 4. Memory budget | ✅ 188 MiB contiguous — single-region Dart heap is fine |
+| 5. Float ABI | ✅ hard float both sides, proven by compilation |
+| 6. Thread budget | ⬜ **still open** — the one thing Phase 0.5 did not answer |
+
+**The verdict is go.** Nothing measured says stop. The remaining unknown is
+threading, which is Phase 1's central problem rather than a feasibility gate.
+
 ### Why this order
 
 Track B needs no hardware, so nothing blocks on shipping, borrowing, or setting

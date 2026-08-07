@@ -1,7 +1,51 @@
 # ADR-0005: How the Dart AOT snapshot gets into the process
 
-**Status:** Proposed — blocked on the Phase 0.5 VM-domain spike
-**Date:** 2026-08-06
+**Status:** **Accepted — Option B.** Proven on hardware 2026-08-07.
+**Date:** 2026-08-06, decided 2026-08-07
+
+## Decision: Option B, load the snapshot at runtime
+
+Track A run 3 on a physical Vita:
+
+```
+sceKernelOpenVMDomain      0x00000000
+wrote code with domain open   ok
+sceKernelCloseVMDomain     0x00000000
+sceKernelSyncVMDomain      0x00000000
+call ARM   code -> 42 (expected 42) PASS
+call Thumb code -> 37 (expected 37) PASS
+```
+
+**Executable memory works from ordinary homebrew, in both ARM and Thumb state,
+with no kernel plugin.** Dart's AOT backend emits ARM, so the ARM result is the
+one that matters; Thumb passing as well means embedder-side generated thunks
+would work too.
+
+Consequences, now settled:
+
+- The AOT snapshot ships as a **data file in `app0:`**, loaded into a VM-domain
+  block at startup. The engine binary is app-independent.
+- **Third parties never relink the engine.** We ship a runtime, not a build
+  system. Milestone M4 gets dramatically cheaper.
+- `flutter_vita_tool build` becomes: `flutter build bundle` → `gen_snapshot` →
+  package. No engine link in the inner loop.
+
+### Operational constraints the measurement imposes
+
+- **VM blocks have a 1 MiB minimum.** 4 KiB, 16 KiB, 64 KiB, 256 KiB and 512 KiB
+  are all rejected with `SCE_KERNEL_ERROR_ILLEGAL_MEMBLOCK_SIZE`. Documented
+  nowhere. Round the snapshot allocation up to a 1 MiB boundary.
+- **The 16 MiB ceiling is not reliably available.** Run 1 measured the largest
+  obtainable block at exactly 16.00 MiB on a clean process. Run 3, after two
+  1 MiB allocate/free cycles earlier in the same process, could only get
+  **8.00 MiB** — an exact halving that looks like the VM region fragmenting
+  without coalescing.
+  **Therefore: allocate the snapshot block once, early, before anything else
+  touches the VM domain.** Treat 8 MiB as the dependable budget and 16 MiB as a
+  best case. A counter app needs 2.11 MiB, so this is comfortable today, but the
+  build tool should warn well below 16 MiB rather than at it.
+- The `Open`/`Close` semantics are **W^X and inverted from the header comment** —
+  see [ADR-0001](0001-aot-only-no-jit.md). Open to write, Close to execute.
 
 ## Context
 
