@@ -23,6 +23,7 @@ project-invented and should be used consistently in code and PRs.
 | **ux0:** | The main writable storage mount (memory card / internal). Per-app writable data goes to `ux0:data/<app>/`. |
 | **VitaShell** | The de facto homebrew file manager. Also hosts the FTP server used for deployment. |
 | **VitaDB** | The community homebrew distribution database. Publishing there is the v1 distribution channel. |
+| **QEMU** | A CPU emulator: runs armv7 binaries on an x64 or arm64 host. **It cannot run our Vita build** — it emulates the CPU, not the Vita OS, and knows nothing of `sce*` calls. What it can run is a `linux-arm` Dart build, which makes it useful for architecture-level bugs (GC on 32-bit ARM, armv7 codegen) with a real debugger attached and no hardware deploy. Useless for anything touching `sce*`, memory budgets, or timing — and its performance numbers are meaningless, the same trap as Vita3K. Upstream documents the approach in `runtime/docs/qemu.md`. |
 | **Vita3K** | Open-source Vita emulator. Fast iteration target, but compatibility is imperfect — **advisory only**, real hardware is ground truth. |
 | **PSVshell** | Homebrew overclock/monitoring plugin. Relevant because the 333–500 MHz CPU range is user-controllable, so "the" clock speed is not a single number. |
 | **Extended memory mode** | A `param.sfo` flag letting a title claim substantially more than the default user memory budget. The difference between ~200 MB and ~330–400 MB usable. |

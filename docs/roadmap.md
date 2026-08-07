@@ -88,9 +88,13 @@ Vita:
   out **easier than feared**: VitaSDK ships real pthreads, and most of the
   apparent POSIX gaps are profiler plumbing that is already out of scope. The
   residual risk concentrates in one file, `virtual_memory_vita.cc`.
-- **Phase 2** — nobody has run a foreign toolchain through the Flutter engine's
-  GN build. Whether it even works on a macOS host is unknown; that is one reason
-  Docker exists in the plan.
+- **Phase 2** — downgraded from High to moderate after reading the build config;
+  see [the GN notes](phase-2-gn-notes.md). GN is designed for foreign
+  toolchains: `gcc_toolchain.gni` already exists, `arm_toolchain_prefix` is
+  already a declared arg, and the `current_os` dispatch is the same mechanical
+  shape as the `#if` chains patch 0002 extended. What stays genuinely unknown is
+  whether it works from a **macOS host** to an `arm-vita-eabi` target — which is
+  why Docker is in the plan.
 
 Everything measured so far has come in *at or better than* estimate. That is not
 evidence these two will.
