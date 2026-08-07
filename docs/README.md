@@ -2,6 +2,7 @@
 
 | Document | What it is |
 |---|---|
+| **[HANDOFF.md](HANDOFF.md)** | **Start here.** Where the work stopped, the machine setup, the build pipeline, and every gotcha that cost time. |
 | [roadmap.md](roadmap.md) | What stands between today and a `.vpk` with Flutter inside, and how long each stage costs |
 | [phase-1-workplan.md](phase-1-workplan.md) | What Phase 1 actually requires, derived from the Dart SDK source |
 | [phase-2-gn-notes.md](phase-2-gn-notes.md) | The GN gate: what it is, tooling reality, and why the foreign-toolchain risk is lower than feared |

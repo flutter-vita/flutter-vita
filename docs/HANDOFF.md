@@ -1,0 +1,184 @@
+# Handoff — state of play
+
+Written 2026-08-07 at the end of a long session. Everything needed to pick this
+up cold. Read [docs/README.md](README.md) for the project shape;
+this file is specifically *where we stopped and why*.
+
+---
+
+## One-paragraph summary
+
+Flutter-for-Vita is at **milestone M1**: pure-Dart AOT running on the device, no
+Flutter yet. The Dart runtime **compiles and links for `arm-vita-eabi`**, a
+**vita-targeting `gen_snapshot`** exists, and a `.vpk` runs on real hardware and
+gets as far as **creating a Dart isolate**. It then faults calling `main()`.
+Phase 0.5 (feasibility) is complete and the verdict was go.
+
+## The machine
+
+| | |
+|---|---|
+| VitaSDK | `~/vitasdk` (GCC 15.2.0, `arm-vita-eabi`) — no sudo, installed via vdpm |
+| depot_tools | `~/depot_tools` — provides `gclient`; `gn`/`ninja` come from the Dart checkout |
+| Dart SDK | `third_party/sdk` — **gclient-owned**, pinned `d684a576`, ~7.8 GB, gitignored |
+| Flutter | FVM 3.44.8, pinned in committed `.fvmrc` |
+| Vita | `192.168.0.40`, FTP on **1337 only while VitaShell is open with SELECT pressed** |
+| Title ID | `FVTA00002` (M1), `FVTA00001` (Track A probe) |
+
+**Never `rsync` into `third_party/sdk`.** gclient records DEPS sub-repos with
+gitlinks that a file copy corrupts; the failures surface later as
+*"not a git repository"* on a different directory each sync. The tree is
+disposable — [`patches/dart-sdk/`](../patches/dart-sdk/README.md) is the real
+artifact and restores the whole port with one `git apply`. That has been proven
+twice, once after a careless `reset --hard` destroyed the working tree.
+
+## Build pipeline, in order
+
+```bash
+# 1. Dart runtime for Vita (494 objects, ~3 MiB stripped)
+ninja -C third_party/sdk/out/vita obj/runtime/libdart_aotruntime_product.a
+
+# 2. Host gen_snapshot that targets Vita
+ninja -C third_party/sdk/out/host gen_snapshot_product_vita_arm
+
+# 3. hello.dart -> kernel
+./spikes/b1-aot-snapshot/build.sh
+
+# 4. kernel -> snapshot.S  (app-aot-assembly; ADR-0005 option A)
+third_party/sdk/out/host/gen_snapshot_product_vita_arm \
+  --snapshot_kind=app-aot-assembly \
+  --assembly=spikes/m1-snapshot/out/snapshot.S \
+  spikes/b1-aot-snapshot/out/hello.dill
+
+# 5. link everything into a vpk
+./spikes/m1-vpk/build.sh
+```
+
+**Steps 1 and 2 must be rebuilt together.** Dart hashes its VM sources into the
+snapshot version; patching a file shared by the runtime and the precompiler and
+rebuilding only one produces *"Wrong full snapshot version"* at startup.
+
+### gn args used
+
+```
+target_os="vita" target_cpu="arm" is_debug=false is_release=false
+is_product=true dart_runtime_mode="release"
+```
+
+`dart_runtime_mode="release"` matters beyond product mode: it disables perfetto
+and the timeline, which otherwise fail to build for an unknown OS.
+
+## Deploying
+
+The app is already installed, so **do not reinstall the vpk** — overwrite in
+place:
+
+```bash
+unzip -o -q build/flutter_vita_m1.vpk eboot.bin -d out/staging
+curl -T out/staging/eboot.bin "ftp://192.168.0.40:1337/ux0:/app/FVTA00002/eboot.bin"
+```
+
+Then launch **Flutter Vita M1** from the LiveArea. Logs:
+
+```
+ux0:data/flutter-vita/m1.log     harness checkpoints
+ux0:data/flutter-vita/dart.log   VitaTrace + Dart's Syslog
+```
+
+[`spikes/m1-vpk/deploy.sh`](../spikes/m1-vpk/deploy.sh) scripts this with
+`USE_COMPANION=0`. **vitacompanion destabilised the device** — it loads into
+SceShell — so avoid shell plugins. Recovery if one bricks the UI: hold **L**
+during boot to skip taiHEN plugins.
+
+## Where it stops
+
+Last hardware run:
+
+```
+Dart_Initialize ok
+isolate created
+[checkpoint] invoking main()
+<data abort>
+```
+
+Crash dump says `dart::Object::HandleImpl`, faulting on `ldr.w r3, [r1, #-1]` —
+Dart untagging a heap pointer to read its object header, i.e. **a garbage
+`ObjectPtr`**. Suspicion is `Dart_RootLibrary()` returning junk from the object
+store, but unconfirmed.
+
+**Run 11 is built and deployed but never launched.** It adds one checkpoint per
+API call (`Dart_RootLibrary` / `Dart_NewStringFromCString` / `Dart_Invoke`) and
+logs whether the root library handle is null. **Launch it first** — it identifies
+which call faults, which is the immediate unknown.
+
+Note Vita3K died at this same stage with `instructions_arm.cc: pattern.IsValid()`.
+I dismissed that as an emulator artifact when hardware failed earlier; that was
+premature and they may be the same bug.
+
+## Debugging, since there is none of the usual kind
+
+No DevTools, no profiler, no timeline, no on-device debugger — all disabled or
+impossible. What exists instead:
+
+- **Crash dumps.** The Vita writes `psp2core-*.psp2dmp` to `ux0:data/` on every
+  fault. [`spikes/m1-vpk/analyse-crash.sh`](../spikes/m1-vpk/analyse-crash.sh)
+  symbolicates one against `build/flutter_vita_m1` (the ELF, **not** eboot.bin).
+  This has been the single most effective tool — it found the BSS problem in one
+  run after four rounds of trace-point bisection got nowhere. Needs
+  `pyelftools==0.29` in a venv and a py3 patch to `util.py`, both already done
+  under `spikes/m1-vpk/out/`.
+- **`VitaTrace`** in `syslog_vita.cc` — writes straight to `sceIo` and syncs
+  every line, works before the VM can log anything.
+- **Checkpoints** in the harness, flushed before every risky call.
+
+## Gotchas that cost real time
+
+- `print()` in Dart **throws** until an embedder installs `_printClosure`;
+  `runtime/bin` normally does that and is excluded here. hello.dart returns a
+  checksum (**6830**) instead. `asyncMarker()` returns 99 only if the microtask
+  queue drains.
+- `SCE_O_TRUNC` does not truncate on Vita3K — stale log tails read as current
+  errors. Both logs are `sceIoRemove`d before opening.
+- `sceKernelExitProcess` is not `noreturn` and **returned** on Vita3K, carrying
+  execution past a reported failure.
+- `ninja | grep | tail` reports **tail's** exit code. A build that died at
+  80/1151 looked like success.
+- The `vita_create_vpk` macro renumbers output (`_2`, `_3`…) on reconfigure. A
+  clean `rm -rf build` restores the predictable name.
+- ICU is built **with** exceptions while Dart is `-fno-exceptions`, so the target
+  must link as C++ (`LINKER_LANGUAGE CXX`) or `__gxx_personality_v0` is undefined.
+- Dart's runtime is **not** one archive — GN emits `source_set`s whose objects
+  link directly. CMake globs all ~500 `.o` files. An 8.66 MiB
+  `libdart_aotruntime_product.a` once looked complete while containing **no**
+  platform code at all, because creating an archive never resolves symbols.
+
+## Decisions worth not relitigating
+
+Read [`docs/adr/`](adr/README.md), but the load-bearing ones:
+
+- **[ADR-0005](adr/0005-aot-snapshot-delivery.md) reversed to Option A.** The
+  snapshot is assembled and linked into `eboot.bin`. Option B (runtime loading
+  into a VM-domain block) works for allocation, W^X flipping, I-cache sync and
+  execution — all proven on hardware — but `Image::bss()` puts a **writable**
+  BSS inside the instructions image, and the VM domain is all-or-nothing. Cost:
+  every app relinks the engine, which hurts M4. Revivable by patching
+  `Image::bss()`, not worth it to reach M1.
+- **[ADR-0006](adr/0006-performance-bar-set-from-measurement.md)**: measured on
+  hardware. 60 fps at native 960×544 is impossible (the 8.06 ms present blit
+  alone is 48% of the frame budget); 30 fps is marginal; **720×408 upscaled
+  reaches 68 fps**, so the reduced-resolution fallback is the likely default.
+- **[ADR-0007](adr/0007-enable-partial-repaint-in-software-path.md)**: Flutter's
+  software path repaints the whole screen every frame. Accepted as required.
+
+## Still open
+
+- **Threading substrate and iteration cost** were never grilled. Both are logged
+  in [the ADR index](adr/README.md).
+- `Flutter Vita Plan.md` contradicts the docs in seven places (pin version, the
+  "~2 MP" arithmetic, JIT needing kernel plugins, 60 fps, pthread absence). Left
+  as the historical record; either reconcile it or mark it superseded.
+- `runtime/docs/qemu.md` — a `linux-arm` build under QEMU would allow a real
+  debugger for Dart-runtime bugs. Parked since Phase 0.5 and increasingly the
+  thing that would pay for itself.
+- Phase 2 (the Flutter engine itself) has not been started. Only the Dart
+  runtime is ported.
