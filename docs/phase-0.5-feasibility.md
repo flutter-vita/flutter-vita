@@ -14,6 +14,28 @@ outcome for this phase.
 The six exit criteria below are not equally urgent and do not all need a Vita.
 They split into two tracks that run in parallel.
 
+### What actually distinguishes the tracks
+
+The split began as scheduling — "what can be done without a Vita?" — but the
+more useful distinction is **what kind of evidence each track produces**.
+
+| | **Track B** | **Track A** |
+|---|---|---|
+| Question | *What does Flutter cost?* | *What can the Vita afford?* |
+| Subject | Flutter and Dart — software that already works elsewhere | The Vita's hardware and OS |
+| Runs on | any machine | real hardware only |
+| Evidence | **portable and reproducible** — rerun the script, get the number | **device-specific** — label it with model, firmware, clock |
+| Emulator substitute? | not applicable | **no, and Vita3K actively lies** — see [Vita3K as a target](vita3k-as-a-target.md) |
+| Can it still kill the project? | **no** — memory, size, and ABI are closed | **yes** — both remaining blockers live here |
+
+Phase 0.5's go/no-go is literally the comparison of those two answers: *Flutter
+costs X; the Vita affords Y.* Track B has delivered most of X. Y is still
+entirely unknown.
+
+One asymmetry worth naming: Track B's findings came from reading source and
+running host tools, so they are cheap and can be produced unattended. **Track A
+needs a person** — a device, a firmware, an FTP deploy, a button press.
+
 ### Step 0 — make the repo real (30 minutes)
 
 `git init`. Commit `Flutter Vita Plan.md`, `VERSIONS.md`, and `docs/`. Right now

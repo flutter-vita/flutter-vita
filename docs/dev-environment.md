@@ -3,6 +3,39 @@
 Phase 0 is "Environment & Vertical Slice Foundation", so this belongs in the
 repo rather than in someone's head.
 
+## Toolchain: VitaSDK natively, Docker later
+
+**Install VitaSDK natively on macOS via `vdpm`.** It is supported, and it is all
+Track A needs. Do not reach for Docker yet.
+
+Docker does earn its place, but for three separate purposes that are easy to
+conflate:
+
+1. **CI and reproducibility (Phase 4 / M4).** The plan wants GitHub Actions
+   producing a `.vpk` per commit, and M4 wants a third party to reproduce the
+   build from `README.md` alone. A pinned toolchain image is the honest way to
+   deliver both.
+2. **Building the Flutter engine for `linux-arm`** ([Phase 0.5 B3b](phase-0.5-feasibility.md)).
+   This genuinely requires a Linux host — but note it is a *different* container
+   for a different job: a Linux build box, not a VitaSDK image.
+3. **Possibly Phase 2.** Whether the engine's GN build tolerates a custom
+   `arm-vita-eabi` toolchain *on a macOS host* is **unknown** — Flutter fetches
+   host-specific buildtools, and nobody has tried this. If macOS will not
+   cooperate, Docker becomes the fallback. Better to discover that in Phase 2
+   than to assume it now.
+
+The compiler VitaSDK gives you, per `vitasdk/buildscripts`:
+
+```
+--with-arch=armv7-a  --with-tune=cortex-a9  --with-fpu=neon
+--with-float=hard    --with-mode=thumb      --disable-multilib
+```
+
+Hard float, matching Dart and the engine — see
+[Phase 0.5 B5](phase-0.5-feasibility.md). `--disable-multilib` means there is no
+softfp variant to fall back on, and the Thumb default is worth remembering when
+Dart's ARM-mode code has to interwork with it.
+
 ## IDE: VS Code
 
 This project is polyglot in an unusually demanding way. It needs, at once:

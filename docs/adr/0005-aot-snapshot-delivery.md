@@ -15,6 +15,36 @@ A Dart AOT snapshot has four parts: `vm_snapshot_data`,
 The two `_data` parts are ordinary read-only bytes. The two `_instructions` parts
 are **machine code and must live in executable memory.**
 
+### What the 16 MiB cap does and does not limit
+
+Worth stating plainly, because it is easy to misread as an app-wide memory
+limit. From `psp2/kernel/sysmem.h`:
+
+```c
+/**
+ * Allocates a new memory block for Virtual Machine domain.
+ * @note - size can't be higher than 16 * 1024 * 1024.
+*/
+SceUID sceKernelAllocMemBlockForVM(const char *name, SceSize size);
+```
+
+- **It caps only executable-capable memory.** The VM domain is the sole
+  mechanism a normal homebrew app has for memory it can execute from.
+- **Ordinary memory is unaffected.** Plain `sceKernelAllocMemBlock` has no such
+  cap — that is where the Dart heap, Skia caches, framebuffers, and the
+  snapshot's `.rodata` all live. None of it needs to be executable.
+- **Multiple VM blocks do not help.** `Open`/`CloseVMDomain` act on all VM
+  blocks at once so several may exist, but Dart needs one contiguous mapping for
+  its instructions, so blocks cannot be stitched together past 16 MiB.
+- **Under Option A the cap is irrelevant** — instructions land in `.text` of the
+  main ELF and the OS loader maps them executable, with no VM domain involved.
+
+Informed speculation on the origin, not verified: the VM domain looks like
+Sony's provision for **PlayStation Mobile**, which ran C#/Mono with a JIT on
+retail Vitas. If so, 16 MiB is a product decision rather than a hardware one,
+which would make it a fixed number rather than something varying with firmware
+or memory pressure. The A1 spike measures the real obtainable maximum anyway.
+
 ### Option A — bake in (`gen_snapshot --snapshot-kind=app-aot-assembly`)
 
 Assemble the snapshot with the VitaSDK assembler and statically link it into
