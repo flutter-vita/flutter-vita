@@ -1,9 +1,9 @@
 diff --git a/runtime/platform/syslog_vita.cc b/runtime/platform/syslog_vita.cc
 new file mode 100644
-index 00000000..0c8e5aef
+index 00000000..39e46e86
 --- /dev/null
 +++ b/runtime/platform/syslog_vita.cc
-@@ -0,0 +1,36 @@
+@@ -0,0 +1,75 @@
 +// Copyright (c) 2012, the Dart project authors.  Please see the AUTHORS file
 +// for details. All rights reserved. Use of this source code is governed by a
 +// BSD-style license that can be found in the LICENSE file.
@@ -12,6 +12,9 @@ index 00000000..0c8e5aef
 +#if defined(DART_HOST_OS_VITA)
 +
 +#include <stdio.h>
++
++#include <psp2/io/fcntl.h>
++#include <psp2/io/stat.h>
 +
 +#include "platform/syslog.h"
 +
@@ -27,12 +30,48 @@ index 00000000..0c8e5aef
 +
 +namespace dart {
 +
++// Nothing is attached to stdout on a retail Vita, so VM diagnostics -- including
++// the message a FATAL prints just before aborting -- would vanish. Everything is
++// therefore mirrored to a file, opened lazily and synced after every write so a
++// crash cannot cost us the last line.
++//
++// This is the whole debugging story for this port: no DevTools, no profiler, no
++// timeline, no debugger on device. When Dart fails inside a single opaque API
++// call, this file is the only thing that says why.
++static SceUID g_dart_log = -1;
++static bool g_dart_log_tried = false;
++
++static void DartLogWrite(const char* buf, int len) {
++  if (!g_dart_log_tried) {
++    g_dart_log_tried = true;
++    sceIoMkdir("ux0:data", 0777);
++    sceIoMkdir("ux0:data/flutter-vita", 0777);
++    g_dart_log = sceIoOpen("ux0:data/flutter-vita/dart.log",
++                           SCE_O_WRONLY | SCE_O_CREAT | SCE_O_TRUNC, 0777);
++  }
++  if (g_dart_log >= 0 && len > 0) {
++    sceIoWrite(g_dart_log, buf, len);
++    sceIoSyncByFd(g_dart_log, 0);
++  }
++}
++
++static void DartLogVPrint(const char* format, va_list args) {
++  char buf[1024];
++  va_list copy;
++  va_copy(copy, args);
++  const int len = vsnprintf(buf, sizeof(buf), format, copy);
++  va_end(copy);
++  DartLogWrite(buf, len < (int)sizeof(buf) ? len : (int)sizeof(buf) - 1);
++}
++
 +void Syslog::VPrint(const char* format, va_list args) {
++  DartLogVPrint(format, args);
 +  vfprintf(stdout, format, args);
 +  fflush(stdout);
 +}
 +
 +void Syslog::VPrintErr(const char* format, va_list args) {
++  DartLogVPrint(format, args);
 +  vfprintf(stderr, format, args);
 +  fflush(stderr);
 +}
@@ -772,10 +811,10 @@ index 00000000..682a0d8a
 +#endif  // defined(DART_HOST_OS_VITA)
 diff --git a/runtime/vm/virtual_memory_vita.cc b/runtime/vm/virtual_memory_vita.cc
 new file mode 100644
-index 00000000..a62c6534
+index 00000000..ed36165f
 --- /dev/null
 +++ b/runtime/vm/virtual_memory_vita.cc
-@@ -0,0 +1,157 @@
+@@ -0,0 +1,165 @@
 +// Copyright (c) 2012, the Dart project authors.  Please see the AUTHORS file
 +// for details. All rights reserved. Use of this source code is governed by a
 +// BSD-style license that can be found in the LICENSE file.
@@ -788,6 +827,7 @@ index 00000000..a62c6534
 +#include <psp2/kernel/sysmem.h>
 +
 +#include "platform/assert.h"
++#include "platform/syslog.h"
 +#include "vm/os.h"
 +
 +// Vita virtual memory, on sceKernelAllocMemBlock.
@@ -865,6 +905,13 @@ index 00000000..a62c6534
 +      sceKernelAllocMemBlock(name, SCE_KERNEL_MEMBLOCK_TYPE_USER_MAIN_RW,
 +                             static_cast<SceSize>(size), &opt);
 +  if (uid < 0) {
++    // Loud on failure. Returning nullptr silently would surface far away as a
++    // crash inside whichever allocation happened to need it, and there is no
++    // debugger on device to walk back from there.
++    Syslog::PrintErr(
++        "virtual_memory_vita: sceKernelAllocMemBlock('%s', size=%ld, "
++        "align=%ld) failed -> 0x%08X\n",
++        name, static_cast<long>(size), static_cast<long>(alignment), uid);
 +    return nullptr;
 +  }
 +
