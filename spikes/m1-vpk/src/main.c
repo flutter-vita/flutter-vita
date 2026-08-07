@@ -200,6 +200,27 @@ int main(void) {
   r = sceKernelSyncVMDomain(vm_uid, vm_base, VM_BLOCK_SIZE);
   lg("  sceKernelSyncVMDomain   0x%08X\n", r);
 
+  // Can we still READ the block now the domain is closed?
+  //
+  // Track A proved code in a VM block executes after Close, but never read
+  // back from one. Dart does: the snapshot reader parses an image header out
+  // of the instructions image before running any of it. If Close leaves the
+  // memory execute-only, that read faults -- which matches run 8 dying after
+  // the zone allocation and before any thread is created, with no diagnostic.
+  //
+  // Compare against the source buffers still in ordinary memory. A mismatch
+  // means the copy did not stick; a fault here means the block is not readable
+  // and ADR-0005 Option B needs rethinking.
+  lg("  [checkpoint] reading back from the closed domain\n");
+  const uint32_t vm_first = *(const volatile uint32_t*)(base + vm_off);
+  const uint32_t iso_first = *(const volatile uint32_t*)(base + iso_off);
+  const uint32_t vm_expect = *(const uint32_t*)vm_instr_src;
+  const uint32_t iso_expect = *(const uint32_t*)iso_instr_src;
+  lg("  vm  first word 0x%08X (expect 0x%08X) %s\n", vm_first, vm_expect,
+     vm_first == vm_expect ? "ok" : "MISMATCH");
+  lg("  iso first word 0x%08X (expect 0x%08X) %s\n", iso_first, iso_expect,
+     iso_first == iso_expect ? "ok" : "MISMATCH");
+
   free(vm_instr_src);
   free(iso_instr_src);
 

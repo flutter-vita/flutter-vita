@@ -1,0 +1,9 @@
+[vita] OS::Init
+[vita] VirtualMemory::Init
+[vita] CpuInfo::Init
+[vita] alloc 'dart-heap' size=524288 align=524288
+[vita]   -> uid 0x4001020F
+[vita]   -> base 0x8d600000 aligned=1
+[vita] alloc 'dart-zone' size=65536 align=4096
+[vita]   -> uid 0x4001024B
+[vita]   -> base 0x81450000 aligned=1
