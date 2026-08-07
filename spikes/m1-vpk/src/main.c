@@ -137,14 +137,27 @@ int main(void) {
   Dart_EnterScope();
   lg("  [checkpoint] invoking main()\n");
 
+  // One checkpoint per API call. The previous run faulted somewhere in this
+  // sequence -- Object::HandleImpl on a garbage ObjectPtr -- and three calls
+  // between two log lines is not enough to say which.
+  lg("  [checkpoint] Dart_RootLibrary\n");
   Dart_Handle root = Dart_RootLibrary();
   if (Dart_IsError(root)) {
     lg("  FAIL Dart_RootLibrary: %s\n", Dart_GetError(root));
     wait_and_exit(1);
   }
+  lg("  root library handle ok, null=%d\n", Dart_IsNull(root) ? 1 : 0);
 
-  Dart_Handle result =
-      Dart_Invoke(root, Dart_NewStringFromCString("main"), 0, NULL);
+  lg("  [checkpoint] Dart_NewStringFromCString\n");
+  Dart_Handle name = Dart_NewStringFromCString("main");
+  if (Dart_IsError(name)) {
+    lg("  FAIL Dart_NewStringFromCString: %s\n", Dart_GetError(name));
+    wait_and_exit(1);
+  }
+  lg("  name handle ok\n");
+
+  lg("  [checkpoint] Dart_Invoke\n");
+  Dart_Handle result = Dart_Invoke(root, name, 0, NULL);
   if (Dart_IsError(result)) {
     lg("  FAIL main(): %s\n", Dart_GetError(result));
     wait_and_exit(1);
