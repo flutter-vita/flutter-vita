@@ -27,12 +27,14 @@
 
 #include <psp2/appmgr.h>
 #include <psp2/ctrl.h>
+#include <psp2/io/dirent.h>
 #include <psp2/io/fcntl.h>
 #include <psp2/io/stat.h>
 #include <psp2/kernel/processmgr.h>
 #include <psp2/kernel/threadmgr.h>
 #include <psp2/net/net.h>
 #include <psp2/net/netctl.h>
+#include <psp2/promoterutil.h>
 #include <psp2/sysmodule.h>
 
 #include <stdarg.h>
@@ -76,6 +78,18 @@ static int recv_line(int sock, char* out, int max) {
   if (n > 0 && out[n - 1] == '\r') n--;
   out[n] = '\0';
   return n;
+}
+
+// mkdir -p. Promote wants a directory tree (eboot.bin plus sce_sys/...), and
+// the client should not have to order its uploads to build it.
+static void mkdirs(const char* path) {
+  char tmp[256];
+  snprintf(tmp, sizeof tmp, "%s", path);
+  for (char* p = strchr(tmp, '/'); p != NULL; p = strchr(p + 1, '/')) {
+    *p = '\0';
+    sceIoMkdir(tmp, 0777);
+    *p = '/';
+  }
 }
 
 static void send_str(int sock, const char* s) {
@@ -207,6 +221,149 @@ static int serve(int sock) {
                  TARGET_EBOOT);
       }
       send_str(sock, msg);
+    } else if (strncmp(line, "ls ", 3) == 0) {
+      // A remote filesystem-permission explorer. Cheaper than rebuilding and
+      // reinstalling this app once per hypothesis -- which is what testing
+      // "can we write X" one path at a time would otherwise cost.
+      SceUID d = sceIoDopen(line + 3);
+      if (d < 0) {
+        char m[128];
+        snprintf(m, sizeof m, "ERR dopen 0x%08X\n", (unsigned)d);
+        send_str(sock, m);
+      } else {
+        SceIoDirent e;
+        char m[320];
+        int count = 0;
+        memset(&e, 0, sizeof e);
+        while (sceIoDread(d, &e) > 0 && count < 200) {
+          snprintf(m, sizeof m, "%s %s\n",
+                   SCE_S_ISDIR(e.d_stat.st_mode) ? "d" : "-", e.d_name);
+          send_str(sock, m);
+          memset(&e, 0, sizeof e);
+          count++;
+        }
+        sceIoDclose(d);
+        snprintf(m, sizeof m, "(%d entries)\n", count);
+        send_str(sock, m);
+      }
+    } else if (strncmp(line, "touch ", 6) == 0) {
+      SceUID fd = sceIoOpen(line + 6, SCE_O_WRONLY | SCE_O_CREAT | SCE_O_TRUNC,
+                            0777);
+      char m[160];
+      if (fd >= 0) {
+        sceIoWrite(fd, "x", 1);
+        sceIoClose(fd);
+        sceIoRemove(line + 6);
+        snprintf(m, sizeof m, "WRITABLE %s\n", line + 6);
+      } else {
+        snprintf(m, sizeof m, "no (0x%08X) %s\n", (unsigned)fd, line + 6);
+      }
+      send_str(sock, m);
+    } else if (strncmp(line, "mkdir ", 6) == 0) {
+      const int r = sceIoMkdir(line + 6, 0777);
+      char m[160];
+      snprintf(m, sizeof m, "%s (0x%08X) %s\n", r >= 0 ? "MADE" : "no",
+               (unsigned)r, line + 6);
+      send_str(sock, m);
+    } else if (strncmp(line, "cp ", 3) == 0) {
+      // cp <src> <dst> -- copy the staged binary anywhere, so a candidate
+      // install path can be tried for real rather than only touch-tested.
+      char* sp = strchr(line + 3, ' ');
+      if (sp == NULL) { send_str(sock, "ERR cp <src> <dst>\n"); continue; }
+      *sp = '\0';
+      const char* src = line + 3;
+      const char* dst = sp + 1;
+      SceUID in = sceIoOpen(src, SCE_O_RDONLY, 0777);
+      if (in < 0) { send_str(sock, "ERR src\n"); continue; }
+      SceUID out = sceIoOpen(dst, SCE_O_WRONLY | SCE_O_CREAT | SCE_O_TRUNC, 0777);
+      if (out < 0) {
+        char m[160];
+        snprintf(m, sizeof m, "ERR dst 0x%08X\n", (unsigned)out);
+        sceIoClose(in);
+        send_str(sock, m);
+        continue;
+      }
+      static char cbuf[32 * 1024];
+      int n, tot = 0;
+      while ((n = sceIoRead(in, cbuf, sizeof cbuf)) > 0) { sceIoWrite(out, cbuf, n); tot += n; }
+      sceIoClose(in); sceIoClose(out);
+      char m[160];
+      snprintf(m, sizeof m, "OK copied %d bytes\n", tot);
+      send_str(sock, m);
+    } else if (strncmp(line, "put ", 4) == 0) {
+      // put <size> <path> -- receive a file anywhere we can write. This is the
+      // whole reason BGFTP can be dropped: we no longer need to write ux0:app
+      // ourselves, only ux0:data, and then let the promoter do the install.
+      char* sp = strchr(line + 4, ' ');
+      if (sp == NULL) { send_str(sock, "ERR put <size> <path>\n"); return 0; }
+      *sp = '\0';
+      const int size = atoi(line + 4);
+      const char* path = sp + 1;
+      if (size < 0 || size > 64 * 1024 * 1024) { send_str(sock, "ERR size\n"); return 0; }
+      mkdirs(path);
+      sceIoRemove(path);
+      SceUID fd = sceIoOpen(path, SCE_O_WRONLY | SCE_O_CREAT | SCE_O_TRUNC, 0777);
+      if (fd < 0) {
+        char m[192];
+        snprintf(m, sizeof m, "ERR open 0x%08X %s\n", (unsigned)fd, path);
+        send_str(sock, m);
+        return 0;  // payload still in flight; drop rather than parse it
+      }
+      static char pbuf[32 * 1024];
+      int left = size;
+      while (left > 0) {
+        const int want = left < (int)sizeof pbuf ? left : (int)sizeof pbuf;
+        const int got = sceNetRecv(sock, pbuf, want, 0);
+        if (got <= 0) { sceIoClose(fd); sceIoRemove(path); send_str(sock, "ERR short\n"); return 0; }
+        sceIoWrite(fd, pbuf, got);
+        left -= got;
+      }
+      sceIoClose(fd);
+      { char m[192]; snprintf(m, sizeof m, "OK %d -> %s\n", size, path); send_str(sock, m); }
+    } else if (strncmp(line, "promote ", 8) == 0) {
+      // The promoter runs as a system service, so it is not bound by our
+      // sandbox -- it installs into ux0:app the same way VHBB and PKGj do.
+      // This is what removes BGFTP from the loop entirely.
+      const char* dir = line + 8;
+      char m[256];
+      // scePromoterUtil is an *internal* sysmodule and is not resident by
+      // default. Calling scePromoterUtilityInit without loading it first jumps
+      // through an unresolved stub and takes the process down -- which is
+      // exactly what happened the first time, with the log stopping before the
+      // next line could be written.
+      int r = sceSysmoduleLoadModuleInternal(SCE_SYSMODULE_INTERNAL_PROMOTER_UTIL);
+      if (r < 0) {
+        snprintf(m, sizeof m, "ERR loadmodule 0x%08X\n", (unsigned)r);
+        send_str(sock, m);
+        continue;
+      }
+      lg("  promoter module loaded\n");
+      r = scePromoterUtilityInit();
+      if (r < 0) {
+        snprintf(m, sizeof m, "ERR init 0x%08X\n", (unsigned)r);
+        send_str(sock, m);
+        sceSysmoduleUnloadModuleInternal(SCE_SYSMODULE_INTERNAL_PROMOTER_UTIL);
+        continue;
+      }
+      lg("  promoting %s\n", dir);
+      r = scePromoterUtilityPromotePkg(dir, 1);
+      int state = -1, res = -1;
+      if (r >= 0) {
+        // sync=1 should block, but poll anyway rather than trust it.
+        for (int i = 0; i < 600; i++) {
+          if (scePromoterUtilityGetState(&state) < 0) break;
+          if (state == 0) break;
+          sceKernelDelayThread(100 * 1000);
+        }
+        scePromoterUtilityGetResult(&res);
+      }
+      scePromoterUtilityExit();
+      sceSysmoduleUnloadModuleInternal(SCE_SYSMODULE_INTERNAL_PROMOTER_UTIL);
+      snprintf(m, sizeof m, "%s promote=0x%08X state=%d result=0x%08X\n",
+               (r >= 0 && res == 0) ? "OK" : "ERR", (unsigned)r, state,
+               (unsigned)res);
+      lg("  %s", m);
+      send_str(sock, m);
     } else if (strncmp(line, "stage ", 6) == 0) {
       const int size = atoi(line + 6);
       if (size <= 0 || size > 64 * 1024 * 1024) {

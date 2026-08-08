@@ -38,9 +38,15 @@ target_link_libraries(${PROJECT_NAME}
   SceNetCtl_stub
   SceSysmodule_stub
   SceAppMgr_stub
+  ScePromoterUtil_stub
 )
 
-vita_create_self(${PROJECT_NAME}.self ${PROJECT_NAME})
+# UNSAFE, deliberately. vita_create_self builds a *safe* self by default, and a
+# safe self is confined regardless of the "Enable unsafe homebrew" setting --
+# ux0:app is not merely unwritable but invisible, and ScePromoterUtil's library
+# is refused with MODULEMGR_NO_LIB. That confinement, not any HENkaku option,
+# is what forced BGFTP into the deploy loop.
+vita_create_self(${PROJECT_NAME}.self ${PROJECT_NAME} UNSAFE)
 vita_create_vpk(${PROJECT_NAME}.vpk ${VITA_TITLEID} ${PROJECT_NAME}.self
   VERSION ${VITA_VERSION}
   NAME ${VITA_APP_NAME}

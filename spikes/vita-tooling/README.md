@@ -51,6 +51,55 @@ see "What is actually possible" below.
 
 ## The loop, as built
 
+**The confinement was self-inflicted.** `vita_create_self` builds a *safe* self
+by default — it passes `-s` to `vita-make-fself` — and a safe self cannot see
+`ux0:app` at all, whatever "Enable unsafe homebrew" is set to. Adding `UNSAFE`
+to the loader's `vita_create_self` removed the flag, and with it every
+restriction this document previously recorded as a platform rule.
+
+So the loop is now two apps and one socket each:
+
+| | Port | Role |
+|---|---|---|
+| M1 (`FVTA00002`) | 1339 | the app under test; hands off, serves its log |
+| loader (`FVTA00003`) | 1341 | **UNSAFE self** — writes `ux0:app/FVTA00002/` and launches M1 |
+
+```
+M1 --handoff--> loader --stage, install, launch--> M1
+```
+
+`./dev.sh cycle` — **~10 seconds, no FTP, no taps.**
+
+Staging and installing stay separate: the upload lands in `ux0:data` and only a
+complete file is copied over `eboot.bin` via a `.tmp` and a rename, so a dropped
+transfer cannot damage the installed app.
+
+### What this corrected
+
+Three earlier conclusions here were wrong, all downstream of one unchecked
+assumption:
+
+- *"Sandboxed homebrew cannot see `ux0:app` at all."* True only of **safe**
+  selfs, which is what we were building without ever choosing to.
+- *"BGFTP cannot be dropped; the boundary is app vs SceShell plugin."* No — the
+  boundary was safe vs unsafe self. BGFTP was never special.
+- *"An app cannot write its own `ux0:app` directory."* Untested under UNSAFE;
+  possibly also false. It no longer matters, since the two-app design is needed
+  for the launch anyway.
+
+Routes explored and abandoned before finding it: `ux0:patch` (invisible to a
+safe self, same as `ux0:app`), and `ScePromoterUtil` (its library is refused
+with `MODULEMGR_NO_LIB`, and calling it without
+`sceSysmoduleLoadModuleInternal` first crashes the process outright).
+
+The lesson is narrow and worth keeping: **check your own build flags before
+concluding the platform forbids something.** Four measurements were correct and
+the conclusion drawn from them was still wrong, because the variable under test
+was one we had set ourselves.
+
+## Superseded: the FTP-based loop
+
+
 Three parties, each doing the one thing it is permitted to do:
 
 | | Port | Can |
