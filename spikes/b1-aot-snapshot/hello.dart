@@ -43,8 +43,15 @@ int main() {
   final unique = counts.length; // 7
   final the = counts['the']!; // 3
 
-  // Scheduler and microtask queue. Completes during Dart_RunLoop, not here.
-  Future<void>.delayed(Duration.zero, () => _asyncMarker = 99);
+  // Microtask queue. Completes during Dart_RunLoop, not here.
+  //
+  // Was Future.delayed(Duration.zero), which is a *timer*, not a microtask --
+  // it goes through VMLibraryHooks.timerFactory and threw "Timer interface not
+  // supported" because no embedder installs one. Future.microtask goes through
+  // _ScheduleImmediate._closure instead, which the harness now installs.
+  // Timers remain unimplemented and are tracked separately; Flutter will need
+  // them, a microtask smoke test does not.
+  Future<void>.microtask(() => _asyncMarker = 99);
 
   // 6765 + 55 + 7 + 3 = 6830. A wrong total localises the failure: too small by
   // ~6765 implicates recursion, by 55 the list, and so on.

@@ -147,6 +147,41 @@ int main(void) {
   lg("  --- snapshot read complete, entering invoke sequence ---\n");
 
   Dart_EnterScope();
+
+  // The VM ships no microtask scheduler; the embedder installs one, and until
+  // it does dart:async throws "Microtasks are not supported" on the first
+  // await. runtime/bin does this in DartUtils::PrepareAsyncLibrary
+  // (dartutils.cc:524) -- pure Dart API, no natives, so it ports unchanged.
+  // Timers are a separate and much heavier hook: VMLibraryHooks.timerFactory
+  // wants timer_impl.dart, which needs the dart:io event handler. Not done.
+  lg("  [checkpoint] installing microtask scheduler\n");
+  Dart_Handle isolate_lib =
+      Dart_LookupLibrary(Dart_NewStringFromCString("dart:isolate"));
+  Dart_Handle async_lib =
+      Dart_LookupLibrary(Dart_NewStringFromCString("dart:async"));
+  if (Dart_IsError(isolate_lib) || Dart_IsError(async_lib)) {
+    lg("  FAIL looking up async libraries: %s\n",
+       Dart_GetError(Dart_IsError(isolate_lib) ? isolate_lib : async_lib));
+    wait_and_exit(1);
+  }
+  Dart_Handle sched_closure = Dart_Invoke(
+      isolate_lib, Dart_NewStringFromCString("_getIsolateScheduleImmediateClosure"),
+      0, NULL);
+  if (Dart_IsError(sched_closure)) {
+    lg("  FAIL _getIsolateScheduleImmediateClosure: %s\n",
+       Dart_GetError(sched_closure));
+    wait_and_exit(1);
+  }
+  Dart_Handle sched_args[1] = {sched_closure};
+  Dart_Handle sched_set = Dart_Invoke(
+      async_lib, Dart_NewStringFromCString("_setScheduleImmediateClosure"), 1,
+      sched_args);
+  if (Dart_IsError(sched_set)) {
+    lg("  FAIL _setScheduleImmediateClosure: %s\n", Dart_GetError(sched_set));
+    wait_and_exit(1);
+  }
+  lg("  microtask scheduler installed\n");
+
   lg("  [checkpoint] invoking main()\n");
 
   // One checkpoint per API call. The previous run faulted somewhere in this
@@ -185,9 +220,27 @@ int main(void) {
      EXPECTED_CHECKSUM,
      checksum == EXPECTED_CHECKSUM ? "PASS" : "MISMATCH");
 
-  // Drains the event loop, where the Future scheduled by main() completes.
-  // Exercises the condvars and timers in os_thread_vita.cc -- the part of the
-  // port most likely to be subtly wrong.
+  // Dart_RunLoop alone does not drain microtasks, which is why the first run
+  // that got this far reported asyncMarker()==0. The VM drains the queue after
+  // handling a *message*, and runtime/bin gets one for free: main_impl.cc:1095
+  // does not invoke main directly, it calls _startMainIsolate, which schedules
+  // main into the message queue. This harness invokes main directly so it can
+  // read the return value, so no message turn ever happens.
+  //
+  // _runPendingImmediateCallback is the same entry point the VM itself uses
+  // from DartLibraryCalls::DrainMicrotaskQueue, so calling it here is the
+  // documented drain, not a workaround around one.
+  lg("  [checkpoint] draining microtasks\n");
+  Dart_Handle drain = Dart_Invoke(
+      isolate_lib, Dart_NewStringFromCString("_runPendingImmediateCallback"), 0,
+      NULL);
+  if (Dart_IsError(drain)) {
+    lg("  FAIL draining microtasks: %s\n", Dart_GetError(drain));
+  }
+
+  // Still worth running: it starts the message handler on the isolate group's
+  // thread pool and waits on a Monitor, which is the os_thread_vita.cc condvar
+  // path -- the part of the port most likely to be subtly wrong.
   lg("  [checkpoint] Dart_RunLoop\n");
   Dart_Handle loop = Dart_RunLoop();
   if (Dart_IsError(loop)) {
