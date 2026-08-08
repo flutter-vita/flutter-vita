@@ -53,7 +53,7 @@ index bfa036e1..dcc507ea 100644
    ASSERT(*(reinterpret_cast<uint32_t*>(pc) - 1) == 0xe12fff3e);
  
 diff --git a/runtime/vm/object.h b/runtime/vm/object.h
-index f8bc544e..95fca3b6 100644
+index f8bc544e..06bf3b05 100644
 --- a/runtime/vm/object.h
 +++ b/runtime/vm/object.h
 @@ -43,6 +43,12 @@
@@ -69,7 +69,7 @@ index f8bc544e..95fca3b6 100644
  // Forward declarations.
  namespace compiler {
  class Assembler;
-@@ -774,6 +780,22 @@ class Object {
+@@ -774,6 +780,38 @@ class Object {
                                            ObjectPtr ptr,
                                            intptr_t default_cid) {
      Object* obj = reinterpret_cast<Object*>(VMHandles::AllocateHandle(zone));
@@ -85,8 +85,24 @@ index f8bc544e..95fca3b6 100644
 +    uword raw_ptr_value;
 +    memcpy(&raw_ptr_value, &ptr, sizeof(raw_ptr_value));
 +    if (raw_ptr_value == kHeapObjectTag) {
-+      VitaTrace("[vita] HandleImpl: ObjectPtr==1 from ra=%p cid=%d\n",
-+                __builtin_return_address(0), static_cast<int>(default_cid));
++      // ra(0) lands inside ObjectPool::Handle, a thin wrapper, so the real
++      // call site is further up. GCC on ARM rejects __builtin_return_address(n)
++      // for n > 0, so scan the stack instead and print anything that looks like
++      // a code address. Crude, but it needs no frame pointers and the noise is
++      // easy to filter with addr2line.
++      VitaTrace("[vita] HandleImpl: ObjectPtr==1 cid=%d ra0=%p\n",
++                static_cast<int>(default_cid), __builtin_return_address(0));
++      {
++        uword* sp = reinterpret_cast<uword*>(__builtin_frame_address(0));
++        for (intptr_t i = 0; i < 48; i++) {
++          const uword w = sp[i];
++          // Thumb return addresses are odd and live in the text range.
++          if ((w & 1) == 1 && w > 0x81000000 && w < 0x81800000) {
++            VitaTrace("[vita]   stack[%d] = 0x%08x\n", static_cast<int>(i),
++                      static_cast<unsigned>(w));
++          }
++        }
++      }
 +    }
 +#endif
      obj->setPtr(ptr, default_cid);
