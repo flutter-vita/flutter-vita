@@ -95,10 +95,8 @@ LiveArea, and that is fine.
 
 ## M1 is met
 
-Verified on hardware 2026-08-08. Note the passing run still had the debug
-scaffolding compiled in; it was removed afterwards and that build is deployed
-but **not yet re-run**. Nothing in the scaffolding was load-bearing (it only
-logged), but the confirmation is still outstanding:
+Verified on hardware 2026-08-08, and re-verified after the debug scaffolding was
+removed — same result from a build carrying no instrumentation:
 
 ```
 [checkpoint] Dart_SetVMFlags (--precompilation)
@@ -116,8 +114,21 @@ microtask scheduler installed
 
 6830 means `fib(20)` recursed ~13k calls, a list and a map allocated and grew,
 strings hashed, and the value returned through `Dart_IntegerToInt64`. Generated
-ARM code, the GC, the handle machinery, the microtask queue, and the message
-handler's thread-pool and condvar path all work on the device.
+ARM code, the GC, the handle machinery and the microtask queue all work on the
+device.
+
+The threading substrate is exercised too, not merely compiled. `dart.log` from
+the clean run ends with
+
+```
+[vita] pthread_create 'DartWorker' stack=524288
+[vita]   -> 0
+```
+
+so `Dart_RunLoop` really did start the message handler on the isolate group's
+thread pool, and `Dart_Cleanup` returned ok afterwards, meaning the worker
+joined. That is the `os_thread_vita.cc` condvar and thread-creation path
+running end to end — the piece the ADR index still lists as never grilled.
 
 ### What was wrong: three embedder gaps, none of them the port
 
