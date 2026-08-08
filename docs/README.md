@@ -23,8 +23,9 @@ initialises the Dart VM, creates an isolate, executes compiled ARM code, returns
 runtime is ported. See [HANDOFF.md](HANDOFF.md) for how the last three failures
 were resolved, all of them embedder gaps rather than porting problems.
 
-Nearest blocker for Phase 2: **timers are unimplemented**, and Flutter needs
-them.
+`print()`, microtasks and real timers all work, so the async machinery Flutter
+depends on is running. FFI natives resolve at runtime via
+`Dart_SetFfiNativeResolver` — the same channel `dart:ui` uses.
 
 **Phase 0.5 is complete and the verdict is go.** Both tracks are done; nothing
 measured says stop. Five of six exit criteria are closed — the sixth, the thread

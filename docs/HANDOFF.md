@@ -273,11 +273,9 @@ Read [`docs/adr/`](adr/README.md), but the load-bearing ones:
 
 ## Still open
 
-- **Timers are not implemented.** `VMLibraryHooks.timerFactory` is unset, so
-  `Timer`, `Future.delayed` and `Future(...)` all throw. **A hard prerequisite
-  for Flutter** and the first Phase 2 task — but the scheduler itself is already
-  compiled in; only the hooks are missing. See
-  [embedder-startup.md](embedder-startup.md).
+- ~~Timers~~ **done** — `Future.delayed` fires on hardware. See
+  [embedder-startup.md](embedder-startup.md). The C side is a 1 ms polling
+  thread, which should become an event-flag wait before frame pacing matters.
 - **Threading substrate and iteration cost** were never grilled. Both are logged
   in [the ADR index](adr/README.md).
 - `Flutter Vita Plan.md` contradicts the docs in seven places (pin version, the

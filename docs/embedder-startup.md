@@ -21,10 +21,10 @@ any embedder.
 | Native resolvers for `dart:_builtin`, `dart:cli` | `Builtin::TrySetNativeResolver` | skipped | `dart:io` scaffolding. Not needed. |
 | `SetupDartIoLibrary` | `dartutils.cc` | skipped | `dart:io`. Not needed. |
 | `Dart_FinalizeLoading(false)` | `dartutils.cc` | skipped | Kernel-loading concern; AOT snapshots arrive finalised. Harmless so far — **verify** before assuming. |
-| `_printClosure` ← `dart:_builtin _getPrintClosure` | `PrepareBuiltinLibrary` | skipped | Why `print()` throws. See below — worth fixing. |
+| `_printClosure` ← `dart:_builtin _getPrintClosure` | `PrepareBuiltinLibrary` | **done** | Sourced from our own shim rather than `dart:_builtin`. |
 | `_setScheduleImmediateClosure` ← `dart:isolate` | `PrepareAsyncLibrary` | **done** | Pure Dart API. Without it: *"Microtasks are not supported"*. |
 | `Uri.base` ← `dart:io _getUriBaseClosure` | `PrepareCoreLibrary` | skipped | `dart:io`. Not needed. |
-| `dart:isolate _setupHooks` | `PrepareIsolateLibrary` | **not done** | **This is the timer hook.** See below. |
+| `dart:isolate _setupHooks` | `PrepareIsolateLibrary` | **done** | The timer hook. Verified on hardware. |
 | `dart:cli _setupHooks` | `PrepareCLILibrary` | skipped | Returns null; a no-op even upstream. |
 | Run `main` via `_startMainIsolate` | `main_impl.cc:1095` | deliberately not | Schedules `main` into the message queue. M1 invokes `main` directly to read its return value, and so must drain microtasks by hand. |
 
@@ -39,7 +39,7 @@ walk then reads a pool pointer out of a slot holding something else, gets zero,
 and hands `nullptr | kHeapObjectTag` to `ObjectPool::Handle`. It presents as a
 data abort deep inside `Object::HandleImpl`, which is nowhere near the cause.
 
-## Timers: smaller than it looked
+## Timers: smaller than it looked — and now working
 
 HANDOFF previously said timers "mean `timer_impl.dart`, which wants the
 `dart:io` event handler — a genuine piece of work". That overstated it.
@@ -76,15 +76,27 @@ synthesize a closure from C. `runtime/bin` gets them from `dart:io`'s
 a small Dart shim compiled into the snapshot with `@pragma('vm:entry-point')`,
 which the embedder invokes once at startup and which calls out to C.
 
+All three are installed and verified on hardware: a 50 ms `Future.delayed`
+fires and its callback runs. Not `Duration.zero` — `dart:isolate` short-circuits
+zero-duration timers by posting `_ZERO_EVENT` to its own port, so they never
+reach the platform hook and would prove nothing.
+
+The C side is a 1 ms polling thread. Crude but obviously correct, and easy to
+replace with an event-flag wait once frame pacing matters.
+
 ## Print, while we are here
 
 `print()` throws until `_printClosure` is set in `dart:_internal`;
 `PrepareBuiltinLibrary` sets it from `dart:_builtin`, which is `dart:io`
 scaffolding we exclude. The same Dart shim that carries the timer closures can
-carry a print closure routed to the debug screen and `m1.log`. M1 worked around
-this by returning a checksum, which was right for a smoke test and will be
-painful for an engine bring-up. **Do this early in Phase 2** — it converts every
-later Dart-side failure from a silent wrong number into a message.
+carry a print closure routed to the debug screen and `m1.log`. **Done**, via an
+FFI native — `@Native<Void Function(Handle)>`, resolved at runtime with
+`Dart_SetFfiNativeResolver` because `Dart_SetNativeResolver` runs inside
+gen_snapshot and we use a stock one. Passing a `Handle` avoids malloc and manual
+UTF-8 work; the SDK uses the same shape in `concurrent_patch.dart`.
+
+That FFI channel matters beyond print: it is how `dart:ui` reaches its embedder,
+so Phase 2 now has a proven Dart-to-C path rather than an assumed one.
 
 ## The lesson
 
