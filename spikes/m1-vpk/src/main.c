@@ -101,8 +101,17 @@ int main(void) {
 
   // Must precede Dart_Initialize: the flag table is initialised by this call,
   // not by Dart_Initialize.
-  lg("  [checkpoint] Dart_SetVMFlags\n");
-  char* err = Dart_SetVMFlags(0, NULL);
+  //
+  // --precompilation is not optional and nothing in the VM sets it for us --
+  // every AOT embedder in the tree passes it explicitly (runtime/bin/
+  // main_impl.cc:1313). It selects bare_instructions_frame_layout. Without it
+  // the runtime keeps default_frame_layout, whose saved_caller_pp_from_fp names
+  // a real slot, while AOT frames have no saved PP slot at all. The runtime
+  // then reads a pool pointer out of a slot holding something else, gets null,
+  // and faults in Object::HandleImpl on an ObjectPtr of 1 -- null | kHeapObjectTag.
+  const char* vm_flags[] = {"--precompilation"};
+  lg("  [checkpoint] Dart_SetVMFlags (--precompilation)\n");
+  char* err = Dart_SetVMFlags(1, vm_flags);
   if (err != NULL) {
     lg("  FAIL Dart_SetVMFlags: %s\n", err);
     wait_and_exit(1);
