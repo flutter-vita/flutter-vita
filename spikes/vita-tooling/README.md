@@ -259,28 +259,27 @@ been the single biggest source of friction in the deploy loop.
 
 ## Screen power, and not burning the panel
 
-Two separate concerns, deliberately handled differently:
+Verified on hardware.
 
 | | |
 |---|---|
-| **Suspend** | always blocked — `sceKernelPowerTick(DISABLE_AUTO_SUSPEND)` every 200 ms. If the console suspends the network goes with it, and the deploy loop dies. |
-| **Display** | **off after 60 s idle**, via `scePowerRequestDisplayOff()`. |
+| **Suspend** | always blocked — `sceKernelPowerTick(DEFAULT)` every 200 ms. A suspended console takes the network, and the deploy loop, with it. |
+| **Display** | panel stays powered; the **framebuffer is blanked to black** after 60 s idle. |
+| **Any button** | redraws immediately. |
+| **SELECT** | toggles stay-awake. |
 
-The first version of this held the display on unconditionally, which on a
-PSVita-1000's OLED means burn-in from a static debug screen. That is a bad trade
-on hardware that cannot be replaced, and the console owner was right to push
-back on it.
+**Do not use `scePowerRequestDisplayOff`.** It was tried and it works, which is
+the problem: `scePowerRequestDisplayOn` had no effect afterwards, and the only
+routes back were exiting the app or minimising it. On a single-console setup
+that is an unacceptable way to lose the display.
 
-- **Any button** wakes the display for another 60 s (rising edge only, so
-  holding a button is one wake rather than thousands).
-- **SELECT** toggles a stay-awake mode, for when you actually want to watch it.
-  Deliberately not the default.
+Blanking reaches the same goal without the risk. On an OLED a black pixel draws
+essentially no current, and what causes burn-in here is static *text* sitting on
+screen for hours — which blanking removes. Recovery is guaranteed because the
+app owns the framebuffer.
 
-The app keeps running with the panel off — the dev server, the timer thread and
-the network are all unaffected, so `./dev.sh cycle` works against a dark screen.
-
-Note `nosleep.skprx`, which is loaded on this device, prevents *sleep*, not the
-display timers. The two are unrelated.
+Note `nosleep.skprx`, loaded on this device, prevents *sleep* and has nothing to
+do with the display timers.
 
 ## WiFi drops
 
