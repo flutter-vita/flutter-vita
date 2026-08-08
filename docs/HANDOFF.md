@@ -131,16 +131,26 @@ pointer.
 That is a much more specific lead than "garbage pointer". Somewhere a slot that
 should hold a real object holds zero.
 
-**Worth checking first:** whether the snapshot's BSS is being populated
-correctly. `_kDartVmSnapshotBss` and `_kDartIsolateSnapshotBss` land 4 bytes
-apart (0x813b0f9c and 0x813b0fa0) in an 8-byte `.bss`, and `Image::bss()`
-locates them as `instructions_image + extra_info_->bss_offset_`. The linker put
-`.text` at 0x81000040 and `.bss` at 0x813b0f80, so that offset must be about
-0x3b0f40 — worth confirming gen_snapshot recorded a value matching the linked
-layout, because a wrong offset would have `BSS::Initialize` write somewhere
-harmless and leave the real slots zero. Note the *first* hardware crash was also
-in `BSS::Initialize`; that one was a writability problem, but it means this area
-has already bitten once.
+**The BSS offset is ruled out.** It was the leading suspect and it is correct.
+gen_snapshot emits it as a link-time expression, not a baked-in constant:
+
+```asm
+.long _kDartVmSnapshotBss - (.) - -72
+```
+
+The field sits at image start + 72, so that reduces to `bss - image_start` and
+the linker resolves it from the real symbol addresses — it cannot disagree with
+the layout. Verified against the linked binary anyway:
+
+```
+_kDartVmSnapshotInstructions  0x81005680
+_kDartVmSnapshotBss           0x813b0f9c
+actual distance               0x003ab91c
+recorded bss_offset_          0x003ab91c   MATCH
+```
+
+So `Image::bss()` finds the right place, and whatever is zero is not zero
+because `BSS::Initialize` wrote to the wrong address.
 
 ### Weaker hypothesis: ARM/Thumb interworking
 
@@ -175,16 +185,18 @@ like the same bug seen sooner.
 
 **Things to try, cheapest first:**
 
-1. **Find who passes the 1.** `HandleImpl` is called from everywhere, so add a
-   trace or a conditional breakpoint on `ptr == 1` and walk back. The stack in
-   the dump only gives PC and LR, both inside `HandleImpl` itself.
-2. **Verify the BSS offset.** Compare `extra_info_->bss_offset_` in the linked
-   snapshot against the actual distance from `_kDartVmSnapshotInstructions` to
-   `_kDartVmSnapshotBss`. Both symbols are in the binary, so this is a static
-   check needing no device.
-3. **Check `Object::null_` and friends are initialised.** If a VM-wide static
-   that should hold a real object is zero, tagging it produces exactly 1.
-4. Rule out interworking by building `-marm`. Cheap, but the dump makes it
+1. **Find who passes the 1.** `HandleImpl` is called from everywhere and the
+   dump gives only PC and LR, both inside it. Patch `HandleImpl` to `VitaTrace`
+   a return address when `ptr == 1` — that names the caller in one run.
+2. **Check `Object::null_` and the other VM-wide statics.** If a slot that
+   should hold a real object is zero, tagging it produces exactly 1. These are
+   set during `Dart::Init` from the VM snapshot.
+3. **Compare against a working target.** Build the same `hello.dill` for
+   `linux-arm`, run it under QEMU, and see whether the same call path produces a
+   valid pointer. This is the strongest available signal and needs no Vita —
+   see `runtime/docs/qemu.md`.
+4. ~~Verify the BSS offset~~ — **done, it is correct.** See above.
+5. Rule out interworking by building `-marm`. Cheap, but the dump makes it
    unlikely.
 
 ## Earlier failures, for context
