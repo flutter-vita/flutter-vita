@@ -16,6 +16,15 @@
 
 ## Where the project stands
 
+**M1 is met: pure-Dart AOT runs on real hardware.** On a PSVita-1000 the `.vpk`
+initialises the Dart VM, creates an isolate, executes compiled ARM code, returns
+6830 to C, and drains the microtask queue. No Flutter yet — only the Dart
+runtime is ported. See [HANDOFF.md](HANDOFF.md) for how the last three failures
+were resolved, all of them embedder gaps rather than porting problems.
+
+Nearest blocker for Phase 2: **timers are unimplemented**, and Flutter needs
+them.
+
 **Phase 0.5 is complete and the verdict is go.** Both tracks are done; nothing
 measured says stop. Five of six exit criteria are closed — the sixth, the thread
 budget, is Phase 1's central problem rather than a feasibility gate.

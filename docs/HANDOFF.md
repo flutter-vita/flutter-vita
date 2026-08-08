@@ -1,18 +1,18 @@
 # Handoff — state of play
 
-Written 2026-08-07 at the end of a long session. Everything needed to pick this
-up cold. Read [docs/README.md](README.md) for the project shape;
+Written 2026-08-07, updated 2026-08-08 when M1 passed. Everything needed to
+pick this up cold. Read [docs/README.md](README.md) for the project shape;
 this file is specifically *where we stopped and why*.
 
 ---
 
 ## One-paragraph summary
 
-Flutter-for-Vita is at **milestone M1**: pure-Dart AOT running on the device, no
-Flutter yet. The Dart runtime **compiles and links for `arm-vita-eabi`**, a
-**vita-targeting `gen_snapshot`** exists, and a `.vpk` runs on real hardware and
-gets as far as **creating a Dart isolate**. It then faults calling `main()`.
-Phase 0.5 (feasibility) is complete and the verdict was go.
+**Milestone M1 is met.** Pure-Dart AOT runs on real hardware: the Dart runtime
+compiles and links for `arm-vita-eabi`, a vita-targeting `gen_snapshot` exists,
+and a `.vpk` on a PSVita-1000 initialises the VM, creates an isolate, executes
+compiled Dart, returns a value to C, and drains the microtask queue. No Flutter
+yet. Phase 0.5 (feasibility) is complete and the verdict was go.
 
 ## The machine
 
@@ -93,210 +93,102 @@ loads into SceShell) and others would not load at all. BGFTP is installed and
 working; that is the whole deployment story. Launching is manual, from the
 LiveArea, and that is fine.
 
-## Where it stops — narrowed by run 11
+## M1 is met
+
+Verified on hardware 2026-08-08. Note the passing run still had the debug
+scaffolding compiled in; it was removed afterwards and that build is deployed
+but **not yet re-run**. Nothing in the scaffolding was load-bearing (it only
+logged), but the confirmation is still outstanding:
 
 ```
+[checkpoint] Dart_SetVMFlags (--precompilation)
 Dart_Initialize ok
 isolate created
-[checkpoint] Dart_RootLibrary
-root library handle ok, null=0      <- object store is correct
-[checkpoint] Dart_NewStringFromCString
-name handle ok                      <- heap allocation and object creation work
+microtask scheduler installed
 [checkpoint] Dart_Invoke
-<data abort>
+
+  main() returned 6830 (expected 6830) PASS
+  [checkpoint] draining microtasks
+  [checkpoint] Dart_RunLoop
+  asyncMarker() = 99 (expected 99) PASS -- microtasks drained
+  Dart_Cleanup: ok
 ```
 
-**The snapshot loads correctly and the Dart heap works. The fault is specifically
-in calling AOT-generated code.** Everything before `Dart_Invoke` succeeds,
-including creating a Dart String, which exercises allocation and the object
-model.
+6830 means `fib(20)` recursed ~13k calls, a list and a map allocated and grew,
+strings hashed, and the value returned through `Dart_IntegerToInt64`. Generated
+ARM code, the GC, the handle machinery, the microtask queue, and the message
+handler's thread-pool and condvar path all work on the device.
 
-### ROOT CAUSE FOUND: `global_object_pool()` is null
+### What was wrong: three embedder gaps, none of them the port
 
-Traced 2026-08-07 by instrumenting `HandleImpl` (patch 0007) to log its return
-address when handed `ObjectPtr == 1`:
+Every remaining failure was something `runtime/bin` does that this harness did
+not. None required a change to the Dart runtime.
 
-```
-[vita] HandleImpl: ObjectPtr==1 from ra=0x8116779d cid=23
-```
+**1. `--precompilation` was never passed.** This was the data abort. Nothing in
+the VM sets `FLAG_precompiled_mode`; every AOT embedder in the tree passes the
+flag explicitly (`runtime/bin/main_impl.cc:1313`, `gen_snapshot.cc:890`,
+`dartdev.cc:1078`). Without it the runtime keeps `default_frame_layout`, whose
+`saved_caller_pp_from_fp` names a real slot — but bare-instruction AOT frames
+have **no saved PP slot** (`stack_frame.cc:66`). Walking the stack therefore
+read a pool pointer out of a slot holding something else, got zero, and passed
+`nullptr | kHeapObjectTag` to `ObjectPool::Handle`.
 
-`cid=23` is `kObjectPoolCid`, and the return address resolves to
-`dart::ObjectPool::Handle(Zone*, ObjectPoolPtr)` called from
-**`instructions_arm.cc:289`**:
+**2. No microtask scheduler.** `DartUtils::PrepareAsyncLibrary`
+(`dartutils.cc:524`) hands `dart:isolate`'s
+`_getIsolateScheduleImmediateClosure` to `dart:async`'s
+`_setScheduleImmediateClosure`. Pure Dart API, no natives, ports unchanged.
+Without it `dart:async` throws *"Microtasks are not supported"*.
 
-```cpp
-BareSwitchableCallPattern::BareSwitchableCallPattern(uword pc)
-    : SwitchableCallPatternBase(ObjectPool::Handle(
-          IsolateGroup::Current()->object_store()->global_object_pool())) {
-```
+**3. `Dart_RunLoop` does not drain microtasks.** The VM drains after handling a
+*message*, and `runtime/bin` gets one for free: `main_impl.cc:1095` does not
+invoke `main` directly, it calls `_startMainIsolate`, which schedules `main`
+into the message queue. This harness invokes `main` directly so it can read the
+return value, so no message turn ever happens. It now calls
+`_runPendingImmediateCallback` — the same entry point
+`DartLibraryCalls::DrainMicrotaskQueue` uses.
 
-**`object_store()->global_object_pool()` returns null.** `ObjectPool::Handle`
-tags it, producing `nullptr | kHeapObjectTag` = 1, and the header read faults.
+**Timers are still unimplemented and Flutter will need them.**
+`Future.delayed`, `Timer`, and `Future(...)` all go through
+`VMLibraryHooks.timerFactory`, which nothing sets. Implementing it means
+`timer_impl.dart`, which wants the `dart:io` event handler — a genuine piece of
+work, not a hook call. hello.dart uses `Future.microtask` to stay clear of it.
 
-`Dart_Invoke("main")` goes through a switchable call site, which starts
-unlinked and gets patched on first invocation. That patching needs the global
-object pool, and in bare-instructions AOT that pool comes from the isolate
-snapshot into the object store.
+### Method note: reading a crash address
 
-**This also explains Vita3K.** Its failure was `instructions_arm.cc:414`
-(`TypeTestingStubCallPattern`); hardware fails at line 289
-(`BareSwitchableCallPattern`). Same file, same class of operation — patching a
-call site using the object pool. The emulator was pointing at the real bug, and
-dismissing it as an artifact cost two rounds.
+**The binary is not loaded at its linked address.** The slide has been observed
+between 0x40000 and 0x64000 and **varies per run**. Compute it by comparing a
+snapshot symbol address logged in `m1.log` against `arm-vita-eabi-nm` on
+`build/flutter_vita_m1`, then subtract before running `addr2line`. Skipping this
+resolved an address to `StringToDoubleConverter::StringToIeee`, which is obvious
+nonsense — but a less obviously wrong answer would have sent the investigation
+somewhere useless.
 
-**Important caveat for anyone reading a crash address: the binary is not loaded
-at its linked address.** There is a load slide, currently 0x42000 but it varies
-per run. Compute it by comparing a snapshot symbol address logged in `m1.log`
-against `arm-vita-eabi-nm` on `build/flutter_vita_m1`, then subtract before
-running `addr2line`. Skipping this resolved the address to
-`StringToDoubleConverter::StringToIeee`, which is obvious nonsense — but a less
-obviously wrong answer would have sent the investigation somewhere useless.
-
-### Two things the static analysis established
-
-**Generated ARM code is executing.** `BareSwitchableCallPattern` is only
-constructed when the runtime is asked to patch a *switchable call site*, which
-happens when Dart code hits an unlinked call and traps back into the runtime.
-Reaching that point means compiled Dart ran and the trap path worked. **The
-ARM/Thumb interworking hypothesis is dead** — delete it from consideration.
-
-**The pool is probably non-null after deserialisation and null later.**
-`RW(ObjectPool, global_object_pool)` (`object_store.h:209`) is auto-serialised
-with the object store, needing no special handling. And
-`app_snapshot.cc:7486` *dereferences* it while deserialising
-(`pool->untag()->length_`), which would itself have crashed had it been null
-then. So the interesting window is between "isolate snapshot read" and
-"Dart_Invoke".
-
-**Where to look next:**
-
-1. **Bracket the window.** `VitaTrace` the value of
-   `object_store()->global_object_pool()` at three points: end of
-   `Dart_CreateIsolateGroup`, entry to `Dart_Invoke`, and inside
-   `BareSwitchableCallPattern`. Null at the first means it never came out of the
-   snapshot; non-null then null later means something clears or replaces it.
-   This is one build and one run, and it splits the problem in half.
-2. **Check `IsolateGroup::Current()` is the right group.** The pool is read via
-   `IsolateGroup::Current()->object_store()`. If the trap path lands with a
-   different current group — or none — the store would be a different object.
-   Worth logging the group pointer alongside the pool.
-3. **`thread.cc:1656`** caches the pool into `Thread::global_object_pool_` on
-   isolate entry. We rely on `Dart_CreateIsolateGroup` entering implicitly and
-   never call `Dart_EnterIsolate`; confirm that is sufficient.
-4. Compare against a `linux-arm` build of the same `hello.dill` under QEMU.
-
-### Superseded: the ObjectPtr == 1 symptom
-
-From run 11's dump (`analyse-crash.sh` on the newest `psp2core-*`):
+**One return address is not a call site.** Instrumenting `HandleImpl` with
+`__builtin_return_address(0)` produced an address inside `ObjectPool::Handle`,
+a thin wrapper with many callers, and that was misread as naming a specific
+caller. GCC on ARM rejects `__builtin_return_address(n)` for n > 0, so the fix
+was to scan `HandleImpl`'s own frame for words that look like Thumb return
+addresses in the text range. That produced the real chain in one run:
 
 ```
-Stop reason: Data abort exception
-PC: dart::Object::HandleImpl(Zone*, ObjectPtr, int)
-faulting instruction:  ldr.w r3, [r1, #-1]      <- untag and read the header
-R1: 0x1
+0x8118986d  ObjectPool::Handle(Zone*, ObjectPoolPtr)   object.h:5873
+0x81192ffd  StackFrame::IsStubFrame()                  stack_frame.cc:150
+0x8119064b  DRT_TypeCheck -> DRT_HelperTypeCheck       runtime_entry.cc:1886
 ```
 
-**The `ObjectPtr` is literally `1`.** Dart's `kHeapObjectTag` is 1, so the low
-bit set means "heap object"; untagging gives `0x0` and the header read
-dereferences null. An `ObjectPtr` of exactly 1 is `nullptr | kHeapObjectTag` —
-**something read a zero and tagged it**, rather than a corrupted or stale
-pointer.
+A stack walk reading a null pool — which points straight at frame layout.
 
-That is a much more specific lead than "garbage pointer". Somewhere a slot that
-should hold a real object holds zero.
+### Corrections to earlier conclusions
 
-**The BSS offset is ruled out.** It was the leading suspect and it is correct.
-gen_snapshot emits it as a link-time expression, not a baked-in constant:
+Three claims previously recorded in this file were wrong:
 
-```asm
-.long _kDartVmSnapshotBss - (.) - -72
-```
-
-The field sits at image start + 72, so that reduces to `bss - image_start` and
-the linker resolves it from the real symbol addresses — it cannot disagree with
-the layout. Verified against the linked binary anyway:
-
-```
-_kDartVmSnapshotInstructions  0x81005680
-_kDartVmSnapshotBss           0x813b0f9c
-actual distance               0x003ab91c
-recorded bss_offset_          0x003ab91c   MATCH
-```
-
-So `Image::bss()` finds the right place, and whatever is zero is not zero
-because `BSS::Initialize` wrote to the wrong address.
-
-### Weaker hypothesis: ARM/Thumb interworking
-
-**The run 11 dump argues against this**, and it was recorded here more
-confidently than the evidence supported. The disassembly around the crash is
-Thumb-2 (`23b0`, `bd00`, `f853 3022`) and Dart's C++ runtime is executing
-correctly; nothing suggests a state mismatch. The fault is a bad *value*, not a
-bad instruction stream.
-
-Keeping the note because it is still unverified and cheap to rule out — build
-the C/C++ side `-marm` and see if anything changes — but it should not be the
-first thing tried.
-
-This was flagged in [the Phase 1 work plan](phase-1-workplan.md) and never
-verified:
-
-> VitaSDK defaults to `--with-mode=thumb` while Dart's backend emits ARM (A32).
-> Interworking is standard under EABI v5, but verify at M1.
-
-This *is* M1, and the symptom fits precisely. Every C/C++ object in the build is
-Thumb (`-mthumb` appears in the compile flags), while the snapshot's `.text` is
-A32. Calling from Thumb into ARM requires the low bit of the target address to
-be **clear**, and `BLX`/`BX` switch state from it. If Dart computes an entry
-point that keeps a Thumb bit set — or the runtime assumes the same instruction
-set as the code it calls — execution lands mid-instruction and faults.
-
-Supporting evidence: Vita3K failed at this same stage with
-`instructions_arm.cc: 414: expected: pattern.IsValid()`, where the runtime
-decodes a call site and expects the A32 encoding `blx r9` (`0xe12fff39`). That
-was dismissed as an emulator artifact when hardware failed earlier; it now looks
-like the same bug seen sooner.
-
-**Things to try, cheapest first:**
-
-1. **Find who passes the 1.** `HandleImpl` is called from everywhere and the
-   dump gives only PC and LR, both inside it. Patch `HandleImpl` to `VitaTrace`
-   a return address when `ptr == 1` — that names the caller in one run.
-2. **Check `Object::null_` and the other VM-wide statics.** If a slot that
-   should hold a real object is zero, tagging it produces exactly 1. These are
-   set during `Dart::Init` from the VM snapshot.
-3. **Compare against a working target.** Build the same `hello.dill` for
-   `linux-arm`, run it under QEMU, and see whether the same call path produces a
-   valid pointer. This is the strongest available signal and needs no Vita —
-   see `runtime/docs/qemu.md`.
-4. ~~Verify the BSS offset~~ — **done, it is correct.** See above.
-5. Rule out interworking by building `-marm`. Cheap, but the dump makes it
-   unlikely.
-
-## Earlier failures, for context
-
-Last hardware run:
-
-```
-Dart_Initialize ok
-isolate created
-[checkpoint] invoking main()
-<data abort>
-```
-
-Crash dump says `dart::Object::HandleImpl`, faulting on `ldr.w r3, [r1, #-1]` —
-Dart untagging a heap pointer to read its object header, i.e. **a garbage
-`ObjectPtr`**. Suspicion is `Dart_RootLibrary()` returning junk from the object
-store, but unconfirmed.
-
-**Run 11 is built and deployed but never launched.** It adds one checkpoint per
-API call (`Dart_RootLibrary` / `Dart_NewStringFromCString` / `Dart_Invoke`) and
-logs whether the root library handle is null. **Launch it first** — it identifies
-which call faults, which is the immediate unknown.
-
-Note Vita3K died at this same stage with `instructions_arm.cc: pattern.IsValid()`.
-I dismissed that as an emulator artifact when hardware failed earlier; that was
-premature and they may be the same bug.
+- **`BareSwitchableCallPattern` was never the caller.** Its trace never fired.
+  The attribution came from the single-frame return address described above.
+- **ARM/Thumb interworking is dead** as a hypothesis, and was always weakly
+  supported. Compiled Dart was executing the whole time.
+- **Vita3K's `instructions_arm.cc:414` failure** was dismissed as an emulator
+  artifact, which was premature — but whether it shares this root cause is
+  still unverified. Do not record it as confirmed either way.
 
 ## Debugging, since there is none of the usual kind
 
@@ -316,10 +208,19 @@ impossible. What exists instead:
 
 ## Gotchas that cost real time
 
+- **Read `runtime/bin/main_impl.cc` and `dartutils.cc` before writing embedder
+  code.** Every one of M1's last three failures was a step those files perform
+  and this harness did not: `--precompilation`, the microtask closure, and
+  running `main` through the message queue. Building the harness from
+  `embedder.h` and the API headers instead cost three deploy cycles. Phase 2
+  should start by reading that startup path end to end.
 - `print()` in Dart **throws** until an embedder installs `_printClosure`;
   `runtime/bin` normally does that and is excluded here. hello.dart returns a
   checksum (**6830**) instead. `asyncMarker()` returns 99 only if the microtask
   queue drains.
+- **BGFTP frequently resets the first connection.** `curl` reports
+  *"Recv failure: Connection reset by peer"* and the retry succeeds; uploads
+  have taken up to 32 attempts. Loop rather than treating one failure as down.
 - `SCE_O_TRUNC` does not truncate on Vita3K — stale log tails read as current
   errors. Both logs are `sceIoRemove`d before opening.
 - `sceKernelExitProcess` is not `noreturn` and **returned** on Vita3K, carrying
@@ -355,6 +256,10 @@ Read [`docs/adr/`](adr/README.md), but the load-bearing ones:
 
 ## Still open
 
+- **Timers are not implemented.** `VMLibraryHooks.timerFactory` is unset, so
+  `Timer`, `Future.delayed` and `Future(...)` all throw. Needs `timer_impl.dart`
+  and the `dart:io` event handler. **This is a hard prerequisite for Flutter**
+  and is the first Phase 2 task.
 - **Threading substrate and iteration cost** were never grilled. Both are logged
   in [the ADR index](adr/README.md).
 - `Flutter Vita Plan.md` contradicts the docs in seven places (pin version, the
