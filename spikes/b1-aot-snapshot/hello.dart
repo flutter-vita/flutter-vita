@@ -16,6 +16,26 @@
 // Also deliberately not trivial: a bare `return 42` would tree-shake to almost
 // nothing and prove very little.
 
+import 'dart:ffi';
+
+// The embedder shim. It lives in the root library because that is the library
+// the harness can name without knowing a file URI -- Dart_SetFfiNativeResolver
+// is per-library, and the snapshot bakes in absolute host paths for everything
+// else. In a real embedder this belongs in its own library, alongside the timer
+// hooks; see docs/embedder-startup.md.
+//
+// FFI natives, not Dart_SetNativeResolver: that resolver runs at snapshot time
+// and we use a stock gen_snapshot. Dart_SetFfiNativeResolver is a runtime call
+// and works in AOT. The SDK uses this same Handle-passing shape itself, e.g.
+// @Native<Void Function(Handle)> in concurrent_patch.dart.
+@Native<Void Function(Handle)>(symbol: 'vita_dart_print')
+external void _vitaPrint(Object line);
+
+/// Handed to `dart:_internal._printClosure` by the harness, which is what
+/// `print()` dispatches through. Until an embedder sets it, print throws.
+@pragma('vm:entry-point')
+void Function(String) getPrintClosure() => (String line) => _vitaPrint(line);
+
 int fib(int n) => n < 2 ? n : fib(n - 1) + fib(n - 2);
 
 /// Set by the async path below; read by the harness *after* Dart_RunLoop.
@@ -28,6 +48,10 @@ int asyncMarker() => _asyncMarker;
 
 @pragma('vm:entry-point')
 int main() {
+  // First real output from Dart on this device. Until now every failure past
+  // Dart_Invoke surfaced as a wrong number.
+  print('hello from Dart, running AOT on a PlayStation Vita');
+
   // Recursion: ~13k calls, so stack handling and GetCurrentStackBounds.
   final f = fib(20); // 6765
 

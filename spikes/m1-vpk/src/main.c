@@ -60,6 +60,30 @@ static void lg(const char* fmt, ...) {
   }
 }
 
+// Backs hello.dart's @Native<Void Function(Handle)>(symbol: 'vita_dart_print').
+// Taking a Handle rather than a Pointer means no malloc and no manual UTF-8
+// conversion on the Dart side.
+static void vita_dart_print(Dart_Handle line) {
+  const char* s = NULL;
+  Dart_Handle r = Dart_StringToCString(line, &s);
+  if (Dart_IsError(r) || s == NULL) {
+    lg("[dart print] <unprintable>\n");
+    return;
+  }
+  lg("[dart] %s\n", s);
+}
+
+// AOT cannot use Dart_SetNativeResolver -- that resolver runs inside
+// gen_snapshot, and we use a stock one. Dart_SetFfiNativeResolver is a runtime
+// call and is the supported path for @Native in AOT.
+static void* vita_ffi_resolver(const char* name, uintptr_t args_n) {
+  (void)args_n;
+  if (name != NULL && strcmp(name, "vita_dart_print") == 0) {
+    return (void*)vita_dart_print;
+  }
+  return NULL;
+}
+
 static void wait_and_exit(int code) {
   lg("\npress START to exit.\n");
   if (g_log >= 0) sceIoClose(g_log);
@@ -194,6 +218,36 @@ int main(void) {
     wait_and_exit(1);
   }
   lg("  root library handle ok, null=%d\n", Dart_IsNull(root) ? 1 : 0);
+
+  // print() throws until _printClosure is set. runtime/bin sets it from
+  // dart:_builtin's _getPrintClosure (PrepareBuiltinLibrary, dartutils.cc:461);
+  // dart:_builtin is dart:io scaffolding this port excludes, so the closure
+  // comes from our own shim in the root library instead.
+  lg("  [checkpoint] installing print closure\n");
+  Dart_Handle ffi_res = Dart_SetFfiNativeResolver(root, vita_ffi_resolver);
+  if (Dart_IsError(ffi_res)) {
+    lg("  FAIL Dart_SetFfiNativeResolver: %s\n", Dart_GetError(ffi_res));
+    wait_and_exit(1);
+  }
+  Dart_Handle print_closure =
+      Dart_Invoke(root, Dart_NewStringFromCString("getPrintClosure"), 0, NULL);
+  if (Dart_IsError(print_closure)) {
+    lg("  FAIL getPrintClosure: %s\n", Dart_GetError(print_closure));
+    wait_and_exit(1);
+  }
+  Dart_Handle internal_lib =
+      Dart_LookupLibrary(Dart_NewStringFromCString("dart:_internal"));
+  if (Dart_IsError(internal_lib)) {
+    lg("  FAIL looking up dart:_internal: %s\n", Dart_GetError(internal_lib));
+    wait_and_exit(1);
+  }
+  Dart_Handle print_set = Dart_SetField(
+      internal_lib, Dart_NewStringFromCString("_printClosure"), print_closure);
+  if (Dart_IsError(print_set)) {
+    lg("  FAIL setting _printClosure: %s\n", Dart_GetError(print_set));
+    wait_and_exit(1);
+  }
+  lg("  print closure installed\n");
 
   lg("  [checkpoint] Dart_NewStringFromCString\n");
   Dart_Handle name = Dart_NewStringFromCString("main");
