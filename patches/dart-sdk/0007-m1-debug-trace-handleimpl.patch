@@ -1,0 +1,40 @@
+diff --git a/runtime/vm/object.h b/runtime/vm/object.h
+index f8bc544e..95fca3b6 100644
+--- a/runtime/vm/object.h
++++ b/runtime/vm/object.h
+@@ -43,6 +43,12 @@
+ 
+ namespace dart {
+ 
++#if defined(DART_HOST_OS_VITA)
++// Defined in platform/syslog_vita.cc. Writes straight to sceIo and syncs, so it
++// survives a hard fault -- the only diagnostic channel this port has.
++extern void VitaTrace(const char* format, ...);
++#endif
++
+ // Forward declarations.
+ namespace compiler {
+ class Assembler;
+@@ -774,6 +780,22 @@ class Object {
+                                           ObjectPtr ptr,
+                                           intptr_t default_cid) {
+     Object* obj = reinterpret_cast<Object*>(VMHandles::AllocateHandle(zone));
++#if defined(DART_HOST_OS_VITA)
++    // M1 debugging. setPtr immediately untags ptr and reads its header, so an
++    // ObjectPtr of 1 (nullptr | kHeapObjectTag) faults here with no way to see
++    // the caller: the crash dump gives only PC and LR, both inside this
++    // function. Name the caller before dereferencing.
++    //
++    // Remove once the ObjectPtr == 1 bug is found.
++    // Bit-copy rather than an accessor: untagged_pointer() is protected, and
++    // this must not perturb the value being diagnosed.
++    uword raw_ptr_value;
++    memcpy(&raw_ptr_value, &ptr, sizeof(raw_ptr_value));
++    if (raw_ptr_value == kHeapObjectTag) {
++      VitaTrace("[vita] HandleImpl: ObjectPtr==1 from ra=%p cid=%d\n",
++                __builtin_return_address(0), static_cast<int>(default_cid));
++    }
++#endif
+     obj->setPtr(ptr, default_cid);
+     return *obj;
+   }
