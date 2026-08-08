@@ -111,7 +111,48 @@ in calling AOT-generated code.** Everything before `Dart_Invoke` succeeds,
 including creating a Dart String, which exercises allocation and the object
 model.
 
-### Leading hypothesis: ARM/Thumb interworking
+### The crash dump: ObjectPtr == 1
+
+From run 11's dump (`analyse-crash.sh` on the newest `psp2core-*`):
+
+```
+Stop reason: Data abort exception
+PC: dart::Object::HandleImpl(Zone*, ObjectPtr, int)
+faulting instruction:  ldr.w r3, [r1, #-1]      <- untag and read the header
+R1: 0x1
+```
+
+**The `ObjectPtr` is literally `1`.** Dart's `kHeapObjectTag` is 1, so the low
+bit set means "heap object"; untagging gives `0x0` and the header read
+dereferences null. An `ObjectPtr` of exactly 1 is `nullptr | kHeapObjectTag` —
+**something read a zero and tagged it**, rather than a corrupted or stale
+pointer.
+
+That is a much more specific lead than "garbage pointer". Somewhere a slot that
+should hold a real object holds zero.
+
+**Worth checking first:** whether the snapshot's BSS is being populated
+correctly. `_kDartVmSnapshotBss` and `_kDartIsolateSnapshotBss` land 4 bytes
+apart (0x813b0f9c and 0x813b0fa0) in an 8-byte `.bss`, and `Image::bss()`
+locates them as `instructions_image + extra_info_->bss_offset_`. The linker put
+`.text` at 0x81000040 and `.bss` at 0x813b0f80, so that offset must be about
+0x3b0f40 — worth confirming gen_snapshot recorded a value matching the linked
+layout, because a wrong offset would have `BSS::Initialize` write somewhere
+harmless and leave the real slots zero. Note the *first* hardware crash was also
+in `BSS::Initialize`; that one was a writability problem, but it means this area
+has already bitten once.
+
+### Weaker hypothesis: ARM/Thumb interworking
+
+**The run 11 dump argues against this**, and it was recorded here more
+confidently than the evidence supported. The disassembly around the crash is
+Thumb-2 (`23b0`, `bd00`, `f853 3022`) and Dart's C++ runtime is executing
+correctly; nothing suggests a state mismatch. The fault is a bad *value*, not a
+bad instruction stream.
+
+Keeping the note because it is still unverified and cheap to rule out — build
+the C/C++ side `-marm` and see if anything changes — but it should not be the
+first thing tried.
 
 This was flagged in [the Phase 1 work plan](phase-1-workplan.md) and never
 verified:
@@ -134,15 +175,17 @@ like the same bug seen sooner.
 
 **Things to try, cheapest first:**
 
-1. Disassemble around the crash PC from a fresh dump and check whether execution
-   is in ARM or Thumb state, and whether the target address had bit 0 set.
-   `analyse-crash.sh` labels the mode it disassembles in.
-2. Check whether Dart's ARM assembler assumes callers are also ARM — in
-   particular how `Instructions::EntryPoint()` and the stub call sequences
-   compute target addresses.
-3. Try building the C/C++ side as ARM rather than Thumb (`-marm` in the vita
-   toolchain config) to remove the mixed-state variable entirely. Bigger code,
-   but it isolates the question.
+1. **Find who passes the 1.** `HandleImpl` is called from everywhere, so add a
+   trace or a conditional breakpoint on `ptr == 1` and walk back. The stack in
+   the dump only gives PC and LR, both inside `HandleImpl` itself.
+2. **Verify the BSS offset.** Compare `extra_info_->bss_offset_` in the linked
+   snapshot against the actual distance from `_kDartVmSnapshotInstructions` to
+   `_kDartVmSnapshotBss`. Both symbols are in the binary, so this is a static
+   check needing no device.
+3. **Check `Object::null_` and friends are initialised.** If a VM-wide static
+   that should hold a real object is zero, tagging it produces exactly 1.
+4. Rule out interworking by building `-marm`. Cheap, but the dump makes it
+   unlikely.
 
 ## Earlier failures, for context
 
