@@ -174,22 +174,22 @@ static void* vita_ffi_resolver(const char* name, uintptr_t args_n) {
 // devserver takes a plain (const char*) sink rather than a printf-style one,
 // so it cannot accidentally format attacker-controlled bytes from the socket.
 
-// Screen power, deliberately conservative.
+// Screen power.
 //
-// The earlier version held the display on unconditionally, which on a 1000's
-// OLED means burn-in from a static debug screen -- a bad trade for a console
-// that cannot be replaced. So the two concerns are separated:
+// scePowerRequestDisplayOff is NOT used here, and must not be reintroduced. It
+// does turn the panel off, but nothing this app can do brings it back --
+// scePowerRequestDisplayOn had no effect, and the only ways out were exiting
+// the app or minimising it. On someone's only console that is an unacceptable
+// way to lose the display.
 //
-//   suspend  -- always blocked, via DISABLE_AUTO_SUSPEND. If the console
-//               suspends, the network dies and the deploy loop dies with it.
-//   display  -- off by default after a minute idle, and woken only on purpose.
-//
-// Any button press wakes it for another minute. SELECT toggles a stay-awake
-// mode for when you actually want to watch it, and the mode is deliberately
-// not the default.
+// What protects the OLED instead is blanking: the panel stays powered, but the
+// framebuffer is cleared to black, and a black pixel on an OLED draws
+// essentially no current. Burn-in comes from static *text* sitting there for
+// hours, and blanking removes exactly that. Recovery is guaranteed because we
+// own the framebuffer -- any button redraws.
 #define SCREEN_IDLE_US (60 * 1000 * 1000)
 
-static volatile int g_screen_on = 1;
+static volatile int g_blanked = 0;
 static volatile int g_stay_awake = 0;
 static volatile uint64_t g_last_activity = 0;
 
@@ -199,36 +199,33 @@ static int power_tick_thread(SceSize args, void* argp) {
   (void)args;
   (void)argp;
   SceCtrlData pad;
-  unsigned int prev_buttons = 0;
+  unsigned int prev = 0;
   screen_activity();
   for (;;) {
-    // Never let the console suspend: that would take the network with it.
-    sceKernelPowerTick(SCE_KERNEL_POWER_TICK_DISABLE_AUTO_SUSPEND);
+    // Keep the console awake in both senses: no suspend (it would kill the
+    // network and the deploy loop with it) and no system-driven display off
+    // (whose wake path we do not control).
+    sceKernelPowerTick(SCE_KERNEL_POWER_TICK_DEFAULT);
 
     if (sceCtrlPeekBufferPositive(0, &pad, 1) >= 0) {
-      if (pad.buttons != 0 && pad.buttons != prev_buttons) {
-        // Rising edge only, so holding a button is one wake, not thousands.
-        if ((pad.buttons & SCE_CTRL_SELECT) && !(prev_buttons & SCE_CTRL_SELECT)) {
+      if (pad.buttons != 0 && pad.buttons != prev) {
+        if ((pad.buttons & SCE_CTRL_SELECT) && !(prev & SCE_CTRL_SELECT)) {
           g_stay_awake = !g_stay_awake;
         }
         screen_activity();
       }
-      prev_buttons = pad.buttons;
+      prev = pad.buttons;
     }
 
     const uint64_t idle = sceKernelGetProcessTimeWide() - g_last_activity;
-    const int want_on = g_stay_awake || idle < SCREEN_IDLE_US;
+    const int want_blank = !g_stay_awake && idle >= SCREEN_IDLE_US;
 
-    if (want_on && !g_screen_on) {
-      scePowerRequestDisplayOn();
-      g_screen_on = 1;
-    } else if (!want_on && g_screen_on) {
-      scePowerRequestDisplayOff();
-      g_screen_on = 0;
-    }
-    if (g_screen_on) {
-      // Only reset the dimming timers while the panel is meant to be lit.
-      sceKernelPowerTick(SCE_KERNEL_POWER_TICK_DEFAULT);
+    if (want_blank && !g_blanked) {
+      psvDebugScreenPuts("\033[2J");  // black, but the panel stays on
+      g_blanked = 1;
+    } else if (!want_blank && g_blanked) {
+      psvDebugScreenPuts("\033[2Jflutter-vita: awake. SELECT = stay awake.\n");
+      g_blanked = 0;
     }
     sceKernelDelayThread(200 * 1000);
   }
