@@ -25,7 +25,28 @@ so 1337 stays BGFTP's. Verified in `CMakeCache.txt` and the compile flags — th
 binaries are byte-identical in *size* to stock, because a port is a constant, so
 size is not evidence the change took.
 
-## config.txt changes
+## Outcome of attempt 1: reverted
+
+**The combined change stopped the Vita booting.** Config restored from
+`backup/config.txt.orig` and verified byte-for-byte.
+
+The mistake was not the port fix; it was bundling. Repointing the two
+`psp2shell` paths was described below as fixing dead entries, which was wrong in
+a way that mattered: those paths pointed at a directory that does not exist, so
+`psp2shell_k.skprx` — a **kernel** module — had never loaded on this device.
+Making the path valid did not fix anything, it switched on a kernel module and a
+SceShell module for the first time, in the same boot that first enabled
+vitacompanion. Three newly-active modules, two of them in kernel and shell.
+
+**A dead path is a disabled plugin. Correcting the path is an activation, not a
+cleanup.** Treat it with the same caution as installing something new.
+
+Attempt 2 should add vitacompanion alone — two lines, nothing else, dead paths
+left dead. If that boots, the port collision was the original cause. If it does
+not, vitacompanion is incompatible with this setup and the fallback is a network
+listener inside the app itself, which needs no taiHEN involvement at all.
+
+## config.txt changes (attempt 1 — reverted)
 
 Applied on top of the live config (backed up first, in `backup/`):
 
