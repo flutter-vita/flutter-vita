@@ -170,12 +170,16 @@ static void cmd_launch(int sock) {
   send_str(sock, "OK launching " TARGET_TITLEID "\n");
   sceNetSocketClose(sock);
   lg("  launching %s\n", TARGET_TITLEID);
-  sceKernelDelayThread(300 * 1000);  // let the reply drain
+  sceKernelDelayThread(200 * 1000);  // let the reply drain
   // Launching another title replaces us, which is exactly what we want: the
   // target's directory must be unlocked, and it cannot be while we hold it.
   sceAppMgrLaunchAppByUri(0xFFFFF, "psgm:play?titleid=" TARGET_TITLEID);
-  sceKernelDelayThread(2 * 1000 * 1000);
-  lg("  launch did not take effect\n");
+  // Exit at once rather than lingering. The "close the current application?"
+  // prompt appears only because the outgoing app is still alive; launchers that
+  // switch silently exit straight after issuing the launch.
+  if (g_log >= 0) sceIoClose(g_log);
+  sceKernelExitProcess(0);
+  for (;;) sceKernelDelayThread(1000 * 1000);
 }
 
 // Returns 1 to stop serving.

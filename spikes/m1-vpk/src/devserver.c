@@ -1,6 +1,7 @@
 #include "devserver.h"
 
 #include <psp2/appmgr.h>
+#include <psp2/kernel/processmgr.h>
 #include <psp2/ctrl.h>
 #include <psp2/io/fcntl.h>
 #include <psp2/io/stat.h>
@@ -176,11 +177,16 @@ static int serve(int sock, const char* log_path, const char* eboot_path) {
       send_str(sock, "OK handing off to FVTA00003\n");
       sceNetSocketClose(sock);
       logf_("  [dev] handing off to the loader\n");
-      sceKernelDelayThread(300 * 1000);
+      sceKernelDelayThread(200 * 1000);
       sceAppMgrLaunchAppByUri(0xFFFFF, "psgm:play?titleid=FVTA00003");
-      sceKernelDelayThread(2 * 1000 * 1000);
-      logf_("  [dev] handoff did not take effect\n");
-      return 1;
+      // Exit immediately. Lingering here is what produced the "close the
+      // current application?" prompt: the shell only asks because we are still
+      // running. Launchers that switch silently (HEXFlow, RetroFlow) all exit
+      // straight after issuing the launch.
+      sceKernelExitProcess(0);
+      for (;;) {
+        sceKernelDelayThread(1000 * 1000);
+      }
     } else if (strcmp(line, "relaunch") == 0) {
       send_str(sock, "OK relaunching\n");
       sceNetSocketClose(sock);

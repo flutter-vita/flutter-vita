@@ -68,6 +68,20 @@ launch, print the log. **Verified end to end with no manual steps.**
 
 `sceAppMgrLaunchAppByUri(0xFFFFF, "psgm:play?titleid=...")` works on this device.
 
+### Exit immediately after launching, or the shell prompts
+
+The first version lingered two seconds after issuing the launch, to log whether
+it had taken effect. That diagnostic was buying a **"close the current
+application?"** dialog every cycle: the shell asks precisely because the
+outgoing app is still alive. Launchers that switch silently (HEXFlow, RetroFlow)
+call `sceKernelExitProcess` straight after the launch, and so do both of ours
+now.
+
+It also broke a cycle outright — the prompt appeared, the app then exited out
+from under it, and the launch was cancelled, leaving nothing running.
+
+A full cycle takes **~10 seconds** including a 2.4 MB upload.
+
 ### The loader does not write anything
 
 The first design had the loader install the binary itself. It cannot: it gets
