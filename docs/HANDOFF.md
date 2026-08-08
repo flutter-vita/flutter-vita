@@ -152,17 +152,38 @@ running `addr2line`. Skipping this resolved the address to
 `StringToDoubleConverter::StringToIeee`, which is obvious nonsense — but a less
 obviously wrong answer would have sent the investigation somewhere useless.
 
+### Two things the static analysis established
+
+**Generated ARM code is executing.** `BareSwitchableCallPattern` is only
+constructed when the runtime is asked to patch a *switchable call site*, which
+happens when Dart code hits an unlinked call and traps back into the runtime.
+Reaching that point means compiled Dart ran and the trap path worked. **The
+ARM/Thumb interworking hypothesis is dead** — delete it from consideration.
+
+**The pool is probably non-null after deserialisation and null later.**
+`RW(ObjectPool, global_object_pool)` (`object_store.h:209`) is auto-serialised
+with the object store, needing no special handling. And
+`app_snapshot.cc:7486` *dereferences* it while deserialising
+(`pool->untag()->length_`), which would itself have crashed had it been null
+then. So the interesting window is between "isolate snapshot read" and
+"Dart_Invoke".
+
 **Where to look next:**
 
-1. Why is `global_object_pool` null after the isolate snapshot is read? It is an
-   `RW` field in `object_store.h:209`, so it should be deserialised with
-   everything else. Check whether the AOT deserialiser populates it and whether
-   anything on the Vita path skips that.
-2. `thread.cc:1656` caches it into `Thread::global_object_pool_` when entering
-   an isolate. Confirm that path runs — we call `Dart_CreateIsolateGroup`, which
-   enters the isolate implicitly, and never call `Dart_EnterIsolate` ourselves.
-3. Compare against a `linux-arm` build of the same `hello.dill` under QEMU. If
-   the pool is populated there, diff the two paths.
+1. **Bracket the window.** `VitaTrace` the value of
+   `object_store()->global_object_pool()` at three points: end of
+   `Dart_CreateIsolateGroup`, entry to `Dart_Invoke`, and inside
+   `BareSwitchableCallPattern`. Null at the first means it never came out of the
+   snapshot; non-null then null later means something clears or replaces it.
+   This is one build and one run, and it splits the problem in half.
+2. **Check `IsolateGroup::Current()` is the right group.** The pool is read via
+   `IsolateGroup::Current()->object_store()`. If the trap path lands with a
+   different current group — or none — the store would be a different object.
+   Worth logging the group pointer alongside the pool.
+3. **`thread.cc:1656`** caches the pool into `Thread::global_object_pool_` on
+   isolate entry. We rely on `Dart_CreateIsolateGroup` entering implicitly and
+   never call `Dart_EnterIsolate`; confirm that is sufficient.
+4. Compare against a `linux-arm` build of the same `hello.dill` under QEMU.
 
 ### Superseded: the ObjectPtr == 1 symptom
 
