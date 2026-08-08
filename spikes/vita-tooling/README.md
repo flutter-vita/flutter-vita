@@ -46,8 +46,42 @@ recovery boot. A normal boot clears it.
 **L-recovery is confirmed working on this device** — that much was worth
 learning.
 
-The remote-control problem is solved without taiHEN instead: a listener inside
-our own app. See `spikes/m1-vpk/src/main.c`.
+The remote-control problem is solved without taiHEN instead, but only partly --
+see "What is actually possible" below.
+
+## What is actually possible, measured
+
+Two facts settle the design, and both were measured on the device rather than
+assumed:
+
+**An app cannot see its own directory.** From inside FVTA00002, creating a file
+in `ux0:app/FVTA00002/` fails with `0x80010002` — **ENOENT, not EACCES**. The
+path does not exist in that sandbox; the same content is mounted read-only as
+`app0:`. So no amount of retiming or staging lets a running app replace its own
+`eboot.bin`.
+
+**While an app runs, its directory is locked against everyone.** BGFTP — a
+separate background process that can normally write there — gets `550` on
+`ux0:app/FVTA00002/` for as long as our app is up, and succeeds within seconds
+of it exiting.
+
+Together those kill self-update outright. The loop that remains:
+
+| Step | How |
+|---|---|
+| pull logs | `./dev.sh log` — over the in-app server on 1339 |
+| close the app | `./dev.sh exit` — releases the directory lock |
+| upload a new build | BGFTP on 1337, which runs in the background permanently |
+| **launch** | **tap the icon** — the one manual step |
+
+`./dev.sh deploy` chains the middle three. Launching needs a SceShell plugin,
+which is exactly what vitacompanion would have provided and cannot here.
+
+A fully automatic loop would need a second small "loader" vpk: our app writes
+the new binary to `ux0:data/` (writable), launches the loader by title id, and
+exits; the loader — now that the lock is gone — copies it into place and
+launches FVTA00002. That is a real option if one tap per iteration becomes the
+bottleneck.
 
 ## Outcome of attempt 1: reverted
 

@@ -135,12 +135,40 @@ static int serve(int sock, const char* log_path, const char* eboot_path) {
       cmd_log(sock, log_path);
       return 0;  // close so the reader sees EOF
     } else if (strncmp(line, "upload ", 7) == 0) {
-      const int size = atoi(line + 7);
-      if (size <= 0 || size > 64 * 1024 * 1024) {
-        send_str(sock, "ERR size\n");
-        continue;
+      // Measured, not assumed: ux0:app/<own titleid> is ENOENT from inside this
+      // app's sandbox (it is mounted as app0:, read-only), and while the app
+      // runs the directory is locked against every other process too -- BGFTP
+      // gets 550 on it. So a running app can never replace its own eboot.bin,
+      // by any route. Deploying means: exit, upload over BGFTP, launch.
+      send_str(sock,
+               "ERR cannot self-update: ux0:app/<self> is ENOENT in-sandbox "
+               "and locked while running. Use ./dev.sh deploy\n");
+      return 0;
+    } else if (strcmp(line, "probe") == 0) {
+      // ux0:app/<self> may be read-only from inside the app's own sandbox, or
+      // locked because the running binary lives there. BGFTP writes it happily
+      // from another process, so the difference matters and is worth measuring
+      // rather than assuming.
+      static const char* const dirs[] = {
+          "ux0:data/flutter-vita", "ux0:app/FVTA00002", "ux0:data", "ux0:",
+          "ur0:data", NULL};
+      for (int i = 0; dirs[i] != NULL; i++) {
+        char path[256], msg[320];
+        snprintf(path, sizeof path, "%s/.fvita_probe", dirs[i]);
+        SceUID fd = sceIoOpen(path, SCE_O_WRONLY | SCE_O_CREAT | SCE_O_TRUNC,
+                              0777);
+        if (fd >= 0) {
+          sceIoWrite(fd, "x", 1);
+          sceIoClose(fd);
+          sceIoRemove(path);
+          snprintf(msg, sizeof msg, "WRITABLE  %s\n", dirs[i]);
+        } else {
+          snprintf(msg, sizeof msg, "no (0x%08X)  %s\n", (unsigned)fd,
+                   dirs[i]);
+        }
+        send_str(sock, msg);
       }
-      cmd_upload(sock, eboot_path, size);
+      return 0;
     } else if (strcmp(line, "relaunch") == 0) {
       send_str(sock, "OK relaunching\n");
       sceNetSocketClose(sock);
@@ -154,7 +182,7 @@ static int serve(int sock, const char* log_path, const char* eboot_path) {
       send_str(sock, "OK\n");
       return 1;
     } else if (n > 0) {
-      send_str(sock, "ERR unknown (ping|log|upload <n>|relaunch|exit)\n");
+      send_str(sock, "ERR unknown (ping|probe|log|upload <n>|relaunch|exit)\n");
     }
   }
 }
