@@ -25,6 +25,30 @@ so 1337 stays BGFTP's. Verified in `CMakeCache.txt` and the compile flags — th
 binaries are byte-identical in *size* to stock, because a port is a constant, so
 size is not evidence the change took.
 
+## Verdict: vitacompanion does not work on this device. Do not retry.
+
+Attempt 2 was the clean experiment — the known-good config plus exactly two
+lines, dead paths left dead, FTP moved to 1340. **Same failure: stuck on
+loading, then shut off.**
+
+So the port collision, while real and documented, was not the cause. That theory
+is disproved, not merely unproven. Both modules stay on the device unreferenced;
+neither belongs in `config.txt`.
+
+No crash dump was produced, which fits a kernel-side load failure — coredumps
+cover user-mode app crashes.
+
+**C2-12828-1 is a red herring here.** It appeared only after booting with L
+held. L skips every plugin including `nonpdrm.skprx`, and without nonpdrm,
+NoNpDrm-installed titles fail with exactly that code. It is an artifact of the
+recovery boot. A normal boot clears it.
+
+**L-recovery is confirmed working on this device** — that much was worth
+learning.
+
+The remote-control problem is solved without taiHEN instead: a listener inside
+our own app. See `spikes/m1-vpk/src/main.c`.
+
 ## Outcome of attempt 1: reverted
 
 **The combined change stopped the Vita booting.** Config restored from
