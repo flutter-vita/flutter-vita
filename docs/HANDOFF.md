@@ -325,7 +325,7 @@ barrier only runs once objects begin getting promoted, which needs a GC first.
 It dies at **i≈200–300 with only ~80 KB retained** — nowhere near any memory
 limit, so this is not a heap-size threshold.
 
-### The lead: `thread_local` is emulated, and emulated TLS allocates
+### CONFIRMED: `thread_local` returns null on this platform
 
 ```
 __emutls symbols in the binary : 15
@@ -340,15 +340,37 @@ can allocate* — and Dart reads it from inside allocation slow paths, GC, and
 no-safepoint scopes, which are exactly the places where allocating is illegal
 or can fail.
 
-**Next steps, in order:**
+`DRT_AllocateArray` was instrumented to log both the thread it is handed and
+`Thread::Current()`. On hardware:
 
-1. Instrument `DRT_AllocateArray` to log `thread` and `Thread::Current()` on
-   entry. Confirms whether the null arrives from generated code or from TLS.
-2. Check `__emutls_get_address` in VitaSDK's libgcc: does it return null on
-   malloc failure, and is it reentrant?
-3. If confirmed, replace the `thread_local` on this platform with a Vita
-   primitive that does not allocate on read — `sceKernelGetThreadId()` indexing
-   a fixed table, or storing the pointer in a reserved register.
+```
+[vita] AllocateArray ok        arg=0x817127c8  tls=0x817127c8
+[vita] AllocateArray MISMATCH  arg=0x817127c8  tls=0x0
+```
+
+**The runtime entry's `thread` argument is valid throughout. `Thread::Current()`
+returns null.** Same thread, same moment: the argument is right and the TLS read
+is wrong. Generated code and the THR register are exonerated; this is purely
+`thread_local` failing.
+
+`SetTypeArguments` uses the no-thread `StorePointer` overload, which resolves
+the thread through `Thread::Current()`, so the barrier dereferences null and
+takes the process down.
+
+**The fix (patch 0009, not yet written):** `Thread::Current()` must not depend
+on emulated TLS. It is read from allocation slow paths, GC and no-safepoint
+scopes, and `__emutls_get_address` mallocs a thread's block on first access —
+allocating on a path that must never allocate.
+
+Replace the two `thread_local`s in `runtime/vm/os_thread.h` with Vita-specific
+storage that cannot allocate: a fixed-size table keyed by
+`sceKernelGetThreadId()`, linear-scanned. Dart uses few threads, so a small
+array is enough and it is allocation-free by construction.
+
+**This is a platform-layer defect affecting every `thread_local` in the
+runtime**, not just this one call site. Anything else reading TLS on an
+allocation path has the same latent bug — which is a strong argument for fixing
+it before the engine lands on top.
 
 Note the threads created with `sceKernelCreateThread` (timer, power tick) are
 not pthreads, which is a second way emulated TLS can misbehave.
