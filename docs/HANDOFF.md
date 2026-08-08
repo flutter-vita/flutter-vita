@@ -22,7 +22,7 @@ Phase 0.5 (feasibility) is complete and the verdict was go.
 | depot_tools | `~/depot_tools` — provides `gclient`; `gn`/`ninja` come from the Dart checkout |
 | Dart SDK | `third_party/sdk` — **gclient-owned**, pinned `d684a576`, ~7.8 GB, gitignored |
 | Flutter | FVM 3.44.8, pinned in committed `.fvmrc` |
-| Vita | `192.168.0.40`, FTP on **1337 only while VitaShell is open with SELECT pressed** |
+| Vita | `192.168.0.40`, FTP on 1337 — always on, served by **BGFTP** |
 | Title ID | `FVTA00002` (M1), `FVTA00001` (Track A probe) |
 
 **Never `rsync` into `third_party/sdk`.** gclient records DEPS sub-repos with
@@ -86,9 +86,12 @@ ux0:data/flutter-vita/dart.log   VitaTrace + Dart's Syslog
 ```
 
 [`spikes/m1-vpk/deploy.sh`](../spikes/m1-vpk/deploy.sh) scripts this with
-`USE_COMPANION=0`. **vitacompanion destabilised the device** — it loads into
-SceShell — so avoid shell plugins. Recovery if one bricks the UI: hold **L**
-during boot to skip taiHEN plugins.
+`USE_COMPANION=0`.
+
+**Do not suggest taiHEN plugins.** vitacompanion destabilised the device (it
+loads into SceShell) and others would not load at all. BGFTP is installed and
+working; that is the whole deployment story. Launching is manual, from the
+LiveArea, and that is fine.
 
 ## Where it stops — narrowed by run 11
 
