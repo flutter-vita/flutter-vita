@@ -41,16 +41,20 @@ ninja -C third_party/sdk/out/vita obj/runtime/libdart_aotruntime_product.a
 # 2. Host gen_snapshot that targets Vita
 ninja -C third_party/sdk/out/host gen_snapshot_product_vita_arm
 
-# 3. hello.dart -> kernel
+# 3. Platform dill from THIS tree, so patch 0007 is in it. One-time setup:
+#      python3 third_party/sdk/tools/generate_package_config.py
+ninja -C third_party/sdk/out/host vm_platform_product.dill
+
+# 4. hello.dart -> kernel (build.sh points --platform at the dill from step 3)
 ./spikes/b1-aot-snapshot/build.sh
 
-# 4. kernel -> snapshot.S  (app-aot-assembly; ADR-0005 option A)
+# 5. kernel -> snapshot.S  (app-aot-assembly; ADR-0005 option A)
 third_party/sdk/out/host/gen_snapshot_product_vita_arm \
   --snapshot_kind=app-aot-assembly \
   --assembly=spikes/m1-snapshot/out/snapshot.S \
   spikes/b1-aot-snapshot/out/hello.dill
 
-# 5. link everything into a vpk
+# 6. link everything into a vpk
 ./spikes/m1-vpk/build.sh
 ```
 

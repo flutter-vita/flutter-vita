@@ -1,0 +1,31 @@
+diff --git a/sdk/lib/_internal/vm/lib/internal_patch.dart b/sdk/lib/_internal/vm/lib/internal_patch.dart
+index d13d7f8e..d96a09f8 100644
+--- a/sdk/lib/_internal/vm/lib/internal_patch.dart
++++ b/sdk/lib/_internal/vm/lib/internal_patch.dart
+@@ -87,15 +87,26 @@ external String allocateTwoByteString(int length);
+ @pragma("vm:external-name", "Internal_writeIntoTwoByteString")
+ external void writeIntoTwoByteString(String string, int index, int codePoint);
+ 
++// vm:entry-point so an embedder can reach this class and these fields through
++// Dart_GetClass + Dart_SetField. Product AOT drops library dictionary entries
++// for classes nothing marks as an entry point, and dart:io -- which is the only
++// thing in the SDK that sets the two fields below -- is not part of every
++// embedder. Without this, Dart_GetClass reports
++// "Class 'VMLibraryHooks' not found in library 'dart._internal'" and timers
++// cannot be installed at all.
++@pragma("vm:entry-point")
+ class VMLibraryHooks {
+   // Example: "dart:isolate _Timer._factory"
++  @pragma("vm:entry-point")
+   static Timer Function(int, void Function(Timer), bool)? timerFactory;
+ 
+   // Example: "dart:io _EventHandler._sendData"
++  @pragma("vm:entry-point")
+   static late void Function(Object?, SendPort, int) eventHandlerSendData;
+ 
+   // A nullary closure that answers the current clock value in milliseconds.
+   // Example: "dart:io _EventHandler._timerMillisecondClock"
++  @pragma("vm:entry-point")
+   static late int Function() timerMillisecondClock;
+ 
+   // Implementation of package root/map provision.

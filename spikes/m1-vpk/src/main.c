@@ -31,6 +31,7 @@
 #include <string.h>
 
 #include "dart_api.h"
+#include "dart_native_api.h"  // Dart_CObject / Dart_PostCObject, for the timer
 #include "debugScreen.h"
 
 unsigned int _newlib_heap_size_user = 192 * 1024 * 1024;
@@ -73,13 +74,71 @@ static void vita_dart_print(Dart_Handle line) {
   lg("[dart] %s\n", s);
 }
 
+// ---------------------------------------------------------------- timers ---
+//
+// dart:isolate already contains the timer scheduler; it is missing only two
+// platform primitives. These are them. The contract, from timer_impl.dart:
+//
+//   timerMillisecondClock()                -> monotonic ms, any epoch
+//   eventHandlerSendData(_, port, wakeup)  -> post null to `port` at `wakeup`,
+//                                             or cancel when wakeup is -1
+//
+// The null message is _TIMEOUT_EVENT. Zero-duration timers never arrive here:
+// dart:isolate posts _ZERO_EVENT to its own port without asking the platform.
+
+#define VITA_NO_TIMER (-1)
+
+// 32-bit deliberately. A 64-bit store is not atomic on ARMv7, and these are
+// written by the Dart thread and read by the timer thread; 32-bit ms wraps
+// after ~24 days of uptime, which no spike run will reach. A real embedder
+// should take a lock rather than rely on that.
+static volatile int32_t g_wakeup_ms = 0;  // 0 = nothing scheduled
+static volatile Dart_Port g_timer_port = ILLEGAL_PORT;
+static volatile int g_timer_run = 1;
+
+static int64_t vita_monotonic_ms(void) {
+  return (int64_t)(sceKernelGetProcessTimeWide() / 1000ULL);
+}
+
+static void vita_schedule_wakeup(Dart_Handle send_port, int64_t wakeup_ms) {
+  Dart_Port port_id = ILLEGAL_PORT;
+  Dart_Handle r = Dart_SendPortGetId(send_port, &port_id);
+  if (Dart_IsError(r)) {
+    lg("  [timer] FAIL Dart_SendPortGetId: %s\n", Dart_GetError(r));
+    return;
+  }
+  g_timer_port = port_id;
+  g_wakeup_ms = (wakeup_ms == VITA_NO_TIMER) ? 0 : (int32_t)wakeup_ms;
+}
+
+// Polls at 1 ms. Crude but obviously correct, and easy to replace with an event
+// flag once the frame loop cares -- which it will, at 16.6 ms budgets.
+static int vita_timer_thread(SceSize args, void* argp) {
+  (void)args;
+  (void)argp;
+  while (g_timer_run) {
+    const int32_t target = g_wakeup_ms;
+    if (target != 0 && (int32_t)vita_monotonic_ms() - target >= 0) {
+      g_wakeup_ms = 0;
+      Dart_CObject msg;
+      msg.type = Dart_CObject_kNull;
+      Dart_PostCObject(g_timer_port, &msg);  // _TIMEOUT_EVENT
+    }
+    sceKernelDelayThread(1000);
+  }
+  return 0;
+}
+
 // AOT cannot use Dart_SetNativeResolver -- that resolver runs inside
 // gen_snapshot, and we use a stock one. Dart_SetFfiNativeResolver is a runtime
 // call and is the supported path for @Native in AOT.
 static void* vita_ffi_resolver(const char* name, uintptr_t args_n) {
   (void)args_n;
-  if (name != NULL && strcmp(name, "vita_dart_print") == 0) {
-    return (void*)vita_dart_print;
+  if (name == NULL) return NULL;
+  if (strcmp(name, "vita_dart_print") == 0) return (void*)vita_dart_print;
+  if (strcmp(name, "vita_monotonic_ms") == 0) return (void*)vita_monotonic_ms;
+  if (strcmp(name, "vita_schedule_wakeup") == 0) {
+    return (void*)vita_schedule_wakeup;
   }
   return NULL;
 }
@@ -249,6 +308,56 @@ int main(void) {
   }
   lg("  print closure installed\n");
 
+  // Timers. Three hooks, none of which implement a timer -- the scheduler is
+  // already in dart:isolate. See docs/embedder-startup.md.
+  lg("  [checkpoint] installing timer hooks\n");
+
+  // 1. timerFactory, set by dart:isolate's own _setupHooks. This is the call
+  //    PrepareIsolateLibrary makes (dartutils.cc:533).
+  Dart_Handle iso_hooks =
+      Dart_Invoke(isolate_lib, Dart_NewStringFromCString("_setupHooks"), 0, NULL);
+  if (Dart_IsError(iso_hooks)) {
+    lg("  FAIL dart:isolate _setupHooks: %s\n", Dart_GetError(iso_hooks));
+    wait_and_exit(1);
+  }
+
+  // 2 and 3. The platform primitives, as static fields on VMLibraryHooks.
+  //    Dart_SetField on a type handle reaches statics and ignores the
+  //    leading-underscore visibility rules.
+  Dart_Handle hooks_cls =
+      Dart_GetClass(internal_lib, Dart_NewStringFromCString("VMLibraryHooks"));
+  if (Dart_IsError(hooks_cls)) {
+    lg("  FAIL locating VMLibraryHooks: %s\n", Dart_GetError(hooks_cls));
+    wait_and_exit(1);
+  }
+  Dart_Handle clock =
+      Dart_Invoke(root, Dart_NewStringFromCString("getTimerClock"), 0, NULL);
+  Dart_Handle send_data = Dart_Invoke(
+      root, Dart_NewStringFromCString("getEventHandlerSendData"), 0, NULL);
+  if (Dart_IsError(clock) || Dart_IsError(send_data)) {
+    lg("  FAIL building timer closures: %s\n",
+       Dart_GetError(Dart_IsError(clock) ? clock : send_data));
+    wait_and_exit(1);
+  }
+  Dart_Handle r1 = Dart_SetField(
+      hooks_cls, Dart_NewStringFromCString("timerMillisecondClock"), clock);
+  Dart_Handle r2 = Dart_SetField(
+      hooks_cls, Dart_NewStringFromCString("eventHandlerSendData"), send_data);
+  if (Dart_IsError(r1) || Dart_IsError(r2)) {
+    lg("  FAIL setting timer hooks: %s\n",
+       Dart_GetError(Dart_IsError(r1) ? r1 : r2));
+    wait_and_exit(1);
+  }
+
+  SceUID timer_thread = sceKernelCreateThread(
+      "vita_timer", vita_timer_thread, 0x10000100, 0x4000, 0, 0, NULL);
+  if (timer_thread < 0) {
+    lg("  FAIL creating timer thread: 0x%08X\n", (unsigned)timer_thread);
+    wait_and_exit(1);
+  }
+  sceKernelStartThread(timer_thread, 0, NULL);
+  lg("  timer hooks installed, timer thread started\n");
+
   lg("  [checkpoint] Dart_NewStringFromCString\n");
   Dart_Handle name = Dart_NewStringFromCString("main");
   if (Dart_IsError(name)) {
@@ -312,6 +421,22 @@ int main(void) {
     }
   }
 
+  // Only becomes 42 if the whole round trip worked: timerFactory -> _Timer ->
+  // eventHandlerSendData -> the timer thread -> Dart_PostCObject -> the message
+  // loop. If Dart_RunLoop above hung instead, this line never printed and the
+  // log ends at the RunLoop checkpoint -- which is itself the diagnosis.
+  Dart_Handle delayed =
+      Dart_Invoke(root, Dart_NewStringFromCString("delayedMarker"), 0, NULL);
+  int64_t delayed_value = -1;
+  if (!Dart_IsError(delayed) &&
+      !Dart_IsError(Dart_IntegerToInt64(delayed, &delayed_value))) {
+    lg("  delayedMarker() = %lld (expected 42) %s\n", (long long)delayed_value,
+       delayed_value == 42 ? "PASS -- real timer fired" : "FAIL");
+  } else {
+    lg("  FAIL reading delayedMarker\n");
+  }
+
+  g_timer_run = 0;
   Dart_ExitScope();
   Dart_ShutdownIsolate();
   err = Dart_Cleanup();

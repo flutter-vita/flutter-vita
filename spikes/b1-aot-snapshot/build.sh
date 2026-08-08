@@ -12,6 +12,7 @@ cd "$(dirname "$0")"
 OUT=out
 FLUTTER_VERSION=3.44.8   # must match VERSIONS.md
 SDK="$HOME/fvm/versions/$FLUTTER_VERSION/bin/cache/dart-sdk"
+PLATFORM="$(cd "$(dirname "$0")/../.." && pwd)/third_party/sdk/out/host/vm_platform_product.dill"
 
 GEN_SNAPSHOT="$OUT/gen_snapshot_arm"
 GEN_SNAPSHOT_URL="https://raw.githubusercontent.com/ardera/flutter-engine-binaries-for-arm/main/arm/gen_snapshot_macos_x64_release"
@@ -38,10 +39,21 @@ fi
 # --aot enables the tree shaker and the AOT-specific transformations; the
 # product platform dill drops assertions and debug-only code. The kernel binary
 # format is version-locked to the SDK, so this SDK must match gen_snapshot's.
+#
+# The platform dill comes from *our* tree, not from FVM. It carries patch 0007
+# (VMLibraryHooks marked vm:entry-point), without which timers cannot be
+# installed at all. It also removes a latent mismatch: the runtime is built from
+# third_party/sdk, so the SDK sources compiled into the snapshot should come
+# from there too rather than happening to be the same revision.
+#
+#   ninja -C third_party/sdk/out/host vm_platform_product.dill
+#
+# That target needs .dart_tool/package_config.json, which a fresh gclient sync
+# does not create:  python3 tools/generate_package_config.py
 echo "==> gen_kernel: hello.dart -> $OUT/hello.dill"
 "$SDK/bin/dartaotruntime" \
   "$SDK/bin/snapshots/gen_kernel_aot.dart.snapshot" \
-  --platform "$SDK/lib/_internal/vm_platform_product.dill" \
+  --platform "$PLATFORM" \
   --aot \
   -Ddart.vm.product=true \
   -o "$OUT/hello.dill" \

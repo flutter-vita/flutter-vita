@@ -17,6 +17,7 @@
 // nothing and prove very little.
 
 import 'dart:ffi';
+import 'dart:isolate';
 
 // The embedder shim. It lives in the root library because that is the library
 // the harness can name without knowing a file URI -- Dart_SetFfiNativeResolver
@@ -36,6 +37,32 @@ external void _vitaPrint(Object line);
 @pragma('vm:entry-point')
 void Function(String) getPrintClosure() => (String line) => _vitaPrint(line);
 
+// The timer hooks. dart:isolate already contains the whole timer scheduler
+// (timer_impl.dart is `part` of isolate_patch.dart), so nothing here implements
+// timers -- these only supply the two platform primitives it is missing.
+// See docs/embedder-startup.md.
+
+@Native<Int64 Function()>(symbol: 'vita_monotonic_ms')
+external int _vitaMonotonicMs();
+
+@Native<Void Function(Handle, Int64)>(symbol: 'vita_schedule_wakeup')
+external void _vitaScheduleWakeup(Object sendPort, int wakeupTime);
+
+/// For `VMLibraryHooks.timerMillisecondClock`. Must share an epoch with the
+/// `wakeupTime` values handed to the hook below -- `_Timer` computes one from
+/// the other.
+@pragma('vm:entry-point')
+int Function() getTimerClock() => () => _vitaMonotonicMs();
+
+/// For `VMLibraryHooks.eventHandlerSendData`. `_Timer` calls this to ask the
+/// platform to wake the isolate at [wakeupTime], or to cancel with -1
+/// (`_NO_TIMER`). Zero-duration timers never reach here -- dart:isolate handles
+/// those itself by posting `_ZERO_EVENT` straight to its own port.
+@pragma('vm:entry-point')
+void Function(Object?, SendPort, int) getEventHandlerSendData() =>
+    (Object? sender, SendPort port, int wakeupTime) =>
+        _vitaScheduleWakeup(port, wakeupTime);
+
 int fib(int n) => n < 2 ? n : fib(n - 1) + fib(n - 2);
 
 /// Set by the async path below; read by the harness *after* Dart_RunLoop.
@@ -45,6 +72,15 @@ int _asyncMarker = 0;
 
 @pragma('vm:entry-point')
 int asyncMarker() => _asyncMarker;
+
+/// Set by a real (non-zero) timer, so it only becomes 42 if the whole
+/// timerFactory -> _Timer -> eventHandlerSendData -> Dart_PostCObject ->
+/// message loop round trip works. A zero-duration delay would not test it:
+/// dart:isolate short-circuits those without ever calling the platform hook.
+int _delayedMarker = 0;
+
+@pragma('vm:entry-point')
+int delayedMarker() => _delayedMarker;
 
 @pragma('vm:entry-point')
 int main() {
@@ -76,6 +112,10 @@ int main() {
   // Timers remain unimplemented and are tracked separately; Flutter will need
   // them, a microtask smoke test does not.
   Future<void>.microtask(() => _asyncMarker = 99);
+
+  // A real timer, 50 ms out, so the platform hook is genuinely exercised.
+  Future<void>.delayed(const Duration(milliseconds: 50),
+      () => _delayedMarker = 42);
 
   // 6765 + 55 + 7 + 3 = 6830. A wrong total localises the failure: too small by
   // ~6765 implicates recursion, by 55 the list, and so on.

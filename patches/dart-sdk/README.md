@@ -15,6 +15,7 @@ disposable; these patches are the real artifact.
 | 0004 | [gn-vita-toolchain](0004-gn-vita-toolchain.patch) | Teaches the GN build about `vita` |
 | 0005 | [zlib-no-armv8-on-vita](0005-zlib-no-armv8-on-vita.patch) | **Applies to `third_party/zlib`, a separate repo** |
 | 0006 | [newlib-portability-fixes](0006-newlib-portability-fixes.patch) | Shared Dart sources that assume glibc or "not POSIX means Windows" |
+| 0007 | [vmlibraryhooks-entry-point](0007-vmlibraryhooks-entry-point.patch) | Marks `VMLibraryHooks` and its fields `vm:entry-point` so an embedder can install the timer hooks. **Affects the platform dill, not the runtime** — rebuild `vm_platform_product.dill`, not just the runtime |
 
 All three are verified to compile with
 [`spikes/p1-compile-check/check.sh`](../../spikes/p1-compile-check/check.sh).

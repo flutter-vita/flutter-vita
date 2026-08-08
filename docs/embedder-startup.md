@@ -93,3 +93,35 @@ failures were embedder omissions, and each was hunted inside the Dart runtime
 first. Phase 2 has a far larger embedder surface than M1 did, so the default
 assumption on any new failure should be *"what does the reference embedder do
 here that we don't?"* before *"what did we get wrong in the port?"*
+
+## Addendum: reaching `VMLibraryHooks` from C
+
+Installing the two timer primitives means writing static fields on
+`VMLibraryHooks` in `dart:_internal`. `Dart_SetField` does reach statics when
+handed a type handle, and it ignores leading-underscore visibility — but getting
+the type handle fails in product AOT:
+
+```
+FAIL locating VMLibraryHooks: Class 'VMLibraryHooks' not found in library 'dart._internal'.
+```
+
+The precompiler drops library dictionary entries for classes nothing marks as an
+entry point, and nothing does: `dart:io`'s `_setupHooks` is the only thing in the
+SDK that writes these fields, and it reaches them as ordinary Dart code from
+inside the SDK. An embedder without `dart:io` has no route in.
+
+The fix is patch 0007 — `@pragma("vm:entry-point")` on the class and on the
+three fields. **This is a platform-dill change, not a runtime change**, so it
+only takes effect if the kernel is compiled against a platform dill built from
+this tree:
+
+```bash
+python3 tools/generate_package_config.py          # gclient sync does not create this
+ninja -C third_party/sdk/out/host vm_platform_product.dill
+```
+
+`spikes/b1-aot-snapshot/build.sh` now points `--platform` at that file instead of
+FVM's copy. That is worth doing on its own merits: the runtime is built from
+`third_party/sdk`, so the SDK sources compiled into the snapshot should come
+from there too, rather than from a separate checkout that merely happens to be
+the same revision.
