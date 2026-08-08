@@ -82,7 +82,10 @@ target_link_libraries(${PROJECT_NAME}
   m
 )
 
-vita_create_self(${PROJECT_NAME}.self ${PROJECT_NAME})
+# UNSAFE so this app can write ux0:app too, which is what lets it install a new
+# loader. Without it only the loader could update M1, and updating the loader
+# itself would still need an FTP server.
+vita_create_self(${PROJECT_NAME}.self ${PROJECT_NAME} UNSAFE)
 
 # The four blobs ship as data files next to eboot.bin; main() reads them from
 # app0:. Splitting them on the host avoids an ELF parser on the device --

@@ -170,6 +170,44 @@ static int serve(int sock, const char* log_path, const char* eboot_path) {
         send_str(sock, msg);
       }
       return 0;
+    } else if (strncmp(line, "put ", 4) == 0) {
+      // put <size> <path>. M1 is an UNSAFE self too, so it can write ux0:app --
+      // which is how a new *loader* gets installed. Each app can now replace
+      // the other, and no FTP server is involved in either direction.
+      char* sp = strchr(line + 4, ' ');
+      if (sp == NULL) { send_str(sock, "ERR put <size> <path>\n"); return 0; }
+      *sp = '\0';
+      const int size = atoi(line + 4);
+      const char* path = sp + 1;
+      if (size < 0 || size > 64 * 1024 * 1024) { send_str(sock, "ERR size\n"); return 0; }
+      char tmp[256];
+      snprintf(tmp, sizeof tmp, "%s.tmp", path);
+      sceIoRemove(tmp);
+      SceUID fd = sceIoOpen(tmp, SCE_O_WRONLY | SCE_O_CREAT | SCE_O_TRUNC, 0777);
+      if (fd < 0) {
+        char m[192];
+        snprintf(m, sizeof m, "ERR open 0x%08X %s\n", (unsigned)fd, tmp);
+        send_str(sock, m);
+        return 0;
+      }
+      static char pbuf[32 * 1024];
+      int left = size;
+      while (left > 0) {
+        const int want = left < (int)sizeof pbuf ? left : (int)sizeof pbuf;
+        const int got = sceNetRecv(sock, pbuf, want, 0);
+        if (got <= 0) { sceIoClose(fd); sceIoRemove(tmp); send_str(sock, "ERR short\n"); return 0; }
+        sceIoWrite(fd, pbuf, got);
+        left -= got;
+      }
+      sceIoClose(fd);
+      // Rename only after the whole file has landed, so a dropped transfer
+      // cannot leave a half-written binary in place.
+      sceIoRemove(path);
+      const int rr = sceIoRename(tmp, path);
+      char m[192];
+      if (rr < 0) snprintf(m, sizeof m, "ERR rename 0x%08X\n", (unsigned)rr);
+      else snprintf(m, sizeof m, "OK %d -> %s\n", size, path);
+      send_str(sock, m);
     } else if (strcmp(line, "handoff") == 0) {
       // The other half of the loop. We cannot replace our own eboot.bin, and
       // while we run nobody else can either -- so hand control to the loader,
@@ -200,7 +238,7 @@ static int serve(int sock, const char* log_path, const char* eboot_path) {
       send_str(sock, "OK\n");
       return 1;
     } else if (n > 0) {
-      send_str(sock, "ERR unknown (ping|probe|log|handoff|relaunch|exit)\n");
+      send_str(sock, "ERR unknown (ping|probe|log|put <n> <path>|handoff|relaunch|exit)\n");
     }
   }
 }

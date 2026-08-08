@@ -68,7 +68,11 @@ So the loop is now two apps and one socket each:
 M1 --handoff--> loader --stage, install, launch--> M1
 ```
 
-`./dev.sh cycle` — **~10 seconds, no FTP, no taps.**
+`./dev.sh cycle` — **~5 seconds, no FTP, no taps.**
+
+Both apps are UNSAFE selfs, so **each can install the other**: the loader writes
+`ux0:app/FVTA00002/`, and M1's `put` writes `ux0:app/FVTA00003/`. Nothing
+external is needed to update either one.
 
 Staging and installing stay separate: the upload lands in `ux0:data` and only a
 complete file is copied over `eboot.bin` via a `.tmp` and a rename, so a dropped
@@ -252,6 +256,18 @@ which is the entry that actually matters. Not worth the risk of touching.
 
 If 1340 proves reliable, it removes the need to launch BGFTP by hand — which has
 been the single biggest source of friction in the deploy loop.
+
+## WiFi drops
+
+**There is no user-mode API to join a given access point.** `sceNetCtl` exposes
+`sceNetCtlInetGetState` and callbacks and nothing else; AP selection belongs to
+the system. A kernel plugin could reach further, and plugins are off the table
+here.
+
+What the loader does instead is survive drops without help: it polls the net
+state about once a second, tears the listener down when the link goes, and
+rebuilds it when the system reconnects. A drop used to leave a dead socket that
+needed a tap to clear; now it just goes quiet and comes back.
 
 ## Note on WiFi
 

@@ -390,6 +390,42 @@ static int serve(int sock) {
   }
 }
 
+static int net_state(void) {
+  int st = -1;
+  if (sceNetCtlInetGetState(&st) < 0) return -1;
+  return st;
+}
+
+// Returns a listening socket, or negative. Separated from main so it can be
+// redone from scratch after the wifi drops -- which on this device is routine,
+// and used to strand the loader with a dead socket until someone tapped it.
+static int start_listener(void) {
+  const int srv =
+      sceNetSocket("fvita-loader", SCE_NET_AF_INET, SCE_NET_SOCK_STREAM, 0);
+  if (srv < 0) return srv;
+  int one = 1;
+  sceNetSetsockopt(srv, SCE_NET_SOL_SOCKET, SCE_NET_SO_REUSEADDR, &one,
+                   sizeof one);
+  SceNetSockaddrIn addr;
+  memset(&addr, 0, sizeof addr);
+  addr.sin_family = SCE_NET_AF_INET;
+  addr.sin_addr.s_addr = sceNetHtonl(SCE_NET_INADDR_ANY);
+  addr.sin_port = sceNetHtons(LOADER_PORT);
+  if (sceNetBind(srv, (SceNetSockaddr*)&addr, sizeof addr) < 0 ||
+      sceNetListen(srv, 2) < 0) {
+    sceNetSocketClose(srv);
+    return -1;
+  }
+  sceNetSetsockopt(srv, SCE_NET_SOL_SOCKET, SCE_NET_SO_NBIO, &one, sizeof one);
+  SceNetCtlInfo info;
+  if (sceNetCtlInetGetInfo(SCE_NETCTL_INFO_GET_IP_ADDRESS, &info) >= 0) {
+    lg("listening on %s:%d\n", info.ip_address, LOADER_PORT);
+  } else {
+    lg("listening on :%d\n", LOADER_PORT);
+  }
+  return srv;
+}
+
 int main(void) {
   psvDebugScreenInit();
   sceIoMkdir("ux0:data", 0777);
@@ -404,7 +440,9 @@ int main(void) {
 
   if (sceSysmoduleLoadModule(SCE_SYSMODULE_NET) < 0) {
     lg("FATAL: net module failed\n");
-  } else {
+    goto done;
+  }
+  {
     SceNetInitParam np;
     np.memory = g_net_pool;
     np.size = sizeof g_net_pool;
@@ -412,61 +450,67 @@ int main(void) {
     const int ni = sceNetInit(&np);
     if (ni < 0 && ni != (int)0x80410103) {
       lg("FATAL: sceNetInit 0x%08X\n", (unsigned)ni);
-    } else {
-      sceNetCtlInit();
-      SceNetCtlInfo info;
-      if (sceNetCtlInetGetInfo(SCE_NETCTL_INFO_GET_IP_ADDRESS, &info) >= 0) {
-        lg("listening on %s:%d\n", info.ip_address, LOADER_PORT);
-      } else {
-        lg("listening on :%d (no IP yet)\n", LOADER_PORT);
-      }
-
-      const int srv =
-          sceNetSocket("fvita-loader", SCE_NET_AF_INET, SCE_NET_SOCK_STREAM, 0);
-      int one = 1;
-      sceNetSetsockopt(srv, SCE_NET_SOL_SOCKET, SCE_NET_SO_REUSEADDR, &one,
-                       sizeof one);
-      SceNetSockaddrIn addr;
-      memset(&addr, 0, sizeof addr);
-      addr.sin_family = SCE_NET_AF_INET;
-      addr.sin_addr.s_addr = sceNetHtonl(SCE_NET_INADDR_ANY);
-      addr.sin_port = sceNetHtons(LOADER_PORT);
-      if (srv < 0 || sceNetBind(srv, (SceNetSockaddr*)&addr, sizeof addr) < 0 ||
-          sceNetListen(srv, 2) < 0) {
-        lg("FATAL: bind/listen on %d failed\n", LOADER_PORT);
-      } else {
-        sceNetSetsockopt(srv, SCE_NET_SOL_SOCKET, SCE_NET_SO_NBIO, &one,
-                         sizeof one);
-        lg("\nwaiting for commands. START exits.\n");
-
-        SceCtrlData pad;
-        sceCtrlSetSamplingMode(SCE_CTRL_MODE_ANALOG);
-        for (;;) {
-          const int c = sceNetAccept(srv, NULL, NULL);
-          if (c >= 0) {
-            int zero = 0;
-            sceNetSetsockopt(c, SCE_NET_SOL_SOCKET, SCE_NET_SO_NBIO, &zero,
-                             sizeof zero);
-            const int stop = serve(c);
-            sceNetSocketClose(c);
-            if (stop) break;
-            continue;
-          }
-          // Non-blocking accept so START still works with the network down --
-          // which on this device is a regular occurrence, and would otherwise
-          // strand the user in an app with no way out.
-          sceCtrlPeekBufferPositive(0, &pad, 1);
-          if (pad.buttons & SCE_CTRL_START) {
-            lg("START pressed\n");
-            break;
-          }
-          sceKernelDelayThread(30 * 1000);
-        }
-        sceNetSocketClose(srv);
-      }
+      goto done;
     }
   }
+  sceNetCtlInit();
 
+  SceCtrlData pad;
+  sceCtrlSetSamplingMode(SCE_CTRL_MODE_ANALOG);
+
+  int srv = -1;
+  int last_state = -2;
+  int ticks = 0;
+
+  for (;;) {
+    // There is no user-mode API to join a given access point -- sceNetCtl
+    // exposes state and callbacks only -- so the best available behaviour is to
+    // notice the drop, tear the socket down, and rebuild it the moment the
+    // system reconnects. No tap required either way.
+    if (++ticks >= 30) {  // roughly once a second
+      ticks = 0;
+      const int st = net_state();
+      if (st != last_state) {
+        lg("net state -> %s\n",
+           st == SCE_NETCTL_STATE_CONNECTED      ? "connected"
+           : st == SCE_NETCTL_STATE_CONNECTING   ? "connecting"
+           : st == SCE_NETCTL_STATE_DISCONNECTED ? "disconnected"
+                                                 : "unknown");
+        last_state = st;
+      }
+      if (st != SCE_NETCTL_STATE_CONNECTED && srv >= 0) {
+        lg("wifi gone, dropping the listener\n");
+        sceNetSocketClose(srv);
+        srv = -1;
+      } else if (st == SCE_NETCTL_STATE_CONNECTED && srv < 0) {
+        srv = start_listener();
+        if (srv < 0) lg("relisten failed, will retry\n");
+      }
+    }
+
+    if (srv >= 0) {
+      const int c = sceNetAccept(srv, NULL, NULL);
+      if (c >= 0) {
+        int zero = 0;
+        sceNetSetsockopt(c, SCE_NET_SOL_SOCKET, SCE_NET_SO_NBIO, &zero,
+                         sizeof zero);
+        const int stop = serve(c);
+        sceNetSocketClose(c);
+        if (stop) break;
+        continue;
+      }
+    }
+
+    sceCtrlPeekBufferPositive(0, &pad, 1);
+    if (pad.buttons & SCE_CTRL_START) {
+      lg("START pressed\n");
+      break;
+    }
+    sceKernelDelayThread(30 * 1000);
+  }
+  if (srv >= 0) sceNetSocketClose(srv);
+
+done:
   if (g_log >= 0) sceIoClose(g_log);
   sceKernelExitProcess(0);
   for (;;) sceKernelDelayThread(1000 * 1000);
