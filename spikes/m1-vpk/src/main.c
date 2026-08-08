@@ -133,6 +133,9 @@ int main(void) {
     wait_and_exit(1);
   }
   lg("  isolate created\n");
+  // Bracket point: the trace lines from thread.cc appear in dart.log before
+  // this, so anything after it is the "post-snapshot, pre-invoke" window.
+  lg("  --- snapshot read complete, entering invoke sequence ---\n");
 
   Dart_EnterScope();
   lg("  [checkpoint] invoking main()\n");
