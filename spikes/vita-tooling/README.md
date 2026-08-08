@@ -95,9 +95,21 @@ trip, before anything was built on top of it. The loader's `stage` and `install`
 commands survive in the binary but always fail; only `ping`, `probe` and
 `launch` do anything. Not worth a reinstall to remove.
 
-Enabling **"unsafe homebrew"** in HENkaku Settings reportedly lifts the
-`ux0:app` restriction for homebrew, which would allow a simpler design. Untested
-here, and unnecessary now that the split works.
+**Two explanations were tested and both failed**, so BGFTP stays in the loop:
+
+- *"unsafe homebrew" is off.* It was on the whole time.
+- *"the probe ran on an L-boot, so no plugins were loaded."* Plausible — that
+  boot really did skip plugins — but re-probing on a normal boot gives the same
+  `0x80010002`.
+
+The second test is sound because it measured both sides at once: port 1337 being
+open proves plugins are loaded, since that FTP server *is* a plugin, and on that
+same boot it wrote `ux0:app/FVTA00002/` while the loader could not see it.
+
+So the boundary is **sandboxed app vs. SceShell plugin**, not a setting and not
+a boot mode. BGFTP is not removable from the cycle without becoming a plugin
+itself, and it costs nothing: it is always resident and has been the most
+reliable component here.
 
 ## What is actually possible, measured
 
