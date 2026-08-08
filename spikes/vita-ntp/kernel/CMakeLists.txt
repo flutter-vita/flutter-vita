@@ -19,16 +19,20 @@ set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -std=gnu11 -Wall -Wextra -O2")
 
 add_executable(vitantp_kernel main.c)
 target_compile_definitions(vitantp_kernel PRIVATE __VITA_KERNEL__)
+# Only what is actually called. The first version linked taihenForKernel and
+# SceSysmemForDriver as well and taiHEN refused it with MODULEMGR_OLD_LIB
+# (0x8002D013) -- an import/library-version mismatch. Neither was used.
 target_link_libraries(vitantp_kernel
-  taihenForKernel_stub
   SceRtcForDriver_stub
-  SceSysmemForDriver_stub
   gcc
 )
 set_target_properties(vitantp_kernel PROPERTIES LINK_FLAGS "-nostdlib")
+# No UNSAFE here. That flag is for *user* selfs that need extended permissions;
+# a kernel module is already kernel-side, and building one unsafe produced a
+# self that faulted taiHEN's loader rather than loading. Every kernel module in
+# the wild (vitacompanion's included) is a plain CONFIG self.
 vita_create_self(vitantp_kernel.skprx vitantp_kernel
   CONFIG ${CMAKE_SOURCE_DIR}/vitantp_kernel.yml
-  UNSAFE
 )
 vita_create_stubs(vitantp_kernel_stubs vitantp_kernel
   ${CMAKE_SOURCE_DIR}/vitantp_kernel.yml KERNEL

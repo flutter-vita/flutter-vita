@@ -31,7 +31,6 @@
 // Exported by the kernel module; the stub comes from vita_create_stubs.
 extern int vitaNtpKernelGetApiVersion(void);
 extern int vitaNtpKernelSetUnixTime(unsigned int unix_seconds);
-extern int vitaNtpKernelGetUnixTime(unsigned int *out);
 
 #define KMOD_PATH "ux0:data/flutter-vita/vitantp_kernel.skprx"
 #define NTP_PORT 123
@@ -169,8 +168,12 @@ int main(void) {
           lg("  load failed 0x%08X\n", (unsigned)mod);
           lg("  (expected at %s)\n", KMOD_PATH);
         } else {
+          // Log the modid *before* calling in. Previously the first log line
+          // came after the first syscall, so a fault during load and a fault
+          // in the syscall looked identical -- both just stopped here.
+          lg("  loaded, modid=0x%08X\n", (unsigned)mod);
           const int api = vitaNtpKernelGetApiVersion();
-          lg("  loaded, api=%d\n", api);
+          lg("  api=%d\n", api);
           const int sr = vitaNtpKernelSetUnixTime(now);
           if (sr < 0) {
             lg("  set failed 0x%08X\n", (unsigned)sr);

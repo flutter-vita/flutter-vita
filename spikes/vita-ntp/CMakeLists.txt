@@ -18,7 +18,12 @@ set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -std=gnu11 -Wall -Wextra -O2 -g")
 
 # The kernel module is a separate project under kernel/ -- see the comment
 # there for why it cannot live in this file.
-set(KSTUB "${CMAKE_SOURCE_DIR}/kernel/build/libvitantp_kernel_stub.a")
+# The *weak* stub, deliberately. The non-weak one bakes a hard import of
+# VitaNtpKernel into the app, which the loader tries to resolve when the app
+# starts -- long before the module is loaded on demand. vitacompanion can use
+# the strong stub only because its kernel module is loaded at boot from
+# config.txt; ours is not, by design.
+set(KSTUB "${CMAKE_SOURCE_DIR}/kernel/build/libvitantp_kernel_stub_weak.a")
 if(NOT EXISTS "${KSTUB}")
   message(FATAL_ERROR "Build the kernel module first:\n"
     "  cmake -S kernel -B kernel/build && cmake --build kernel/build")

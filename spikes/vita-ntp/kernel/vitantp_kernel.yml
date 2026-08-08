@@ -12,4 +12,3 @@ vitantp_kernel:
       functions:
         - vitaNtpKernelGetApiVersion
         - vitaNtpKernelSetUnixTime
-        - vitaNtpKernelGetUnixTime

@@ -12,8 +12,6 @@
 
 #include <psp2kern/kernel/modulemgr.h>
 #include <psp2kern/kernel/rtc.h>
-#include <psp2kern/kernel/sysmem/data_transfers.h>
-#include <psp2kern/kernel/threadmgr.h>
 
 // The Vita counts microseconds from 0001-01-01, Unix from 1970-01-01. This is
 // the gap, and getting it wrong is the difference between the right time and a
@@ -38,19 +36,6 @@ int vitaNtpKernelSetUnixTime(unsigned int unix_seconds) {
   return ksceRtcSetCurrentTick(&tick);
 }
 
-int vitaNtpKernelGetUnixTime(unsigned int *out) {
-  SceRtcTick tick;
-  const int r = ksceRtcGetCurrentTick(&tick);
-  if (r < 0) return r;
-  const unsigned int secs =
-      (unsigned int)((tick.tick - UNIX_EPOCH_IN_VITA_TICKS) / 1000000ULL);
-  // The caller is user-space, so this has to go through the copy helper rather
-  // than a plain store.
-  ksceKernelMemcpyKernelToUser(out, &secs, sizeof secs);
-  return 0;
-}
-
-void _start() __attribute__((weak, alias("module_start")));
 int module_start(SceSize argc, const void *args) {
   (void)argc;
   (void)args;
@@ -62,3 +47,10 @@ int module_stop(SceSize argc, const void *args) {
   (void)args;
   return SCE_KERNEL_STOP_SUCCESS;
 }
+
+// Declared after module_start and with the matching prototype, as every
+// working kernel module in the wild does it. The previous version declared
+// `void _start()` ahead of the definition, aliasing a function of a different
+// type.
+int _start(SceSize argc, const void *args)
+    __attribute__((weak, alias("module_start")));
