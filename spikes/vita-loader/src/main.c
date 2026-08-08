@@ -31,6 +31,7 @@
 #include <psp2/io/fcntl.h>
 #include <psp2/io/stat.h>
 #include <psp2/kernel/processmgr.h>
+#include <psp2/power.h>
 #include <psp2/kernel/threadmgr.h>
 #include <psp2/net/net.h>
 #include <psp2/net/netctl.h>
@@ -391,22 +392,63 @@ static int serve(int sock) {
 }
 
 
-// Keep the screen on for as long as this app is running.
+// Screen power, deliberately conservative.
 //
-// SCE_KERNEL_POWER_TICK_DEFAULT resets every idle timer at once -- auto-suspend,
-// OLED off and OLED dimming -- so one periodic tick covers all three. A
-// dedicated thread rather than a call in the main loop, because the main loop
-// blocks for seconds at a time during a Dart run or a 2.4 MB upload, and that
-// is exactly when the screen would otherwise dim.
+// The earlier version held the display on unconditionally, which on a 1000's
+// OLED means burn-in from a static debug screen -- a bad trade for a console
+// that cannot be replaced. So the two concerns are separated:
 //
-// This is scoped to our own process on purpose: it stops when the app exits, so
-// it cannot leave the console awake by accident.
+//   suspend  -- always blocked, via DISABLE_AUTO_SUSPEND. If the console
+//               suspends, the network dies and the deploy loop dies with it.
+//   display  -- off by default after a minute idle, and woken only on purpose.
+//
+// Any button press wakes it for another minute. SELECT toggles a stay-awake
+// mode for when you actually want to watch it, and the mode is deliberately
+// not the default.
+#define SCREEN_IDLE_US (60 * 1000 * 1000)
+
+static volatile int g_screen_on = 1;
+static volatile int g_stay_awake = 0;
+static volatile uint64_t g_last_activity = 0;
+
+static void screen_activity(void) { g_last_activity = sceKernelGetProcessTimeWide(); }
+
 static int power_tick_thread(SceSize args, void* argp) {
   (void)args;
   (void)argp;
+  SceCtrlData pad;
+  unsigned int prev_buttons = 0;
+  screen_activity();
   for (;;) {
-    sceKernelPowerTick(SCE_KERNEL_POWER_TICK_DEFAULT);
-    sceKernelDelayThread(10 * 1000 * 1000);  // idle timers are minutes, not seconds
+    // Never let the console suspend: that would take the network with it.
+    sceKernelPowerTick(SCE_KERNEL_POWER_TICK_DISABLE_AUTO_SUSPEND);
+
+    if (sceCtrlPeekBufferPositive(0, &pad, 1) >= 0) {
+      if (pad.buttons != 0 && pad.buttons != prev_buttons) {
+        // Rising edge only, so holding a button is one wake, not thousands.
+        if ((pad.buttons & SCE_CTRL_SELECT) && !(prev_buttons & SCE_CTRL_SELECT)) {
+          g_stay_awake = !g_stay_awake;
+        }
+        screen_activity();
+      }
+      prev_buttons = pad.buttons;
+    }
+
+    const uint64_t idle = sceKernelGetProcessTimeWide() - g_last_activity;
+    const int want_on = g_stay_awake || idle < SCREEN_IDLE_US;
+
+    if (want_on && !g_screen_on) {
+      scePowerRequestDisplayOn();
+      g_screen_on = 1;
+    } else if (!want_on && g_screen_on) {
+      scePowerRequestDisplayOff();
+      g_screen_on = 0;
+    }
+    if (g_screen_on) {
+      // Only reset the dimming timers while the panel is meant to be lit.
+      sceKernelPowerTick(SCE_KERNEL_POWER_TICK_DEFAULT);
+    }
+    sceKernelDelayThread(200 * 1000);
   }
   return 0;
 }

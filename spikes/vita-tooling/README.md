@@ -257,20 +257,30 @@ which is the entry that actually matters. Not worth the risk of touching.
 If 1340 proves reliable, it removes the need to launch BGFTP by hand — which has
 been the single biggest source of friction in the deploy loop.
 
-## Keeping the screen on
+## Screen power, and not burning the panel
 
-Both apps run a thread calling `sceKernelPowerTick(SCE_KERNEL_POWER_TICK_DEFAULT)`
-every ten seconds. `DEFAULT` resets every idle timer at once — auto-suspend,
-OLED off and OLED dimming — so one call covers all three.
+Two separate concerns, deliberately handled differently:
 
-A dedicated thread rather than a call in the main loop, because the main loop
-blocks for seconds during a Dart run or a 2.4 MB upload, which is exactly when
-the screen would dim.
+| | |
+|---|---|
+| **Suspend** | always blocked — `sceKernelPowerTick(DISABLE_AUTO_SUSPEND)` every 200 ms. If the console suspends the network goes with it, and the deploy loop dies. |
+| **Display** | **off after 60 s idle**, via `scePowerRequestDisplayOff()`. |
 
-Scoped to our own processes deliberately: it stops when the app exits, so it
-cannot leave the console awake by accident. `nosleep.skprx` is loaded on this
-device and the screen still turns off; why that is has not been investigated,
-and the per-app tick makes it moot for our case.
+The first version of this held the display on unconditionally, which on a
+PSVita-1000's OLED means burn-in from a static debug screen. That is a bad trade
+on hardware that cannot be replaced, and the console owner was right to push
+back on it.
+
+- **Any button** wakes the display for another 60 s (rising edge only, so
+  holding a button is one wake rather than thousands).
+- **SELECT** toggles a stay-awake mode, for when you actually want to watch it.
+  Deliberately not the default.
+
+The app keeps running with the panel off — the dev server, the timer thread and
+the network are all unaffected, so `./dev.sh cycle` works against a dark screen.
+
+Note `nosleep.skprx`, which is loaded on this device, prevents *sleep*, not the
+display timers. The two are unrelated.
 
 ## WiFi drops
 
