@@ -10,6 +10,7 @@
 | [../patches/dart-sdk/](../patches/dart-sdk/README.md) | The Vita patch series against the pinned Dart SDK |
 | [phase-0.5-feasibility.md](phase-0.5-feasibility.md) | The completed gate. Every measurement taken so far, and the exit criteria still open |
 | [adr/](adr/README.md) | Architecture decision records, with an index and the open questions |
+| [../Flutter Vita Plan.md](../Flutter%20Vita%20Plan.md) | The original plan, reconciled against measurement. Intent and phases 2–5; `docs/` wins on anything measured |
 | [glossary.md](glossary.md) | Shared vocabulary across the Vita homebrew and Flutter halves |
 | [dev-environment.md](dev-environment.md) | Toolchain and IDE setup, including the three-index clangd arrangement |
 | [vita3k-as-a-target.md](vita3k-as-a-target.md) | What the emulator can and cannot be trusted for |
