@@ -40,6 +40,12 @@
 
 unsigned int _newlib_heap_size_user = 192 * 1024 * 1024;
 
+// Vita's default main-thread stack is small, and Dart derives its stack limit
+// from whatever GetCurrentStackBounds reports for the thread it runs on. The
+// first GC-heavy test threw StackOverflowError from code that barely recurses,
+// which points at the limit rather than at real recursion.
+unsigned int sceUserMainThreadStackSize = 1 * 1024 * 1024;
+
 #define EXPECTED_CHECKSUM 6830
 #define EXPECTED_ASYNC 99
 
@@ -286,6 +292,18 @@ int main(void) {
   g_log = sceIoOpen("ux0:data/flutter-vita/m1.log",
                     SCE_O_WRONLY | SCE_O_CREAT | SCE_O_TRUNC, 0777);
 
+  {
+    // Report what Dart will see, since that is what sets the stack limit.
+    SceKernelThreadInfo ti;
+    memset(&ti, 0, sizeof ti);
+    ti.size = sizeof ti;
+    if (sceKernelGetThreadInfo(sceKernelGetThreadId(), &ti) == 0) {
+      lg("main thread stack: base=%p size=%d KiB\n", ti.stack,
+         (int)(ti.stackSize / 1024));
+    } else {
+      lg("main thread stack: sceKernelGetThreadInfo failed\n");
+    }
+  }
   lg("flutter-vita M1: Dart AOT on Vita\n");
   lg("=================================\n");
   lg("ADR-0005 option A: snapshot linked into eboot.bin\n\n");
@@ -537,6 +555,18 @@ int main(void) {
   // _runPendingImmediateCallback is the same entry point the VM itself uses
   // from DartLibraryCalls::DrainMicrotaskQueue, so calling it here is the
   // documented drain, not a workaround around one.
+  // Phase 1 exit criteria, never previously run. Both are cheap and both are
+  // far cheaper to debug here than under a Flutter heap.
+  lg("  [checkpoint] gcStress\n");
+  Dart_Handle gc = Dart_Invoke(root, Dart_NewStringFromCString("gcStress"), 0, NULL);
+  int64_t gc_value = -1;
+  if (Dart_IsError(gc)) {
+    lg("  FAIL gcStress: %s\n", Dart_GetError(gc));
+  } else if (!Dart_IsError(Dart_IntegerToInt64(gc, &gc_value))) {
+    lg("  gcStress() = %lld (expected 1999000) %s\n", (long long)gc_value,
+       gc_value == 1999000 ? "PASS -- GC survived ~8 MB of churn" : "FAIL");
+  }
+
   lg("  [checkpoint] draining microtasks\n");
   Dart_Handle drain = Dart_Invoke(
       isolate_lib, Dart_NewStringFromCString("_runPendingImmediateCallback"), 0,
@@ -563,6 +593,18 @@ int main(void) {
          async_value == EXPECTED_ASYNC ? "PASS -- microtasks drained"
                                        : "FAIL -- event loop did not run");
     }
+  }
+
+  Dart_Handle iso_marker =
+      Dart_Invoke(root, Dart_NewStringFromCString("isoMarker"), 0, NULL);
+  int64_t iso_value = 0;
+  if (!Dart_IsError(iso_marker) &&
+      !Dart_IsError(Dart_IntegerToInt64(iso_marker, &iso_value))) {
+    lg("  isoMarker() = %lld  %s\n", (long long)iso_value,
+       iso_value == 7777  ? "PASS -- second isolate ran"
+       : iso_value == -1  ? "spawn refused (no create_group callback)"
+       : iso_value == -2  ? "spawn silent -- nothing came back in 3s"
+                          : "not run");
   }
 
   // Only becomes 42 if the whole round trip worked: timerFactory -> _Timer ->

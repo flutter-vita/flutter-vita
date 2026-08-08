@@ -1,0 +1,64 @@
+// vitantp_kernel — the one thing that has to live in kernel space.
+//
+// Setting the Vita's clock is kernel-only: psp2/rtc.h exposes
+// sceRtcGetCurrentTick but no setter, and only psp2kern has
+// ksceRtcSetCurrentTick. Everything else about time sync — DNS, the NTP
+// exchange, retries — is ordinary user code and stays out here.
+//
+// This module is deliberately tiny and does no I/O of its own. It is loaded on
+// demand with taiLoadStartKernelModuleForUser, used, and unloaded again, so it
+// never appears in ur0:tai/config.txt and cannot affect boot. A fault here
+// costs a power cycle, not a bricked console.
+
+#include <psp2kern/kernel/modulemgr.h>
+#include <psp2kern/kernel/rtc.h>
+#include <psp2kern/kernel/sysmem/data_transfers.h>
+#include <psp2kern/kernel/threadmgr.h>
+
+// The Vita counts microseconds from 0001-01-01, Unix from 1970-01-01. This is
+// the gap, and getting it wrong is the difference between the right time and a
+// clock two millennia out.
+#define UNIX_EPOCH_IN_VITA_TICKS 62135596800000000ULL
+
+int vitaNtpKernelGetApiVersion(void) {
+  return 1;
+}
+
+// Returns 0 on success. `unix_seconds` is a normal Unix timestamp (UTC).
+int vitaNtpKernelSetUnixTime(unsigned int unix_seconds) {
+  // Refuse anything implausible rather than trusting a packet off the network:
+  // a corrupted reply should not be able to set the clock to 1970 or to the
+  // year 2200. 1.7e9 is 2023-11, 2.1e9 is 2036-07.
+  if (unix_seconds < 1700000000u || unix_seconds > 2100000000u) {
+    return -1;
+  }
+  SceRtcTick tick;
+  tick.tick = UNIX_EPOCH_IN_VITA_TICKS +
+              (unsigned long long)unix_seconds * 1000000ULL;
+  return ksceRtcSetCurrentTick(&tick);
+}
+
+int vitaNtpKernelGetUnixTime(unsigned int *out) {
+  SceRtcTick tick;
+  const int r = ksceRtcGetCurrentTick(&tick);
+  if (r < 0) return r;
+  const unsigned int secs =
+      (unsigned int)((tick.tick - UNIX_EPOCH_IN_VITA_TICKS) / 1000000ULL);
+  // The caller is user-space, so this has to go through the copy helper rather
+  // than a plain store.
+  ksceKernelMemcpyKernelToUser(out, &secs, sizeof secs);
+  return 0;
+}
+
+void _start() __attribute__((weak, alias("module_start")));
+int module_start(SceSize argc, const void *args) {
+  (void)argc;
+  (void)args;
+  return SCE_KERNEL_START_SUCCESS;
+}
+
+int module_stop(SceSize argc, const void *args) {
+  (void)argc;
+  (void)args;
+  return SCE_KERNEL_STOP_SUCCESS;
+}

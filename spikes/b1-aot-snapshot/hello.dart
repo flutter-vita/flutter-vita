@@ -15,7 +15,64 @@
 // No embedder shim here any more. It lives in `dart:vita`, which the harness
 // can name outright; see docs/embedder-startup.md.
 
+import 'dart:async';
+import 'dart:isolate';
+
 int fib(int n) => n < 2 ? n : fib(n - 1) + fib(n - 2);
+
+/// Phase 1 exit criterion: the GC under sustained pressure. M1 exercised the
+/// collector only incidentally, which is not the same as testing it.
+///
+/// Churns roughly 8 MB through new space while retaining a sliding window, so
+/// objects get promoted to old space and then released -- which is what makes
+/// the old-space growth policy matter, and that policy is only calibrated
+/// because we call Dart_FinalizeLoading.
+@pragma('vm:entry-point')
+int gcStress() {
+  var sum = 0;
+  final keep = <List<int>>[];
+  for (var i = 0; i < 2000; i++) {
+    final chunk = List<int>.filled(1000, i);
+    sum += chunk[0];
+    if (i % 10 == 0) keep.add(chunk);
+    if (keep.length > 200) keep.removeAt(0);
+  }
+  // 0 + 1 + ... + 1999
+  return sum;
+}
+
+/// Phase 1 exit criterion: a second isolate. Expected to *fail* as things
+/// stand -- the harness passes no create_group callback to Dart_Initialize, so
+/// the VM has no way to build one. Worth measuring rather than assuming,
+/// because Flutter spawns isolates and the failure mode matters.
+int _isoMarker = 0;
+
+@pragma('vm:entry-point')
+int isoMarker() => _isoMarker;
+
+void _isolateWorker(SendPort sp) {
+  sp.send(7777);
+}
+
+@pragma('vm:entry-point')
+void startIsolateTest() {
+  final rp = ReceivePort();
+  rp.listen((msg) {
+    _isoMarker = msg as int;
+    rp.close();
+  });
+  // A live ReceivePort keeps Dart_RunLoop alive forever, so the timer is not
+  // optional -- it is what guarantees the run terminates either way.
+  Timer(const Duration(seconds: 3), () {
+    if (_isoMarker == 0) _isoMarker = -2;  // nothing came back
+    rp.close();
+  });
+  Isolate.spawn(_isolateWorker, rp.sendPort).catchError((Object e) {
+    _isoMarker = -1;  // spawn refused
+    rp.close();
+    return Isolate.current;
+  });
+}
 
 /// Set by the microtask below; read by the harness *after* the queue drains.
 /// Stays 0 if it never does.
@@ -54,6 +111,8 @@ int main() {
 
   // Microtask queue. Completes during the drain, not here.
   Future<void>.microtask(() => _asyncMarker = 99);
+
+  startIsolateTest();
 
   // A real timer, 50 ms out, so the platform hook is genuinely exercised.
   Future<void>.delayed(
