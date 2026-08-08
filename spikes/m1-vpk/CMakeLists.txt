@@ -48,6 +48,7 @@ endif()
 # split the VM domain cannot express, and the reason option B failed.
 add_executable(${PROJECT_NAME}
   src/main.c
+  src/devserver.c
   ${SNAPSHOT_S}
   ${VITA_SAMPLES_COMMON}/debugScreen.c
 )
@@ -69,6 +70,10 @@ target_link_libraries(${PROJECT_NAME}
   SceDisplay_stub
   SceCtrl_stub
   SceIofilemgr_stub
+  SceNet_stub
+  SceNetCtl_stub
+  SceSysmodule_stub
+  SceAppMgr_stub
   SceSysmem_stub
   SceLibKernel_stub
   SceKernelThreadMgr_stub

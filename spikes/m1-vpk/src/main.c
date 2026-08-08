@@ -35,6 +35,7 @@
 #include "dart_api.h"
 #include "dart_native_api.h"  // Dart_CObject / Dart_PostCObject, for the timer
 #include "debugScreen.h"
+#include "devserver.h"
 
 unsigned int _newlib_heap_size_user = 192 * 1024 * 1024;
 
@@ -169,9 +170,31 @@ static void* vita_ffi_resolver(const char* name, uintptr_t args_n) {
   return NULL;
 }
 
+// devserver takes a plain (const char*) sink rather than a printf-style one,
+// so it cannot accidentally format attacker-controlled bytes from the socket.
+static void lg_line(const char* msg) {
+  lg("%s", msg);
+}
+
 static void wait_and_exit(int code) {
-  lg("\npress START to exit.\n");
-  if (g_log >= 0) sceIoClose(g_log);
+  // Hand off to the on-device dev server rather than idling. It closes the
+  // build loop without taiHEN: upload a new eboot.bin and relaunch over the
+  // network, no button presses and no BGFTP. If it cannot start -- no network,
+  // usually -- fall through to the original wait-for-START behaviour, since
+  // without a network there is no other way out.
+  lg("\n== dev server ==\n");
+  if (g_log >= 0) sceIoClose(g_log);  // release the log so `log` can read it
+  g_log = -1;
+
+  if (dev_server_run(lg_line, "ux0:data/flutter-vita/m1.log",
+                     "ux0:app/FVTA00002/eboot.bin") == 0) {
+    sceKernelExitProcess(code);
+    for (;;) {
+      sceKernelDelayThread(1000 * 1000);
+    }
+  }
+
+  psvDebugScreenPuts("\ndev server unavailable. press START to exit.\n");
   SceCtrlData pad;
   sceCtrlSetSamplingMode(SCE_CTRL_MODE_ANALOG);
   for (;;) {
