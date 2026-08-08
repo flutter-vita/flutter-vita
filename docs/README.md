@@ -5,6 +5,7 @@
 | **[HANDOFF.md](HANDOFF.md)** | **Start here.** Where the work stopped, the machine setup, the build pipeline, and every gotcha that cost time. |
 | [roadmap.md](roadmap.md) | What stands between today and a `.vpk` with Flutter inside, and how long each stage costs |
 | [phase-1-workplan.md](phase-1-workplan.md) | What Phase 1 actually requires, derived from the Dart SDK source |
+| [embedder-startup.md](embedder-startup.md) | What `runtime/bin` does at startup, what M1 skips, and the timer/print plan for Phase 2 |
 | [phase-2-gn-notes.md](phase-2-gn-notes.md) | The GN gate: what it is, tooling reality, and why the foreign-toolchain risk is lower than feared |
 | [../patches/dart-sdk/](../patches/dart-sdk/README.md) | The Vita patch series against the pinned Dart SDK |
 | [phase-0.5-feasibility.md](phase-0.5-feasibility.md) | The completed gate. Every measurement taken so far, and the exit criteria still open |

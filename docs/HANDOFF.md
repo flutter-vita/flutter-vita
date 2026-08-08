@@ -160,9 +160,11 @@ return value, so no message turn ever happens. It now calls
 
 **Timers are still unimplemented and Flutter will need them.**
 `Future.delayed`, `Timer`, and `Future(...)` all go through
-`VMLibraryHooks.timerFactory`, which nothing sets. Implementing it means
-`timer_impl.dart`, which wants the `dart:io` event handler — a genuine piece of
-work, not a hook call. hello.dart uses `Future.microtask` to stay clear of it.
+`VMLibraryHooks.timerFactory`, which nothing sets. hello.dart uses
+`Future.microtask` to stay clear of it. This is **smaller than it first looked**
+— `timer_impl.dart` is part of `dart:isolate` and already in the snapshot, so
+what is missing is three hook installations rather than a timer implementation.
+See [embedder-startup.md](embedder-startup.md).
 
 ### Method note: reading a crash address
 
@@ -268,9 +270,10 @@ Read [`docs/adr/`](adr/README.md), but the load-bearing ones:
 ## Still open
 
 - **Timers are not implemented.** `VMLibraryHooks.timerFactory` is unset, so
-  `Timer`, `Future.delayed` and `Future(...)` all throw. Needs `timer_impl.dart`
-  and the `dart:io` event handler. **This is a hard prerequisite for Flutter**
-  and is the first Phase 2 task.
+  `Timer`, `Future.delayed` and `Future(...)` all throw. **A hard prerequisite
+  for Flutter** and the first Phase 2 task — but the scheduler itself is already
+  compiled in; only the hooks are missing. See
+  [embedder-startup.md](embedder-startup.md).
 - **Threading substrate and iteration cost** were never grilled. Both are logged
   in [the ADR index](adr/README.md).
 - `Flutter Vita Plan.md` contradicts the docs in seven places (pin version, the
