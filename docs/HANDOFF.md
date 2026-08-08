@@ -90,7 +90,58 @@ ux0:data/flutter-vita/dart.log   VitaTrace + Dart's Syslog
 SceShell — so avoid shell plugins. Recovery if one bricks the UI: hold **L**
 during boot to skip taiHEN plugins.
 
-## Where it stops
+## Where it stops — narrowed by run 11
+
+```
+Dart_Initialize ok
+isolate created
+[checkpoint] Dart_RootLibrary
+root library handle ok, null=0      <- object store is correct
+[checkpoint] Dart_NewStringFromCString
+name handle ok                      <- heap allocation and object creation work
+[checkpoint] Dart_Invoke
+<data abort>
+```
+
+**The snapshot loads correctly and the Dart heap works. The fault is specifically
+in calling AOT-generated code.** Everything before `Dart_Invoke` succeeds,
+including creating a Dart String, which exercises allocation and the object
+model.
+
+### Leading hypothesis: ARM/Thumb interworking
+
+This was flagged in [the Phase 1 work plan](phase-1-workplan.md) and never
+verified:
+
+> VitaSDK defaults to `--with-mode=thumb` while Dart's backend emits ARM (A32).
+> Interworking is standard under EABI v5, but verify at M1.
+
+This *is* M1, and the symptom fits precisely. Every C/C++ object in the build is
+Thumb (`-mthumb` appears in the compile flags), while the snapshot's `.text` is
+A32. Calling from Thumb into ARM requires the low bit of the target address to
+be **clear**, and `BLX`/`BX` switch state from it. If Dart computes an entry
+point that keeps a Thumb bit set — or the runtime assumes the same instruction
+set as the code it calls — execution lands mid-instruction and faults.
+
+Supporting evidence: Vita3K failed at this same stage with
+`instructions_arm.cc: 414: expected: pattern.IsValid()`, where the runtime
+decodes a call site and expects the A32 encoding `blx r9` (`0xe12fff39`). That
+was dismissed as an emulator artifact when hardware failed earlier; it now looks
+like the same bug seen sooner.
+
+**Things to try, cheapest first:**
+
+1. Disassemble around the crash PC from a fresh dump and check whether execution
+   is in ARM or Thumb state, and whether the target address had bit 0 set.
+   `analyse-crash.sh` labels the mode it disassembles in.
+2. Check whether Dart's ARM assembler assumes callers are also ARM — in
+   particular how `Instructions::EntryPoint()` and the stub call sequences
+   compute target addresses.
+3. Try building the C/C++ side as ARM rather than Thumb (`-marm` in the vita
+   toolchain config) to remove the mixed-state variable entirely. Bigger code,
+   but it isolates the question.
+
+## Earlier failures, for context
 
 Last hardware run:
 
