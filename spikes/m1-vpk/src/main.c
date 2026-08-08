@@ -572,7 +572,6 @@ int main(void) {
   // being investigated, not a test failure. Re-enable once
   // OSThread::GetCurrentStackBounds is fixed; leaving it on just crashes the
   // app that hosts the dev server, which costs a manual relaunch every cycle.
-#if 0
   lg("  [checkpoint] gcStress\n");
   Dart_Handle gc = Dart_Invoke(root, Dart_NewStringFromCString("gcStress"), 0, NULL);
   int64_t gc_value = -1;
@@ -583,7 +582,6 @@ int main(void) {
        gc_value == 1999000 ? "PASS -- GC survived ~8 MB of churn" : "FAIL");
   }
 
-#endif
 
   lg("  [checkpoint] draining microtasks\n");
   Dart_Handle drain = Dart_Invoke(

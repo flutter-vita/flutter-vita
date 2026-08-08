@@ -282,7 +282,7 @@ Both were listed as never executed. They are now, and both found something.
 worth having measured: **Flutter spawns isolates**, so this is a Phase 2
 prerequisite, not a curiosity.
 
-**GC stress: crashes the process.** `gcStress()` allocates ~8 MB in a tight loop
+**GC stress: crashes the process — root cause narrowed to emulated TLS.** `gcStress()` allocates ~8 MB in a tight loop
 and dies with a data abort in `DRT_AllocateArray`, sometimes preceded by a
 spurious-looking `StackOverflowError`. **Currently disabled** behind `#if 0` in
 `spikes/m1-vpk/src/main.c` because it takes down the app that hosts the dev
@@ -303,8 +303,58 @@ right and the implementation is correct. The crash is something else, and the
 crash-dump SP that looked out of range came from a different run with a
 different load address — not comparable.
 
-So the GC bug is real, reproducible, and still unexplained. It is the most
-valuable open item: it will be far worse to debug under a Flutter heap.
+### What the crash dump actually says
+
+Two dumps, different binaries, **byte-identical registers** — a deterministic
+failure at a fixed call depth. The faulting instruction:
+
+```asm
+81140a46:  ldr.w r1, [lr, #40]      <- LR = 0x00000000
+```
+```c
+// raw_object.h, UntaggedObject::CheckArrayPointerStore
+uword overlap = (source_tags >> kBarrierOverlapShift) & target_tags &
+                thread->write_barrier_mask();
+```
+
+The compiler allocated `Thread*` into `LR` (legal, it is r14) and **`thread` is
+null**. So `DRT_AllocateArray` reaches the generational write barrier with a
+null thread. That also explains why only allocation-heavy code trips it: the
+barrier only runs once objects begin getting promoted, which needs a GC first.
+
+It dies at **i≈200–300 with only ~80 KB retained** — nowhere near any memory
+limit, so this is not a heap-size threshold.
+
+### The lead: `thread_local` is emulated, and emulated TLS allocates
+
+```
+__emutls symbols in the binary : 15
+ELF TLS segment                : none
+```
+
+VitaSDK has no real ELF TLS; `thread_local` compiles to `__emutls_get_address`,
+and that function **calls `malloc`** to create a thread's TLS block on first
+access. `Thread::Current()` is a `thread_local`
+([os_thread.h:329](../third_party/sdk/runtime/vm/os_thread.h)), so *reading it
+can allocate* — and Dart reads it from inside allocation slow paths, GC, and
+no-safepoint scopes, which are exactly the places where allocating is illegal
+or can fail.
+
+**Next steps, in order:**
+
+1. Instrument `DRT_AllocateArray` to log `thread` and `Thread::Current()` on
+   entry. Confirms whether the null arrives from generated code or from TLS.
+2. Check `__emutls_get_address` in VitaSDK's libgcc: does it return null on
+   malloc failure, and is it reentrant?
+3. If confirmed, replace the `thread_local` on this platform with a Vita
+   primitive that does not allocate on read — `sceKernelGetThreadId()` indexing
+   a fixed table, or storing the pointer in a reserved register.
+
+Note the threads created with `sceKernelCreateThread` (timer, power tick) are
+not pthreads, which is a second way emulated TLS can misbehave.
+
+This is the most valuable open item. It is a platform-layer defect, it is
+deterministic, and it will be far worse to debug under a Flutter heap.
 
 ## Still open
 

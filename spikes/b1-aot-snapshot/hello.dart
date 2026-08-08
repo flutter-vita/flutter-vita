@@ -32,6 +32,13 @@ int gcStress() {
   var sum = 0;
   final keep = <List<int>>[];
   for (var i = 0; i < 2000; i++) {
+    // Progress every 100 iterations, through the print closure, which syncs to
+    // m1.log line by line. One crashing run then tells us the iteration it died
+    // on -- and so the live-set size at that moment -- instead of costing a
+    // relaunch per guess.
+    if (i % 100 == 0) {
+      print('gcStress i=$i retained=${keep.length} (~${keep.length * 4}KB live)');
+    }
     final chunk = List<int>.filled(1000, i);
     sum += chunk[0];
     if (i % 10 == 0) keep.add(chunk);
