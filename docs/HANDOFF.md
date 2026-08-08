@@ -272,6 +272,40 @@ Read [`docs/adr/`](adr/README.md), but the load-bearing ones:
 - **[ADR-0007](adr/0007-enable-partial-repaint-in-software-path.md)**: Flutter's
   software path repaints the whole screen every frame. Accepted as required.
 
+## Phase 1 exit criteria, finally run
+
+Both were listed as never executed. They are now, and both found something.
+
+**Multi-isolate: refused, as designed.** `Isolate.spawn` returns
+`isoMarker = -1` — the harness passes no `create_group` callback to
+`Dart_Initialize`, so the VM cannot build a second isolate group. Expected, but
+worth having measured: **Flutter spawns isolates**, so this is a Phase 2
+prerequisite, not a curiosity.
+
+**GC stress: crashes the process.** `gcStress()` allocates ~8 MB in a tight loop
+and dies with a data abort in `DRT_AllocateArray`, sometimes preceded by a
+spurious-looking `StackOverflowError`. **Currently disabled** behind `#if 0` in
+`spikes/m1-vpk/src/main.c` because it takes down the app that hosts the dev
+server, costing a manual relaunch every cycle.
+
+`OSThread::GetCurrentStackBounds` was the leading suspect and has been
+**cleared**. The theory was that `SceKernelThreadInfo.stack` is the stack top,
+making the reported bounds inverted. Measured directly instead — logging
+`ti.stack` next to the address of a local:
+
+```
+ti.stack=0x81501000  size=1024 KiB  &local=0x81600ec0
+-> ti.stack is the base (local is above it)
+```
+
+The local sits near the top of `[ti.stack, ti.stack+size]`, so the bounds are
+right and the implementation is correct. The crash is something else, and the
+crash-dump SP that looked out of range came from a different run with a
+different load address — not comparable.
+
+So the GC bug is real, reproducible, and still unexplained. It is the most
+valuable open item: it will be far worse to debug under a Flutter heap.
+
 ## Still open
 
 - ~~Timers~~ **done** — `Future.delayed` fires on hardware, and the timer
