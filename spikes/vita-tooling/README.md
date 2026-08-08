@@ -257,6 +257,21 @@ which is the entry that actually matters. Not worth the risk of touching.
 If 1340 proves reliable, it removes the need to launch BGFTP by hand — which has
 been the single biggest source of friction in the deploy loop.
 
+## Keeping the screen on
+
+Both apps run a thread calling `sceKernelPowerTick(SCE_KERNEL_POWER_TICK_DEFAULT)`
+every ten seconds. `DEFAULT` resets every idle timer at once — auto-suspend,
+OLED off and OLED dimming — so one call covers all three.
+
+A dedicated thread rather than a call in the main loop, because the main loop
+blocks for seconds during a Dart run or a 2.4 MB upload, which is exactly when
+the screen would dim.
+
+Scoped to our own processes deliberately: it stops when the app exits, so it
+cannot leave the console awake by accident. `nosleep.skprx` is loaded on this
+device and the screen still turns off; why that is has not been investigated,
+and the per-app tick makes it moot for our case.
+
 ## WiFi drops
 
 **There is no user-mode API to join a given access point.** `sceNetCtl` exposes

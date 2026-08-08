@@ -390,6 +390,33 @@ static int serve(int sock) {
   }
 }
 
+
+// Keep the screen on for as long as this app is running.
+//
+// SCE_KERNEL_POWER_TICK_DEFAULT resets every idle timer at once -- auto-suspend,
+// OLED off and OLED dimming -- so one periodic tick covers all three. A
+// dedicated thread rather than a call in the main loop, because the main loop
+// blocks for seconds at a time during a Dart run or a 2.4 MB upload, and that
+// is exactly when the screen would otherwise dim.
+//
+// This is scoped to our own process on purpose: it stops when the app exits, so
+// it cannot leave the console awake by accident.
+static int power_tick_thread(SceSize args, void* argp) {
+  (void)args;
+  (void)argp;
+  for (;;) {
+    sceKernelPowerTick(SCE_KERNEL_POWER_TICK_DEFAULT);
+    sceKernelDelayThread(10 * 1000 * 1000);  // idle timers are minutes, not seconds
+  }
+  return 0;
+}
+
+static void start_power_tick(void) {
+  const SceUID t = sceKernelCreateThread("fvita_powertick", power_tick_thread,
+                                         0x10000100, 0x1000, 0, 0, NULL);
+  if (t >= 0) sceKernelStartThread(t, 0, NULL);
+}
+
 static int net_state(void) {
   int st = -1;
   if (sceNetCtlInetGetState(&st) < 0) return -1;
@@ -428,6 +455,7 @@ static int start_listener(void) {
 
 int main(void) {
   psvDebugScreenInit();
+  start_power_tick();
   sceIoMkdir("ux0:data", 0777);
   sceIoMkdir("ux0:data/flutter-vita", 0777);
   sceIoRemove("ux0:data/flutter-vita/loader.log");
