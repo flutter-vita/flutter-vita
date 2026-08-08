@@ -16,6 +16,7 @@ disposable; these patches are the real artifact.
 | 0005 | [zlib-no-armv8-on-vita](0005-zlib-no-armv8-on-vita.patch) | **Applies to `third_party/zlib`, a separate repo** |
 | 0006 | [newlib-portability-fixes](0006-newlib-portability-fixes.patch) | Shared Dart sources that assume glibc or "not POSIX means Windows" |
 | 0007 | [vmlibraryhooks-entry-point](0007-vmlibraryhooks-entry-point.patch) | Marks `VMLibraryHooks` and its fields `vm:entry-point` so an embedder can install the timer hooks. **Affects the platform dill, not the runtime** — rebuild `vm_platform_product.dill`, not just the runtime |
+| 0008 | [dart-vita-embedder-library](0008-dart-vita-embedder-library.patch) | Adds `dart:vita`, the Dart-side embedder shim. **Three files**: the library, `libraries.json`, and the VM target's `extraRequiredLibraries` — omitting the last produces a byte-identical dill with no error |
 
 All three are verified to compile with
 [`spikes/p1-compile-check/check.sh`](../../spikes/p1-compile-check/check.sh).

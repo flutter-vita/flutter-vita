@@ -88,9 +88,8 @@ than dereferencing null — a clear error, not a crash.
 
 **The catch:** 2 and 3 must be *Dart closures*, and an embedder cannot
 synthesize a closure from C. `runtime/bin` gets them from `dart:io`'s
-`_EventHandler`. Rather than pull in `dart:io`, the shape that fits this port is
-a small Dart shim compiled into the snapshot with `@pragma('vm:entry-point')`,
-which the embedder invokes once at startup and which calls out to C.
+`_EventHandler`. Rather than pull in `dart:io`, this port has its own SDK
+library — see below.
 
 All three are installed and verified on hardware: a 50 ms `Future.delayed`
 fires and its callback runs. Not `Duration.zero` — `dart:isolate` short-circuits
@@ -156,3 +155,37 @@ FVM's copy. That is worth doing on its own merits: the runtime is built from
 `third_party/sdk`, so the SDK sources compiled into the snapshot should come
 from there too, rather than from a separate checkout that merely happens to be
 the same revision.
+
+
+## `dart:vita`, the Dart-side shim
+
+Several hooks are Dart closures and C cannot synthesize one. `runtime/bin` gets
+its closures from `dart:_builtin` and `dart:io`; Flutter gets its from
+`dart:ui`. This port has `dart:vita` (patch 0008), holding the print closure and
+the two timer primitives, reached by the embedder with
+`Dart_LookupLibrary("dart:vita")`.
+
+It began life in the application's root library, which worked but tied the
+embedder to wherever the app source sat on the build machine — the snapshot
+bakes absolute host paths into application libraries. A real SDK library has a
+stable name.
+
+**Adding an SDK library takes three edits, and the third fails silently:**
+
+1. the library itself, `sdk/lib/vita/vita.dart`
+2. `sdk/lib/libraries.json` — declares it
+3. `pkg/vm/lib/modular/target/vm.dart`, `extraRequiredLibraries` — declares that
+   the VM platform requires it
+
+With only 1 and 2, `compile_platform` emits a **byte-identical dill**, no error
+and no warning, and the library simply does not exist. The only signal is the
+unchanged output size. Worth remembering when `dart:ui` gets added in Phase 2 —
+it is the same operation.
+
+Two things this confirmed that Phase 2 depends on:
+
+- **AOT retains a custom SDK library by name.** `Dart_LookupLibrary("dart:vita")`
+  resolves in a product AOT snapshot. Its entry points carry
+  `@pragma('vm:entry-point')`; the library itself needed no extra marking.
+- **`Dart_SetFfiNativeResolver` works in AOT**, which is how `dart:ui` reaches
+  its embedder too.

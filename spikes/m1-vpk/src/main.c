@@ -12,9 +12,11 @@
 // strex, data abort. Linking sidesteps it, because .text lands read-execute and
 // .bss read-write, as on every other platform.
 //
-// Success is a number, not a message: hello.dart returns 6830 rather than
-// printing, because print() throws until an embedder installs _printClosure and
-// runtime/bin -- which normally does that -- is excluded from this port.
+// Success is a number as well as a message: hello.dart returns 6830, and it
+// also prints, because this harness installs _printClosure from dart:vita --
+// the SDK library holding the Dart-side shim, since runtime/bin's dart:_builtin
+// is excluded from this port. The checksum stays: it is the more precise
+// signal, and it survives anything going wrong with output.
 //
 // Every step logs a checkpoint and flushes before doing anything risky. Track A
 // run 2 faulted mid-test and the log survived only by luck; here it is design.
@@ -61,7 +63,7 @@ static void lg(const char* fmt, ...) {
   }
 }
 
-// Backs hello.dart's @Native<Void Function(Handle)>(symbol: 'vita_dart_print').
+// Backs dart:vita's @Native<Void Function(Handle)>(symbol: 'vita_dart_print').
 // Taking a Handle rather than a Pointer means no malloc and no manual UTF-8
 // conversion on the Dart side.
 static void vita_dart_print(Dart_Handle line) {
@@ -318,15 +320,25 @@ int main(void) {
   // print() throws until _printClosure is set. runtime/bin sets it from
   // dart:_builtin's _getPrintClosure (PrepareBuiltinLibrary, dartutils.cc:461);
   // dart:_builtin is dart:io scaffolding this port excludes, so the closure
-  // comes from our own shim in the root library instead.
+  // comes from dart:vita, our own SDK library. Naming it outright is the point:
+  // the shim used to live in the app's root library, which tied the embedder to
+  // wherever the app's source happened to sit on the build machine.
+  lg("  [checkpoint] looking up dart:vita\n");
+  Dart_Handle vita_lib =
+      Dart_LookupLibrary(Dart_NewStringFromCString("dart:vita"));
+  if (Dart_IsError(vita_lib)) {
+    lg("  FAIL looking up dart:vita: %s\n", Dart_GetError(vita_lib));
+    wait_and_exit(1);
+  }
+
   lg("  [checkpoint] installing print closure\n");
-  Dart_Handle ffi_res = Dart_SetFfiNativeResolver(root, vita_ffi_resolver);
+  Dart_Handle ffi_res = Dart_SetFfiNativeResolver(vita_lib, vita_ffi_resolver);
   if (Dart_IsError(ffi_res)) {
     lg("  FAIL Dart_SetFfiNativeResolver: %s\n", Dart_GetError(ffi_res));
     wait_and_exit(1);
   }
   Dart_Handle print_closure =
-      Dart_Invoke(root, Dart_NewStringFromCString("getPrintClosure"), 0, NULL);
+      Dart_Invoke(vita_lib, Dart_NewStringFromCString("getPrintClosure"), 0, NULL);
   if (Dart_IsError(print_closure)) {
     lg("  FAIL getPrintClosure: %s\n", Dart_GetError(print_closure));
     wait_and_exit(1);
@@ -368,9 +380,9 @@ int main(void) {
     wait_and_exit(1);
   }
   Dart_Handle clock =
-      Dart_Invoke(root, Dart_NewStringFromCString("getTimerClock"), 0, NULL);
+      Dart_Invoke(vita_lib, Dart_NewStringFromCString("getTimerClock"), 0, NULL);
   Dart_Handle send_data = Dart_Invoke(
-      root, Dart_NewStringFromCString("getEventHandlerSendData"), 0, NULL);
+      vita_lib, Dart_NewStringFromCString("getEventHandlerSendData"), 0, NULL);
   if (Dart_IsError(clock) || Dart_IsError(send_data)) {
     lg("  FAIL building timer closures: %s\n",
        Dart_GetError(Dart_IsError(clock) ? clock : send_data));

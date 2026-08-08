@@ -41,7 +41,8 @@ ninja -C third_party/sdk/out/vita obj/runtime/libdart_aotruntime_product.a
 # 2. Host gen_snapshot that targets Vita
 ninja -C third_party/sdk/out/host gen_snapshot_product_vita_arm
 
-# 3. Platform dill from THIS tree, so patch 0007 is in it. One-time setup:
+# 3. Platform dill from THIS tree, so patches 0007 and 0008 are in it (the
+#    VMLibraryHooks pragmas and dart:vita). One-time setup:
 #      python3 third_party/sdk/tools/generate_package_config.py
 ninja -C third_party/sdk/out/host vm_platform_product.dill
 
