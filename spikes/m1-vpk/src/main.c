@@ -96,6 +96,12 @@ static volatile int32_t g_wakeup_ms = 0;  // 0 = nothing scheduled
 static volatile Dart_Port g_timer_port = ILLEGAL_PORT;
 static volatile int g_timer_run = 1;
 
+// The timer thread sleeps on this rather than polling, so an idle app costs
+// nothing. Signalled whenever the schedule changes or on shutdown; the thread
+// re-reads g_wakeup_ms each time it wakes.
+static SceUID g_timer_ef = -1;
+#define TIMER_EF_WAKE 1u
+
 static int64_t vita_monotonic_ms(void) {
   return (int64_t)(sceKernelGetProcessTimeWide() / 1000ULL);
 }
@@ -109,22 +115,40 @@ static void vita_schedule_wakeup(Dart_Handle send_port, int64_t wakeup_ms) {
   }
   g_timer_port = port_id;
   g_wakeup_ms = (wakeup_ms == VITA_NO_TIMER) ? 0 : (int32_t)wakeup_ms;
+  sceKernelSetEventFlag(g_timer_ef, TIMER_EF_WAKE);
 }
 
-// Polls at 1 ms. Crude but obviously correct, and easy to replace with an event
-// flag once the frame loop cares -- which it will, at 16.6 ms budgets.
+// Waits rather than polls: with no timer scheduled it blocks indefinitely, and
+// with one it blocks exactly until the wakeup. An earlier version polled at
+// 1 ms, which worked but burned a wakeup every millisecond on a 444 MHz CPU.
 static int vita_timer_thread(SceSize args, void* argp) {
   (void)args;
   (void)argp;
   while (g_timer_run) {
     const int32_t target = g_wakeup_ms;
-    if (target != 0 && (int32_t)vita_monotonic_ms() - target >= 0) {
-      g_wakeup_ms = 0;
-      Dart_CObject msg;
-      msg.type = Dart_CObject_kNull;
-      Dart_PostCObject(g_timer_port, &msg);  // _TIMEOUT_EVENT
+    SceUInt timeout_us = 0;
+    SceUInt* timeout = NULL;  // NULL means wait forever
+
+    if (target != 0) {
+      // Signed subtraction, so this stays correct across the 32-bit wrap.
+      const int32_t delta_ms = target - (int32_t)vita_monotonic_ms();
+      if (delta_ms <= 0) {
+        g_wakeup_ms = 0;
+        Dart_CObject msg;
+        msg.type = Dart_CObject_kNull;
+        Dart_PostCObject(g_timer_port, &msg);  // _TIMEOUT_EVENT
+        continue;
+      }
+      timeout_us = (SceUInt)delta_ms * 1000u;
+      timeout = &timeout_us;
     }
-    sceKernelDelayThread(1000);
+
+    unsigned int out_bits = 0;
+    // Either the deadline passes or someone reschedules; both just re-run the
+    // loop, which re-reads the schedule. Spurious wakeups are harmless.
+    sceKernelWaitEventFlag(g_timer_ef, TIMER_EF_WAKE,
+                           SCE_EVENT_WAITOR | SCE_EVENT_WAITCLEAR, &out_bits,
+                           timeout);
   }
   return 0;
 }
@@ -230,6 +254,19 @@ int main(void) {
   lg("  --- snapshot read complete, entering invoke sequence ---\n");
 
   Dart_EnterScope();
+
+  // Not the no-op it looks like in AOT. The class-finalisation half is --
+  // ClassFinalizer::ProcessPendingClasses just asserts and returns true under
+  // DART_PRECOMPILED_RUNTIME. But Dart_FinalizeLoading also calls
+  // heap()->old_space()->EvaluateAfterLoading(), which recomputes the old-space
+  // growth threshold from real post-load usage (pages.cc:1743). Skip it and the
+  // GC keeps its pre-load growth policy for the life of the process.
+  lg("  [checkpoint] Dart_FinalizeLoading\n");
+  Dart_Handle finalized = Dart_FinalizeLoading(false);
+  if (Dart_IsError(finalized)) {
+    lg("  FAIL Dart_FinalizeLoading: %s\n", Dart_GetError(finalized));
+    wait_and_exit(1);
+  }
 
   // The VM ships no microtask scheduler; the embedder installs one, and until
   // it does dart:async throws "Microtasks are not supported" on the first
@@ -349,6 +386,11 @@ int main(void) {
     wait_and_exit(1);
   }
 
+  g_timer_ef = sceKernelCreateEventFlag("vita_timer_ef", 0, 0, NULL);
+  if (g_timer_ef < 0) {
+    lg("  FAIL creating timer event flag: 0x%08X\n", (unsigned)g_timer_ef);
+    wait_and_exit(1);
+  }
   SceUID timer_thread = sceKernelCreateThread(
       "vita_timer", vita_timer_thread, 0x10000100, 0x4000, 0, 0, NULL);
   if (timer_thread < 0) {
@@ -436,7 +478,12 @@ int main(void) {
     lg("  FAIL reading delayedMarker\n");
   }
 
+  // Signal as well as clear the flag: the thread is blocked in
+  // sceKernelWaitEventFlag and would otherwise sit there until its next
+  // deadline, or forever if none is scheduled.
   g_timer_run = 0;
+  sceKernelSetEventFlag(g_timer_ef, TIMER_EF_WAKE);
+
   Dart_ExitScope();
   Dart_ShutdownIsolate();
   err = Dart_Cleanup();

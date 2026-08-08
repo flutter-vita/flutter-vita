@@ -20,7 +20,7 @@ any embedder.
 | `Dart_Initialize` + isolate group | `main_impl.cc` | done | |
 | Native resolvers for `dart:_builtin`, `dart:cli` | `Builtin::TrySetNativeResolver` | skipped | `dart:io` scaffolding. Not needed. |
 | `SetupDartIoLibrary` | `dartutils.cc` | skipped | `dart:io`. Not needed. |
-| `Dart_FinalizeLoading(false)` | `dartutils.cc` | skipped | Kernel-loading concern; AOT snapshots arrive finalised. Harmless so far — **verify** before assuming. |
+| `Dart_FinalizeLoading(false)` | `dartutils.cc` | **done** | **Not optional in AOT**, despite the name. See below. |
 | `_printClosure` ← `dart:_builtin _getPrintClosure` | `PrepareBuiltinLibrary` | **done** | Sourced from our own shim rather than `dart:_builtin`. |
 | `_setScheduleImmediateClosure` ← `dart:isolate` | `PrepareAsyncLibrary` | **done** | Pure Dart API. Without it: *"Microtasks are not supported"*. |
 | `Uri.base` ← `dart:io _getUriBaseClosure` | `PrepareCoreLibrary` | skipped | `dart:io`. Not needed. |
@@ -38,6 +38,22 @@ have **no saved PP slot**
 walk then reads a pool pointer out of a slot holding something else, gets zero,
 and hands `nullptr | kHeapObjectTag` to `ObjectPool::Handle`. It presents as a
 data abort deep inside `Object::HandleImpl`, which is nowhere near the cause.
+
+## `Dart_FinalizeLoading` is not a loading-only concern
+
+This was listed here as an AOT no-op worth verifying, and verifying it showed
+the note was wrong. The class-finalisation half genuinely is a no-op --
+`ClassFinalizer::ProcessPendingClasses` asserts and returns true under
+`DART_PRECOMPILED_RUNTIME`
+([class_finalizer.cc:43](../third_party/sdk/runtime/vm/class_finalizer.cc)).
+
+But the same function also calls
+`heap()->old_space()->EvaluateAfterLoading()`, which recomputes the old-space
+growth threshold from actual post-load heap usage
+([pages.cc:1743](../third_party/sdk/runtime/vm/heap/pages.cc)). Skip it and the
+GC keeps its pre-load growth policy for the life of the process. Invisible in a
+smoke test; not something to carry into an engine with a real heap on a 188 MiB
+budget.
 
 ## Timers: smaller than it looked — and now working
 
@@ -81,8 +97,11 @@ fires and its callback runs. Not `Duration.zero` — `dart:isolate` short-circui
 zero-duration timers by posting `_ZERO_EVENT` to its own port, so they never
 reach the platform hook and would prove nothing.
 
-The C side is a 1 ms polling thread. Crude but obviously correct, and easy to
-replace with an event-flag wait once frame pacing matters.
+The C side sleeps on a Vita event flag: it blocks indefinitely with nothing
+scheduled, blocks exactly to the deadline with something scheduled, and is
+signalled on every reschedule and on shutdown. The deadline delta is computed
+with signed subtraction so it survives the 32-bit millisecond wrap. (It began as
+a 1 ms polling loop, which worked but burned a wakeup every millisecond.)
 
 ## Print, while we are here
 

@@ -273,9 +273,9 @@ Read [`docs/adr/`](adr/README.md), but the load-bearing ones:
 
 ## Still open
 
-- ~~Timers~~ **done** — `Future.delayed` fires on hardware. See
-  [embedder-startup.md](embedder-startup.md). The C side is a 1 ms polling
-  thread, which should become an event-flag wait before frame pacing matters.
+- ~~Timers~~ **done** — `Future.delayed` fires on hardware, and the timer
+  thread sleeps on an event flag rather than polling. See
+  [embedder-startup.md](embedder-startup.md).
 - **Threading substrate and iteration cost** were never grilled. Both are logged
   in [the ADR index](adr/README.md).
 - `Flutter Vita Plan.md` contradicts the docs in seven places (pin version, the
