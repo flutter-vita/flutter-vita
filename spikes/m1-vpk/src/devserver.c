@@ -169,6 +169,18 @@ static int serve(int sock, const char* log_path, const char* eboot_path) {
         send_str(sock, msg);
       }
       return 0;
+    } else if (strcmp(line, "handoff") == 0) {
+      // The other half of the loop. We cannot replace our own eboot.bin, and
+      // while we run nobody else can either -- so hand control to the loader,
+      // which can do both once we are gone. It launches us back afterwards.
+      send_str(sock, "OK handing off to FVTA00003\n");
+      sceNetSocketClose(sock);
+      logf_("  [dev] handing off to the loader\n");
+      sceKernelDelayThread(300 * 1000);
+      sceAppMgrLaunchAppByUri(0xFFFFF, "psgm:play?titleid=FVTA00003");
+      sceKernelDelayThread(2 * 1000 * 1000);
+      logf_("  [dev] handoff did not take effect\n");
+      return 1;
     } else if (strcmp(line, "relaunch") == 0) {
       send_str(sock, "OK relaunching\n");
       sceNetSocketClose(sock);
@@ -182,7 +194,7 @@ static int serve(int sock, const char* log_path, const char* eboot_path) {
       send_str(sock, "OK\n");
       return 1;
     } else if (n > 0) {
-      send_str(sock, "ERR unknown (ping|probe|log|upload <n>|relaunch|exit)\n");
+      send_str(sock, "ERR unknown (ping|probe|log|handoff|relaunch|exit)\n");
     }
   }
 }
