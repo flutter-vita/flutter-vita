@@ -49,6 +49,42 @@ learning.
 The remote-control problem is solved without taiHEN instead, but only partly --
 see "What is actually possible" below.
 
+## The loop, as built
+
+Three parties, each doing the one thing it is permitted to do:
+
+| | Port | Can |
+|---|---|---|
+| BGFTP | 1337 | write `ux0:app/` — it is a **SceShell plugin**, so it runs with shell permissions, and it stays reachable even while another app runs |
+| M1 (`FVTA00002`) | 1339 | hand off, serve its log |
+| loader (`FVTA00003`) | 1341 | **launch M1** — that is all, and it is enough |
+
+```
+M1 --handoff--> loader --(BGFTP writes eboot.bin)--> launch --> M1
+```
+
+`./dev.sh cycle` runs it: hand off so the directory unlocks, upload over BGFTP,
+launch, print the log. **Verified end to end with no manual steps.**
+
+`sceAppMgrLaunchAppByUri(0xFFFFF, "psgm:play?titleid=...")` works on this device.
+
+### The loader does not write anything
+
+The first design had the loader install the binary itself. It cannot: it gets
+the **same `0x80010002` ENOENT** on `ux0:app/FVTA00002/` that M1 gets on its own
+directory. So the restriction is not "an app cannot see its own directory" — it
+is that **sandboxed homebrew cannot see `ux0:app/` at all**. BGFTP is exempt
+because it is a shell plugin, not an app.
+
+That was an inference I got wrong and the `probe` command caught in one round
+trip, before anything was built on top of it. The loader's `stage` and `install`
+commands survive in the binary but always fail; only `ping`, `probe` and
+`launch` do anything. Not worth a reinstall to remove.
+
+Enabling **"unsafe homebrew"** in HENkaku Settings reportedly lifts the
+`ux0:app` restriction for homebrew, which would allow a simpler design. Untested
+here, and unnecessary now that the split works.
+
 ## What is actually possible, measured
 
 Two facts settle the design, and both were measured on the device rather than
