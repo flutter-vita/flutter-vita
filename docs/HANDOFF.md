@@ -111,7 +111,60 @@ in calling AOT-generated code.** Everything before `Dart_Invoke` succeeds,
 including creating a Dart String, which exercises allocation and the object
 model.
 
-### The crash dump: ObjectPtr == 1
+### ROOT CAUSE FOUND: `global_object_pool()` is null
+
+Traced 2026-08-07 by instrumenting `HandleImpl` (patch 0007) to log its return
+address when handed `ObjectPtr == 1`:
+
+```
+[vita] HandleImpl: ObjectPtr==1 from ra=0x8116779d cid=23
+```
+
+`cid=23` is `kObjectPoolCid`, and the return address resolves to
+`dart::ObjectPool::Handle(Zone*, ObjectPoolPtr)` called from
+**`instructions_arm.cc:289`**:
+
+```cpp
+BareSwitchableCallPattern::BareSwitchableCallPattern(uword pc)
+    : SwitchableCallPatternBase(ObjectPool::Handle(
+          IsolateGroup::Current()->object_store()->global_object_pool())) {
+```
+
+**`object_store()->global_object_pool()` returns null.** `ObjectPool::Handle`
+tags it, producing `nullptr | kHeapObjectTag` = 1, and the header read faults.
+
+`Dart_Invoke("main")` goes through a switchable call site, which starts
+unlinked and gets patched on first invocation. That patching needs the global
+object pool, and in bare-instructions AOT that pool comes from the isolate
+snapshot into the object store.
+
+**This also explains Vita3K.** Its failure was `instructions_arm.cc:414`
+(`TypeTestingStubCallPattern`); hardware fails at line 289
+(`BareSwitchableCallPattern`). Same file, same class of operation — patching a
+call site using the object pool. The emulator was pointing at the real bug, and
+dismissing it as an artifact cost two rounds.
+
+**Important caveat for anyone reading a crash address: the binary is not loaded
+at its linked address.** There is a load slide, currently 0x42000 but it varies
+per run. Compute it by comparing a snapshot symbol address logged in `m1.log`
+against `arm-vita-eabi-nm` on `build/flutter_vita_m1`, then subtract before
+running `addr2line`. Skipping this resolved the address to
+`StringToDoubleConverter::StringToIeee`, which is obvious nonsense — but a less
+obviously wrong answer would have sent the investigation somewhere useless.
+
+**Where to look next:**
+
+1. Why is `global_object_pool` null after the isolate snapshot is read? It is an
+   `RW` field in `object_store.h:209`, so it should be deserialised with
+   everything else. Check whether the AOT deserialiser populates it and whether
+   anything on the Vita path skips that.
+2. `thread.cc:1656` caches it into `Thread::global_object_pool_` when entering
+   an isolate. Confirm that path runs — we call `Dart_CreateIsolateGroup`, which
+   enters the isolate implicitly, and never call `Dart_EnterIsolate` ourselves.
+3. Compare against a `linux-arm` build of the same `hello.dill` under QEMU. If
+   the pool is populated there, diff the two paths.
+
+### Superseded: the ObjectPtr == 1 symptom
 
 From run 11's dump (`analyse-crash.sh` on the newest `psp2core-*`):
 
