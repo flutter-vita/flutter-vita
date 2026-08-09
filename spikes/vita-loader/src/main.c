@@ -280,6 +280,17 @@ static int serve(int sock) {
       send_str(sock, m);
     } else if (strcmp(line, "ping") == 0) {
       send_str(sock, "loader\n");
+    } else if (strncmp(line, "kload ", 6) == 0) {
+      // Load a kernel module at runtime. Nothing goes in config.txt and nothing
+      // loads at boot, so a bad module costs a power cycle, not a console that
+      // will not boot. Unlike `inject`, this does not touch SceShell at all --
+      // that route is closed after our own module took the shell down.
+      const SceUID mid = taiLoadStartKernelModule(line + 6, 0, NULL, 0);
+      char m[224];
+      snprintf(m, sizeof m, "%s kload %s modid=0x%08X\n",
+               mid >= 0 ? "OK" : "ERR", line + 6, (unsigned)mid);
+      lg("  %s", m);
+      send_str(sock, m);
     } else if (strncmp(line, "inject", 6) == 0) {
       // Inject the launcher module into SceShell. SceShell survives our apps
       // crashing, so a module inside it can relaunch us with no human involved

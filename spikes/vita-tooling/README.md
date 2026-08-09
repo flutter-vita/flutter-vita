@@ -304,3 +304,39 @@ state, costing signal strength and range.
 `NoPowerLimits` and `nosleep.skprx` are already loading and help, but neither
 reconnects. If the setting is not enough, the fallback is to write a small
 SceShell plugin that polls `sceNetCtlInetGetState()` and reconnects on drop.
+
+
+## Removing the human from the loop: what is and is not possible
+
+A crashed app cannot be restarted remotely on this console. **Three independent
+routes were tried and all failed**, so this is settled rather than unexplored:
+
+| Route | Result |
+|---|---|
+| Plugin in `ur0:tai/config.txt` | console would not boot. Twice. |
+| Module injected into SceShell at runtime | shell crashed, needed a reboot. Twice — vitacompanion, and our own 150-line module with no hooks, no FTP and no kernel part |
+| Kernel module via `taiLoadStartKernelModuleForUser` | crashed the calling app. Twice — our own module, and the known-good `psp2shell_k.skprx` |
+| `sceBgAppUtilStartBgApp(1)` background app | refused with `0x80106501`; the SFO attribute that would permit it is undocumented |
+
+So **a genuine crash costs one tap**, and no amount of cleverness changes that.
+
+### What actually mattered
+
+Most interruptions were never crashes. The loader would sit running on screen
+with a dead socket, unreachable and holding its directory lock. `ping` answered
+with 0% loss the whole time — the device was fine and nothing was listening.
+
+That was a bug in the loader's own recovery: it rebuilt the listener only on a
+net-state *transition*, so a socket killed by a blip while the state still read
+CONNECTED was never rebuilt. Fixed — it now rebuilds on a persistently failing
+accept, and again after five minutes with no connection at all.
+
+**The five-second `ping` test that separates "device gone" from "nothing
+listening" is the first thing to run when a port goes quiet.** Hours went into
+crash-recovery machinery for a problem that was mostly this.
+
+### Therefore
+
+Keep crashes rare rather than recoverable: risky code should run only on an
+explicit command, so the default cycle never crashes and a crash is always
+something deliberately triggered.
