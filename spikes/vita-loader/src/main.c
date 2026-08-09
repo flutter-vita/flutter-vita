@@ -38,6 +38,7 @@
 #include <psp2/net/netctl.h>
 #include <psp2/promoterutil.h>
 #include <psp2/sysmodule.h>
+#include <taihen.h>
 
 #include <stdarg.h>
 #include <stdio.h>
@@ -279,6 +280,49 @@ static int serve(int sock) {
       send_str(sock, m);
     } else if (strcmp(line, "ping") == 0) {
       send_str(sock, "loader\n");
+    } else if (strncmp(line, "inject", 6) == 0) {
+      // Inject the launcher module into SceShell. SceShell survives our apps
+      // crashing, so a module inside it can relaunch us with no human involved
+      // -- which is the entire point.
+      //
+      // Runtime injection, deliberately: nothing goes into ur0:tai/config.txt
+      // and nothing loads at boot, so the worst case is a hung shell that a
+      // reboot clears completely. The two failures earlier today were
+      // config.txt entries that stopped the console booting at all.
+      // sceAppMgrGetIdByName("SceShell") returns 0x80802012 here -- it does
+      // not resolve the shell. SceShell's pid is conventionally a fixed value
+      // on this platform, so allow it to be given explicitly:
+      //   inject           -> try the name, then fall back to 0x10005
+      //   inject 10005     -> use that pid (hex)
+      // Passing it in means candidate pids can be tried without a rebuild and
+      // redeploy for each one.
+      SceUID shell_pid = 0;
+      char m[224];
+      if (line[6] == ' ' && line[7] != '\0') {
+        shell_pid = (SceUID)strtoul(line + 7, NULL, 16);
+        lg("  using given pid 0x%08X\n", (unsigned)shell_pid);
+      } else {
+        const int r = sceAppMgrGetIdByName(&shell_pid, "SceShell");
+        if (r < 0) {
+          shell_pid = 0x10005;  // the conventional SceShell pid
+          lg("  getIdByName 0x%08X, falling back to 0x%08X\n", (unsigned)r,
+             (unsigned)shell_pid);
+        }
+      }
+      lg("  SceShell pid = 0x%08X\n", (unsigned)shell_pid);
+      tai_module_args_t targs;
+      memset(&targs, 0, sizeof targs);
+      targs.size = sizeof targs;
+      targs.pid = shell_pid;
+      targs.args = 0;
+      targs.argp = NULL;
+      targs.flags = 0;
+      const SceUID mid = taiLoadStartModuleForPidForUser(
+          "ux0:data/flutter-vita/fvita_launcher.suprx", &targs);
+      snprintf(m, sizeof m, "%s inject pid=0x%08X modid=0x%08X\n",
+               mid >= 0 ? "OK" : "ERR", (unsigned)shell_pid, (unsigned)mid);
+      lg("  %s", m);
+      send_str(sock, m);
     } else if (strcmp(line, "probe") == 0) {
       // Can we write into the target's directory at all? This is the one
       // assumption the whole design rests on, so it is measurable on demand

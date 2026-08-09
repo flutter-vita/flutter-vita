@@ -41,6 +41,7 @@ target_link_libraries(${PROJECT_NAME}
   SceAppMgr_stub
   ScePromoterUtil_stub
   SceBgAppUtil_stub
+  taihen_stub
 )
 
 # UNSAFE, deliberately. vita_create_self builds a *safe* self by default, and a
