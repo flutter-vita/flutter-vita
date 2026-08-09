@@ -26,6 +26,7 @@
 // tap. Keep it boring.
 
 #include <psp2/appmgr.h>
+#include <psp2/bgapputil.h>
 #include <psp2/ctrl.h>
 #include <psp2/io/dirent.h>
 #include <psp2/io/fcntl.h>
@@ -532,6 +533,16 @@ int main(void) {
   g_log = sceIoOpen("ux0:data/flutter-vita/loader.log",
                     SCE_O_WRONLY | SCE_O_CREAT | SCE_O_TRUNC, 0777);
 
+  // Start the background supervisor before anything else. It is what makes a
+  // crash recoverable without a tap: it is a separate process, so it outlives
+  // the foreground app dying. Failure here is not fatal -- the loop still works,
+  // it just needs a tap after each crash, as before.
+  {
+    const int bg = sceSysmoduleLoadModule(SCE_SYSMODULE_BG_APP_UTIL);
+    const int st = (bg >= 0) ? sceBgAppUtilStartBgApp(1) : bg;
+    lg("supervisor start: sysmodule=0x%08X start=0x%08X\n", (unsigned)bg,
+       (unsigned)st);
+  }
   lg("Flutter Vita Loader\n");
   lg("===================\n");
   lg("target: %s\n\n", TARGET_EBOOT);

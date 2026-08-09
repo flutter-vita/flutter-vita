@@ -40,6 +40,7 @@ target_link_libraries(${PROJECT_NAME}
   ScePower_stub
   SceAppMgr_stub
   ScePromoterUtil_stub
+  SceBgAppUtil_stub
 )
 
 # UNSAFE, deliberately. vita_create_self builds a *safe* self by default, and a
@@ -51,7 +52,24 @@ target_link_libraries(${PROJECT_NAME}
 # so the flag would resolve to nothing, and it has no thread_local of its own.
 # See spikes/m1-vpk/CMakeLists.txt for what that flag is for.
 vita_create_self(${PROJECT_NAME}.self ${PROJECT_NAME} UNSAFE)
+# The supervisor ships inside the same vpk as eboot2.bin, which is the file
+# sceBgAppUtilStartBgApp(1) starts as a background application. It survives the
+# foreground app crashing, which is the entire point.
+add_executable(fvita_supervisor src/supervisor.c)
+target_link_libraries(fvita_supervisor
+  SceIofilemgr_stub
+  SceSysmem_stub
+  SceLibKernel_stub
+  SceKernelThreadMgr_stub
+  SceNet_stub
+  SceNetCtl_stub
+  SceSysmodule_stub
+  SceAppMgr_stub
+)
+vita_create_self(fvita_supervisor.self fvita_supervisor UNSAFE)
+
 vita_create_vpk(${PROJECT_NAME}.vpk ${VITA_TITLEID} ${PROJECT_NAME}.self
+  FILE ${CMAKE_CURRENT_BINARY_DIR}/fvita_supervisor.self eboot2.bin
   VERSION ${VITA_VERSION}
   NAME ${VITA_APP_NAME}
 )

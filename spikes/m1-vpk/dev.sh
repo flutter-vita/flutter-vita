@@ -13,6 +13,7 @@
 #   ./dev.sh log       pull m1.log
 #   ./dev.sh crash     pull and symbolicate the newest crash dump
 #   ./dev.sh get P F   copy a file off the device
+#   ./dev.sh sup       is the background supervisor alive
 #
 # On a crash the cycle says so, pulls the dump, and waits for you to tap the
 # loader rather than failing with "did not come up".
@@ -21,6 +22,7 @@ set -uo pipefail
 VITA="${VITA_IP:-192.168.0.32}"
 DEV=1339
 LDR=1341
+SUP=1342   # background supervisor (eboot2.bin), survives crashes
 HERE="$(cd "$(dirname "$0")" && pwd)"
 EBOOT="$HERE/out/staging/eboot.bin"
 ELF="$HERE/build/flutter_vita_m1"
@@ -42,9 +44,16 @@ waitp() {
   return 1
 }
 
-# Blocks until either app answers. Used after a crash, because with both apps
-# dead nothing on the device can start anything -- only a tap can.
+# Recover after a crash. The supervisor is a background app, so it outlives the
+# foreground app dying -- if it answers, recovery needs no human at all. Falling
+# back to asking for a tap only when it is absent.
 wait_for_tap() {
+  if open_ "$SUP"; then
+    echo "  supervisor is alive — relaunching the loader, no tap needed" >&2
+    say "$SUP" "launch FVTA00003" >/dev/null
+    waitp "$LDR" 45 && { echo "  loader is back" >&2; return 0; }
+    echo "  supervisor could not bring the loader back" >&2
+  fi
   echo "  >>> tap Flutter Vita Loader on the Vita (waiting up to ${TAP_WAIT}s)" >&2
   local waited=0
   while [ "$waited" -lt "$TAP_WAIT" ]; do
@@ -132,6 +141,7 @@ cycle() {
 }
 
 case "${1:-}" in
+  sup)     open_ "$SUP" && say "$SUP" ping || echo "supervisor not running" ;;
   who)     p="$(live)"; [ "$p" = "$DEV" ] && echo "M1 on $DEV" || { [ "$p" = "$LDR" ] && echo "loader on $LDR" || echo "nothing running"; } ;;
   log)     say "$DEV" log ;;
   probe)   p="$(live)"; say "$p" probe ;;
