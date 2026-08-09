@@ -85,6 +85,22 @@ target_link_libraries(${PROJECT_NAME}
 # UNSAFE so this app can write ux0:app too, which is what lets it install a new
 # loader. Without it only the loader could update M1, and updating the loader
 # itself would still need an FTP server.
+# -u pthread_cancel is load-bearing, not housekeeping.
+#
+# VitaSDK has no ELF TLS, so every thread_local compiles to
+# __emutls_get_address. That function asks __gthread_active_p() whether threads
+# exist, and __gthread_active_p is literally "is the address of pthread_cancel
+# non-null?" -- a *weak* reference. Weak undefined references do not pull a
+# member out of a static archive, so pthread_cancel stayed null, emutls decided
+# the program was single-threaded, and every thread_local became ONE SHARED
+# GLOBAL across all threads.
+#
+# That is what made Thread::Current() return null: Dart_RunLoop moves the
+# isolate to a worker thread, the worker writes the shared global, and the main
+# thread then reads what the worker left. Forcing the symbol in flips emutls to
+# the real pthread_getspecific path and fixes every thread_local at once.
+target_link_options(${PROJECT_NAME} PRIVATE -u pthread_cancel)
+
 vita_create_self(${PROJECT_NAME}.self ${PROJECT_NAME} UNSAFE)
 
 # The four blobs ship as data files next to eboot.bin; main() reads them from

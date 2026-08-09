@@ -294,6 +294,29 @@ static int serve(int sock) {
                  TARGET_EBOOT);
       }
       send_str(sock, msg);
+    } else if (strncmp(line, "get ", 4) == 0) {
+      // Stream a file back and close. This is what lets crash dumps and logs be
+      // pulled without an FTP server: BGFTP is deliberately not part of this
+      // loop, so the loop must be able to diagnose itself.
+      SceUID gf = sceIoOpen(line + 4, SCE_O_RDONLY, 0777);
+      if (gf < 0) {
+        char m[192];
+        snprintf(m, sizeof m, "ERR open 0x%08X %s\n", (unsigned)gf, line + 4);
+        send_str(sock, m);
+        return 0;
+      }
+      static char gbuf[32 * 1024];
+      int gn;
+      while ((gn = sceIoRead(gf, gbuf, sizeof gbuf)) > 0) {
+        int off = 0;
+        while (off < gn) {
+          const int w = sceNetSend(sock, gbuf + off, gn - off, 0);
+          if (w <= 0) break;
+          off += w;
+        }
+      }
+      sceIoClose(gf);
+      return 0;  // close so the reader sees EOF
     } else if (strncmp(line, "ls ", 3) == 0) {
       // A remote filesystem-permission explorer. Cheaper than rebuilding and
       // reinstalling this app once per hypothesis -- which is what testing

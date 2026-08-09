@@ -1,20 +1,21 @@
 #!/usr/bin/env bash
-# Drive the Vita with no manual steps and no FTP.
+# Drive the Vita. No FTP, no taps in the normal case.
 #
 #   M1     FVTA00002, port 1339 — the app under test
-#   loader FVTA00003, port 1341 — built as an UNSAFE self, so it can write
-#                                 ux0:app directly. That is the whole trick.
+#   loader FVTA00003, port 1341 — installs and launches M1
 #
-# vita_create_self builds a *safe* self by default, and a safe self is confined:
-# ux0:app is invisible, not merely unwritable, whatever "Enable unsafe homebrew"
-# is set to. Adding UNSAFE removes the -s flag from vita-make-fself and the
-# confinement goes with it. Everything else here — BGFTP, the promoter, patch
-# directories — was working around a restriction we had opted into.
+# Both are UNSAFE selfs, so each can write ux0:app and replace the other.
+# BGFTP is deliberately not used: the loop diagnoses itself through the `get`
+# and `ls` commands in the apps.
 #
-#   ./dev.sh who      which app is running
-#   ./dev.sh cycle    handoff -> stage -> install -> launch -> log
-#   ./dev.sh log      pull m1.log
-#   ./dev.sh probe    what the running app can write
+#   ./dev.sh cycle     handoff -> stage -> install -> launch -> log
+#   ./dev.sh who       which app is running
+#   ./dev.sh log       pull m1.log
+#   ./dev.sh crash     pull and symbolicate the newest crash dump
+#   ./dev.sh get P F   copy a file off the device
+#
+# On a crash the cycle says so, pulls the dump, and waits for you to tap the
+# loader rather than failing with "did not come up".
 set -uo pipefail
 
 VITA="${VITA_IP:-192.168.0.32}"
@@ -22,48 +23,122 @@ DEV=1339
 LDR=1341
 HERE="$(cd "$(dirname "$0")" && pwd)"
 EBOOT="$HERE/out/staging/eboot.bin"
+ELF="$HERE/build/flutter_vita_m1"
+DUMPS="$HERE/out/dumps"
+# How long to wait for a human to tap the loader after a crash.
+TAP_WAIT="${TAP_WAIT:-180}"
 
 open_() { nc -z -G 2 -w 2 "$VITA" "$1" 2>/dev/null; }
-waitp() { for _ in $(seq 1 "${2:-40}"); do open_ "$1" && return 0; sleep 3; done; return 1; }
 say()   { printf '%s\n' "$2" | nc -w 30 "$VITA" "$1"; }
+# Which port is alive, if any. Empty means nothing is running.
+live()  { open_ "$DEV" && { echo "$DEV"; return; }; open_ "$LDR" && { echo "$LDR"; return; }; echo ""; }
 
-who() {
-  open_ "$DEV" && { echo "M1 (FVTA00002) on $DEV"; return 0; }
-  open_ "$LDR" && { echo "loader (FVTA00003) on $LDR"; return 0; }
-  echo "neither running — tap Flutter Vita Loader once"; return 1
+waitp() {
+  local port="$1" secs="${2:-60}" waited=0
+  while [ "$waited" -lt "$secs" ]; do
+    open_ "$port" && return 0
+    sleep 3; waited=$((waited + 3))
+  done
+  return 1
+}
+
+# Blocks until either app answers. Used after a crash, because with both apps
+# dead nothing on the device can start anything -- only a tap can.
+wait_for_tap() {
+  echo "  >>> tap Flutter Vita Loader on the Vita (waiting up to ${TAP_WAIT}s)" >&2
+  local waited=0
+  while [ "$waited" -lt "$TAP_WAIT" ]; do
+    [ -n "$(live)" ] && { echo "  ok, something is up again" >&2; return 0; }
+    sleep 3; waited=$((waited + 3))
+  done
+  echo "  nothing came up within ${TAP_WAIT}s" >&2
+  return 1
+}
+
+# Newest psp2core dump name, via whichever app is alive.
+newest_dump() {
+  local p; p="$(live)"; [ -z "$p" ] && return 1
+  printf 'ls ux0:data\n' | nc -w 25 "$VITA" "$p" 2>/dev/null \
+    | grep -o "psp2core-[0-9]*-0x[0-9a-f]*-[^ ]*\.psp2dmp" \
+    | sort -t- -k2 -n | tail -1
+}
+
+cmd_get() {  # <device path> <local path>
+  local p; p="$(live)"; [ -z "$p" ] && { echo "nothing running" >&2; return 1; }
+  mkdir -p "$(dirname "$2")"
+  printf 'get %s\n' "$1" | nc -w 120 "$VITA" "$p" > "$2"
+  [ -s "$2" ] || { echo "empty: $1" >&2; rm -f "$2"; return 1; }
+  echo "  pulled $1 -> $2 ($(wc -c <"$2" | tr -d ' ') B)"
+}
+
+cmd_crash() {
+  local d; d="$(newest_dump)" || { echo "cannot list dumps" >&2; return 1; }
+  [ -z "$d" ] && { echo "no dumps on the device" >&2; return 1; }
+  echo "newest dump: $d"
+  cmd_get "ux0:data/$d" "$DUMPS/$d" || return 1
+  [ -x "$HERE/out/vpc-venv/bin/python3" ] || { echo "  (no analyser venv)"; return 0; }
+  echo "--- symbolicated ---"
+  ( export PATH="$HOME/vitasdk/bin:$PATH"
+    "$HERE/out/vpc-venv/bin/python3" "$HERE/out/vita-parse-core/main.py" \
+      "$DUMPS/$d" "$ELF" 2>/dev/null | sed -e 's/\x1b\[[0-9;]*m//g' \
+      | grep -E "Stop reason|PC:|^ *R[0-9]+:|<.*\+0x" | head -14 )
 }
 
 cycle() {
   [ -f "$EBOOT" ] || { echo "no $EBOOT — build first" >&2; return 1; }
 
+  # Nothing alive means a previous run crashed. Say so, and wait rather than
+  # failing: with both apps dead only a tap can restart the loop.
+  if [ -z "$(live)" ]; then
+    echo "nothing is running — the last run probably crashed"
+    wait_for_tap || return 1
+  fi
+
   if open_ "$DEV"; then
     echo "handoff M1 -> loader…"
     say "$DEV" handoff >/dev/null
-    waitp "$LDR" 40 || { echo "loader never came up" >&2; return 1; }
-  elif ! open_ "$LDR"; then
-    echo "nothing running — tap Flutter Vita Loader once" >&2; return 1
+    if ! waitp "$LDR" 45; then
+      echo "!! the loader never came up after handoff" >&2
+      echo "   (M1 exited but the launch did not take -- see spikes/vita-tooling)" >&2
+      wait_for_tap || return 1
+    fi
   fi
 
   local size; size=$(wc -c <"$EBOOT" | tr -d ' ')
-  echo "staging $size bytes to ux0:data…"
-  { printf 'stage %s\n' "$size"; cat "$EBOOT"; } | nc -w 180 "$VITA" "$LDR"
-  # Stage and install are separate so a dropped transfer -- routine on this
-  # wifi -- cannot leave a half-written eboot.bin in ux0:app.
+  echo "staging $size bytes…"
+  if ! { printf 'stage %s\n' "$size"; cat "$EBOOT"; } | nc -w 180 "$VITA" "$LDR" | grep -q OK; then
+    echo "!! stage failed (wifi drop mid-transfer?)" >&2; return 1
+  fi
   echo "installing…"
-  say "$LDR" install
+  say "$LDR" install | grep -q OK || { echo "!! install failed" >&2; return 1; }
+
   echo "launching…"
   say "$LDR" launch >/dev/null
-  waitp "$DEV" 60 || { echo "M1 did not come up" >&2; return 1; }
+  if ! waitp "$DEV" 60; then
+    # The interesting case: M1 was installed and launched but never answered.
+    echo "!! M1 CRASHED (installed and launched, but never opened $DEV)" >&2
+    if [ -n "$(live)" ]; then
+      echo "   pulling the crash dump…" >&2
+      cmd_crash >&2
+    else
+      echo "   both apps are down, so the dump cannot be pulled yet." >&2
+      wait_for_tap && cmd_crash >&2
+    fi
+    return 2   # distinct exit code: crashed, as opposed to 1 for setup errors
+  fi
+
   echo "--- m1.log ---"
   say "$DEV" log
 }
 
 case "${1:-}" in
-  who)     who ;;
+  who)     p="$(live)"; [ "$p" = "$DEV" ] && echo "M1 on $DEV" || { [ "$p" = "$LDR" ] && echo "loader on $LDR" || echo "nothing running"; } ;;
   log)     say "$DEV" log ;;
-  probe)   open_ "$DEV" && say "$DEV" probe || say "$LDR" probe ;;
+  probe)   p="$(live)"; say "$p" probe ;;
   handoff) say "$DEV" handoff ;;
   launch)  say "$LDR" launch ;;
+  crash)   cmd_crash ;;
+  get)     cmd_get "${2:?device path}" "${3:?local path}" ;;
   cycle)   cycle ;;
-  *) sed -n '2,19p' "$0" | sed 's/^# \{0,1\}//'; exit 1 ;;
+  *) sed -n '2,18p' "$0" | sed 's/^# \{0,1\}//'; exit 1 ;;
 esac

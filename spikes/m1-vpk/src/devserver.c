@@ -145,6 +145,29 @@ static int serve(int sock, const char* log_path, const char* eboot_path) {
                "ERR cannot self-update: ux0:app/<self> is ENOENT in-sandbox "
                "and locked while running. Use ./dev.sh deploy\n");
       return 0;
+    } else if (strncmp(line, "get ", 4) == 0) {
+      // Stream a file back and close. This is what lets crash dumps and logs be
+      // pulled without an FTP server: BGFTP is deliberately not part of this
+      // loop, so the loop must be able to diagnose itself.
+      SceUID gf = sceIoOpen(line + 4, SCE_O_RDONLY, 0777);
+      if (gf < 0) {
+        char m[192];
+        snprintf(m, sizeof m, "ERR open 0x%08X %s\n", (unsigned)gf, line + 4);
+        send_str(sock, m);
+        return 0;
+      }
+      static char gbuf[32 * 1024];
+      int gn;
+      while ((gn = sceIoRead(gf, gbuf, sizeof gbuf)) > 0) {
+        int off = 0;
+        while (off < gn) {
+          const int w = sceNetSend(sock, gbuf + off, gn - off, 0);
+          if (w <= 0) break;
+          off += w;
+        }
+      }
+      sceIoClose(gf);
+      return 0;  // close so the reader sees EOF
     } else if (strcmp(line, "probe") == 0) {
       // ux0:app/<self> may be read-only from inside the app's own sandbox, or
       // locked because the running binary lives there. BGFTP writes it happily
@@ -238,7 +261,7 @@ static int serve(int sock, const char* log_path, const char* eboot_path) {
       send_str(sock, "OK\n");
       return 1;
     } else if (n > 0) {
-      send_str(sock, "ERR unknown (ping|probe|log|put <n> <path>|handoff|relaunch|exit)\n");
+      send_str(sock, "ERR unknown (ping|probe|log|get <path>|put <n> <path>|handoff|relaunch|exit)\n");
     }
   }
 }

@@ -47,6 +47,9 @@ target_link_libraries(${PROJECT_NAME}
 # ux0:app is not merely unwritable but invisible, and ScePromoterUtil's library
 # is refused with MODULEMGR_NO_LIB. That confinement, not any HENkaku option,
 # is what forced BGFTP into the deploy loop.
+# No -u pthread_cancel here, unlike m1-vpk. This app does not link libpthread,
+# so the flag would resolve to nothing, and it has no thread_local of its own.
+# See spikes/m1-vpk/CMakeLists.txt for what that flag is for.
 vita_create_self(${PROJECT_NAME}.self ${PROJECT_NAME} UNSAFE)
 vita_create_vpk(${PROJECT_NAME}.vpk ${VITA_TITLEID} ${PROJECT_NAME}.self
   VERSION ${VITA_VERSION}
