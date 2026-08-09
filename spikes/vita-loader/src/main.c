@@ -614,12 +614,26 @@ int main(void) {
   int srv = -1;
   int last_state = -2;
   int ticks = 0;
+  int accept_errs = 0;
+  // Belt and braces: even with no visible error, rebuild the listener
+  // periodically if nothing has connected. A silently wedged socket is
+  // indistinguishable from an idle one from in here, and rebuilding an idle
+  // listener costs nothing.
+  int idle_ticks = 0;
 
   for (;;) {
     // There is no user-mode API to join a given access point -- sceNetCtl
     // exposes state and callbacks only -- so the best available behaviour is to
     // notice the drop, tear the socket down, and rebuild it the moment the
     // system reconnects. No tap required either way.
+    // ~5 minutes with no connection at all: assume wedged and rebuild.
+    if (srv >= 0 && ++idle_ticks > 5 * 60 * 30) {
+      idle_ticks = 0;
+      lg("no connections for 5 min; rebuilding the listener as a precaution\n");
+      sceNetSocketClose(srv);
+      srv = -1;
+      continue;
+    }
     if (++ticks >= 30) {  // roughly once a second
       ticks = 0;
       const int st = net_state();
@@ -643,10 +657,31 @@ int main(void) {
 
     if (srv >= 0) {
       const int c = sceNetAccept(srv, NULL, NULL);
+      if (c < 0) {
+        // A non-blocking accept returns EWOULDBLOCK constantly and that is
+        // normal. Anything else means the listener is broken -- which is what
+        // a brief wifi blip does, while sceNetCtlInetGetState still reports
+        // CONNECTED. The old code only rebuilt on a state *transition*, so a
+        // socket that died without a state change was never rebuilt and the
+        // app sat there visible on screen, unreachable, holding its directory
+        // lock. That cost several manual recoveries.
+        if (c != (int)0x80410104 /* EWOULDBLOCK */ &&
+            c != (int)0x80410116 /* EAGAIN-ish */) {
+          if (++accept_errs > 20) {
+            lg("listener is wedged (last 0x%08X); rebuilding\n", (unsigned)c);
+            sceNetSocketClose(srv);
+            srv = -1;
+            accept_errs = 0;
+            continue;
+          }
+        }
+      }
       if (c >= 0) {
+        accept_errs = 0;
         int zero = 0;
         sceNetSetsockopt(c, SCE_NET_SOL_SOCKET, SCE_NET_SO_NBIO, &zero,
                          sizeof zero);
+        idle_ticks = 0;
         const int stop = serve(c);
         sceNetSocketClose(c);
         if (stop) break;
