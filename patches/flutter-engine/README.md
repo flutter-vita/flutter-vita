@@ -12,6 +12,7 @@ disposable; these patches are the artifact.
 | # | Patch | What it does |
 |---|---|---|
 | 0001 | [gn-vita-toolchain](0001-gn-vita-toolchain.patch) | Teaches the engine's GN about `target_os=vita` |
+| 0002 | [fml-for-vita](0002-fml-for-vita.patch) | Teaches `fml` the platform, and gets it off `mmap`. **Read the message-loop note** |
 
 ## Applying
 
@@ -123,14 +124,57 @@ for any non-default use and costs nothing.
 Same rule explains why `current_os` worked without help: for the default
 toolchain GN takes it from the `target_os` build arg instead.
 
-## Verified so far
+### Verified
 
-`gn gen` configures 921 targets, and `//flutter/third_party/zlib` compiles for
+`gn gen` configures 921 targets, and every third-party dependency compiles for
 `arm-vita-eabi` with
 
 ```
 -march=armv7-a -mfloat-abi=hard -mtune=cortex-a9 -mthumb -mfpu=neon
 ```
 
-on the command line. That is the toolchain proven end to end; it is not yet
-evidence about the engine's own sources.
+on the command line: zlib, libpng, freetype2, harfbuzz, expat, ICU, and Skia.
+See [the Skia patches](../skia/README.md) — that tree needed two files.
+
+## 0002 — fml for vita
+
+`//flutter/fml` is the engine's base library; everything depends on it. Four
+files, and it now compiles clean.
+
+**`fml/build_config.h`** was 22 of the 22 failures on the first attempt — one
+`#error Please add support for your platform`, reached because VitaSDK's GCC
+defines neither `__linux__` nor `__unix__`. `FML_OS_VITA` joins the chain and
+`FML_OS_POSIX`, the latter for the same reason GN hands us
+`fml/platform/posix/`: newlib supplies `open`/`read`/`close`, pthreads and
+`pthread_once`, which is everything `FML_OS_POSIX` gates. It is not a claim that
+the platform is POSIX.
+
+**`platform/posix/paths_posix.cc`** — `PATH_MAX` is undefined. VitaSDK ships a
+`<limits.h>` that defines it, but GCC's own `limits.h` shadows that one and the
+`include_next` chain never reaches it. `<sys/syslimits.h>` has it (1024).
+
+**`platform/posix/file_posix.cc`** — includes `<sys/mman.h>` and never uses it.
+
+**`platform/posix/mapping_posix.cc`** — the real one. Same shape as the Skia
+change, with one deliberate difference: **writable mappings are refused rather
+than emulated.** A read-only mapping can be a heap copy without the caller being
+able to tell. A `MAP_SHARED` writable one cannot — its writes go back to the
+file, a heap copy's do not, and there is no honest point at which to write it
+back. Emulating it would make the persistent shader cache appear to work while
+discarding everything. Callers check `IsValid()`, so refusing degrades a feature
+instead of corrupting data.
+
+### Compiles is not runs: `MessageLoopImpl::Create()` returns nullptr
+
+`fml/message_loop_impl.cc` dispatches on `FML_OS_*` and ends in
+`#else return nullptr`. Vita takes that branch. **This is not a build error and
+will not block M2** — the engine will link. It will then fail the `FML_CHECK` in
+`MessageLoop::EnsureInitializedForCurrentThread` the first time any thread wants
+a loop, which is immediately.
+
+A real `fml/platform/vita/message_loop_vita.{cc,h}` is required before anything
+runs. Linux's is `timerfd`-backed; the Vita equivalent is the event-flag wait
+already written for the M1 timer thread (`spikes/m1-vpk/src/main.c`), so the
+mechanism is known. Tracked as a Phase 3 prerequisite, recorded here because a
+silent `nullptr` is exactly the kind of thing that gets found on hardware at the
+worst moment.

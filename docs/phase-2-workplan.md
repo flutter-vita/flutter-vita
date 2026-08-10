@@ -82,7 +82,7 @@ for the AOT snapshot.
 | `gn gen` for `target_os=vita` | done — 921 targets |
 | zlib, libpng, freetype2, harfbuzz, expat, ICU | build clean |
 | Skia | **builds** — 544 objects, [two files patched](../patches/skia/README.md) |
-| `fml` | not started — needs the platform layer above |
+| `fml` | **compiles** — but `MessageLoopImpl::Create()` returns nullptr, see below |
 | Dart runtime under the engine's GN | not started |
 | `dart:io` for vita | not started — the largest new item |
 | `dart:ui` in the platform dill | not started |
@@ -93,8 +93,12 @@ for the AOT snapshot.
 1. ~~**Skia**~~ — done. Two files: platform detection, and a heap-copy
    replacement for `mmap`. See [the patch notes](../patches/skia/README.md);
    the `mmap` one is a memory-cost decision, not just a portability fix.
-2. **`fml`**, because everything above it depends on it, and because
-   `mapping_posix` is the first genuinely hard file.
+2. ~~**`fml`**~~ — compiles. Four files, and `mapping_posix` was indeed the
+   hard one. **It is not finished**: `MessageLoopImpl::Create()` ends in
+   `#else return nullptr` and Vita takes that branch, so the engine will link
+   and then fail `MessageLoop::EnsureInitializedForCurrentThread` the first
+   time any thread wants a loop. A real `message_loop_vita` is a prerequisite
+   for anything running, not for M2.
 3. **The Dart runtime under the engine's GN.** Release mode resolves
    `//flutter/runtime:libdart` to `libdart_aotruntime`, which is the target
    Phase 1 already builds — this should be close to free, and if it is not, the
