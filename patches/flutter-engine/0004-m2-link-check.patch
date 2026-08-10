@@ -70,10 +70,10 @@ index 61abe64a..b92ae80c 100644
  
 diff --git a/engine/src/flutter/shell/platform/embedder/vita_embedder.cc b/engine/src/flutter/shell/platform/embedder/vita_embedder.cc
 new file mode 100644
-index 00000000..67afd7bb
+index 00000000..86168d7d
 --- /dev/null
 +++ b/engine/src/flutter/shell/platform/embedder/vita_embedder.cc
-@@ -0,0 +1,182 @@
+@@ -0,0 +1,203 @@
 +// Copyright (c) 2026, the Flutter Authors. All rights reserved.
 +// Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
@@ -109,6 +109,7 @@ index 00000000..67afd7bb
 +// copy, not a different renderer.
 +
 +#include <psp2/display.h>
++#include <psp2/io/stat.h>
 +#include <psp2/kernel/sysmem.h>
 +#include <psp2/kernel/threadmgr.h>
 +
@@ -207,7 +208,27 @@ index 00000000..67afd7bb
 +extern const uint8_t _kDartIsolateSnapshotInstructions[];
 +}
 +
++// m3 shipped without a log channel, which is why the first crash had to be
++// read out of registers. printf on this platform goes to the debug UART, and
++// nothing here has one. Point both streams at a file on ux0: instead, before
++// anything else runs, so `dev.sh get ux0:data/flutter-vita/m3.log` works even
++// after a crash -- the loader is up by then and serves the file.
++//
++// Line buffering matters more than it looks. A crash discards whatever is
++// still in the FILE buffer, and the interesting line is always the last one.
++static void OpenLog() {
++  sceIoMkdir("ux0:data/flutter-vita", 0777);
++  std::freopen("ux0:data/flutter-vita/m3.log", "w", stdout);
++  std::setvbuf(stdout, nullptr, _IOLBF, 0);
++  // stderr shares the file rather than getting its own, so FML_LOG output and
++  // the embedder's own printfs interleave in write order. Two files would make
++  // the ordering between them guesswork.
++  std::freopen("ux0:data/flutter-vita/m3.log", "a", stderr);
++  std::setvbuf(stderr, nullptr, _IOLBF, 0);
++}
++
 +int main(int argc, char** argv) {
++  OpenLog();
 +  std::printf("flutter-vita: starting\n");
 +
 +  if (!InitDisplay()) {
