@@ -1,8 +1,8 @@
 diff --git a/engine/src/flutter/shell/platform/embedder/BUILD.gn b/engine/src/flutter/shell/platform/embedder/BUILD.gn
-index 61abe64a..9558048d 100644
+index 61abe64a..b92ae80c 100644
 --- a/engine/src/flutter/shell/platform/embedder/BUILD.gn
 +++ b/engine/src/flutter/shell/platform/embedder/BUILD.gn
-@@ -562,6 +562,51 @@ if (is_mac && !embedder_for_target) {
+@@ -562,6 +562,65 @@ if (is_mac && !embedder_for_target) {
    }
  }
  
@@ -34,6 +34,9 @@ index 61abe64a..9558048d 100644
 +    ]
 +  }
 +
++  # Kept alongside the real embedder: it names only the four entry points, so it
++  # stays the fastest way to ask "does the engine still link" without dragging
++  # in sceDisplay or a snapshot.
 +  executable("vita_link_check") {
 +    sources = [ "vita_link_check.cc" ]
 +    deps = [ ":embedder" ]
@@ -51,9 +54,208 @@ index 61abe64a..9558048d 100644
 +  }
 +}
 +
++if (is_vita) {
++  # The real embedder. Unlike vita_link_check it expects a snapshot: the four
++  # _kDart* symbols come from the assembly gen_snapshot emits, which is not part
++  # of this target, so this only links inside the .vpk build.
++  source_set("vita_embedder") {
++    sources = [ "vita_embedder.cc" ]
++    deps = [ ":embedder" ]
++    public_configs = [ "//flutter:config" ]
++  }
++}
++
  group("flutter_engine") {
    deps = []
  
+diff --git a/engine/src/flutter/shell/platform/embedder/vita_embedder.cc b/engine/src/flutter/shell/platform/embedder/vita_embedder.cc
+new file mode 100644
+index 00000000..67afd7bb
+--- /dev/null
++++ b/engine/src/flutter/shell/platform/embedder/vita_embedder.cc
+@@ -0,0 +1,182 @@
++// Copyright (c) 2026, the Flutter Authors. All rights reserved.
++// Use of this source code is governed by a BSD-style license that can be
++// found in the LICENSE file.
++
++// The PlayStation Vita embedder — first cut.
++//
++// Replaces vita_link_check.cc, which existed only to make the linker answer the
++// M2 question. This one is meant to run.
++//
++// **It is not complete.** What is here: engine startup against a linked-in AOT
++// snapshot, and a software present callback that copies Skia's output into the
++// display. What is not here yet, in the order it should arrive:
++//
++//   * Input. sceTouchPeek -> FlutterPointerEvent, and
++//     sceCtrlPeekBufferPositive -> a `vita/gamepad` platform channel.
++//   * Vsync. Frames are presented as they arrive rather than paced against
++//     sceDisplayWaitVblankStart, so there is no frame budget being kept.
++//   * Custom task runners. The engine will spin up its own threads for now;
++//     ADR-0004 wants the platform runner pinned to the main Vita thread.
++//
++// Two decisions are already baked in and are worth reading before changing
++// anything here.
++//
++// **The snapshot is linked in, not loaded** (ADR-0005 option A). The four
++// symbols below are emitted by gen_snapshot into an assembly file that becomes
++// part of eboot.bin. The embedder API's other route -- FlutterEngineCreateAOTData
++// with an ELF path -- needs a loader the Vita does not have.
++//
++// **The present path is a memcpy, and that is the measured cost.** Phase 0.5
++// found the blit alone is 8.06 ms at 960x544 and bandwidth-bound at roughly 15%
++// of the memory system, which is why ADR-0006 sets the bar at 30 fps native or
++// 60 at 720x408. If this needs to get faster, the first thing to try is a NEON
++// copy, not a different renderer.
++
++#include <psp2/display.h>
++#include <psp2/kernel/sysmem.h>
++#include <psp2/kernel/threadmgr.h>
++
++#include <cstdio>
++#include <cstring>
++
++#include "flutter/shell/platform/embedder/embedder.h"
++
++namespace {
++
++// The Vita's panel. ADR-0006 records that native resolution cannot hold 60 fps
++// and that 720x408 upscaled reaches 68 -- when the reduced-resolution path
++// lands, this is the constant that changes, plus a GXM scale on present.
++constexpr int kWidth = 960;
++constexpr int kHeight = 544;
++
++// sceDisplaySetFrameBuf requires the pitch to be a multiple of 64 pixels; 960
++// already is, but the constant is named rather than assumed because it stops
++// being true the moment the resolution changes.
++constexpr int kPitch = 960;
++
++// SCE_DISPLAY_PIXELFORMAT_A8B8G8R8 is R,G,B,A in memory order on a
++// little-endian target, which is byte-identical to
++// kFlutterSoftwarePixelFormatRGBA8888. VERSIONS.md flagged this as "verify, do
++// not assume" in Phase 0.5; it held, and it is why the present below is a plain
++// copy with no channel swizzle.
++struct VitaDisplay {
++  SceUID memblock = -1;
++  void* base = nullptr;
++};
++
++VitaDisplay g_display;
++
++bool InitDisplay() {
++  // CDRAM is the fast path for the display controller. The framebuffer must be
++  // 256 KiB aligned, which SCE_KERNEL_MEMBLOCK_TYPE_USER_CDRAM_RW gives.
++  const int size = kPitch * kHeight * 4;
++  const int aligned = (size + 0x3FFFF) & ~0x3FFFF;
++
++  g_display.memblock = sceKernelAllocMemBlock(
++      "flutter_fb", SCE_KERNEL_MEMBLOCK_TYPE_USER_CDRAM_RW, aligned, nullptr);
++  if (g_display.memblock < 0) {
++    std::printf("sceKernelAllocMemBlock failed: 0x%08X\n", g_display.memblock);
++    return false;
++  }
++  if (sceKernelGetMemBlockBase(g_display.memblock, &g_display.base) < 0) {
++    std::printf("sceKernelGetMemBlockBase failed\n");
++    return false;
++  }
++  std::memset(g_display.base, 0, aligned);
++
++  SceDisplayFrameBuf fb = {};
++  fb.size = sizeof(fb);
++  fb.base = g_display.base;
++  fb.pitch = kPitch;
++  fb.pixelformat = SCE_DISPLAY_PIXELFORMAT_A8B8G8R8;
++  fb.width = kWidth;
++  fb.height = kHeight;
++  return sceDisplaySetFrameBuf(&fb, SCE_DISPLAY_SETBUF_NEXTFRAME) >= 0;
++}
++
++// |SoftwareSurfacePresentCallback|
++bool PresentSurface(void* /* user_data */,
++                    const void* allocation,
++                    size_t row_bytes,
++                    size_t height) {
++  if (g_display.base == nullptr) {
++    return false;
++  }
++
++  // Single-buffered on purpose, for now. Double buffering is the right answer
++  // and it costs another 2 MiB of CDRAM; that trade belongs with the vsync work
++  // rather than here, because without pacing a second buffer buys nothing but
++  // tearing in a different place.
++  const size_t copy_bytes = row_bytes < static_cast<size_t>(kPitch * 4)
++                                ? row_bytes
++                                : static_cast<size_t>(kPitch * 4);
++  const uint8_t* src = static_cast<const uint8_t*>(allocation);
++  uint8_t* dst = static_cast<uint8_t*>(g_display.base);
++  for (size_t y = 0; y < height && y < static_cast<size_t>(kHeight); y++) {
++    std::memcpy(dst + y * kPitch * 4, src + y * row_bytes, copy_bytes);
++  }
++  return true;
++}
++
++}  // namespace
++
++// The AOT snapshot, linked into eboot.bin rather than loaded. gen_snapshot
++// emits these four symbols into the assembly file that is assembled alongside
++// this translation unit; see ADR-0005 for why the alternative -- an ELF loaded
++// at runtime -- was abandoned.
++extern "C" {
++extern const uint8_t _kDartVmSnapshotData[];
++extern const uint8_t _kDartVmSnapshotInstructions[];
++extern const uint8_t _kDartIsolateSnapshotData[];
++extern const uint8_t _kDartIsolateSnapshotInstructions[];
++}
++
++int main(int argc, char** argv) {
++  std::printf("flutter-vita: starting\n");
++
++  if (!InitDisplay()) {
++    std::printf("flutter-vita: display init failed\n");
++    return 1;
++  }
++
++  FlutterRendererConfig config = {};
++  config.type = kSoftware;
++  config.software.struct_size = sizeof(FlutterSoftwareRendererConfig);
++  config.software.surface_present_callback = PresentSurface;
++
++  FlutterProjectArgs args = {};
++  args.struct_size = sizeof(FlutterProjectArgs);
++  // app0: is the read-only mount of the installed .vpk.
++  args.assets_path = "app0:/flutter_assets";
++  args.icu_data_path = "app0:/icudtl.dat";
++  args.vm_snapshot_data = _kDartVmSnapshotData;
++  args.vm_snapshot_instructions = _kDartVmSnapshotInstructions;
++  args.isolate_snapshot_data = _kDartIsolateSnapshotData;
++  args.isolate_snapshot_instructions = _kDartIsolateSnapshotInstructions;
++
++  FlutterEngine engine = nullptr;
++  FlutterEngineResult result =
++      FlutterEngineRun(FLUTTER_ENGINE_VERSION, &config, &args, nullptr, &engine);
++  if (result != kSuccess || engine == nullptr) {
++    std::printf("flutter-vita: FlutterEngineRun failed: %d\n", result);
++    return 1;
++  }
++  std::printf("flutter-vita: engine running\n");
++
++  FlutterWindowMetricsEvent metrics = {};
++  metrics.struct_size = sizeof(FlutterWindowMetricsEvent);
++  metrics.width = kWidth;
++  metrics.height = kHeight;
++  metrics.pixel_ratio = 1.0;
++  FlutterEngineSendWindowMetricsEvent(engine, &metrics);
++
++  // Nothing drives this loop yet -- no input, no vsync. It exists so the
++  // process stays alive while the engine's own threads render, which is enough
++  // to answer the only question that matters on the first run: does anything
++  // reach the screen.
++  for (;;) {
++    sceKernelDelayThread(16 * 1000);
++  }
++
++  return 0;
++}
 diff --git a/engine/src/flutter/shell/platform/embedder/vita_link_check.cc b/engine/src/flutter/shell/platform/embedder/vita_link_check.cc
 new file mode 100644
 index 00000000..1efb39f9
