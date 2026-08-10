@@ -51,11 +51,11 @@ ELF="$APPDIR/build/$ELF_NAME"
 DUMPS="$APPDIR/out/dumps"
 # How long to keep watching for the loader after a crash.
 #
-# Long on purpose. Three minutes was too short: the app crashes, the loader gets
-# tapped a minute or two later, and by then the script has given up -- so the tap
-# goes unnoticed and has to be repeated. Waiting half an hour costs nothing and
-# means a tap is never wasted.
-TAP_WAIT="${TAP_WAIT:-1800}"
+# Was 1800. Cut to 45 on 2026-08-10, because the original reasoning was about a
+# user who might not be watching, and this one always is: the loader is opened
+# immediately after every crash, so it is answering within seconds. Half an hour
+# of waiting only delayed a dump that was already available.
+TAP_WAIT="${TAP_WAIT:-45}"
 
 open_() { nc -z -G 2 -w 2 "$VITA" "$1" 2>/dev/null; }
 say()   { printf '%s\n' "$2" | nc -w 30 "$VITA" "$1"; }
