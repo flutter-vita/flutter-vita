@@ -14,9 +14,11 @@
 #   ./dev.sh crash     pull and symbolicate the newest crash dump
 #   ./dev.sh get P F   copy a file off the device
 #   ./dev.sh sup       is the background supervisor alive
+#   ./dev.sh watch     wait until either app appears, then say which
 #
-# On a crash the cycle says so, pulls the dump, and waits for you to tap the
-# loader rather than failing with "did not come up".
+# On a crash the cycle says so, pulls the dump, and then WATCHES CONTINUOUSLY
+# for the loader rather than failing. Tap it whenever you notice; the wait is
+# half an hour, so a tap is never missed and never has to be repeated.
 set -uo pipefail
 
 VITA="${VITA_IP:-192.168.0.32}"
@@ -27,8 +29,13 @@ HERE="$(cd "$(dirname "$0")" && pwd)"
 EBOOT="$HERE/out/staging/eboot.bin"
 ELF="$HERE/build/flutter_vita_m1"
 DUMPS="$HERE/out/dumps"
-# How long to wait for a human to tap the loader after a crash.
-TAP_WAIT="${TAP_WAIT:-180}"
+# How long to keep watching for the loader after a crash.
+#
+# Long on purpose. Three minutes was too short: the app crashes, the loader gets
+# tapped a minute or two later, and by then the script has given up -- so the tap
+# goes unnoticed and has to be repeated. Waiting half an hour costs nothing and
+# means a tap is never wasted.
+TAP_WAIT="${TAP_WAIT:-1800}"
 
 open_() { nc -z -G 2 -w 2 "$VITA" "$1" 2>/dev/null; }
 say()   { printf '%s\n' "$2" | nc -w 30 "$VITA" "$1"; }
@@ -54,10 +61,19 @@ wait_for_tap() {
     waitp "$LDR" 45 && { echo "  loader is back" >&2; return 0; }
     echo "  supervisor could not bring the loader back" >&2
   fi
-  echo "  >>> tap Flutter Vita Loader on the Vita (waiting up to ${TAP_WAIT}s)" >&2
+  echo "  >>> tap Flutter Vita Loader on the Vita" >&2
+  echo "      watching continuously for up to $((TAP_WAIT / 60)) min — tap whenever you like" >&2
   local waited=0
   while [ "$waited" -lt "$TAP_WAIT" ]; do
-    [ -n "$(live)" ] && { echo "  ok, something is up again" >&2; return 0; }
+    local p; p="$(live)"
+    if [ -n "$p" ]; then
+      echo "  detected port $p after ${waited}s — carrying on" >&2
+      return 0
+    fi
+    # Occasional progress, so a long wait cannot be mistaken for a hang.
+    if [ "$waited" -gt 0 ] && [ $((waited % 60)) -eq 0 ]; then
+      echo "      still watching (${waited}s)" >&2
+    fi
     sleep 3; waited=$((waited + 3))
   done
   echo "  nothing came up within ${TAP_WAIT}s" >&2
@@ -149,6 +165,7 @@ case "${1:-}" in
   launch)  say "$LDR" launch ;;
   crash)   cmd_crash ;;
   get)     cmd_get "${2:?device path}" "${3:?local path}" ;;
+  watch)   wait_for_tap && { p="$(live)"; echo "up on port $p"; } ;;
   cycle)   cycle ;;
   *) sed -n '2,18p' "$0" | sed 's/^# \{0,1\}//'; exit 1 ;;
 esac
