@@ -524,3 +524,29 @@ hand from C. `runtime/bin` is in the build now and supplies all four the way it
 does on every other platform. Verify at runtime — but do not port `dart:vita`
 forward without checking, or four workarounds get carried into a phase that may
 need none of them.
+
+## `gen_snapshot` already targets vita
+
+Phase 1 needed a purpose-built `gen_snapshot_product_vita_arm`, because Dart
+embeds the target OS in a snapshot's features string and validates it on load —
+a `linux-arm` gen_snapshot's output is *rejected* by a `vita` runtime. That was
+the single thing standing between "we can make armv7 snapshots" and M1.
+
+In the engine build it comes for free:
+
+```
+gn desc out/vita_release \
+  "//flutter/third_party/dart/runtime/bin:gen_snapshot(//build/toolchain/mac:clang_arm64)" defines
+  -> DART_TARGET_OS_VITA
+```
+
+The host `gen_snapshot` is already configured for vita, because the engine sets
+`target_os = "vita"` globally and Dart's `dart_os_config` keys off `target_os`
+rather than `current_os` — so patch 0004's one-line addition to that config
+covers the host tool as well as the target runtime. The bespoke
+`gen_snapshot_product_vita_arm` target is still in the tree from Phase 1 and is
+**not** what the engine uses.
+
+**Configured is not built.** This is GN's answer, not the compiler's; building
+the host tool is a large Dart VM build and has not been run yet. Do that before
+relying on it.
