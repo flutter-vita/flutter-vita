@@ -31,10 +31,10 @@ index 2079106a..3d09aad7 100644
          "patches": [
 diff --git a/sdk/lib/vita/vita.dart b/sdk/lib/vita/vita.dart
 new file mode 100644
-index 00000000..fd3037fc
+index 00000000..40fa3c83
 --- /dev/null
 +++ b/sdk/lib/vita/vita.dart
-@@ -0,0 +1,59 @@
+@@ -0,0 +1,83 @@
 +// The Vita embedder's Dart-side shim.
 +//
 +// This exists because several VM hooks are Dart closures, and an embedder
@@ -54,6 +54,7 @@ index 00000000..fd3037fc
 +// malloc and no manual UTF-8 handling on the Dart side.
 +library dart.vita;
 +
++import 'dart:_internal' show VMLibraryHooks;
 +import 'dart:ffi';
 +import 'dart:isolate';
 +
@@ -94,3 +95,26 @@ index 00000000..fd3037fc
 +void Function(Object?, SendPort, int) getEventHandlerSendData() =>
 +    (Object? sender, SendPort port, int wakeupTime) =>
 +        _vitaScheduleWakeup(port, wakeupTime);
++
++// ----------------------------------------------------------- isolate spawn --
++//
++// Isolate.spawn does not fail in the embedder -- it refuses in Dart, here:
++//
++//   var script = VMLibraryHooks.platformScript;
++//   if (script == null) throw UnsupportedError("Isolate.spawn");
++//
++// It needs a script URI to hand the child isolate. runtime/bin supplies one
++// from dart:io's Platform._nativeScript; this port has no dart:io, so nothing
++// ever set it and spawn was refused with no further explanation.
++//
++// Being a real SDK library means this can import dart:_internal and assign the
++// field directly, rather than going through Dart_SetField on VMLibraryHooks
++// from C.
++//
++// The URI is nominal. Nothing resolves it -- the snapshot is already linked
++// into the binary and the child runs the same code -- but it must be non-null
++// and parseable.
++@pragma('vm:entry-point')
++void installPlatformScript() {
++  VMLibraryHooks.platformScript = (() => Uri.parse('vita:flutter-vita'));
++}
