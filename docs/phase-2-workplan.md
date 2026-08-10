@@ -146,10 +146,13 @@ compile error, and each now calls `FDUtils::SetNonBlocking` explicitly.
 `accept4` is gone the same way; note that Linux gets atomicity there and this
 does not, which is safe only because the descriptor is not yet visible to Dart.
 
-Three shared `*_posix.cc` files gate on an OS list and could take a `vita` arm
-instead of being duplicated: `console_posix.cc`, `socket_base_posix.cc` and
-`virtual_memory_posix.cc`. `socket_base_posix.cc` needs its `SCM_RIGHTS` and
-multicast functions excluded first — VitaSDK has no `struct cmsghdr` at all.
+`socket_base_posix.cc` is now in the build too, which is what supplies
+`SocketBase::Available` and the rest of the shared socket surface. Three of its
+functions are excluded: `is_file_descriptors_control_message`, `ReceiveMessage`
+and `SendMessage`, all of which need `struct cmsghdr`, which VitaSDK does not
+have at any level. `ListInterfaces` reports `ENOSYS` rather than returning an
+empty list — the device plainly does have an address, and code that checks "are
+there any interfaces" before acting would take the wrong branch silently.
 
 ### 2. `fml` needs a platform layer, and its POSIX fallback is not portable
 
@@ -187,7 +190,7 @@ for the AOT snapshot.
 | `fml` | **compiles** — but `MessageLoopImpl::Create()` returns nullptr, see below |
 | Everything else in the engine | **compiles** — display_list, lib/ui, lib/gpu, tonic, abseil, shell, flow, txt |
 | Dart runtime under the engine's GN | **compiles** — it came for free, as hoped |
-| `dart:io` for vita | **compiles — all 16 modules, 68 objects.** `process` still undefined at link |
+| `dart:io` for vita | **compiles — all 16 modules plus `socket_base_posix.cc`.** `process` still undefined at link |
 | **Every source file in the engine** | **compiles — 2682 objects, `ninja` exit 0** |
 | Link `flutter_engine` | **M2** |
 

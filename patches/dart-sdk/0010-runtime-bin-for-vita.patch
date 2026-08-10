@@ -1146,6 +1146,170 @@ index 24f8e067..06b30afe 100644
  }  // namespace bin
  }  // namespace dart
  
+diff --git a/runtime/bin/socket_base_posix.cc b/runtime/bin/socket_base_posix.cc
+index 629c307d..d0f506f1 100644
+--- a/runtime/bin/socket_base_posix.cc
++++ b/runtime/bin/socket_base_posix.cc
+@@ -4,11 +4,14 @@
+ 
+ #include "platform/globals.h"
+ #if defined(DART_HOST_OS_ANDROID) || defined(DART_HOST_OS_LINUX) ||            \
+-    defined(DART_HOST_OS_MACOS)
++    defined(DART_HOST_OS_MACOS) || defined(DART_HOST_OS_VITA)
++#include "bin/vita_compat.h"
+ #include "bin/socket_base.h"
+ 
+ #include <errno.h>        // NOLINT
++#if !defined(DART_HOST_OS_VITA)
+ #include <net/if.h>       // NOLINT
++#endif
+ #include <netinet/tcp.h>  // NOLINT
+ #include <stdio.h>        // NOLINT
+ #include <stdlib.h>       // NOLINT
+@@ -18,9 +21,17 @@
+ 
+ #include "bin/fdutils.h"
+ #include "bin/file.h"
++#if !defined(DART_HOST_OS_VITA)
+ #include "bin/ifaddrs.h"
++#endif
++#if defined(DART_HOST_OS_VITA)
++// socket_base.h has already included socket_base_vita.h, and
++// platform/signal_blocker.h will not build here -- vita_compat.h supplies the
++// retry macros instead. See its comment.
++#else
+ #include "bin/socket_base_macos.h"
+ #include "platform/signal_blocker.h"
++#endif
+ 
+ namespace dart {
+ namespace bin {
+@@ -91,16 +102,46 @@ intptr_t SocketBase::RecvFrom(intptr_t fd,
+   return read_bytes;
+ }
+ 
++#if defined(DART_HOST_OS_VITA)
++
++// VitaSDK has no struct cmsghdr and no SCM_RIGHTS, so a socket cannot carry
++// ancillary data at all -- passing a file descriptor over one is impossible
++// here rather than unimplemented. No control message can exist to be one.
++bool SocketControlMessage::is_file_descriptors_control_message() {
++  return false;
++}
++
++#else
++
+ bool SocketControlMessage::is_file_descriptors_control_message() {
+   return level_ == SOL_SOCKET && type_ == SCM_RIGHTS;
+ }
+ 
++#endif  // defined(DART_HOST_OS_VITA)
++
+ // The maximum size on macOS is not documented so use the same size as Linux.
+ // If the sender message size is larger than this then some
+ // SocketControlMessages may not be received.
+ // /proc/sys/net/core/optmem_max is corresponding kernel setting.
+ const size_t kMaxSocketMessageControlLength = 2048;
+ 
++#if defined(DART_HOST_OS_VITA)
++
++intptr_t SocketBase::ReceiveMessage(intptr_t fd,
++                                    void* buffer,
++                                    int64_t* p_bytes_read,
++                                    SocketControlMessage** p_messages,
++                                    SocketOpKind sync,
++                                    OSError* p_oserror) {
++  // See is_file_descriptors_control_message above: no ancillary data on this
++  // platform. Reading a plain datagram still works; asking for the control
++  // messages that came with it cannot.
++  errno = ENOSYS;
++  return -1;
++}
++
++#else
++
+ intptr_t SocketBase::ReceiveMessage(intptr_t fd,
+                                     void* buffer,
+                                     int64_t* p_buffer_num_bytes,
+@@ -177,6 +218,8 @@ intptr_t SocketBase::ReceiveMessage(intptr_t fd,
+   return num_messages;
+ }
+ 
++#endif  // defined(DART_HOST_OS_VITA)
++
+ bool SocketBase::AvailableDatagram(intptr_t fd,
+                                    void* buffer,
+                                    intptr_t num_bytes) {
+@@ -210,6 +253,21 @@ intptr_t SocketBase::SendTo(intptr_t fd,
+   return written_bytes;
+ }
+ 
++#if defined(DART_HOST_OS_VITA)
++
++intptr_t SocketBase::SendMessage(intptr_t fd,
++                                 void* buffer,
++                                 size_t num_bytes,
++                                 SocketControlMessage* messages,
++                                 intptr_t num_messages,
++                                 SocketOpKind sync,
++                                 OSError* p_oserror) {
++  errno = ENOSYS;
++  return -1;
++}
++
++#else
++
+ intptr_t SocketBase::SendMessage(intptr_t fd,
+                                  void* buffer,
+                                  size_t num_bytes,
+@@ -271,6 +329,8 @@ intptr_t SocketBase::SendMessage(intptr_t fd,
+   return written_bytes;
+ }
+ 
++#endif  // defined(DART_HOST_OS_VITA)
++
+ bool SocketBase::GetSocketName(intptr_t fd, RawAddr* raw) {
+   ASSERT(fd >= 0);
+   ASSERT(raw != nullptr);
+@@ -328,6 +388,29 @@ bool SocketBase::ParseAddress(int type, const char* address, RawAddr* addr) {
+   return (result == 1);
+ }
+ 
++#if defined(DART_HOST_OS_VITA)
++
++AddressList<InterfaceSocketAddress>* SocketBase::ListInterfaces(
++    int type,
++    OSError** os_error) {
++  // No <ifaddrs.h>, no getifaddrs, and no if_nametoindex either: sceNetCtl
++  // reports the state of the one connection the system owns and does not
++  // enumerate interfaces.
++  //
++  // NetworkInterface.list therefore throws rather than returning an empty list.
++  // An empty list would be a lie of a particularly unhelpful kind -- the device
++  // plainly does have an address, and code that checks "are there any
++  // interfaces" before doing something would take the wrong branch silently.
++  ASSERT(*os_error == nullptr);
++  *os_error = new OSError(ENOSYS,
++                          "Listing network interfaces is not supported on "
++                          "this platform",
++                          OSError::kGetAddressInfo);
++  return nullptr;
++}
++
++#else
++
+ static bool ShouldIncludeIfaAddrs(struct ifaddrs* ifa, int lookup_family) {
+   if (ifa->ifa_addr == nullptr) {
+     // OpenVPN's virtual device tun0.
+@@ -377,6 +460,8 @@ AddressList<InterfaceSocketAddress>* SocketBase::ListInterfaces(
+   return addresses;
+ }
+ 
++#endif  // defined(DART_HOST_OS_VITA)
++
+ void SocketBase::Close(intptr_t fd) {
+   ASSERT(fd >= 0);
+   close(fd);
 diff --git a/runtime/bin/socket_base_vita.h b/runtime/bin/socket_base_vita.h
 new file mode 100644
 index 00000000..842c7e08
@@ -1515,10 +1679,10 @@ index 29109362..4bbb0479 100644
  #include "platform/utils.h"
 diff --git a/runtime/bin/vita_compat.h b/runtime/bin/vita_compat.h
 new file mode 100644
-index 00000000..9dba8a09
+index 00000000..e6066a18
 --- /dev/null
 +++ b/runtime/bin/vita_compat.h
-@@ -0,0 +1,141 @@
+@@ -0,0 +1,171 @@
 +// Copyright (c) 2026, the Dart project authors.  Please see the AUTHORS file
 +// for details. All rights reserved. Use of this source code is governed by a
 +// BSD-style license that can be found in the LICENSE file.
@@ -1588,6 +1752,36 @@ index 00000000..9dba8a09
 +#define DT_SOCK 12
 +
 +#define DART_DIRENT_TYPE(entry) DT_UNKNOWN
++
++// -------------------------------------------------------------- retry macros
++//
++// platform/signal_blocker.h cannot be included on this platform -- there is no
++// pthread_sigmask, sigemptyset or sigaddset for ThreadSignalBlocker to use --
++// and the EINTR-retry macros live in it. There are no signals here, so the
++// blocking versions collapse to plain retries.
++#if !defined(TEMP_FAILURE_RETRY)
++#define TEMP_FAILURE_RETRY(expression)                                         \
++  ({                                                                           \
++    intptr_t __result;                                                         \
++    do {                                                                       \
++      __result = (expression);                                                 \
++    } while ((__result == -1L) && (errno == EINTR));                           \
++    __result;                                                                  \
++  })
++#define VOID_TEMP_FAILURE_RETRY(expression)                                    \
++  (static_cast<void>(TEMP_FAILURE_RETRY(expression)))
++#define TEMP_FAILURE_RETRY_NO_SIGNAL_BLOCKER(expression)                       \
++  TEMP_FAILURE_RETRY(expression)
++#define VOID_TEMP_FAILURE_RETRY_NO_SIGNAL_BLOCKER(expression)                  \
++  (static_cast<void>(TEMP_FAILURE_RETRY(expression)))
++#define NO_RETRY_EXPECTED(expression)                                          \
++  ({                                                                           \
++    intptr_t __result = (expression);                                          \
++    __result;                                                                  \
++  })
++#define VOID_NO_RETRY_EXPECTED(expression)                                     \
++  (static_cast<void>(NO_RETRY_EXPECTED(expression)))
++#endif
 +
 +// ------------------------------------------------------------------ st_?tim
 +//
