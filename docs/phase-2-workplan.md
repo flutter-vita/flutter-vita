@@ -192,7 +192,7 @@ for the AOT snapshot.
 | Dart runtime under the engine's GN | **compiles** — it came for free, as hoped |
 | `dart:io` for vita | **compiles — all 16 modules plus `socket_base_posix.cc`.** `process` still undefined at link |
 | **Every source file in the engine** | **compiles — 2682 objects, `ninja` exit 0** |
-| Link the engine | **attempted — 66 undefined symbols, listed in [m2-undefined-symbols.txt](m2-undefined-symbols.txt)** |
+| Link the engine | **54 undefined symbols**, down from 66 — [the list](m2-undefined-symbols.txt) |
 
 ## Order of work
 
@@ -288,7 +288,7 @@ Expected — these are the stubs already scheduled. `Thread::TryStart` is here
 too, which was missed: `thread_linux.cc` has a different guard shape from the
 other eleven and was never widened.
 
-**2. The `*at()` family (12), and this is the find.** `openat`, `fstatat`,
+**2. ~~The `*at()` family (12)~~ — done.** `openat`, `fstatat`,
 `mkdirat`, `unlinkat`, `renameat`, `symlinkat`, `readlinkat`, `faccessat`,
 `utimensat`, plus `dup2`, `readlink` and `uname`. Every one is **declared** in
 VitaSDK's headers — which is why everything compiled — and **none is
@@ -304,8 +304,18 @@ family throughout for namespace-relative paths — `Namespace` exists precisely 
 hold a directory fd. Two routes: implement the dozen on top of `sceIo`, or make
 `Namespace` resolve to absolute paths on this platform and use the plain calls.
 The second is less code and loses the isolation `Namespace` provides, which
-nothing in a single-app homebrew build appears to need. **Decide before
-writing.**
+nothing in a single-app homebrew build appears to need. The wrappers won, and the reason is worth keeping: `NamespaceScope` already
+yields `AT_FDCWD` unless an embedder installs a namespace, and this port does
+not. So each shim handles the case that actually occurs and **refuses** a real
+directory fd rather than silently resolving it against the process's cwd.
+Rewriting `Namespace` would have touched more code to reach the same behaviour
+and would have thrown away that check. See `bin/vita_posix_shims.cc`.
+
+One wrinkle worth remembering: `uname` had to be defined **outside** the
+`extern "C"` block. VitaSDK's `<sys/utsname.h>` declares it with no `extern "C"`
+guard, so under C++ it has C++ linkage — and the mangled name is what the linker
+was asking for. Defining it as C would have added a second, unrelated symbol and
+left the original undefined.
 
 **3. Ganesh (17).** `GrDirectContext`, `GrBackendTexture`,
 `SkSurfaces::RenderTarget`, `SkImages::BorrowTextureFrom`. `skia_enable_ganesh`

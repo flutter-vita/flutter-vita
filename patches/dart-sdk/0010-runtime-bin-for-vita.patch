@@ -892,7 +892,7 @@ index 9f7cbaf9..cd9e088c 100644
    return utimensat(ns.fd(), ns.path(), times, 0) == 0;
  }
 diff --git a/runtime/bin/io_impl_sources.gni b/runtime/bin/io_impl_sources.gni
-index d3ace672..75bae699 100644
+index d3ace672..21d01bf2 100644
 --- a/runtime/bin/io_impl_sources.gni
 +++ b/runtime/bin/io_impl_sources.gni
 @@ -13,6 +13,8 @@ io_impl_sources = [
@@ -904,11 +904,12 @@ index d3ace672..75bae699 100644
    "eventhandler_linux.h",
    "eventhandler_macos.cc",
    "eventhandler_macos.h",
-@@ -86,6 +88,7 @@ io_impl_sources = [
+@@ -86,6 +88,8 @@ io_impl_sources = [
    "stdio.h",
    "stdio_fuchsia.cc",
    "stdio_linux.cc",
 +  "stdio_vita.cc",
++  "vita_posix_shims.cc",
    "stdio_macos.cc",
    "stdio_win.cc",
    "sync_socket.cc",
@@ -1854,6 +1855,199 @@ index 00000000..e6066a18
 +#endif  // defined(DART_HOST_OS_VITA)
 +
 +#endif  // RUNTIME_BIN_VITA_COMPAT_H_
+diff --git a/runtime/bin/vita_posix_shims.cc b/runtime/bin/vita_posix_shims.cc
+new file mode 100644
+index 00000000..0b64c6a5
+--- /dev/null
++++ b/runtime/bin/vita_posix_shims.cc
+@@ -0,0 +1,187 @@
++// Copyright (c) 2026, the Dart project authors.  Please see the AUTHORS file
++// for details. All rights reserved. Use of this source code is governed by a
++// BSD-style license that can be found in the LICENSE file.
++
++#include "platform/globals.h"
++#if defined(DART_HOST_OS_VITA)
++
++#include <errno.h>
++#include <fcntl.h>
++#include <string.h>
++#include <sys/stat.h>
++#include <sys/time.h>
++#include <sys/utsname.h>
++#include <unistd.h>
++#include <utime.h>
++
++// Definitions for libc functions VitaSDK **declares but does not implement**.
++//
++// This is the pattern Phase 1 used for `__emutls_get_address`: these are plain
++// C ABI functions, so defining them in our own object overrides nothing and
++// simply supplies the missing symbol. Every one of them compiled fine across
++// 2682 objects and only appeared at the link, which is the whole reason M2 is a
++// link and not a build.
++//
++// ## Why wrappers rather than a Namespace rewrite
++//
++// Dart's `runtime/bin` uses the `*at()` family throughout, because `Namespace`
++// can hold a directory descriptor and resolve paths relative to it. The
++// alternative to these shims was to teach `Namespace` to produce absolute paths
++// on this platform and call the plain functions.
++//
++// The wrappers win because **`Namespace` is already the default almost
++// everywhere**: `NamespaceScope` yields `AT_FDCWD` unless an embedder installs
++// a namespace, and this port does not. So each shim handles the case that
++// actually occurs -- `AT_FDCWD`, delegate to the plain call -- and refuses the
++// case that does not, loudly, instead of silently resolving against the wrong
++// directory. Rewriting `Namespace` would have touched more code to reach the
++// same behaviour, and would have removed the check.
++//
++// ## Symlinks
++//
++// There are none. VitaSDK has no `symlink` or `readlink`, and sceIo has no
++// concept of one. The shims return the errors POSIX specifies for "this is not
++// a symbolic link" rather than a generic failure, so `File.resolveSymbolicLinks`
++// and friends report something a Dart programmer can act on.
++
++extern "C" {
++
++// A directory descriptor other than AT_FDCWD would need openat's real
++// semantics, which sceIo cannot express. Rather than resolve against the
++// process's cwd and quietly produce the wrong path, say so.
++static int VitaRejectDirFd(int dirfd) {
++  if (dirfd == AT_FDCWD) {
++    return 0;
++  }
++  errno = ENOTSUP;
++  return -1;
++}
++
++int openat(int dirfd, const char* path, int flags, ...) {
++  if (VitaRejectDirFd(dirfd) != 0) {
++    return -1;
++  }
++  // The mode argument only matters with O_CREAT. sceIo ignores POSIX
++  // permission bits entirely -- there is no ownership on this filesystem -- so
++  // it is not forwarded, and open()'s two-argument form is the honest call.
++  return open(path, flags, 0666);
++}
++
++int fstatat(int dirfd, const char* path, struct stat* st, int flags) {
++  if (VitaRejectDirFd(dirfd) != 0) {
++    return -1;
++  }
++  // AT_SYMLINK_NOFOLLOW is a distinction without a difference here: nothing on
++  // this filesystem is a symlink, so stat and lstat agree.
++  return stat(path, st);
++}
++
++int mkdirat(int dirfd, const char* path, mode_t mode) {
++  if (VitaRejectDirFd(dirfd) != 0) {
++    return -1;
++  }
++  return mkdir(path, mode);
++}
++
++int unlinkat(int dirfd, const char* path, int flags) {
++  if (VitaRejectDirFd(dirfd) != 0) {
++    return -1;
++  }
++  return ((flags & AT_REMOVEDIR) != 0) ? rmdir(path) : unlink(path);
++}
++
++int renameat(int olddirfd,
++             const char* oldpath,
++             int newdirfd,
++             const char* newpath) {
++  if (VitaRejectDirFd(olddirfd) != 0 || VitaRejectDirFd(newdirfd) != 0) {
++    return -1;
++  }
++  return rename(oldpath, newpath);
++}
++
++int faccessat(int dirfd, const char* path, int mode, int flags) {
++  if (VitaRejectDirFd(dirfd) != 0) {
++    return -1;
++  }
++  return access(path, mode);
++}
++
++int utimensat(int dirfd,
++              const char* path,
++              const struct timespec times[2],
++              int flags) {
++  if (VitaRejectDirFd(dirfd) != 0) {
++    return -1;
++  }
++  if (times == nullptr) {
++    return utime(path, nullptr);
++  }
++  // Nanoseconds are dropped, which is not a shim's discretion but the
++  // platform's: VitaSDK's struct stat carries time_t, not timespec, so the
++  // resolution was already one second on the way in.
++  struct utimbuf buf;
++  buf.actime = times[0].tv_sec;
++  buf.modtime = times[1].tv_sec;
++  return utime(path, &buf);
++}
++
++// -------------------------------------------------------------- no symlinks
++
++int symlinkat(const char* target, int newdirfd, const char* linkpath) {
++  errno = ENOSYS;
++  return -1;
++}
++
++ssize_t readlink(const char* path, char* buf, size_t bufsize) {
++  // EINVAL is what POSIX specifies for "the named file is not a symbolic
++  // link", which is true of every file here. Callers that probe with readlink
++  // to decide whether a path is a link get the right answer.
++  errno = EINVAL;
++  return -1;
++}
++
++ssize_t readlinkat(int dirfd, const char* path, char* buf, size_t bufsize) {
++  errno = EINVAL;
++  return -1;
++}
++
++// ------------------------------------------------------------------- misc
++
++int dup2(int oldfd, int newfd) {
++  // VitaSDK has dup() but not dup2(), and dup() cannot be told which
++  // descriptor to produce. The only caller in runtime/bin is process
++  // redirection, which does not exist on this platform -- so rather than
++  // return a descriptor with the wrong number and corrupt whatever was at
++  // newfd, refuse.
++  if (oldfd == newfd) {
++    return newfd;
++  }
++  errno = ENOSYS;
++  return -1;
++}
++
++}  // extern "C"
++
++// Outside the extern "C" block on purpose. VitaSDK's <sys/utsname.h> declares
++// uname without an extern "C" guard, so under C++ it has C++ linkage -- the
++// mangled name is what the link was asking for. Defining it as C would add a
++// second, unrelated symbol and leave the original undefined.
++int uname(struct utsname* name) {
++  if (name == nullptr) {
++    errno = EFAULT;
++    return -1;
++  }
++  memset(name, 0, sizeof(*name));
++  // Dart surfaces these through Platform.operatingSystemVersion and
++  // Platform.localHostname. There is no kernel version to report that would
++  // mean anything, and no hostname at all.
++  strncpy(name->sysname, "Vita", sizeof(name->sysname) - 1);
++  strncpy(name->nodename, "localhost", sizeof(name->nodename) - 1);
++  strncpy(name->release, "3.60", sizeof(name->release) - 1);
++  strncpy(name->version, "VitaSDK", sizeof(name->version) - 1);
++  strncpy(name->machine, "armv7l", sizeof(name->machine) - 1);
++  return 0;
++}
++
++#endif  // defined(DART_HOST_OS_VITA)
 diff --git a/runtime/vm/BUILD.gn b/runtime/vm/BUILD.gn
 index 39749fad..67e99611 100644
 --- a/runtime/vm/BUILD.gn

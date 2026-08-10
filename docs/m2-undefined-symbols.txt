@@ -48,19 +48,7 @@ dart::bin::Process::exit_hook_
 dart::bin::Process::global_exit_code_
 dart::bin::Process::global_exit_code_mutex_
 dart::bin::Thread::TryStart(char const*, void (*)(unsigned int), unsigned int)
-dup2
-faccessat
 fml::paths::GetCachesDirectory()
 fml::paths::GetExecutablePath[abi:cxx11]()
-fstatat
-mkdirat
-openat
-readlink
-readlinkat
-renameat
 sceSblDmac5HashTransform
-symlinkat
 taiGetModuleInfo
-uname(utsname*)
-unlinkat
-utimensat
