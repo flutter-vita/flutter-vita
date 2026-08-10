@@ -1,8 +1,8 @@
 diff --git a/runtime/bin/crypto_linux.cc b/runtime/bin/crypto_linux.cc
-index 16a0c866..eb0075c0 100644
+index 16a0c866..d6a469ea 100644
 --- a/runtime/bin/crypto_linux.cc
 +++ b/runtime/bin/crypto_linux.cc
-@@ -3,12 +3,14 @@
+@@ -3,12 +3,18 @@
  // BSD-style license that can be found in the LICENSE file.
  
  #include "platform/globals.h"
@@ -12,12 +12,60 @@ index 16a0c866..eb0075c0 100644
  
  #include <errno.h>
  #include <fcntl.h>
++#if defined(DART_HOST_OS_VITA)
++#include <psp2/kernel/rng.h>
++#else
  #include <sys/syscall.h>
++#endif
  
 +#include "bin/vita_compat.h"
  #include "bin/crypto.h"
  #include "bin/fdutils.h"
  #include "platform/memory_sanitizer.h"
+@@ -40,6 +46,34 @@ static bool GetRandomFromDev(intptr_t count, uint8_t* buffer) {
+   return true;
+ }
+ 
++#if defined(DART_HOST_OS_VITA)
++
++bool Crypto::GetRandomBytes(intptr_t count, uint8_t* buffer) {
++  // sceKernelGetRandomNumber rather than getrandom(2) or /dev/urandom: there is
++  // no syscall(2) here and no /dev at all. It is the kernel's CSPRNG, which is
++  // what the Linux path is reaching for by two different routes.
++  //
++  // It takes a 32-bit size and refuses large requests, so the read is chunked.
++  // Dart asks for small amounts (seeds, hash keys), but a silent short read
++  // would be a security bug rather than a correctness one, so the loop is here
++  // regardless.
++  const SceSize kMaxChunk = 64;
++  intptr_t bytes_read = 0;
++  while (bytes_read < count) {
++    SceSize chunk = static_cast<SceSize>(count - bytes_read);
++    if (chunk > kMaxChunk) {
++      chunk = kMaxChunk;
++    }
++    if (sceKernelGetRandomNumber(buffer + bytes_read, chunk) < 0) {
++      return false;
++    }
++    bytes_read += chunk;
++  }
++  return true;
++}
++
++#else
++
+ bool Crypto::GetRandomBytes(intptr_t count, uint8_t* buffer) {
+   intptr_t bytes_read = 0;
+   do {
+@@ -62,6 +96,8 @@ bool Crypto::GetRandomBytes(intptr_t count, uint8_t* buffer) {
+   return true;
+ }
+ 
++#endif  // defined(DART_HOST_OS_VITA)
++
+ }  // namespace bin
+ }  // namespace dart
+ 
 diff --git a/runtime/bin/directory_linux.cc b/runtime/bin/directory_linux.cc
 index ddfed623..4d781621 100644
 --- a/runtime/bin/directory_linux.cc
@@ -650,10 +698,10 @@ index 00000000..8dfce668
 +
 +#endif  // RUNTIME_BIN_EVENTHANDLER_VITA_H_
 diff --git a/runtime/bin/fdutils_linux.cc b/runtime/bin/fdutils_linux.cc
-index 84fe559d..01aa38ca 100644
+index 84fe559d..61db137e 100644
 --- a/runtime/bin/fdutils_linux.cc
 +++ b/runtime/bin/fdutils_linux.cc
-@@ -3,8 +3,10 @@
+@@ -3,13 +3,17 @@
  // BSD-style license that can be found in the LICENSE file.
  
  #include "platform/globals.h"
@@ -665,11 +713,46 @@ index 84fe559d..01aa38ca 100644
  #include "bin/fdutils.h"
  
  #include <errno.h>      // NOLINT
+ #include <fcntl.h>      // NOLINT
++#if !defined(DART_HOST_OS_VITA)
+ #include <sys/ioctl.h>  // NOLINT
++#endif
+ #include <unistd.h>     // NOLINT
+ 
+ #include "platform/signal_blocker.h"
+@@ -56,6 +60,19 @@ bool FDUtils::IsBlocking(intptr_t fd, bool* is_blocking) {
+ }
+ 
+ intptr_t FDUtils::AvailableBytes(intptr_t fd) {
++#if defined(DART_HOST_OS_VITA)
++  // No ioctl, so no FIONREAD.
++  //
++  // This is safe to leave unimplemented, which is worth stating because it
++  // looks alarming. Every caller of *this* function is debug logging --
++  // eventhandler's DEBUG_POLL trace on Linux and macOS, and Fuchsia's IOHandle.
++  // Nothing on a normal path asks it anything.
++  //
++  // Do not confuse it with SocketBase::Available, which dart:io does lean on
++  // constantly and which reaches for FIONREAD separately in
++  // socket_base_posix.cc. That one still needs a real answer.
++  return -1;
++#else
+   int available;  // ioctl for FIONREAD expects an 'int*' argument.
+   int result = NO_RETRY_EXPECTED(ioctl(fd, FIONREAD, &available));
+   if (result < 0) {
+@@ -63,6 +80,7 @@ intptr_t FDUtils::AvailableBytes(intptr_t fd) {
+   }
+   ASSERT(available >= 0);
+   return static_cast<intptr_t>(available);
++#endif
+ }
+ 
+ ssize_t FDUtils::ReadFromBlocking(int fd, void* buffer, size_t count) {
 diff --git a/runtime/bin/file_linux.cc b/runtime/bin/file_linux.cc
-index 9f7cbaf9..8cbec9ff 100644
+index 9f7cbaf9..cd9e088c 100644
 --- a/runtime/bin/file_linux.cc
 +++ b/runtime/bin/file_linux.cc
-@@ -3,8 +3,10 @@
+@@ -3,15 +3,21 @@
  // BSD-style license that can be found in the LICENSE file.
  
  #include "platform/globals.h"
@@ -681,8 +764,135 @@ index 9f7cbaf9..8cbec9ff 100644
  #include "bin/file.h"
  
  #include <errno.h>         // NOLINT
+ #include <fcntl.h>         // NOLINT
+ #include <libgen.h>        // NOLINT
++#if !defined(DART_HOST_OS_VITA)
+ #include <sys/mman.h>      // NOLINT
++#endif
++#if !defined(DART_HOST_OS_VITA)
+ #include <sys/sendfile.h>  // NOLINT
++#endif
+ #include <sys/stat.h>      // NOLINT
+ #include <sys/types.h>     // NOLINT
+ #include <unistd.h>        // NOLINT
+@@ -75,6 +81,74 @@ bool File::IsClosed() {
+   return handle_->fd() == kClosedFd;
+ }
+ 
++#if defined(DART_HOST_OS_VITA)
++
++MappedMemory* File::Map(MapType type,
++                        int64_t position,
++                        int64_t length,
++                        void* start) {
++  ASSERT(handle_->fd() >= 0);
++  ASSERT(length > 0);
++
++  // No mmap. This is the third place in the port to need a mapping and the
++  // first where a heap copy is not obviously right, so the reasoning matters.
++  //
++  // Skia and fml both map read-only and only ever read through the result, so a
++  // copy is indistinguishable from a mapping there. Here the caller may pass
++  // `start`, which on Linux becomes MAP_FIXED -- "put it exactly here" -- and a
++  // copy cannot honour that. Dart's ELF loader is the caller that does so, when
++  // placing an AOT snapshot's segments.
++  //
++  // Refusing that case is correct rather than merely convenient: this port
++  // links its snapshot into eboot.bin (ADR-0005 option A) precisely because
++  // nothing on the Vita can load one at a chosen address. A caller asking for a
++  // fixed address here has already gone down a path that cannot work, and
++  // should find out now rather than through a wild pointer.
++  if (start != nullptr) {
++    errno = ENOSYS;
++    return nullptr;
++  }
++
++  // kReadExecute would need memory the Vita will let us execute, which means a
++  // VM-domain block rather than the heap -- see virtual_memory_vita.cc, and
++  // ADR-0005 for why that route was abandoned. dart:io itself never asks for
++  // it; only snapshot loading does.
++  if (type == kReadExecute) {
++    errno = ENOSYS;
++    return nullptr;
++  }
++
++  void* addr = malloc(length);
++  if (addr == nullptr) {
++    return nullptr;
++  }
++
++  int64_t offset = 0;
++  while (offset < length) {
++    const int64_t got = TEMP_FAILURE_RETRY(
++        pread(handle_->fd(), reinterpret_cast<char*>(addr) + offset,
++              length - offset, position + offset));
++    if (got <= 0) {
++      break;
++    }
++    offset += got;
++  }
++  if (offset != length) {
++    free(addr);
++    return nullptr;
++  }
++
++  return new MappedMemory(addr, length, /*should_unmap=*/true);
++}
++
++void MappedMemory::Unmap() {
++  free(address_);
++  address_ = nullptr;
++  size_ = 0;
++}
++
++#else
++
+ MappedMemory* File::Map(MapType type,
+                         int64_t position,
+                         int64_t length,
+@@ -129,6 +203,9 @@ void MappedMemory::Unmap() {
+   size_ = 0;
+ }
+ 
++
++#endif  // defined(DART_HOST_OS_VITA)
++
+ int64_t File::Read(void* buffer, int64_t num_bytes) {
+   ASSERT(handle_->fd() >= 0);
+   return TEMP_FAILURE_RETRY(read(handle_->fd(), buffer, num_bytes));
+@@ -573,9 +650,9 @@ void File::Stat(Namespace* namespc, const char* name, int64_t* data) {
+     } else {
+       data[kType] = kDoesNotExist;
+     }
+-    data[kCreatedTime] = TimespecToMilliseconds(st.st_ctim);
+-    data[kModifiedTime] = TimespecToMilliseconds(st.st_mtim);
+-    data[kAccessedTime] = TimespecToMilliseconds(st.st_atim);
++    data[kCreatedTime] = TimespecToMilliseconds(DART_STAT_CTIM(st));
++    data[kModifiedTime] = TimespecToMilliseconds(DART_STAT_MTIM(st));
++    data[kAccessedTime] = TimespecToMilliseconds(DART_STAT_ATIM(st));
+     data[kMode] = st.st_mode;
+     data[kSize] = st.st_size;
+   } else {
+@@ -612,7 +689,7 @@ bool File::SetLastAccessed(Namespace* namespc,
+   NamespaceScope ns(namespc, name);
+   struct timespec times[2];
+   MillisecondsToTimespec(millis, &times[0]);
+-  times[1] = st.st_mtim;
++  times[1] = DART_STAT_MTIM(st);
+   return utimensat(ns.fd(), ns.path(), times, 0) == 0;
+ }
+ 
+@@ -628,7 +705,7 @@ bool File::SetLastModified(Namespace* namespc,
+   // Set the new time:
+   NamespaceScope ns(namespc, name);
+   struct timespec times[2];
+-  times[0] = st.st_atim;
++  times[0] = DART_STAT_ATIM(st);
+   MillisecondsToTimespec(millis, &times[1]);
+   return utimensat(ns.fd(), ns.path(), times, 0) == 0;
+ }
 diff --git a/runtime/bin/io_impl_sources.gni b/runtime/bin/io_impl_sources.gni
-index d3ace672..95704ec3 100644
+index d3ace672..75bae699 100644
 --- a/runtime/bin/io_impl_sources.gni
 +++ b/runtime/bin/io_impl_sources.gni
 @@ -13,6 +13,8 @@ io_impl_sources = [
@@ -694,6 +904,14 @@ index d3ace672..95704ec3 100644
    "eventhandler_linux.h",
    "eventhandler_macos.cc",
    "eventhandler_macos.h",
+@@ -86,6 +88,7 @@ io_impl_sources = [
+   "stdio.h",
+   "stdio_fuchsia.cc",
+   "stdio_linux.cc",
++  "stdio_vita.cc",
+   "stdio_macos.cc",
+   "stdio_win.cc",
+   "sync_socket.cc",
 diff --git a/runtime/bin/namespace_linux.cc b/runtime/bin/namespace_linux.cc
 index c48ec219..1f676d14 100644
 --- a/runtime/bin/namespace_linux.cc
@@ -730,10 +948,10 @@ index 7f5255dc..6fb6b014 100644
    return kWindowsDynamicLibraryProcessPtr;
  #endif
 diff --git a/runtime/bin/platform_linux.cc b/runtime/bin/platform_linux.cc
-index 86a6dc83..c4f698f7 100644
+index 86a6dc83..21455a6c 100644
 --- a/runtime/bin/platform_linux.cc
 +++ b/runtime/bin/platform_linux.cc
-@@ -3,8 +3,10 @@
+@@ -3,14 +3,18 @@
  // BSD-style license that can be found in the LICENSE file.
  
  #include "platform/globals.h"
@@ -745,6 +963,71 @@ index 86a6dc83..c4f698f7 100644
  #include "bin/platform.h"
  
  #include <errno.h>
+ #include <signal.h>
+ #include <string.h>
++#if !defined(DART_HOST_OS_VITA)
+ #include <sys/prctl.h>
++#endif
+ #include <sys/resource.h>
+ #if defined(DART_HOST_OS_ANDROID)
+ #include <sys/system_properties.h>
+@@ -28,6 +32,31 @@ const char* Platform::executable_name_ = nullptr;
+ int Platform::script_index_ = 1;
+ char** Platform::argv_ = nullptr;
+ 
++#if defined(DART_HOST_OS_VITA)
++
++// The whole signal-handling block below is excluded rather than adapted. There
++// are no POSIX signals on this platform: sigaction, sigprocmask, sigemptyset
++// and siginfo_t's si_addr do not exist, and neither do the ILL_*, SEGV_*,
++// BUS_* and TRAP_* codes it decodes.
++//
++// Nothing is lost by skipping it, because the two things it buys are already
++// provided by other means:
++//
++//   * SIGPIPE suppression -- there is no SIGPIPE here; a write to a closed
++//     socket returns EPIPE directly, which is the behaviour the handler exists
++//     to produce.
++//   * The crash handler -- the Vita writes a psp2core-*.psp2dmp dump on every
++//     fault, which spikes/m1-vpk/analyse-crash.sh symbolicates. That has been
++//     the single most effective debugging tool in this port, and it works
++//     without the process cooperating, which a SIGSEGV handler cannot claim.
++
++bool Platform::Initialize(bool install_crash_handler /* = true */) {
++  USE(install_crash_handler);
++  return true;
++}
++
++#else
++
+ static const char* strcode(int si_signo, int si_code) {
+ #define CASE(signo, code)                                                      \
+   if (si_signo == signo && si_code == code) return #code;
+@@ -120,6 +149,8 @@ bool Platform::Initialize(bool install_crash_handler /* = true */) {
+   return true;
+ }
+ 
++#endif  // defined(DART_HOST_OS_VITA)
++
+ int Platform::NumberOfProcessors() {
+   return sysconf(_SC_NPROCESSORS_ONLN);
+ }
+@@ -195,7 +226,15 @@ intptr_t Platform::ResolveExecutablePathInto(char* result, size_t result_size) {
+ }
+ 
+ void Platform::SetProcessName(const char* name) {
++#if defined(DART_HOST_OS_VITA)
++  // Nothing to set. There is one process, its name is fixed by the LiveArea
++  // bubble, and sceKernel exposes no equivalent. Thread names -- the part that
++  // is actually useful when reading a crash dump -- are already applied at
++  // creation in os_thread_vita.cc.
++  USE(name);
++#else
+   prctl(PR_SET_NAME, reinterpret_cast<unsigned long>(name), 0, 0, 0);  // NOLINT
++#endif
+ }
+ 
+ void Platform::Exit(int exit_code) {
 diff --git a/runtime/bin/socket_base.h b/runtime/bin/socket_base.h
 index 904b73ac..08bd63c0 100644
 --- a/runtime/bin/socket_base.h
@@ -777,10 +1060,10 @@ index 904b73ac..08bd63c0 100644
    static_assert(kMaxAddressStringLength >= INET_ADDRSTRLEN);
  
 diff --git a/runtime/bin/socket_base_linux.cc b/runtime/bin/socket_base_linux.cc
-index 24f8e067..90b66033 100644
+index 24f8e067..06b30afe 100644
 --- a/runtime/bin/socket_base_linux.cc
 +++ b/runtime/bin/socket_base_linux.cc
-@@ -3,8 +3,10 @@
+@@ -3,13 +3,22 @@
  // BSD-style license that can be found in the LICENSE file.
  
  #include "platform/globals.h"
@@ -792,12 +1075,83 @@ index 24f8e067..90b66033 100644
  #include "bin/socket_base.h"
  
  #include <errno.h>        // NOLINT
++#if !defined(DART_HOST_OS_VITA)
++// Unused by this file -- ListInterfaces lives in socket_base_posix.cc -- but
++// VitaSDK has no <ifaddrs.h> at all, so the include cannot simply stay.
+ #include <ifaddrs.h>      // NOLINT
++#endif
++#if !defined(DART_HOST_OS_VITA)
++// Interface enumeration again -- no <net/if.h>, so no if_nametoindex.
+ #include <net/if.h>       // NOLINT
++#endif
+ #include <netinet/tcp.h>  // NOLINT
+ #include <stdio.h>        // NOLINT
+ #include <stdlib.h>       // NOLINT
+@@ -19,7 +28,11 @@
+ 
+ #include "bin/fdutils.h"
+ #include "bin/file.h"
++#if !defined(DART_HOST_OS_VITA)
++// socket_base.h has already pulled in the right per-OS header -- for vita that
++// is socket_base_vita.h, which is this file's sibling minus <sys/un.h>.
+ #include "bin/socket_base_linux.h"
++#endif
+ #include "bin/thread.h"
+ #include "platform/signal_blocker.h"
+ 
+@@ -118,6 +131,36 @@ bool SocketBase::GetOption(intptr_t fd,
+   return result == 0;
+ }
+ 
++#if defined(DART_HOST_OS_VITA)
++
++// MCAST_JOIN_GROUP and struct group_req are the protocol-independent multicast
++// API from RFC 3678, and VitaSDK has neither.
++//
++// This is *not* the platform saying no. sceNet does implement IPv4 multicast --
++// IP_ADD_MEMBERSHIP, IP_DROP_MEMBERSHIP and struct ip_mreq are all defined in
++// its <netinet/in.h> -- so a real implementation is available for IPv4 by
++// dropping to the older API and reporting failure for IPv6. That is a feature,
++// not a link requirement, and it wants a device to test against; until then
++// this reports failure honestly rather than pretending to have joined.
++
++bool SocketBase::JoinMulticast(intptr_t fd,
++                               const RawAddr& addr,
++                               const RawAddr&,
++                               int interfaceIndex) {
++  errno = ENOSYS;
++  return false;
++}
++
++bool SocketBase::LeaveMulticast(intptr_t fd,
++                                const RawAddr& addr,
++                                const RawAddr&,
++                                int interfaceIndex) {
++  errno = ENOSYS;
++  return false;
++}
++
++#else
++
+ bool SocketBase::JoinMulticast(intptr_t fd,
+                                const RawAddr& addr,
+                                const RawAddr&,
+@@ -142,6 +185,9 @@ bool SocketBase::LeaveMulticast(intptr_t fd,
+                                       sizeof(mreq))) == 0;
+ }
+ 
++#endif  // defined(DART_HOST_OS_VITA)
++
++
+ }  // namespace bin
+ }  // namespace dart
+ 
 diff --git a/runtime/bin/socket_base_vita.h b/runtime/bin/socket_base_vita.h
 new file mode 100644
-index 00000000..cc8b674d
+index 00000000..842c7e08
 --- /dev/null
 +++ b/runtime/bin/socket_base_vita.h
-@@ -0,0 +1,81 @@
+@@ -0,0 +1,101 @@
 +// Copyright (c) 2026, the Dart project authors.  Please see the AUTHORS file
 +// for details. All rights reserved. Use of this source code is governed by a
 +// BSD-style license that can be found in the LICENSE file.
@@ -849,6 +1203,26 @@ index 00000000..cc8b674d
 +// The value is unreachable rather than wrong.
 +#if !defined(SCM_RIGHTS)
 +#define SCM_RIGHTS 0x01
++#endif
++
++// IPv4 multicast is real here -- sceNet defines IP_MULTICAST_IF, _TTL, _LOOP
++// and IP_ADD_MEMBERSHIP. The IPv6 equivalents are not defined at all, so they
++// get their standard values for the same reason as IPV6_MULTICAST_IF above:
++// setsockopt rejects them, and Dart reports the error.
++#if !defined(IPV6_MULTICAST_LOOP)
++#define IPV6_MULTICAST_LOOP 19
++#endif
++#if !defined(IPV6_MULTICAST_HOPS)
++#define IPV6_MULTICAST_HOPS 10
++#endif
++#if !defined(IPV6_UNICAST_HOPS)
++#define IPV6_UNICAST_HOPS 4
++#endif
++#if !defined(IPV6_JOIN_GROUP)
++#define IPV6_JOIN_GROUP 12
++#endif
++#if !defined(IPV6_LEAVE_GROUP)
++#define IPV6_LEAVE_GROUP 13
 +#endif
 +
 +namespace dart {
@@ -1006,22 +1380,102 @@ index cbd00abc..e865ac74 100644
    return socket;
  }
  
-diff --git a/runtime/bin/stdio_linux.cc b/runtime/bin/stdio_linux.cc
-index 53516b35..d3886ccc 100644
---- a/runtime/bin/stdio_linux.cc
-+++ b/runtime/bin/stdio_linux.cc
-@@ -3,8 +3,10 @@
- // BSD-style license that can be found in the LICENSE file.
- 
- #include "platform/globals.h"
--#if defined(DART_HOST_OS_LINUX) || defined(DART_HOST_OS_ANDROID)
-+#if defined(DART_HOST_OS_LINUX) || defined(DART_HOST_OS_ANDROID) ||          \
-+    defined(DART_HOST_OS_VITA)
- 
-+#include "bin/vita_compat.h"
- #include "bin/stdio.h"
- 
- #include <errno.h>      // NOLINT
+diff --git a/runtime/bin/stdio_vita.cc b/runtime/bin/stdio_vita.cc
+new file mode 100644
+index 00000000..339b5dff
+--- /dev/null
++++ b/runtime/bin/stdio_vita.cc
+@@ -0,0 +1,90 @@
++// Copyright (c) 2026, the Dart project authors.  Please see the AUTHORS file
++// for details. All rights reserved. Use of this source code is governed by a
++// BSD-style license that can be found in the LICENSE file.
++
++#include "platform/globals.h"
++#if defined(DART_HOST_OS_VITA)
++
++#include "bin/stdio.h"
++
++#include <errno.h>   // NOLINT
++#include <unistd.h>  // NOLINT
++
++#include "bin/fdutils.h"
++
++// The only module in `runtime/bin` that is forked rather than shared.
++//
++// Every other Linux implementation could take a `DART_HOST_OS_VITA` in its
++// guard plus a few lines from `vita_compat.h`. This one could not: almost the
++// whole file is termios and ioctl, and there is no terminal on a PS Vita to
++// have attributes. Sharing it would have meant an #if around nine of its ten
++// functions, which is a fork with extra steps.
++//
++// It also cannot include `platform/signal_blocker.h` -- no `pthread_sigmask`
++// here -- and that is where `TEMP_FAILURE_RETRY` comes from, so the one
++// function with real work does its own retry.
++//
++// Everything else reports failure rather than inventing an answer. `dart:io`
++// surfaces that to Dart as a `StdinException`/`StdoutException`, which is
++// truthful: the question "is echo enabled" has no answer here.
++
++namespace dart {
++namespace bin {
++
++bool Stdin::ReadByte(intptr_t fd, int* byte) {
++  unsigned char b;
++  ssize_t s;
++  do {
++    s = read(fd, &b, 1);
++  } while (s < 0 && errno == EINTR);
++  if (s < 0) {
++    return false;
++  }
++  *byte = (s == 0) ? -1 : b;
++  return true;
++}
++
++bool Stdin::GetEchoMode(intptr_t fd, bool* enabled) {
++  return false;
++}
++
++bool Stdin::SetEchoMode(intptr_t fd, bool enabled) {
++  return false;
++}
++
++bool Stdin::GetEchoNewlineMode(intptr_t fd, bool* enabled) {
++  return false;
++}
++
++bool Stdin::SetEchoNewlineMode(intptr_t fd, bool enabled) {
++  return false;
++}
++
++bool Stdin::GetLineMode(intptr_t fd, bool* enabled) {
++  return false;
++}
++
++bool Stdin::SetLineMode(intptr_t fd, bool enabled) {
++  return false;
++}
++
++bool Stdin::AnsiSupported(intptr_t fd, bool* supported) {
++  // Not "unknown" -- known to be false. Output goes to a log file on ux0:, and
++  // escape sequences there are noise in a file someone has to read.
++  *supported = false;
++  return true;
++}
++
++bool Stdout::GetTerminalSize(intptr_t fd, int size[2]) {
++  return false;
++}
++
++bool Stdout::AnsiSupported(intptr_t fd, bool* supported) {
++  *supported = false;
++  return true;
++}
++
++}  // namespace bin
++}  // namespace dart
++
++#endif  // defined(DART_HOST_OS_VITA)
 diff --git a/runtime/bin/sync_socket_linux.cc b/runtime/bin/sync_socket_linux.cc
 index d0e9619c..0d9fb747 100644
 --- a/runtime/bin/sync_socket_linux.cc
@@ -1061,10 +1515,10 @@ index 29109362..4bbb0479 100644
  #include "platform/utils.h"
 diff --git a/runtime/bin/vita_compat.h b/runtime/bin/vita_compat.h
 new file mode 100644
-index 00000000..fce023c8
+index 00000000..9dba8a09
 --- /dev/null
 +++ b/runtime/bin/vita_compat.h
-@@ -0,0 +1,105 @@
+@@ -0,0 +1,141 @@
 +// Copyright (c) 2026, the Dart project authors.  Please see the AUTHORS file
 +// for details. All rights reserved. Use of this source code is governed by a
 +// BSD-style license that can be found in the LICENSE file.
@@ -1135,6 +1589,39 @@ index 00000000..fce023c8
 +
 +#define DART_DIRENT_TYPE(entry) DT_UNKNOWN
 +
++// ------------------------------------------------------------------ st_?tim
++//
++// VitaSDK's <sys/stat.h> picks the older `time_t st_atime` layout for __vita__
++// explicitly, so `st_atim` and friends -- the nanosecond `struct timespec`
++// members -- do not exist. This is not a feature-macro that can be switched on;
++// the struct simply has second resolution.
++//
++// These helpers give the shared code the timespec it wants, with tv_nsec zero,
++// so the call sites read the same on every platform.
++static inline struct timespec DartVitaStatTime(time_t seconds) {
++  struct timespec ts;
++  ts.tv_sec = seconds;
++  ts.tv_nsec = 0;
++  return ts;
++}
++#define DART_STAT_ATIM(st) DartVitaStatTime((st).st_atime)
++#define DART_STAT_MTIM(st) DartVitaStatTime((st).st_mtime)
++#define DART_STAT_CTIM(st) DartVitaStatTime((st).st_ctime)
++
++// ------------------------------------------------------------------ sendfile
++//
++// No sendfile(2). File::Copy already carries a read/write fallback for
++// "platforms where sendfile() fails with EINVAL or ENOSYS" -- its own comment
++// -- so reporting ENOSYS routes the copy down a path Dart already maintains
++// and tests, rather than adding a second one.
++static inline ssize_t sendfile64(int out_fd,
++                                 int in_fd,
++                                 int64_t* offset,
++                                 size_t count) {
++  errno = ENOSYS;
++  return -1;
++}
++
 +// ------------------------------------------------------------------- sockets
 +
 +// No listen() backlog constant. 128 is what Linux uses.
@@ -1166,6 +1653,9 @@ index 00000000..fce023c8
 +#else  // defined(DART_HOST_OS_VITA)
 +
 +#define DART_DIRENT_TYPE(entry) ((entry)->d_type)
++#define DART_STAT_ATIM(st) ((st).st_atim)
++#define DART_STAT_MTIM(st) ((st).st_mtim)
++#define DART_STAT_CTIM(st) ((st).st_ctim)
 +
 +#endif  // defined(DART_HOST_OS_VITA)
 +

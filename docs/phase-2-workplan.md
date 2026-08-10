@@ -187,8 +187,8 @@ for the AOT snapshot.
 | `fml` | **compiles** — but `MessageLoopImpl::Create()` returns nullptr, see below |
 | Everything else in the engine | **compiles** — display_list, lib/ui, lib/gpu, tonic, abseil, shell, flow, txt |
 | Dart runtime under the engine's GN | **compiles** — it came for free, as hoped |
-| `dart:io` for vita | headers done; `eventhandler_vita.cc` and `process_vita.cc` still to write |
-| **Every source file in the engine** | **compiles — 2680 objects, `ninja` exit 0** |
+| `dart:io` for vita | **compiles — all 16 modules, 68 objects.** `process` still undefined at link |
+| **Every source file in the engine** | **compiles — 2682 objects, `ninja` exit 0** |
 | Link `flutter_engine` | **M2** |
 
 ## Order of work
