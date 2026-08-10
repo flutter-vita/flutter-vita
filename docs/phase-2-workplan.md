@@ -192,7 +192,7 @@ for the AOT snapshot.
 | Dart runtime under the engine's GN | **compiles** — it came for free, as hoped |
 | `dart:io` for vita | **compiles — all 16 modules plus `socket_base_posix.cc`.** `process` still undefined at link |
 | **Every source file in the engine** | **compiles — 2682 objects, `ninja` exit 0** |
-| Link the engine | **10 undefined symbols**, down from 66 — [the list](m2-undefined-symbols.txt) |
+| Link the engine | **M2 MET — zero undefined symbols** |
 
 ## Order of work
 
@@ -438,3 +438,66 @@ assuming the branch is wrong.
 **Two are the taiHEN pair**, unchanged and diagnosed in
 `patches/flutter-engine/0004`: `libdl.a` is linked, needs those archives, and
 GN emits them before `-ldl` where static resolution cannot use them.
+
+
+---
+
+# M2 is met
+
+`out/vita_release/vita_link_check` links with **zero undefined symbols**.
+
+```
+Class:   ELF32
+Machine: ARM
+Type:    EXEC
+Flags:   0x5000400, Version5 EABI, hard-float ABI
+```
+
+`nm -u` reports nothing, and 422 engine symbols (`FlutterEngineRun`, `SkCanvas`,
+`Dart_Initialize`) are present. The hard-float flag is the same `0x...400` that
+Phase 0.5 spike B5 measured on VitaSDK's own libraries, so the ABI matches.
+
+**`.text` is 6.26 MiB** — and that number should not be compared to the roadmap's
+12.41 MiB armv7 reference as though Ganesh came for free. This binary is linked
+with `--gc-sections` and only names four embedder entry points, so most of the
+engine was discarded as unreachable. A real embedder will be larger. The Ganesh
+size question is still open; measure it against a Phase 3 binary, not this one.
+
+## The last three, and what they cost
+
+**66 → 28** by stubbing and shimming. **28 → 10** by building Ganesh's core with
+no backend. The last ten took three fixes, two of which were in a place I had
+not looked:
+
+1. **`SkLogVAList`.** `flutter/skia/BUILD.gn` — the *engine's* Skia target — is
+   what builds Skia. `flutter/third_party/skia/BUILD.gn` is not used at all;
+   the engine imports Skia's `.gni` source lists and defines its own target. An
+   earlier edit to Skia's own `BUILD.gn` had no effect for that reason, which is
+   worth knowing before making any other Skia build change.
+
+2. **`-ldl`, found at last.** Same file: Skia's engine target adds it for
+   everything non-Windows except QNX. Not `runtime/vm` and not `runtime/bin`,
+   both of which were excluded for vita first and changed nothing. Removing it
+   made `dlopen`/`dlsym`/`dlclose`/`dlerror` surface honestly — they are now
+   four small refusals in `vita_posix_shims.cc` — and took the two taiHEN
+   symbols with it, since VitaSDK's `libdl.a` implements `dlsym` on taiHEN.
+
+3. **abseil's `LowLevelAlloc`.** Abseil sets `ABSL_LOW_LEVEL_ALLOC_MISSING`
+   when `ABSL_HAVE_MMAP` is absent and compiles the file to nothing, while
+   `absl::Mutex` goes on referencing it. Vita is excluded from that gate and
+   given a `memalign`-backed arena. **Not** by adding `__vita__` to
+   `ABSL_HAVE_MMAP`, which would be a lie in the one place the code asks
+   directly. LowLevelAlloc's two guarantees — no malloc recursion, and
+   async-signal-safety — are both vacuous here: nothing hooks malloc and there
+   are no signals.
+
+Then one warning: VitaSDK's `crtn.o` has no `.note.GNU-stack` section, and
+`--fatal-warnings` turned that into a failed link. Disabled for vita, with the
+reasoning at the call site.
+
+## What M2 does not mean
+
+The engine links. It does not run, and one thing is already known to stop it:
+`MessageLoopImpl::Create()` returns `nullptr` on this platform, so the first
+thread that asks for a loop fails an `FML_CHECK`. That is the first Phase 3
+item, not an M2 one.

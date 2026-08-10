@@ -1,21 +1,3 @@
-diff --git a/BUILD.gn b/BUILD.gn
-index 0c14a65..e4d2624 100644
---- a/BUILD.gn
-+++ b/BUILD.gn
-@@ -2022,7 +2022,12 @@ skia_component("skia") {
-     ]
-   }
- 
--  if (is_linux || is_wasm) {
-+  # Vita joins the stdio branch. Skia picks a logging backend per platform and
-+  # has no arm for one it does not know, so SkLogVAList simply went undefined --
-+  # a link error rather than a build one, and the only Skia symbol left after
-+  # everything else resolved. printf goes to the sceIo-backed log this port
-+  # already reads, which is exactly where Skia's messages should land.
-+  if (is_linux || is_wasm || is_vita) {
-     sources += [ "src/ports/SkLog_stdio.cpp" ]
-     if (skia_use_egl) {
-       libs += [ "GLESv2" ]
 diff --git a/include/private/base/SkFeatures.h b/include/private/base/SkFeatures.h
 index 9ea8063..dd55c18 100644
 --- a/include/private/base/SkFeatures.h

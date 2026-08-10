@@ -2208,10 +2208,10 @@ index 00000000..e6066a18
 +#endif  // RUNTIME_BIN_VITA_COMPAT_H_
 diff --git a/runtime/bin/vita_posix_shims.cc b/runtime/bin/vita_posix_shims.cc
 new file mode 100644
-index 00000000..0b64c6a5
+index 00000000..b2ccc169
 --- /dev/null
 +++ b/runtime/bin/vita_posix_shims.cc
-@@ -0,0 +1,187 @@
+@@ -0,0 +1,216 @@
 +// Copyright (c) 2026, the Dart project authors.  Please see the AUTHORS file
 +// for details. All rights reserved. Use of this source code is governed by a
 +// BSD-style license that can be found in the LICENSE file.
@@ -2373,6 +2373,35 @@ index 00000000..0b64c6a5
 +  }
 +  errno = ENOSYS;
 +  return -1;
++}
++
++
++// ------------------------------------------------------------- no dlopen
++//
++// Now that -ldl is gone -- Skia's engine target was adding it, not Dart's --
++// the four functions the engine actually calls surface honestly instead of
++// being satisfied by a libdl.a that could never have worked. There is no
++// dynamic loader on this platform: homebrew is one statically linked
++// eboot.bin, and Dart's own LoadDynamicLibrary already reports as much.
++//
++// dlerror returns a message rather than nullptr, because a caller that gets a
++// null handle and then a null error string has nothing to report to the user.
++
++void* dlopen(const char* filename, int flags) {
++  return nullptr;
++}
++
++void* dlsym(void* handle, const char* symbol) {
++  return nullptr;
++}
++
++int dlclose(void* handle) {
++  return 0;
++}
++
++char* dlerror(void) {
++  return const_cast<char*>(
++      "Dynamic libraries are not supported on this platform");
 +}
 +
 +}  // extern "C"

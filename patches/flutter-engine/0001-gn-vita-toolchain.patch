@@ -91,10 +91,29 @@ index 02834cd5..c11f5b73 100644
  
      arm_use_thumb = true
 diff --git a/engine/src/build/config/compiler/BUILD.gn b/engine/src/build/config/compiler/BUILD.gn
-index e06cf625..ffb13255 100644
+index e06cf625..015b81e1 100644
 --- a/engine/src/build/config/compiler/BUILD.gn
 +++ b/engine/src/build/config/compiler/BUILD.gn
-@@ -297,6 +297,37 @@ config("compiler") {
+@@ -127,7 +127,17 @@ config("compiler") {
+     }
+ 
+     # Linker warnings.
+-    if (!(is_chromeos && current_cpu == "arm") && !is_mac && !is_ios) {
++    # Not on Vita. VitaSDK's own crtn.o has no .note.GNU-stack section, so every
++    # link emits "missing .note.GNU-stack section implies executable stack" --
++    # a warning about a file this project does not build and cannot fix, which
++    # --fatal-warnings turns into a failed link.
++    #
++    # The warning is also not meaningful here: it exists to catch a
++    # writable-and-executable stack on systems that enforce NX per-page from the
++    # ELF header, and Vita homebrew is loaded by the kernel from a signed self
++    # with its own memory policy.
++    if (!(is_chromeos && current_cpu == "arm") && !is_mac && !is_ios &&
++        !is_vita) {
+       # TODO(jochen): Enable this on chromeos on arm. http://crbug.com/356580
+       ldflags += [ "-Wl,--fatal-warnings" ]
+     }
+@@ -297,6 +307,37 @@ config("compiler") {
      ]
    }
  
@@ -132,7 +151,7 @@ index e06cf625..ffb13255 100644
    if (is_wasm) {
      if (wasm_use_workers) {
        cflags += [ "-sWASM_WORKERS=1" ]
-@@ -483,14 +514,21 @@ config("compiler") {
+@@ -483,14 +524,21 @@ config("compiler") {
  # C++ modules (available and enabled by default in C++20 and above) are
  # prohibited by the style guide.
  config("cxx_disable_modules") {
@@ -161,7 +180,7 @@ index e06cf625..ffb13255 100644
    cflags_c = disable_modules_flags
    cflags_cc = disable_modules_flags
    cflags_objc = disable_modules_flags
-@@ -678,6 +716,22 @@ config("runtime_library") {
+@@ -678,6 +726,22 @@ config("runtime_library") {
    if (is_fuchsia) {
      configs = [ "//flutter/tools/fuchsia/gn-sdk/src/config:runtime_library" ]
    }
@@ -184,7 +203,7 @@ index e06cf625..ffb13255 100644
  }
  
  # default_warning_flags collects all warning flags that are used by default.
-@@ -740,7 +794,12 @@ if (is_win) {
+@@ -740,7 +804,12 @@ if (is_win) {
      "-Wno-unused-parameter",  # Unused function parameters.
    ]
  
