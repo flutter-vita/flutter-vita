@@ -1,3 +1,75 @@
+diff --git a/runtime/bin/crypto_linux.cc b/runtime/bin/crypto_linux.cc
+index 16a0c866..eb0075c0 100644
+--- a/runtime/bin/crypto_linux.cc
++++ b/runtime/bin/crypto_linux.cc
+@@ -3,12 +3,14 @@
+ // BSD-style license that can be found in the LICENSE file.
+ 
+ #include "platform/globals.h"
+-#if defined(DART_HOST_OS_LINUX) || defined(DART_HOST_OS_ANDROID)
++#if defined(DART_HOST_OS_LINUX) || defined(DART_HOST_OS_ANDROID) ||          \
++    defined(DART_HOST_OS_VITA)
+ 
+ #include <errno.h>
+ #include <fcntl.h>
+ #include <sys/syscall.h>
+ 
++#include "bin/vita_compat.h"
+ #include "bin/crypto.h"
+ #include "bin/fdutils.h"
+ #include "platform/memory_sanitizer.h"
+diff --git a/runtime/bin/directory_linux.cc b/runtime/bin/directory_linux.cc
+index ddfed623..4d781621 100644
+--- a/runtime/bin/directory_linux.cc
++++ b/runtime/bin/directory_linux.cc
+@@ -3,8 +3,10 @@
+ // BSD-style license that can be found in the LICENSE file.
+ 
+ #include "platform/globals.h"
+-#if defined(DART_HOST_OS_LINUX) || defined(DART_HOST_OS_ANDROID)
++#if defined(DART_HOST_OS_LINUX) || defined(DART_HOST_OS_ANDROID) ||          \
++    defined(DART_HOST_OS_VITA)
+ 
++#include "bin/vita_compat.h"
+ #include "bin/directory.h"
+ 
+ #include <dirent.h>     // NOLINT
+@@ -125,7 +127,7 @@ ListType DirectoryListingEntry::Next(DirectoryListing* listing) {
+       done_ = true;
+       return kListError;
+     }
+-    switch (entry->d_type) {
++    switch (DART_DIRENT_TYPE(entry)) {
+       case DT_DIR:
+         if ((strcmp(entry->d_name, ".") == 0) ||
+             (strcmp(entry->d_name, "..") == 0)) {
+@@ -208,7 +210,7 @@ ListType DirectoryListingEntry::Next(DirectoryListing* listing) {
+ 
+       default:
+         // We should have covered all the bases. If not, let's get an error.
+-        FATAL("Unexpected d_type: %d\n", entry->d_type);
++        FATAL("Unexpected d_type: %d\n", DART_DIRENT_TYPE(entry));
+         return kListError;
+     }
+   }
+@@ -312,7 +314,7 @@ static bool DeleteRecursively(int dirfd, PathBuffer* path) {
+       return status == 0;
+     }
+     bool ok = false;
+-    switch (entry->d_type) {
++    switch (DART_DIRENT_TYPE(entry)) {
+       case DT_DIR:
+         ok = DeleteDir(dirfd, entry->d_name, path);
+         break;
+@@ -352,7 +354,7 @@ static bool DeleteRecursively(int dirfd, PathBuffer* path) {
+       }
+       default:
+         // We should have covered all the bases. If not, let's get an error.
+-        FATAL("Unexpected d_type: %d\n", entry->d_type);
++        FATAL("Unexpected d_type: %d\n", DART_DIRENT_TYPE(entry));
+         break;
+     }
+     if (!ok) {
 diff --git a/runtime/bin/eventhandler.h b/runtime/bin/eventhandler.h
 index 7da269ca..21368db6 100644
 --- a/runtime/bin/eventhandler.h
@@ -577,6 +649,38 @@ index 00000000..8dfce668
 +}  // namespace dart
 +
 +#endif  // RUNTIME_BIN_EVENTHANDLER_VITA_H_
+diff --git a/runtime/bin/fdutils_linux.cc b/runtime/bin/fdutils_linux.cc
+index 84fe559d..01aa38ca 100644
+--- a/runtime/bin/fdutils_linux.cc
++++ b/runtime/bin/fdutils_linux.cc
+@@ -3,8 +3,10 @@
+ // BSD-style license that can be found in the LICENSE file.
+ 
+ #include "platform/globals.h"
+-#if defined(DART_HOST_OS_LINUX) || defined(DART_HOST_OS_ANDROID)
++#if defined(DART_HOST_OS_LINUX) || defined(DART_HOST_OS_ANDROID) ||          \
++    defined(DART_HOST_OS_VITA)
+ 
++#include "bin/vita_compat.h"
+ #include "bin/fdutils.h"
+ 
+ #include <errno.h>      // NOLINT
+diff --git a/runtime/bin/file_linux.cc b/runtime/bin/file_linux.cc
+index 9f7cbaf9..8cbec9ff 100644
+--- a/runtime/bin/file_linux.cc
++++ b/runtime/bin/file_linux.cc
+@@ -3,8 +3,10 @@
+ // BSD-style license that can be found in the LICENSE file.
+ 
+ #include "platform/globals.h"
+-#if defined(DART_HOST_OS_LINUX) || defined(DART_HOST_OS_ANDROID)
++#if defined(DART_HOST_OS_LINUX) || defined(DART_HOST_OS_ANDROID) ||          \
++    defined(DART_HOST_OS_VITA)
+ 
++#include "bin/vita_compat.h"
+ #include "bin/file.h"
+ 
+ #include <errno.h>         // NOLINT
 diff --git a/runtime/bin/io_impl_sources.gni b/runtime/bin/io_impl_sources.gni
 index d3ace672..95704ec3 100644
 --- a/runtime/bin/io_impl_sources.gni
@@ -590,6 +694,22 @@ index d3ace672..95704ec3 100644
    "eventhandler_linux.h",
    "eventhandler_macos.cc",
    "eventhandler_macos.h",
+diff --git a/runtime/bin/namespace_linux.cc b/runtime/bin/namespace_linux.cc
+index c48ec219..1f676d14 100644
+--- a/runtime/bin/namespace_linux.cc
++++ b/runtime/bin/namespace_linux.cc
+@@ -3,8 +3,10 @@
+ // BSD-style license that can be found in the LICENSE file.
+ 
+ #include "platform/globals.h"
+-#if defined(DART_HOST_OS_LINUX) || defined(DART_HOST_OS_ANDROID)
++#if defined(DART_HOST_OS_LINUX) || defined(DART_HOST_OS_ANDROID) ||          \
++    defined(DART_HOST_OS_VITA)
+ 
++#include "bin/vita_compat.h"
+ #include "bin/namespace.h"
+ 
+ #include <errno.h>
 diff --git a/runtime/bin/native_assets_api_impl.cc b/runtime/bin/native_assets_api_impl.cc
 index 7f5255dc..6fb6b014 100644
 --- a/runtime/bin/native_assets_api_impl.cc
@@ -609,6 +729,22 @@ index 7f5255dc..6fb6b014 100644
  #else
    return kWindowsDynamicLibraryProcessPtr;
  #endif
+diff --git a/runtime/bin/platform_linux.cc b/runtime/bin/platform_linux.cc
+index 86a6dc83..c4f698f7 100644
+--- a/runtime/bin/platform_linux.cc
++++ b/runtime/bin/platform_linux.cc
+@@ -3,8 +3,10 @@
+ // BSD-style license that can be found in the LICENSE file.
+ 
+ #include "platform/globals.h"
+-#if defined(DART_HOST_OS_LINUX) || defined(DART_HOST_OS_ANDROID)
++#if defined(DART_HOST_OS_LINUX) || defined(DART_HOST_OS_ANDROID) ||          \
++    defined(DART_HOST_OS_VITA)
+ 
++#include "bin/vita_compat.h"
+ #include "bin/platform.h"
+ 
+ #include <errno.h>
 diff --git a/runtime/bin/socket_base.h b/runtime/bin/socket_base.h
 index 904b73ac..08bd63c0 100644
 --- a/runtime/bin/socket_base.h
@@ -640,6 +776,22 @@ index 904b73ac..08bd63c0 100644
    static_assert(kMaxAddressStringLength >= INET6_ADDRSTRLEN);
    static_assert(kMaxAddressStringLength >= INET_ADDRSTRLEN);
  
+diff --git a/runtime/bin/socket_base_linux.cc b/runtime/bin/socket_base_linux.cc
+index 24f8e067..90b66033 100644
+--- a/runtime/bin/socket_base_linux.cc
++++ b/runtime/bin/socket_base_linux.cc
+@@ -3,8 +3,10 @@
+ // BSD-style license that can be found in the LICENSE file.
+ 
+ #include "platform/globals.h"
+-#if defined(DART_HOST_OS_LINUX) || defined(DART_HOST_OS_ANDROID)
++#if defined(DART_HOST_OS_LINUX) || defined(DART_HOST_OS_ANDROID) ||          \
++    defined(DART_HOST_OS_VITA)
+ 
++#include "bin/vita_compat.h"
+ #include "bin/socket_base.h"
+ 
+ #include <errno.h>        // NOLINT
 diff --git a/runtime/bin/socket_base_vita.h b/runtime/bin/socket_base_vita.h
 new file mode 100644
 index 00000000..cc8b674d
@@ -727,6 +879,297 @@ index 00000000..cc8b674d
 +typedef struct dart::bin::vita_sockaddr_un sockaddr_un;
 +
 +#endif  // RUNTIME_BIN_SOCKET_BASE_VITA_H_
+diff --git a/runtime/bin/socket_linux.cc b/runtime/bin/socket_linux.cc
+index cbd00abc..e865ac74 100644
+--- a/runtime/bin/socket_linux.cc
++++ b/runtime/bin/socket_linux.cc
+@@ -3,8 +3,10 @@
+ // BSD-style license that can be found in the LICENSE file.
+ 
+ #include "platform/globals.h"
+-#if defined(DART_HOST_OS_LINUX) || defined(DART_HOST_OS_ANDROID)
++#if defined(DART_HOST_OS_LINUX) || defined(DART_HOST_OS_ANDROID) ||          \
++    defined(DART_HOST_OS_VITA)
+ 
++#include "bin/vita_compat.h"
+ #include "bin/socket.h"
+ 
+ #include <errno.h>  // NOLINT
+@@ -34,12 +36,27 @@ void Socket::SetClosedFd() {
+ 
+ static intptr_t Create(const RawAddr& addr) {
+   intptr_t fd;
++#if defined(DART_HOST_OS_VITA)
++  // No SOCK_NONBLOCK: sceNet's socket() takes no such flag, and dart:io's whole
++  // event model assumes non-blocking descriptors -- a blocking one would stall
++  // the event loop on the first read with no data ready. Set it explicitly.
++  fd = NO_RETRY_EXPECTED(socket(addr.ss.ss_family, SOCK_STREAM, 0));
++  if (fd < 0) {
++    return -1;
++  }
++  if (!FDUtils::SetNonBlocking(fd)) {
++    FDUtils::SaveErrorAndClose(fd);
++    return -1;
++  }
++  return fd;
++#else
+   intptr_t type = SOCK_STREAM | SOCK_NONBLOCK | SOCK_CLOEXEC;
+   fd = NO_RETRY_EXPECTED(socket(addr.ss.ss_family, type, 0));
+   if (fd < 0) {
+     return -1;
+   }
+   return fd;
++#endif
+ }
+ 
+ static intptr_t Connect(intptr_t fd, const RawAddr& addr) {
+@@ -121,12 +138,24 @@ intptr_t Socket::CreateBindDatagram(const RawAddr& addr,
+                                     int ttl) {
+   intptr_t fd;
+ 
++#if defined(DART_HOST_OS_VITA)
++  fd = NO_RETRY_EXPECTED(
++      socket(addr.addr.sa_family, SOCK_DGRAM | SOCK_CLOEXEC, IPPROTO_UDP));
++  if (fd < 0) {
++    return -1;
++  }
++  if (!FDUtils::SetNonBlocking(fd)) {
++    FDUtils::SaveErrorAndClose(fd);
++    return -1;
++  }
++#else
+   fd = NO_RETRY_EXPECTED(socket(addr.addr.sa_family,
+                                 SOCK_DGRAM | SOCK_CLOEXEC | SOCK_NONBLOCK,
+                                 IPPROTO_UDP));
+   if (fd < 0) {
+     return -1;
+   }
++#endif
+ 
+   if (reuseAddress) {
+     int optval = 1;
+@@ -179,11 +208,23 @@ intptr_t ServerSocket::CreateBindListen(const RawAddr& addr,
+                                         bool v6_only) {
+   intptr_t fd;
+ 
++#if defined(DART_HOST_OS_VITA)
++  fd = NO_RETRY_EXPECTED(
++      socket(addr.ss.ss_family, SOCK_STREAM | SOCK_CLOEXEC, 0));
++  if (fd < 0) {
++    return -1;
++  }
++  if (!FDUtils::SetNonBlocking(fd)) {
++    FDUtils::SaveErrorAndClose(fd);
++    return -1;
++  }
++#else
+   fd = NO_RETRY_EXPECTED(
+       socket(addr.ss.ss_family, SOCK_STREAM | SOCK_CLOEXEC | SOCK_NONBLOCK, 0));
+   if (fd < 0) {
+     return -1;
+   }
++#endif
+ 
+   int optval = 1;
+   VOID_NO_RETRY_EXPECTED(
+@@ -249,8 +290,17 @@ static bool IsTemporaryAcceptError(int error) {
+ intptr_t ServerSocket::Accept(intptr_t fd) {
+   intptr_t socket;
+   RawAddr client_addr;
++#if defined(DART_HOST_OS_VITA)
++  // No accept4. The accepted descriptor is made non-blocking below, once the
++  // error cases have been dealt with -- note that on Linux accept4 does this
++  // atomically, so between accept() and the fcntl there is a window in which
++  // the descriptor is blocking. Nothing else can see it in that window here:
++  // the fd is not yet published to Dart.
++  socket = TEMP_FAILURE_RETRY(accept(fd, &client_addr.addr, &client_addr.size));
++#else
+   socket = TEMP_FAILURE_RETRY(accept4(fd, &client_addr.addr, &client_addr.size,
+                                       SOCK_NONBLOCK | SOCK_CLOEXEC));
++#endif
+   if (socket == -1) {
+     if (IsTemporaryAcceptError(errno)) {
+       // We need to signal to the caller that this is actually not an
+@@ -260,6 +310,15 @@ intptr_t ServerSocket::Accept(intptr_t fd) {
+       socket = kTemporaryFailure;
+     }
+   }
++#if defined(DART_HOST_OS_VITA)
++  else if (!FDUtils::SetNonBlocking(socket)) {
++    // What accept4 did atomically above, done as a second step. An accepted
++    // socket that stayed blocking would wedge the event loop the first time
++    // dart:io read from it with nothing buffered.
++    FDUtils::SaveErrorAndClose(socket);
++    return -1;
++  }
++#endif
+   return socket;
+ }
+ 
+diff --git a/runtime/bin/stdio_linux.cc b/runtime/bin/stdio_linux.cc
+index 53516b35..d3886ccc 100644
+--- a/runtime/bin/stdio_linux.cc
++++ b/runtime/bin/stdio_linux.cc
+@@ -3,8 +3,10 @@
+ // BSD-style license that can be found in the LICENSE file.
+ 
+ #include "platform/globals.h"
+-#if defined(DART_HOST_OS_LINUX) || defined(DART_HOST_OS_ANDROID)
++#if defined(DART_HOST_OS_LINUX) || defined(DART_HOST_OS_ANDROID) ||          \
++    defined(DART_HOST_OS_VITA)
+ 
++#include "bin/vita_compat.h"
+ #include "bin/stdio.h"
+ 
+ #include <errno.h>      // NOLINT
+diff --git a/runtime/bin/sync_socket_linux.cc b/runtime/bin/sync_socket_linux.cc
+index d0e9619c..0d9fb747 100644
+--- a/runtime/bin/sync_socket_linux.cc
++++ b/runtime/bin/sync_socket_linux.cc
+@@ -3,8 +3,10 @@
+ // BSD-style license that can be found in the LICENSE file.
+ 
+ #include "platform/globals.h"
+-#if defined(DART_HOST_OS_LINUX) || defined(DART_HOST_OS_ANDROID)
++#if defined(DART_HOST_OS_LINUX) || defined(DART_HOST_OS_ANDROID) ||          \
++    defined(DART_HOST_OS_VITA)
+ 
++#include "bin/vita_compat.h"
+ #include "bin/sync_socket.h"
+ 
+ #include <errno.h>  // NOLINT
+diff --git a/runtime/bin/utils_linux.cc b/runtime/bin/utils_linux.cc
+index 29109362..4bbb0479 100644
+--- a/runtime/bin/utils_linux.cc
++++ b/runtime/bin/utils_linux.cc
+@@ -3,13 +3,15 @@
+ // BSD-style license that can be found in the LICENSE file.
+ 
+ #include "platform/globals.h"
+-#if defined(DART_HOST_OS_LINUX) || defined(DART_HOST_OS_ANDROID)
++#if defined(DART_HOST_OS_LINUX) || defined(DART_HOST_OS_ANDROID) ||          \
++    defined(DART_HOST_OS_VITA)
+ 
+ #include <errno.h>     // NOLINT
+ #include <netdb.h>     // NOLINT
+ #include <sys/time.h>  // NOLINT
+ #include <time.h>      // NOLINT
+ 
++#include "bin/vita_compat.h"
+ #include "bin/utils.h"
+ #include "platform/assert.h"
+ #include "platform/utils.h"
+diff --git a/runtime/bin/vita_compat.h b/runtime/bin/vita_compat.h
+new file mode 100644
+index 00000000..fce023c8
+--- /dev/null
++++ b/runtime/bin/vita_compat.h
+@@ -0,0 +1,105 @@
++// Copyright (c) 2026, the Dart project authors.  Please see the AUTHORS file
++// for details. All rights reserved. Use of this source code is governed by a
++// BSD-style license that can be found in the LICENSE file.
++
++#ifndef RUNTIME_BIN_VITA_COMPAT_H_
++#define RUNTIME_BIN_VITA_COMPAT_H_
++
++#include "platform/globals.h"
++
++#if defined(DART_HOST_OS_VITA)
++
++#include <dirent.h>
++#include <errno.h>
++#include <fcntl.h>
++#include <sys/socket.h>
++#include <sys/stat.h>
++#include <sys/types.h>
++
++// Spellings that `runtime/bin`'s Linux implementations use and VitaSDK's newlib
++// does not provide.
++//
++// This header exists so that those implementations can be shared rather than
++// forked. A compile probe over the twelve remaining modules found roughly
++// eighty lines needing attention across 4600 lines of source; copying each
++// `*_linux.cc` to a `*_vita.cc` would duplicate all 4600 and turn every engine
++// roll into a twelve-way merge. Dart already shares this way -- see
++// `socket_base_posix.cc`, which spans three operating systems.
++//
++// **Only genuinely equivalent spellings belong here.** Anything whose absence
++// changes behaviour is called out below rather than papered over, because a
++// silently wrong #define is far more expensive than a compile error.
++
++// ---------------------------------------------------------------- large file
++//
++// newlib is 64-bit-off_t by default here, so the LFS-64 names are pure
++// synonyms rather than a different API. Defining the bare identifiers covers
++// both uses: `struct stat64` becomes `struct stat`, and `stat64(...)` becomes
++// `stat(...)`.
++#define stat64 stat
++#define fstat64 fstat
++#define lstat64 lstat
++#define fstatat64 fstatat
++#define open64 open
++#define openat64 openat
++#define lseek64 lseek
++#define ftruncate64 ftruncate
++#define truncate64 truncate
++
++typedef ino_t ino64_t;
++typedef off_t off64_t;
++
++// ------------------------------------------------------------------- dirent
++//
++// VitaSDK's `struct dirent` carries a SceIoStat and a name, and has no
++// `d_type`. Rather than reach into the SceIoStat -- whose layout is a detail of
++// a different SDK -- entries report DT_UNKNOWN, which sends the caller down a
++// path Dart already maintains for "file systems where readdir does not
++// determine the entry type". That path stats the entry, which is what reading
++// d_stat would have amounted to anyway, and it is already tested.
++#define DT_UNKNOWN 0
++#define DT_FIFO 1
++#define DT_CHR 2
++#define DT_DIR 4
++#define DT_BLK 6
++#define DT_REG 8
++#define DT_LNK 10
++#define DT_SOCK 12
++
++#define DART_DIRENT_TYPE(entry) DT_UNKNOWN
++
++// ------------------------------------------------------------------- sockets
++
++// No listen() backlog constant. 128 is what Linux uses.
++#if !defined(SOMAXCONN)
++#define SOMAXCONN 128
++#endif
++
++// ENONET is Linux-specific ("machine is not on the network") and is only ever
++// compared against, never returned here.
++#if !defined(ENONET)
++#define ENONET 64
++#endif
++
++// SOCK_CLOEXEC is meaningless on this platform and 0 is the honest value: there
++// is no exec(), so no descriptor can leak across one.
++#if !defined(SOCK_CLOEXEC)
++#define SOCK_CLOEXEC 0
++#endif
++
++// **SOCK_NONBLOCK is deliberately NOT defined.**
++//
++// Defining it as 0 would compile and would be wrong in the worst way: every
++// socket dart:io creates would come back blocking, and the event loop would
++// stall on the first read that had no data ready -- a hang, at runtime, far
++// from the cause. Leaving it undefined turns each of those call sites into a
++// compile error, so every one gets an explicit FDUtils::SetNonBlocking after
++// the socket is created. That is more work and it is the only safe version.
++
++#else  // defined(DART_HOST_OS_VITA)
++
++#define DART_DIRENT_TYPE(entry) ((entry)->d_type)
++
++#endif  // defined(DART_HOST_OS_VITA)
++
++#endif  // RUNTIME_BIN_VITA_COMPAT_H_
 diff --git a/runtime/vm/BUILD.gn b/runtime/vm/BUILD.gn
 index 39749fad..67e99611 100644
 --- a/runtime/vm/BUILD.gn

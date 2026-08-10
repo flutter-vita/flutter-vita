@@ -110,9 +110,41 @@ added to the shared guards — with `#if` only around the handful of places that
 are genuinely absent. Dart already shares this way: `socket_base_posix.cc` spans
 three operating systems and `console_posix.cc` four.
 
-`directory` is the one module where a fork may still be right, because
-`d_type`'s absence changes the shape of the listing loop rather than just its
-spelling.
+`directory` did **not** need a fork after all. Dart already maintains a
+`DT_UNKNOWN` branch for "file systems where readdir does not determine the entry
+type", which stats the entry — so a `DART_DIRENT_TYPE()` macro reporting
+`DT_UNKNOWN` reuses a tested path instead of adding one. 36 errors to zero.
+
+### Where the compat header got to
+
+`bin/vita_compat.h` plus widened guards cleared **six of the twelve** modules
+outright: `directory`, `namespace`, `sync_socket`, `utils`, and — after four
+deliberate call-site edits — `socket`.
+
+Six remain, each blocked on exactly one missing facility, and each needing a
+decision rather than a shim:
+
+| Module | Blocked on | The decision |
+|---|---|---|
+| `crypto` | `<sys/syscall.h>` / `__NR_getrandom` | `sceKernelGetRandomNumber` (`psp2/kernel/rng.h`) — a straight swap |
+| `platform` | `<sys/prctl.h>` / `PR_SET_NAME` | No-op. Threads are already named at creation in `os_thread_vita.cc` |
+| `stdio` | `<sys/ioctl.h>` / `tcgetattr` | There is no terminal. Echo and line-mode queries report failure |
+| `socket_base` | `<ifaddrs.h>` | `NetworkInterface.list` reports unsupported |
+| `fdutils` | `FIONREAD` | **Open.** No `ioctl`, and no `SO_RXDATA`/`SO_NREAD` equivalent was found. This backs `SocketBase::Available`, which dart:io uses constantly, so a stub returning 0 would be a hang rather than a missing feature. Candidate: a `MSG_PEEK` read into a scratch buffer |
+| `file` | `<sys/mman.h>` | **Open.** `File::Map` takes a hint and `MAP_FIXED`; the heap-copy answer used in Skia and fml does not fit a fixed-address mapping. Phase 1's `virtual_memory_vita.cc` already solved this shape and is the place to look |
+
+### Not defined on purpose: `SOCK_NONBLOCK`
+
+`SOCK_CLOEXEC` is defined as 0 and that is honest — there is no `exec()`, so no
+descriptor can leak across one.
+
+`SOCK_NONBLOCK` is deliberately **left undefined**. Defining it as 0 would have
+compiled, and every socket dart:io created would have come back blocking — the
+event loop stalling on the first read with nothing ready, at runtime, far from
+the cause. Leaving it undefined turned each of the four call sites into a
+compile error, and each now calls `FDUtils::SetNonBlocking` explicitly.
+`accept4` is gone the same way; note that Linux gets atomicity there and this
+does not, which is safe only because the descriptor is not yet visible to Dart.
 
 Three shared `*_posix.cc` files gate on an OS list and could take a `vita` arm
 instead of being duplicated: `console_posix.cc`, `socket_base_posix.cc` and
