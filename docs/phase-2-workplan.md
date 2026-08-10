@@ -192,7 +192,7 @@ for the AOT snapshot.
 | Dart runtime under the engine's GN | **compiles** — it came for free, as hoped |
 | `dart:io` for vita | **compiles — all 16 modules plus `socket_base_posix.cc`.** `process` still undefined at link |
 | **Every source file in the engine** | **compiles — 2682 objects, `ninja` exit 0** |
-| Link the engine | **54 undefined symbols**, down from 66 — [the list](m2-undefined-symbols.txt) |
+| Link the engine | **28 undefined symbols**, down from 66 — [the list](m2-undefined-symbols.txt) |
 
 ## Order of work
 
@@ -335,3 +335,32 @@ compiled.
 `taiGetModuleInfo` — these are just link flags, `-lSceSblSsMgr_stub` and
 `-ltaihen_stub`. The first is reached by Dart's crypto path; the second by
 something in the toolchain's startup.
+
+
+## Down to 28
+
+66 → 54 → 30 → 28. What is left is two groups and one loose end.
+
+**26 are Ganesh and abseil.** `GrDirectContext`, `GrBackendTexture`,
+`SkSurfaces::RenderTarget`, `SkImages::BorrowTextureFrom`, `SkLogVAList`, and
+six abseil internals (`LowLevelAlloc`, `SigSafeArena`, `CreateThreadIdentity`,
+`AbslInternalPerThreadSem*`).
+
+The Ganesh ones all arrive through one function —
+`flutter::ConvertToRasterUsingResourceContext` — which is compiled because
+nothing excludes it, and which cannot run in a build with no GPU context. This
+is the same seam that made `embedder_surface.cc` need an explicit
+`GrDirectContext.h` include: the engine is not fully partitioned against
+`skia_enable_ganesh = false`. The likely fix is a `#if` around the raster
+conversion path rather than trying to make Skia supply the symbols.
+
+**2 are `sceSblDmac5HashTransform` and `taiGetModuleInfo`, and they are more
+interesting than they look.** They are not referenced by anything in the
+engine. They come from **`libdl.a`'s `dlsym`**, which VitaSDK implements on top
+of taiHEN — so linking `-ldl` on a platform with no dynamic loader drags in two
+stub libraries to support a function that can never succeed.
+
+`-ldl` has been dropped from `runtime/vm/BUILD.gn` for vita, and verified gone
+from the link line, **and the symbols persist** — so `libdl.a` is entering by
+another route not yet identified. Worth finding rather than papering over with
+`-lSceSblSsMgr_stub`: something is linking a library this port has no use for.

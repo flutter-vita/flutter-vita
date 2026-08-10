@@ -24,31 +24,5 @@ absl::base_internal::LowLevelAlloc::AllocWithArena(unsigned int, absl::base_inte
 absl::base_internal::LowLevelAlloc::Free(void*)
 absl::base_internal::SigSafeArena()
 absl::synchronization_internal::CreateThreadIdentity()
-dart::bin::Console::RestoreConfig()
-dart::bin::FileSystemWatcher::Cleanup()
-dart::bin::FileSystemWatcher::GetSocketId(int, int)
-dart::bin::FileSystemWatcher::Init()
-dart::bin::FileSystemWatcher::InitOnce()
-dart::bin::FileSystemWatcher::IsSupported()
-dart::bin::FileSystemWatcher::ReadEvents(int, int)
-dart::bin::FileSystemWatcher::UnwatchPath(int, int)
-dart::bin::FileSystemWatcher::WatchPath(int, dart::bin::Namespace*, char const*, int, bool)
-dart::bin::Process::Cleanup()
-dart::bin::Process::ClearSignalHandler(int, long long)
-dart::bin::Process::CurrentProcessId()
-dart::bin::Process::CurrentRSS()
-dart::bin::Process::Init()
-dart::bin::Process::Kill(int, int)
-dart::bin::Process::MaxRSS()
-dart::bin::Process::SetSignalHandler(int)
-dart::bin::Process::Start(dart::bin::Namespace*, char const*, char const**, int, char const*, char**, int, dart::bin::ProcessStartMode, int*, int*, int*, int*, int*, char**)
-dart::bin::Process::TerminateExitCodeHandler()
-dart::bin::Process::Wait(int, int, int, int, int, dart::bin::ProcessResult*)
-dart::bin::Process::exit_hook_
-dart::bin::Process::global_exit_code_
-dart::bin::Process::global_exit_code_mutex_
-dart::bin::Thread::TryStart(char const*, void (*)(unsigned int), unsigned int)
-fml::paths::GetCachesDirectory()
-fml::paths::GetExecutablePath[abi:cxx11]()
 sceSblDmac5HashTransform
 taiGetModuleInfo

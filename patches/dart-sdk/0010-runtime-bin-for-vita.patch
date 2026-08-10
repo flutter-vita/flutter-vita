@@ -1,3 +1,25 @@
+diff --git a/runtime/bin/console_posix.cc b/runtime/bin/console_posix.cc
+index 0c795c49..ac6209b7 100644
+--- a/runtime/bin/console_posix.cc
++++ b/runtime/bin/console_posix.cc
+@@ -4,13 +4,16 @@
+ 
+ #include "platform/globals.h"
+ #if defined(DART_HOST_OS_LINUX) || defined(DART_HOST_OS_MACOS) ||              \
+-    defined(DART_HOST_OS_ANDROID) || defined(DART_HOST_OS_FUCHSIA)
++    defined(DART_HOST_OS_ANDROID) || defined(DART_HOST_OS_FUCHSIA) ||          \
++    defined(DART_HOST_OS_VITA)
+ 
+ #include "bin/console.h"
+ 
+ #include <errno.h>
++#if !defined(DART_HOST_OS_VITA)
+ #include <sys/ioctl.h>
+ #include <termios.h>
++#endif
+ 
+ #include "bin/fdutils.h"
+ #include "platform/signal_blocker.h"
 diff --git a/runtime/bin/crypto_linux.cc b/runtime/bin/crypto_linux.cc
 index 16a0c866..d6a469ea 100644
 --- a/runtime/bin/crypto_linux.cc
@@ -891,8 +913,82 @@ index 9f7cbaf9..cd9e088c 100644
    MillisecondsToTimespec(millis, &times[1]);
    return utimensat(ns.fd(), ns.path(), times, 0) == 0;
  }
+diff --git a/runtime/bin/file_system_watcher_vita.cc b/runtime/bin/file_system_watcher_vita.cc
+new file mode 100644
+index 00000000..3320ab41
+--- /dev/null
++++ b/runtime/bin/file_system_watcher_vita.cc
+@@ -0,0 +1,68 @@
++// Copyright (c) 2026, the Dart project authors.  Please see the AUTHORS file
++// for details. All rights reserved. Use of this source code is governed by a
++// BSD-style license that can be found in the LICENSE file.
++
++#include "platform/globals.h"
++#if defined(DART_HOST_OS_VITA)
++
++#include "bin/file_system_watcher.h"
++
++#include <errno.h>
++
++#include "bin/builtin.h"
++#include "bin/dartutils.h"
++
++// There is no inotify, no kqueue and no sceIo equivalent: the Vita's filesystem
++// layer reports nothing when a file changes.
++//
++// `IsSupported()` returning false is the whole point of this file. dart:io asks
++// it first and raises a clear `FileSystemException` when it is false, so
++// `Directory.watch` and `File.watch` fail with a real explanation. The
++// alternative -- returning a watcher that never fires -- would look like the
++// filesystem was simply idle, and a program waiting on a change would hang.
++
++namespace dart {
++namespace bin {
++
++void FileSystemWatcher::InitOnce() {}
++
++void FileSystemWatcher::Cleanup() {}
++
++bool FileSystemWatcher::IsSupported() {
++  return false;
++}
++
++intptr_t FileSystemWatcher::Init() {
++  errno = ENOSYS;
++  return -1;
++}
++
++void FileSystemWatcher::Close(intptr_t id) {}
++
++intptr_t FileSystemWatcher::WatchPath(intptr_t id,
++                                      Namespace* namespc,
++                                      const char* path,
++                                      int events,
++                                      bool recursive) {
++  errno = ENOSYS;
++  return -1;
++}
++
++void FileSystemWatcher::UnwatchPath(intptr_t id, intptr_t path_id) {}
++
++intptr_t FileSystemWatcher::GetSocketId(intptr_t id, intptr_t path_id) {
++  errno = ENOSYS;
++  return -1;
++}
++
++Dart_Handle FileSystemWatcher::ReadEvents(intptr_t id, intptr_t path_id) {
++  // Unreachable in practice -- IsSupported() gates every path that leads here
++  // -- but an empty list is the right shape if anything ever does arrive, and
++  // it is safer than returning an error Dart is not expecting at this point.
++  return Dart_NewList(0);
++}
++
++}  // namespace bin
++}  // namespace dart
++
++#endif  // defined(DART_HOST_OS_VITA)
 diff --git a/runtime/bin/io_impl_sources.gni b/runtime/bin/io_impl_sources.gni
-index d3ace672..21d01bf2 100644
+index d3ace672..f7488089 100644
 --- a/runtime/bin/io_impl_sources.gni
 +++ b/runtime/bin/io_impl_sources.gni
 @@ -13,6 +13,8 @@ io_impl_sources = [
@@ -904,7 +1000,23 @@ index d3ace672..21d01bf2 100644
    "eventhandler_linux.h",
    "eventhandler_macos.cc",
    "eventhandler_macos.h",
-@@ -86,6 +88,8 @@ io_impl_sources = [
+@@ -22,6 +24,7 @@ io_impl_sources = [
+   "file_system_watcher.h",
+   "file_system_watcher_fuchsia.cc",
+   "file_system_watcher_linux.cc",
++  "file_system_watcher_vita.cc",
+   "file_system_watcher_macos.cc",
+   "file_system_watcher_win.cc",
+   "filter.cc",
+@@ -50,6 +53,7 @@ io_impl_sources = [
+   "process.h",
+   "process_fuchsia.cc",
+   "process_linux.cc",
++  "process_vita.cc",
+   "process_macos.cc",
+   "process_win.cc",
+   "reference_counting.h",
+@@ -86,6 +90,8 @@ io_impl_sources = [
    "stdio.h",
    "stdio_fuchsia.cc",
    "stdio_linux.cc",
@@ -1029,6 +1141,135 @@ index 86a6dc83..21455a6c 100644
  }
  
  void Platform::Exit(int exit_code) {
+diff --git a/runtime/bin/process_vita.cc b/runtime/bin/process_vita.cc
+new file mode 100644
+index 00000000..2c5ccc60
+--- /dev/null
++++ b/runtime/bin/process_vita.cc
+@@ -0,0 +1,123 @@
++// Copyright (c) 2026, the Dart project authors.  Please see the AUTHORS file
++// for details. All rights reserved. Use of this source code is governed by a
++// BSD-style license that can be found in the LICENSE file.
++
++#include "platform/globals.h"
++#if defined(DART_HOST_OS_VITA)
++
++#include "bin/process.h"
++
++#include <errno.h>
++#include <psp2/kernel/processmgr.h>
++#include <psp2/kernel/sysmem.h>
++
++#include "bin/lockers.h"
++#include "platform/utils.h"
++
++// `Process`, for a platform with exactly one process.
++//
++// This replaces 1203 lines of process_linux.cc with refusals, and that is the
++// implementation rather than a placeholder. The Vita has no fork, no exec, and
++// no way for an application to start another: launching is the shell's
++// business, through sceAppMgrLaunchAppByUri, which terminates the caller. There
++// is nothing here for Process.start to do that would resemble what a Dart
++// programmer means by it.
++//
++// Everything therefore reports failure with a message naming the platform, so
++// `ProcessException` says something useful instead of "operation failed".
++//
++// Three exceptions carry real implementations, because they are not about
++// starting processes at all and dart:io asks them routinely:
++//
++//   * CurrentProcessId  -- sceKernelGetProcessId
++//   * CurrentRSS/MaxRSS -- from sceKernelGetFreeMemorySize
++//
++// Signals are the other absence. There are none on this platform, so the
++// handler registry has nothing to register; ProcessSignal.watch reports that
++// rather than silently never firing, which would be the worse failure -- a
++// program waiting on SIGINT would simply hang.
++
++namespace dart {
++namespace bin {
++
++int Process::global_exit_code_ = 0;
++Mutex* Process::global_exit_code_mutex_ = new Mutex();
++Process::ExitHook Process::exit_hook_ = nullptr;
++
++static const char* kUnsupported =
++    "Starting a process is not supported on this platform";
++
++void Process::Init() {}
++
++void Process::Cleanup() {}
++
++int Process::Start(Namespace* namespc,
++                   const char* path,
++                   const char* arguments[],
++                   intptr_t arguments_length,
++                   const char* working_directory,
++                   char* environment[],
++                   intptr_t environment_length,
++                   ProcessStartMode mode,
++                   intptr_t* in,
++                   intptr_t* out,
++                   intptr_t* err,
++                   intptr_t* id,
++                   intptr_t* exit_handler,
++                   char** os_error_message) {
++  *os_error_message = Utils::StrDup(kUnsupported);
++  return ENOSYS;
++}
++
++bool Process::Wait(intptr_t id,
++                   intptr_t in,
++                   intptr_t out,
++                   intptr_t err,
++                   intptr_t exit_handler,
++                   ProcessResult* result) {
++  errno = ENOSYS;
++  return false;
++}
++
++bool Process::Kill(intptr_t id, int signal) {
++  errno = ENOSYS;
++  return false;
++}
++
++void Process::TerminateExitCodeHandler() {}
++
++intptr_t Process::CurrentProcessId() {
++  return static_cast<intptr_t>(sceKernelGetProcessId());
++}
++
++intptr_t Process::SetSignalHandler(intptr_t signal) {
++  errno = ENOSYS;
++  return -1;
++}
++
++void Process::ClearSignalHandler(intptr_t signal, Dart_Port port) {}
++
++int64_t Process::CurrentRSS() {
++  // There is no per-process accounting -- there is only the one process -- so
++  // "resident set" is read as how much of the application's heap is in use.
++  // sceKernelGetFreeMemorySize reports what remains of the partition this app
++  // was given, which is the number a developer watching for a leak wants.
++  SceKernelFreeMemorySizeInfo info;
++  info.size = sizeof(info);
++  if (sceKernelGetFreeMemorySize(&info) < 0) {
++    return -1;
++  }
++  return static_cast<int64_t>(info.size_user);
++}
++
++int64_t Process::MaxRSS() {
++  // Nothing tracks a high-water mark. Returning -1 is how dart:io spells "not
++  // available", and is better than reporting the current value as if it were
++  // the peak.
++  return -1;
++}
++
++}  // namespace bin
++}  // namespace dart
++
++#endif  // defined(DART_HOST_OS_VITA)
 diff --git a/runtime/bin/socket_base.h b/runtime/bin/socket_base.h
 index 904b73ac..08bd63c0 100644
 --- a/runtime/bin/socket_base.h
@@ -1657,6 +1898,41 @@ index d0e9619c..0d9fb747 100644
  #include "bin/sync_socket.h"
  
  #include <errno.h>  // NOLINT
+diff --git a/runtime/bin/thread_linux.cc b/runtime/bin/thread_linux.cc
+index b302dfde..fc2c7fd9 100644
+--- a/runtime/bin/thread_linux.cc
++++ b/runtime/bin/thread_linux.cc
+@@ -3,9 +3,11 @@
+ // BSD-style license that can be found in the LICENSE file.
+ 
+ #include "platform/globals.h"
+-#if (defined(DART_HOST_OS_LINUX) || defined(DART_HOST_OS_ANDROID)) &&          \
++#if (defined(DART_HOST_OS_LINUX) || defined(DART_HOST_OS_ANDROID) ||          \
++     defined(DART_HOST_OS_VITA)) &&                                            \
+     !defined(DART_USE_ABSL)
+ 
++#include "bin/vita_compat.h"
+ #include "bin/thread.h"
+ 
+ #include <errno.h>         // NOLINT
+@@ -50,9 +52,17 @@ static void* ThreadStart(void* data_ptr) {
+ 
+   // Set the thread name. There is 16 bytes limit on the name (including \0).
+   // pthread_setname_np ignores names that are too long rather than truncating.
++#if !defined(DART_HOST_OS_VITA)
+   char truncated_name[16];
+   snprintf(truncated_name, sizeof(truncated_name), "%s", name);
+   pthread_setname_np(pthread_self(), truncated_name);
++#else
++  // VitaSDK's pthread has no pthread_setname_np. The name is not lost: the
++  // Vita runtime's own os_thread_vita.cc passes it to sceKernelCreateThread,
++  // which is where the crash dumps read it from -- and the dumps are this
++  // port's main debugging tool, so that is the copy that matters.
++  USE(name);
++#endif
+ 
+   // Call the supplied thread start function handing it its parameters.
+   function(parameter);
 diff --git a/runtime/bin/utils_linux.cc b/runtime/bin/utils_linux.cc
 index 29109362..4bbb0479 100644
 --- a/runtime/bin/utils_linux.cc
@@ -2049,10 +2325,28 @@ index 00000000..0b64c6a5
 +
 +#endif  // defined(DART_HOST_OS_VITA)
 diff --git a/runtime/vm/BUILD.gn b/runtime/vm/BUILD.gn
-index 39749fad..67e99611 100644
+index 39749fad..2d0c9869 100644
 --- a/runtime/vm/BUILD.gn
 +++ b/runtime/vm/BUILD.gn
-@@ -63,7 +63,14 @@ config("libdart_vm_config") {
+@@ -56,14 +56,31 @@ config("libdart_vm_config") {
+       libs += [ "dbghelp.lib" ]
+     }
+   } else {
+-    libs = [ "dl" ]
++    # No -ldl on Vita. There is no dynamic loader, LoadDynamicLibrary already
++    # reports unsupported, and linking it is not merely useless: VitaSDK's
++    # libdl.a implements dlsym on top of taiGetModuleInfo and
++    # sceSblDmac5HashTransform, so it drags in two stub libraries to support a
++    # function that can never succeed. Those arrived at the link as two
++    # undefined symbols with no obvious owner.
++    if (target_os == "vita") {
++      libs = []
++    } else {
++      libs = [ "dl" ]
++    }
+     if (!is_android) {
+       libs += [ "pthread" ]
+     }
  
      # Clang with libc++ does not require an explicit atomic library reference.
      # (similar to https://github.com/flutter/buildroot/blob/master/build/config/compiler/BUILD.gn#L562)
