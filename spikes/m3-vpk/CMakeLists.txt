@@ -12,7 +12,19 @@ project(flutter_vita_m3 C CXX ASM)
 include("${VITASDK}/share/vita.cmake" REQUIRED)
 
 set(VITA_APP_NAME "Flutter Vita")
-set(VITA_TITLEID  "FVTA00004")
+
+# FVTA00002 -- M1's slot, deliberately reused rather than taking a new one.
+#
+# The whole dev loop is built around this title id: the loader hard-codes
+# TARGET_TITLEID "FVTA00002" (spikes/vita-loader/src/main.c:51) and dev.sh
+# drives that. Giving M3 its own id would mean changing the loader, rebuilding
+# it, and installing it -- and installing a loader is the one operation that
+# needs the old loader working, so a mistake there costs a manual recovery.
+#
+# M1 has served its purpose: Phase 1's exit criteria are all met and recorded.
+# Its .vpk can be rebuilt from spikes/m1-vpk at any time if a known-good
+# pure-Dart reference is ever needed again.
+set(VITA_TITLEID  "FVTA00002")
 set(VITA_VERSION  "01.00")
 
 # Same reasoning as m1-vpk: -g in Release because the debug info never reaches
