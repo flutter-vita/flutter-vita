@@ -14,6 +14,7 @@ disposable; these patches are the artifact.
 | 0001 | [gn-vita-toolchain](0001-gn-vita-toolchain.patch) | Teaches the engine's GN about `target_os=vita` |
 | 0002 | [fml-for-vita](0002-fml-for-vita.patch) | Teaches `fml` the platform, and gets it off `mmap`. **Read the message-loop note** |
 | 0003 | [engine-sources-for-vita](0003-engine-sources-for-vita.patch) | Clang-only flags, missing `<cstring>`, two more platform chains, one Skia type |
+| 0004 | [m2-link-check](0004-m2-link-check.patch) | An executable that makes the linker answer the M2 question |
 
 ## Applying
 
