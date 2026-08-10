@@ -117,8 +117,15 @@ Measure before committing. Verdict: **go**. See [phase-0.5-feasibility.md](docs/
       PSVita-1000: `main()` returns 6830, `print()` works, microtasks drain,
       and a real 50 ms timer fires.
 
-**Still open from Phase 1's exit criteria:** GC stress test and multi-isolate
-smoke test were never run. M1 exercised the GC incidentally, not deliberately.
+**Phase 1's exit criteria are now all met.** The GC stress test and the
+multi-isolate smoke test were run on hardware on 2026-08-09: `gcStress()`
+returns 1999000 after ~8 MB of churn, and `isoMarker()` returns 7777 from a
+second isolate. Both found something. GC stress failed at ~200 iterations until
+patch 0009 replaced libgcc's emulated TLS, under which every `thread_local` in
+the runtime -- including `Thread::Current()` -- was one shared global.
+`Isolate.spawn` needed two things: `create_group`/`initialize_isolate` callbacks
+in `Dart_Initialize`, *and* `VMLibraryHooks.platformScript`, which nothing set
+because this port has no `dart:io`.
 
 > The original note "do not start Phase 2 before M1 is green" was correct and
 > was honoured. M1 surfaced the frame-layout, snapshot-delivery, and embedder
@@ -132,6 +139,10 @@ smoke test were never run. M1 exercised the GC incidentally, not deliberately.
       natives via `Dart_SetFfiNativeResolver`, which is also how `dart:ui`
       reaches its embedder.
 - [ ] Fonts: no system fonts on Vita — embed a default font and register it.
+- [ ] **[added]** `dart:io` platform files for vita — ~11 `*_vita.cc` in
+      `runtime/bin`, moved here from Phase 5 (see below). Sockets are the bulk
+      and VitaSDK ships the BSD headers; `sys/un.h` and `ifaddrs.h` are the
+      absentees.
 - [ ] **[added]** `dart:ui` gets added to the platform dill the same way
       `dart:vita` was, which takes **three** edits — see
       [embedder-startup.md](docs/embedder-startup.md). Omitting the third
@@ -164,7 +175,13 @@ Core deliverable. Single binary: `flutter_vita_embedder`.
       Note [ADR-0005](docs/adr/0005-aot-snapshot-delivery.md) makes this harder: every app relinks the engine.
 
 ### Phase 5 — Hardening & Ecosystem
-- [ ] `dart:io` subset: file IO via `sceIo`, sockets via `sceNet`/`sceHttp`.
+- [ ] ~~`dart:io` subset~~ — **moved to Phase 2.** This was scheduled here on the
+      assumption that `dart:io` is optional. It is not: the embedder's base
+      `deps` include `$dart_src/runtime/bin:common_embedder_dart_io`
+      unconditionally, so the platform files have to exist before M2 can link.
+      Discovered 2026-08-10 by reading `shell/platform/embedder/BUILD.gn`. What
+      may still belong here is the *quality* of that layer -- the first pass
+      only has to link and behave honestly.
 - [ ] vitaGL/GLES2 Skia backend experiment; measure against the software renderer.
 - [ ] Memory tuning: Skia resource cache caps, image decode limits, isolate heap caps.
 - [ ] **[corrected]** Performance targets: **30 fps at native, or 60 fps at 720×408**, from [ADR-0006](docs/adr/0006-performance-bar-set-from-measurement.md). The original "60 fps simple / 20 fps complex" was asserted, not measured, and 60 fps native is impossible.

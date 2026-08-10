@@ -253,3 +253,64 @@ proves codegen, sizes and kernel-format pinning — but it is **not** a valid M1
 input. M1 additionally needs a `gen_snapshot` that targets vita, which Dart
 supports as a host-run cross-precompiler (see `libdart_precompiler_product_linux_arm`
 for the shape).
+
+---
+
+## 0010 — `runtime/bin` for vita (in progress)
+
+`dart:io`'s native layer. Phase 1 excluded `runtime/bin` entirely; the engine's
+embedder depends on it unconditionally, so it has to exist before M2 can link.
+
+### `socket_base_vita.h`, and why it declares `sockaddr_un`
+
+VitaSDK's socket layer is a thin BSD-shaped wrapper over sceNet, and it is
+thinner than its header list suggests:
+
+| | |
+|---|---|
+| IPv4/IPv6, TCP/UDP, `getaddrinfo`, `poll` | present and linkable |
+| `AF_UNIX` | `#define`d — but sceNet rejects the family |
+| `struct sockaddr_un`, `<sys/un.h>` | **absent** |
+| `struct cmsghdr`, `SCM_RIGHTS` | **absent** — no ancillary data at all, so passing file descriptors over a socket is impossible, not merely unimplemented |
+| `<ifaddrs.h>` | **absent** — interfaces cannot be enumerated |
+| `IPV6_*` options | only `IPV6_V6ONLY`. No multicast |
+
+The shared, non-platform files reach into `RawAddr::un` from five places —
+`socket_base.h`, `socket_base.cc`, `socket_base_posix.cc`, `socket.h`,
+`socket.cc` — about thirty sites in total. Threading an `#if` through all of
+them would be thirty chances to get it wrong on the next engine roll.
+
+So `socket_base_vita.h` declares the type instead, with the standard BSD layout
+so `sizeof` and `offsetof` give the values the shared code expects. **This is
+safe because nothing can construct a working `AF_UNIX` socket here**: `socket()`
+fails at the sceNet boundary, so those fields are never reached with a live
+descriptor. Failing at the syscall is the correct answer for a platform without
+Unix sockets — unlike the Skia `mmap` case, where returning an error would have
+broken a feature that *should* work.
+
+Same reasoning for `IPV6_MULTICAST_IF` and `SCM_RIGHTS`, both given their
+standard BSD values rather than invented ones. `IPV6_MULTICAST_IF` is a real
+option number that sceNet will reject; `SCM_RIGHTS` is only ever compared
+against a control message's type, and no control message can exist.
+
+This one header took the failing objects from eight to three.
+
+### Still to write
+
+- **`eventhandler_vita.{h,cc}`** — the substantial one, and a design decision is
+  open. See the note in [the Phase 2 work plan](../../docs/phase-2-workplan.md).
+- **`process_vita.cc`** — `process.cc` compiles, but nothing defines
+  `Process::Start` and friends, so this surfaces at link rather than at compile.
+  An honest failure is the right implementation; there is no `fork` here.
+
+### Gotcha: do not apply a later patch onto an already-patched tree
+
+The patches are each generated with `git diff` against the **pristine** tree, so
+two patches touching the same file overlap — the later one contains the earlier
+one's hunks. Applying 0010 to a tree that already had 0004 did not fail; `git
+apply` found matching context elsewhere in `runtime/bin/BUILD.gn` and inserted a
+**second copy** of the vita `gen_snapshot` targets. Twenty `vita_arm` references
+where there should be ten, and no error.
+
+Regenerating 0010 with `':!runtime/bin/BUILD.gn'` fixed the overlap. The
+tree-comparison one-liner is what caught it; run it after touching either tree.

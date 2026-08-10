@@ -276,7 +276,7 @@ index b5196cb9..baf3d3ee 100644
      assert(false, "Unknown/Unsupported platform.")
    }
 diff --git a/engine/src/flutter/tools/gn b/engine/src/flutter/tools/gn
-index 726f1715..cd72f27c 100755
+index 726f1715..0ae7796b 100755
 --- a/engine/src/flutter/tools/gn
 +++ b/engine/src/flutter/tools/gn
 @@ -109,7 +109,9 @@ def can_use_prebuilt_dart(args):
@@ -314,7 +314,7 @@ index 726f1715..cd72f27c 100755
    else:
      gn_args['is_clang'] = args.clang
    if args.target_os == 'ios' or args.slimpeller:
-@@ -646,10 +656,46 @@ def to_gn_args(args):
+@@ -646,10 +656,60 @@ def to_gn_args(args):
      gn_args['skia_enable_ganesh'] = False
      gn_args['skia_enable_graphite'] = False
      gn_args['arm_use_neon'] = False
@@ -342,6 +342,20 @@ index 726f1715..cd72f27c 100755
 +    # The Cortex-A9 does have NEON, unlike QNX above -- keep it.
 +    gn_args['arm_use_neon'] = True
 +
++    # No TLS in dart:io on this port, for now. This is a deliberate decision
++    # rather than something to discover at link time:
++    #
++    #   * There is no root certificate store on the device, so certificate
++    #     verification would have nothing to verify against.
++    #   * dart:io's security_context_linux.cc reaches for /etc/ssl and the
++    #     glibc-only bits around it.
++    #   * BoringSSL for armv7-newlib is its own porting project, and nothing in
++    #     "draw a Flutter frame" needs it.
++    #
++    # SecureSocket and https:// therefore throw. Plain sockets and http:// work.
++    # Revisit when there is a reason to.
++    gn_args['dart_disable_secure_socket'] = True
++
 +    # Record the SDK path in args.gn rather than leaving the toolchain to read
 +    # $VITASDK at gn time. Otherwise the out directory is not self-describing:
 +    # every later `gn ls`, `gn desc` or ninja-triggered regen needs the same
@@ -362,7 +376,7 @@ index 726f1715..cd72f27c 100755
      # OpenGL is deprecated on macOS > 10.11.
      # This is not necessarily needed but enabling this until we have a way to
      # build a macOS metal only shell and a gl only shell.
-@@ -660,7 +706,7 @@ def to_gn_args(args):
+@@ -660,7 +720,7 @@ def to_gn_args(args):
    # Enable Vulkan on all platforms except for iOS. This is just
    # to save on mobile binary size, as there's no reason the Vulkan embedder
    # features can't work on these platforms.
@@ -371,7 +385,7 @@ index 726f1715..cd72f27c 100755
      gn_args['skia_use_vulkan'] = True
      gn_args['skia_use_vma'] = False
      gn_args['shell_enable_vulkan'] = True
-@@ -960,7 +1006,7 @@ def parse_args(args):
+@@ -960,7 +1020,7 @@ def parse_args(args):
    parser.add_argument(
        '--target-os',
        type=str,

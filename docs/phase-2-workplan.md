@@ -97,7 +97,7 @@ for the AOT snapshot.
 | `fml` | **compiles** — but `MessageLoopImpl::Create()` returns nullptr, see below |
 | Everything else in the engine | **compiles** — display_list, lib/ui, lib/gpu, tonic, abseil, shell, flow, txt |
 | Dart runtime under the engine's GN | **compiles** — it came for free, as hoped |
-| `dart:io` for vita | **the only thing left before the link** — 12 objects in `runtime/bin` |
+| `dart:io` for vita | **3 objects left** — down from 12. Secure sockets off, `socket_base_vita.h` written |
 | `dart:ui` in the platform dill | not started |
 | Link `flutter_engine` | **M2** |
 
@@ -115,8 +115,41 @@ for the AOT snapshot.
 3. ~~**The Dart runtime under the engine's GN**~~ — free, as predicted. Release
    mode resolves `//flutter/runtime:libdart` to `libdart_aotruntime`, the target
    Phase 1 already builds, and Phase 1's patches carried it.
-4. **`dart:io`**, the platform files. This is now the whole remainder: of 1458
-   build edges, 12 failing objects are in `runtime/bin` and nothing else fails.
+4. **`dart:io`**, the platform files — the whole remainder. Of 1458 build edges,
+   3 failing objects are left, all in `runtime/bin`:
+
+   - **`eventhandler.o`** needs `eventhandler_vita.{h,cc}`, and there is a
+     design decision open (below).
+   - **`socket.o`** and **`dart_io_api_impl.o`** follow from it.
+
+   Then `process_vita.cc`, which will surface at **link** rather than compile:
+   `process.cc` builds fine, but nothing defines `Process::Start`. There is no
+   `fork` here, so an honest failure is the implementation.
+
+   ### The event handler decision
+
+   Dart's `eventhandler_linux.cc` is built on three Linux primitives, and the
+   Vita has none of them: `epoll`, a `pipe2` self-pipe for interrupts, and
+   `timerfd` for timeouts. Two candidate mechanisms, and the choice is not yet
+   made because **each has an unverified assumption**:
+
+   - **`poll()`** — compiles *and links* against VitaSDK. `sys/poll.h` is real
+     (`poll.h` is a one-line forwarder to it, which is why a first grep made it
+     look empty). Unverified: whether it actually works on sceNet descriptors.
+   - **`sceNetEpollCreate` / `sceNetEpollWait`** — the native mechanism, and a
+     much closer match to the code being replaced. Unverified: it almost
+     certainly accepts *only* sceNet sockets, which breaks the self-pipe.
+
+   **Linking is not working.** `socketpair()` is declared in VitaSDK's
+   `sys/socket.h` and cannot possibly work, because it needs `AF_UNIX`. Whatever
+   is chosen, prove it with a five-line on-device probe first — the dev loop
+   makes that cheap, and this project has already paid for the difference twice.
+
+   The interrupt channel needs solving either way. A loopback UDP socket is the
+   conventional answer and works under both mechanisms.
+
+   Timeouts are the easy part: `TimeoutQueue` already tracks the next deadline,
+   so it can be passed as the wait timeout instead of arming a `timerfd`.
 5. **`dart:ui` into the platform dill**, via the same three-edit procedure
    `dart:vita` needed — library file, `libraries.json`, and
    `extraRequiredLibraries` in `pkg/vm/lib/modular/target/vm.dart`. Omitting the

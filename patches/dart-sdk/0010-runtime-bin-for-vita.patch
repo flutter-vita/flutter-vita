@@ -17,3 +17,121 @@ index 7f5255dc..6fb6b014 100644
  #else
    return kWindowsDynamicLibraryProcessPtr;
  #endif
+diff --git a/runtime/bin/socket_base.h b/runtime/bin/socket_base.h
+index 904b73ac..08bd63c0 100644
+--- a/runtime/bin/socket_base.h
++++ b/runtime/bin/socket_base.h
+@@ -15,6 +15,8 @@
+ #include "bin/socket_base_macos.h"
+ #elif defined(DART_HOST_OS_WINDOWS)
+ #include "bin/socket_base_win.h"
++#elif defined(DART_HOST_OS_VITA)
++#include "bin/socket_base_vita.h"
+ #else
+ #error Unknown target os.
+ #endif
+@@ -115,12 +117,15 @@ class SocketAddress {
+   static void SetAddrScope(RawAddr* addr, intptr_t scope_id);
+   static intptr_t GetAddrScope(const RawAddr& addr);
+ 
+-#if !defined(DART_HOST_OS_FUCHSIA)
++// Vita joins Fuchsia here for the same reason: its sockaddr_un is a local
++// declaration (see socket_base_vita.h), not a real platform type, so sizing a
++// buffer from it would be sizing it from a fiction.
++#if !defined(DART_HOST_OS_FUCHSIA) && !defined(DART_HOST_OS_VITA)
+   static constexpr intptr_t kMaxAddressStringLength =
+       sizeof(decltype(sockaddr_un::sun_path));
+ #else
+   static constexpr intptr_t kMaxAddressStringLength = INET6_ADDRSTRLEN;
+-#endif  // !defined(DART_HOST_OS_FUCHSIA)
++#endif  // !defined(DART_HOST_OS_FUCHSIA) && !defined(DART_HOST_OS_VITA)
+   static_assert(kMaxAddressStringLength >= INET6_ADDRSTRLEN);
+   static_assert(kMaxAddressStringLength >= INET_ADDRSTRLEN);
+ 
+diff --git a/runtime/bin/socket_base_vita.h b/runtime/bin/socket_base_vita.h
+new file mode 100644
+index 00000000..cc8b674d
+--- /dev/null
++++ b/runtime/bin/socket_base_vita.h
+@@ -0,0 +1,81 @@
++// Copyright (c) 2026, the Dart project authors.  Please see the AUTHORS file
++// for details. All rights reserved. Use of this source code is governed by a
++// BSD-style license that can be found in the LICENSE file.
++
++#ifndef RUNTIME_BIN_SOCKET_BASE_VITA_H_
++#define RUNTIME_BIN_SOCKET_BASE_VITA_H_
++
++#if !defined(RUNTIME_BIN_SOCKET_BASE_H_)
++#error Do not include socket_base_vita.h directly. Use socket_base.h.
++#endif
++
++#include <arpa/inet.h>
++#include <netdb.h>
++#include <sys/socket.h>
++
++// This is socket_base_linux.h minus <sys/un.h>, plus the declarations below.
++//
++// VitaSDK's socket layer is a thin BSD-shaped wrapper over sceNet, and it is
++// genuinely thinner than the header list suggests. What it has: IPv4 and IPv6,
++// TCP and UDP, poll/select, getaddrinfo. What it does not have, and what these
++// declarations exist to paper over just far enough to compile:
++//
++//   * No <sys/un.h> and no struct sockaddr_un, though AF_UNIX is #defined.
++//   * No struct cmsghdr and no SCM_RIGHTS, so no ancillary data at all --
++//     passing file descriptors over a socket is impossible here, not merely
++//     unimplemented.
++//   * No <ifaddrs.h>, so interfaces cannot be enumerated.
++//   * Of the IPV6_* socket options, only IPV6_V6ONLY exists. There is no
++//     multicast.
++//
++// Everything above is reported as an error at the call site rather than
++// silently doing nothing -- see socket_base_vita.cc.
++
++// Two constants the shared code names but VitaSDK does not define. Both are
++// given their standard BSD values rather than invented ones, so that if sceNet
++// ever grows support the numbers are already right, and so that reading the
++// code does not require knowing these are local.
++//
++// IPV6_MULTICAST_IF is a real socket option number that this platform will
++// reject: of the IPPROTO_IPV6 options, sceNet implements only IPV6_V6ONLY. The
++// setsockopt call therefore fails and Dart reports the error, which is the
++// correct outcome -- there is no multicast here.
++#if !defined(IPV6_MULTICAST_IF)
++#define IPV6_MULTICAST_IF 9
++#endif
++
++// SCM_RIGHTS is only ever compared against a control message's type, and
++// VitaSDK has no struct cmsghdr, so no control message can exist to compare.
++// The value is unreachable rather than wrong.
++#if !defined(SCM_RIGHTS)
++#define SCM_RIGHTS 0x01
++#endif
++
++namespace dart {
++namespace bin {
++
++// dart::bin::RawAddr has a sockaddr_un member and several shared, non-platform
++// files reach into it. Rather than thread an #if through socket_base.h,
++// socket_base.cc, socket.h and socket.cc -- five files and about thirty sites,
++// each a chance to get it wrong on the next engine roll -- the type is declared
++// here so that code continues to compile unchanged.
++//
++// This is safe because nothing can construct a working AF_UNIX socket on this
++// platform: sceNet rejects the family, so socket() fails and the paths that use
++// these fields are never reached with a live descriptor. The layout below is
++// the standard BSD one, so sizeof() and offsetof() give the values the shared
++// code expects.
++struct vita_sockaddr_un {
++  unsigned char sun_len;
++  unsigned char sun_family;
++  char sun_path[104];
++};
++
++}  // namespace bin
++}  // namespace dart
++
++// Deliberately outside the namespace: the shared code spells it `sockaddr_un`
++// unqualified, as the POSIX type.
++typedef struct dart::bin::vita_sockaddr_un sockaddr_un;
++
++#endif  // RUNTIME_BIN_SOCKET_BASE_VITA_H_
