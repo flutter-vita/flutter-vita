@@ -385,7 +385,7 @@ uses it, and it faults on the first unlock.
 `-u pthread_cancel` has been removed from `spikes/m1-vpk/CMakeLists.txt`, with
 this reasoning recorded there so it is not restored on its own.
 
-**The actual fix (patch 0009, not yet written):** `Thread::Current()` must not depend
+**The fix: patch 0009, written and verified on hardware.** `Thread::Current()` must not depend
 on emulated TLS. It is read from allocation slow paths, GC and no-safepoint
 scopes, and `__emutls_get_address` mallocs a thread's block on first access —
 allocating on a path that must never allocate.
@@ -408,6 +408,25 @@ pthread mutex that was never initialised.
 This is preferable to editing `os_thread.h`, which would fix only
 `Thread::Current()` and leave every other `thread_local` in the runtime
 silently sharing state.
+
+**Result on hardware**, with the file living in
+`runtime/platform/emutls_vita.cc` and listed in `platform_sources.gni`:
+
+```
+thread_local probe (main set 111):
+  pthread worker set 222 -> main reads 111  PER-THREAD OK
+  vita thread set 333    -> main reads 111  PER-THREAD OK
+
+main() 6830 PASS | gcStress() 1999000 PASS | asyncMarker 99 PASS
+delayedMarker 42 PASS
+```
+
+Note it must be guarded with `#if defined(DART_HOST_OS_VITA)`, with the psp2
+include *inside* the guard: `platform_sources.gni` is shared, so the host build
+of gen_snapshot compiles this file too and has no psp2 headers. When that guard
+was missing, gen_snapshot failed to build and the snapshot step still reported
+success, because the previous gen_snapshot binary was still on disk and ran.
+**Check exit codes on every build step.**
 
 **This is a platform-layer defect affecting every `thread_local` in the
 runtime**, not just this one call site. Anything else reading TLS on an
