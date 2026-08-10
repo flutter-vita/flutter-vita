@@ -722,3 +722,91 @@ adjacent string data.
 `socket_base_vita.h` is the one to suspect first, because it **invents** a type
 the platform does not have, and `RawAddr` is a union — get its size wrong and
 every field after it in any containing struct shifts.
+
+### The full backtrace, and what it corrects
+
+`vita-parse-core` had been failing with `ModuleNotFoundError: No module named
+'elftools'` — it was being run under the system Python instead of
+`out/vpc-venv`, and it also needs `arm-vita-eabi-addr2line` on `PATH`. Both
+fixed, the dump gives a symbolicated stack, and the stack rewrites most of the
+paragraphs above.
+
+**First correction: `R0` is not the address.** `pte_osAtomicExchange` opens with
+`mov r3, r0` and then `ldrex r0, [r3]`, so by the time of the fault `R0` holds
+the **loaded value** and `R3` holds the pointer. The faulting instruction is
+`strex r2, r1, [r3]` with `R3 = 0x81c86320`. Subtracting the module load base
+(`0x81066000`) gives ELF `0x81c20320`, which is **inside `.rodata`**.
+
+So the data abort is not a wild pointer at all. It is a **write to read-only
+memory**: an atomic exchange against a string literal.
+
+```
+.rodata @ 0x81c2031c:  "trace-to-file"
+                        ^^^^ ^^^^
+        0x81c20320 --------'
+```
+
+`0x6f742d65` is simply the four bytes `ldrex` read back from the middle of that
+literal. It is constant every boot because it is a string constant. Every
+inference drawn from treating it as a handle value was drawn from a red herring.
+
+**Second correction: the layout theory is wrong too.** The stack names the
+caller chain exactly:
+
+```
+FlutterEngineInitialize
+  EmbedderThreadHost::CreateEngineManagedThreadHost   embedder_thread_host.cc:122
+    ThreadHost::CreateThread                          thread_host.cc:70
+      fml::Thread ctor
+        fml::AutoResetWaitableEvent::Wait             waitable_event.cc:74
+          std::condition_variable::wait
+            pthread_cond_wait
+              pte_cond_wait_cleanup   -- relocks the caller's mutex on exit
+                pthread_mutex_lock
+                  pte_osAtomicExchange   <-- fault
+```
+
+`pte_cond_wait_cleanup` reacquires the *user's* mutex, not the condvar's
+internal one, and the object it was handed decodes cleanly off the main thread's
+stack. `AutoResetWaitableEvent` is `cv_`, `mutex_`, `signaled_` in that order:
+
+```
+0x8208029c  cv_        = 0x82106460   valid: nWaitersBlocked=1, both sems live,
+                                      mtxUnblockLock = 0x82106a90
+0x820802a0  mutex_     = 0x81c2031c   &"trace-to-file"
+0x820802a4  signaled_  = 1
+```
+
+Three fields, three offsets, all where the C++ says they should be. **The
+layout is correct.** `stat`, `dirent` and `sockaddr_un` are off the hook; so is
+`socket_base_vita.h`, which was first on the list an hour ago.
+
+### What this actually is
+
+`signaled_ == 1` means the child thread already ran `Signal()`, which locks
+`mutex_`. `cv_` is a *live* condvar with a waiter registered, so
+`Wait()` locked `mutex_` too. **The mutex was valid twice**, and by the time the
+parent woke up to relock it, its four bytes held a pointer to a string literal.
+
+That is a **stray write of one word into the main thread's stack**, at a fixed
+offset, while the main thread is parked inside `pthread_cond_wait`. The value
+written is a pointer into the switch-descriptor strings of
+`shell/common/switches.cc` — the same table whose entries
+(`icu-data-file-path`, `use-test-fonts`, `enable-impeller`, …) litter the
+surrounding stack words from an earlier frame.
+
+The pointer appears nowhere in the image as a stored word and nowhere in `.text`
+as a literal-pool constant, so it is materialised at runtime.
+
+### Next probes
+
+1. `AutoResetWaitableEvent` sits on the *parent's* stack while a freshly created
+   thread holds a reference to it. Confirm the child's stack does not overlap
+   the parent's: print the `sceKernelCreateThread` stack base and size for each
+   `pte_osThreadCreate`, against the main thread's `0x82041000..0x82081000`.
+2. Only three threads exist at the fault and the new one is named `pthread`, not
+   `io.flutter.ui` — the name never reached the kernel object. Whatever writes
+   the name is a suspect for writing somewhere else too.
+3. Put a guard word on either side of the latch in `fml::Thread`'s ctor and
+   check it after `Wait()` returns. That converts "something writes the stack"
+   into a bounded range.
