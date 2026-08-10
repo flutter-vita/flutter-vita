@@ -34,32 +34,49 @@ around — `_printClosure`, the microtask closure, the timer hooks,
 puts it back.
 
 `runtime/bin/io_impl_sources.gni` is a flat list of 91 files with per-OS `#if`
-guards inside them, the same shape as `runtime/vm`. Eleven modules have a
-per-platform implementation:
+guards inside them, the same shape as `runtime/vm`.
 
-```
-console  eventhandler  file_system_watcher  namespace  platform  process
-security_context  socket  socket_base  stdio  sync_socket
-```
+### The inventory, corrected
 
-So the shape is: **~11 new `*_vita.cc` files**, comparable in size to Phase 1's
-eight. Not all need to be real. `process` and `file_system_watcher` can fail
-honestly; `security_context` pulls BoringSSL, and `dart_disable_secure_socket`
-is a declared GN arg — turning it off is likely right, and should be a decision
-rather than something discovered at link time.
+An earlier pass through this file said "~11 modules, comparable in size to
+Phase 1's eight." **That was an undercount**, from grepping only the modules
+whose names appear with an OS suffix in the sources list. The real figure is
+**16 modules, 4675 lines of Linux implementation**, and it is worth having the
+honest number before starting rather than discovering it two files in.
 
-**Sockets are much less work than they look.** VitaSDK ships the BSD headers,
-so `socket_base_vita.h` is `socket_base_linux.h` with one line removed:
+It is less work than 4675 lines suggests, because VitaSDK's POSIX file and
+directory surface is nearly complete — `fcntl`, `opendir`, `readdir`, `stat`,
+`lstat`, `mkdir`, `rmdir`, `unlink`, `rename`, `realpath`, `chdir`, `getcwd`,
+`truncate`, `ftruncate`, `lseek`, `fsync`, `link`, `utime`, `access`, `isatty`
+and `nanosleep` are all real. Absent: `symlink`, `readlink`, `tcgetattr`,
+`ioctl`, `sched_yield`.
 
-| header | |
-|---|---|
-| `sys/socket.h`, `netinet/in.h`, `netinet/tcp.h`, `arpa/inet.h`, `netdb.h` | present |
-| `poll.h`, `sys/select.h` | present |
-| `sys/un.h` | **absent** — no Unix domain sockets |
-| `ifaddrs.h` | **absent** — no `getifaddrs`, so `NetworkInterface.list` needs another route |
+| Module | Linux LOC | Verdict |
+|---|---:|---|
+| `process` | 1203 | **Stub.** No `fork`, no `exec`. `Process.start` fails honestly |
+| `file` | 809 | Port. Mostly mechanical; drop the `symlink`/`readlink` paths |
+| `directory` | 518 | Port. Same |
+| `eventhandler` | 433 | **Port, poll-based.** Design settled — see below |
+| `socket` | 269 | Port. Follows Linux closely |
+| `platform` | 221 | Small port — no `uname`, so the strings are ours |
+| `namespace` | 159 | Small port |
+| `file_system_watcher` | 155 | **Stub.** No inotify |
+| `socket_base` | 148 | Port, minus `getifaddrs` and multicast |
+| `stdio` | 140 | Small port — no `tcgetattr`, so terminal queries fail |
+| `fdutils` | 132 | Port. `fcntl` is present, so this is close to a copy |
+| `security_context` | 119 | **Excluded** by `dart_disable_secure_socket` |
+| `utils` | 113 | Small port |
+| `thread` | 97 | Port. VitaSDK has real pthreads |
+| `sync_socket` | 91 | Port |
+| `crypto` | 68 | Small port — `sceKernelGetRandomNumber` instead of `/dev/urandom` |
 
-The `.cc` side should follow the Linux implementation closely, minus the
-Unix-domain paths and interface enumeration.
+Realistically **1500–2000 lines of new code**, most of it mechanical, with the
+event handler as the only piece needing design.
+
+Three shared `*_posix.cc` files gate on an OS list and could take a `vita` arm
+instead of being duplicated: `console_posix.cc`, `socket_base_posix.cc` and
+`virtual_memory_posix.cc`. `socket_base_posix.cc` needs its `SCM_RIGHTS` and
+multicast functions excluded first — VitaSDK has no `struct cmsghdr` at all.
 
 ### 2. `fml` needs a platform layer, and its POSIX fallback is not portable
 
