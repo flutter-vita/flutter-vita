@@ -1,5 +1,5 @@
 diff --git a/runtime/bin/BUILD.gn b/runtime/bin/BUILD.gn
-index 0eedc427..aa94a35d 100644
+index 0eedc427..ed9cc665 100644
 --- a/runtime/bin/BUILD.gn
 +++ b/runtime/bin/BUILD.gn
 @@ -22,6 +22,18 @@ import("native_assets_impl_sources.gni")
@@ -35,7 +35,23 @@ index 0eedc427..aa94a35d 100644
  build_libdart_builtin("libdart_builtin_product_linux_riscv64") {
    extra_configs = [
      "..:dart_product_config",
-@@ -397,6 +416,23 @@ build_gen_snapshot("gen_snapshot_product_linux_arm") {
+@@ -198,6 +217,7 @@ template("build_elf_loader") {
+       "virtual_memory.h",
+       "virtual_memory_fuchsia.cc",
+       "virtual_memory_posix.cc",
++      "virtual_memory_vita.cc",
+       "virtual_memory_win.cc",
+     ]
+     deps = invoker.deps
+@@ -232,6 +252,7 @@ template("build_shared_object_loaders") {
+       "virtual_memory.h",
+       "virtual_memory_fuchsia.cc",
+       "virtual_memory_posix.cc",
++      "virtual_memory_vita.cc",
+       "virtual_memory_win.cc",
+     ]
+     deps = invoker.deps
+@@ -397,6 +418,23 @@ build_gen_snapshot("gen_snapshot_product_linux_arm") {
    ]
  }
  
@@ -59,7 +75,7 @@ index 0eedc427..aa94a35d 100644
  build_gen_snapshot("gen_snapshot_product_linux_riscv64") {
    extra_configs = [
      "..:dart_product_config",
-@@ -518,6 +554,13 @@ build_gen_snapshot_dart_io("gen_snapshot_dart_io_product_linux_arm") {
+@@ -518,6 +556,13 @@ build_gen_snapshot_dart_io("gen_snapshot_dart_io_product_linux_arm") {
    ]
  }
  
@@ -1136,7 +1152,7 @@ index 7f5255dc..6fb6b014 100644
    return kWindowsDynamicLibraryProcessPtr;
  #endif
 diff --git a/runtime/bin/platform_linux.cc b/runtime/bin/platform_linux.cc
-index 86a6dc83..21455a6c 100644
+index 86a6dc83..f1c15325 100644
 --- a/runtime/bin/platform_linux.cc
 +++ b/runtime/bin/platform_linux.cc
 @@ -3,14 +3,18 @@
@@ -1216,6 +1232,28 @@ index 86a6dc83..21455a6c 100644
  }
  
  void Platform::Exit(int exit_code) {
+@@ -211,8 +250,21 @@ void Platform::_Exit(int exit_code) {
+ }
+ 
+ void Platform::SetCoreDumpResourceLimit(int value) {
++#if defined(DART_HOST_OS_VITA)
++  // setrlimit is declared by VitaSDK and not implemented -- the fourth time
++  // that pattern has cost a link here. There are no resource limits on this
++  // platform to raise or lower.
++  //
++  // Nothing is lost. The Vita writes a psp2core-*.psp2dmp on every fault
++  // regardless of what the process asks for, and
++  // spikes/m1-vpk/analyse-crash.sh symbolicates it. That has been the single
++  // most effective debugging tool in this port, and unlike a core-dump rlimit
++  // it does not need the process to have set anything up beforehand.
++  USE(value);
++#else
+   rlimit limit = {static_cast<rlim_t>(value), static_cast<rlim_t>(value)};
+   setrlimit(RLIMIT_CORE, &limit);
++#endif
+ }
+ 
+ }  // namespace bin
 diff --git a/runtime/bin/process_vita.cc b/runtime/bin/process_vita.cc
 new file mode 100644
 index 00000000..2c5ccc60
@@ -2029,6 +2067,107 @@ index 29109362..4bbb0479 100644
  #include "bin/utils.h"
  #include "platform/assert.h"
  #include "platform/utils.h"
+diff --git a/runtime/bin/virtual_memory_vita.cc b/runtime/bin/virtual_memory_vita.cc
+new file mode 100644
+index 00000000..f1753dab
+--- /dev/null
++++ b/runtime/bin/virtual_memory_vita.cc
+@@ -0,0 +1,95 @@
++// Copyright (c) 2026, the Dart project authors.  Please see the AUTHORS file
++// for details. All rights reserved. Use of this source code is governed by a
++// BSD-style license that can be found in the LICENSE file.
++
++#include "platform/globals.h"
++#if defined(DART_HOST_OS_VITA)
++
++#include "bin/virtual_memory.h"
++
++#include <malloc.h>
++#include <psp2/kernel/sysmem.h>
++
++#include "platform/assert.h"
++#include "platform/utils.h"
++
++// `runtime/bin`'s VirtualMemory, which is a **different class** from
++// `runtime/vm`'s -- Phase 1 wrote virtual_memory_vita.cc for the VM and this is
++// the other one. `bin`'s exists to back the ELF loader and `MemoryMappable`,
++// and its interface is much smaller: allocate, protect, free, page size.
++//
++// It went unnoticed until now for an instructive reason. `vita_link_check`
++// links clean without it, because that target names only four embedder entry
++// points and `--gc-sections` discards the elf_loader path as unreachable. The
++// real embedder reaches it. **A link check is only as strong as the entry
++// points it names**, which is worth remembering before trusting the next one.
++//
++// ## Executable memory
++//
++// `Allocate(size, is_executable, name)` cannot honour is_executable here. Phase
++// 1 established that the Vita's W^X story is all-or-nothing per memory domain:
++// a block is either writable or executable, and the VM-domain route that would
++// allow flipping is exactly what ADR-0005 abandoned when it moved the snapshot
++// into eboot.bin. Requesting executable memory therefore fails rather than
++// quietly returning writable-only pages that fault on the first branch into
++// them.
++//
++// Nothing in this port should ask. The only caller that wants executable pages
++// is the ELF loader placing an AOT snapshot's instructions image, and this port
++// links its snapshot in instead.
++
++namespace dart {
++namespace bin {
++
++uword VirtualMemory::page_size_ = 0;
++
++intptr_t VirtualMemory::CalculatePageSize() {
++  // sceKernel's user memory blocks are granted in 4 KiB units for the RW type
++  // this file uses. There is no getpagesize() to ask, so the constant is named
++  // rather than discovered -- if the block type changes, this must too.
++  return 4096;
++}
++
++VirtualMemory* VirtualMemory::Allocate(intptr_t size,
++                                       bool is_executable,
++                                       const char* name) {
++  if (is_executable) {
++    // See the note above: refusing is correct, not lazy.
++    return nullptr;
++  }
++
++  const intptr_t page = PageSize();
++  void* address = memalign(page, Utils::RoundUp(size, page));
++  if (address == nullptr) {
++    return nullptr;
++  }
++  return new VirtualMemory(address, size);
++}
++
++VirtualMemory::~VirtualMemory() {
++  if (address_ != nullptr) {
++    free(address_);
++    address_ = nullptr;
++    size_ = 0;
++  }
++}
++
++void VirtualMemory::Protect(void* address, intptr_t size, Protection mode) {
++  // A no-op, and deliberately silent rather than fatal.
++  //
++  // Callers use this to tighten permissions on memory they already own -- for
++  // example marking a loaded image read-only after writing it. On a platform
++  // with no per-page protection to tighten, doing nothing leaves the memory
++  // readable and writable, which is *weaker* than asked for but not incorrect
++  // for any caller here: none of them depends on a later write actually
++  // faulting.
++  //
++  // It is worth being explicit that this is a security property being given up,
++  // not merely an unimplemented call. On a device running unsigned homebrew
++  // that the user installed deliberately, it buys little.
++}
++
++}  // namespace bin
++}  // namespace dart
++
++#endif  // defined(DART_HOST_OS_VITA)
 diff --git a/runtime/bin/vita_compat.h b/runtime/bin/vita_compat.h
 new file mode 100644
 index 00000000..e6066a18

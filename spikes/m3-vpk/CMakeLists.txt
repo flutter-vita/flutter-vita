@@ -51,6 +51,21 @@ add_executable(${PROJECT_NAME}
 # supplies. This bit M1 and the reason is unchanged.
 set_target_properties(${PROJECT_NAME} PROPERTIES LINKER_LANGUAGE CXX)
 
+# vita-elf-create appends ~32 KB of SCE metadata after the first LOAD segment,
+# and fails outright if the next segment starts before there is room:
+#
+#   Cannot allocate 32400 bytes for SCE data at end of segment 0;
+#   segment 1 overlaps
+#
+# At the default 4 KiB page size the gap between segments came to 2148 bytes.
+# Aligning to 64 KiB leaves a whole page of slack. This did not arise for M1
+# because its text segment was ~2.5 MiB; at 12 MiB the alignment padding
+# happened to land badly.
+target_link_options(${PROJECT_NAME} PRIVATE
+  "-Wl,-z,max-page-size=0x10000"
+  "-Wl,-z,common-page-size=0x10000"
+)
+
 # GN emits source_sets whose objects link directly; there is no single archive
 # to point at. M1 globbed ~500 objects, this globs ~2700.
 #
@@ -95,11 +110,17 @@ target_link_libraries(${PROJECT_NAME}
 # should not be reverted casually.
 vita_create_self(${PROJECT_NAME}.self ${PROJECT_NAME} UNSAFE)
 
-# icudtl.dat and flutter_assets ship as data files; vita_embedder.cc reads them
-# from app0:. ICU's data is ~10 MB, which is most of the .vpk -- slimming it is
-# on the Phase 2 list and has not been done.
+# icudtl.dat ships as a data file; vita_embedder.cc reads it from app0:.
+#
+# It is 862 KB, not the ~10 MB this project has been assuming: Flutter vendors
+# an already-slimmed ICU dataset at third_party/icu/flutter/ rather than the
+# full one. So "slim icudtl.dat" comes off the Phase 2 list -- upstream did it.
+#
+# flutter_assets is still missing. A real bundle needs `flutter build bundle`
+# against an app, which is Phase 4 tooling; until then the engine will start and
+# fail to find its assets, which is the expected first-run outcome.
 vita_create_vpk(${PROJECT_NAME}.vpk ${VITA_TITLEID} ${PROJECT_NAME}.self
   VERSION ${VITA_VERSION}
   NAME ${VITA_APP_NAME}
-  FILE ${ENGINE_OUT}/flutter_patched_sdk/platform_strong.dill platform_strong.dill
+  FILE ${ENGINE_SRC}/flutter/third_party/icu/flutter/icudtl.dat icudtl.dat
 )

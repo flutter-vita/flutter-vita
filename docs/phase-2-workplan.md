@@ -570,3 +570,33 @@ Verified rather than assumed:
 `app-aot-assembly` emits the instructions image as raw words — so nothing here
 disassembles armv7 and confirms it. Matching size and a clean exit are strong
 circumstantial evidence, not execution. The proof is the device.
+
+
+## The package, corrected
+
+```
+sce_sys/param.sfo      912 B
+eboot.bin           11.2 MiB
+icudtl.dat         862,304 B
+                  ---------
+                    11.6 MiB
+```
+
+Two corrections against what I wrote an hour earlier.
+
+**`icudtl.dat` is 862 KB, not ~10 MB.** This project has repeated the 10 MB
+figure since the plan was written, and it is wrong for Flutter: the engine
+vendors an already-slimmed dataset at `third_party/icu/flutter/`. **"Slim
+icudtl.dat" comes off the Phase 2 list** — upstream did it.
+
+**`platform_strong.dill` should never have been in the package**, and the first
+`.vpk` shipped it. It is a *host-side* artifact: the SDK half of the kernel that
+`gen_snapshot` consumes when compiling an app on the build machine. The device
+runs the AOT snapshot linked into `eboot.bin` and has no use for kernel. Removing
+it took 2.7 MiB off the package, and it was 9.95 MiB of the previous 14.3 —
+compressed well, but dead weight either way.
+
+What is still missing is `flutter_assets`. A real bundle needs
+`flutter build bundle` against an app, which is Phase 4 tooling. Until then the
+engine will start and fail to find its assets, which is the expected first-run
+outcome and not worth working around.
