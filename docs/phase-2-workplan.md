@@ -645,3 +645,38 @@ strong enough that someone will reach for it again.
    runners immediately; M1 ran essentially single-threaded. `MessageLoopVita` is
    new and unexercised, and `Thread::TryStart` came from `thread_linux.cc` with
    its `pthread_setname_np` call newly stubbed out.
+
+## The memset did not fix it, and the reason rules out my theory
+
+Second run, same crash, and one detail settles it:
+
+```
+run 1:  PC flutter_vita_m3 + 0xb7be22   R0 = 0x6f742d65
+run 2:  PC flutter_vita_m3 + 0xb7be2a   R0 = 0x6f742d65
+```
+
+**`R0` is identical across runs.** Uninitialised heap does not repeat — it holds
+whatever the previous allocation left, which varies. A constant value means the
+memory is *consistently* that value, so the zeroing hypothesis is wrong even
+though the mechanism behind it was real. (The `memset` is kept: `mmap` really
+does zero and `memalign` really does not, and abseil's callers really do depend
+on it. It was a latent bug, just not this one.)
+
+The PC moved by 8 bytes, which is the `memset` shifting code, so it is the same
+instruction: `pte_osAtomicExchange`, reached from `pthread_mutex_lock`,
+dereferencing `R0`.
+
+`0x6f742d65` little-endian is `e-to`. A `pthread_mutex_t` whose bytes are a
+string fragment, at the same value every boot, is a **statically allocated mutex
+that was never initialised** and happens to overlap string data in `.data`.
+
+That is Phase 1's failure mode exactly: **VitaSDK's pthread does not support
+static initialisers.** The earlier grep for `PTHREAD_MUTEX_INITIALIZER` came
+back empty, but it searched `fml`, `runtime` and abseil only. It did not search
+the place most likely to have one:
+
+**libstdc++.** `std::mutex`, `std::recursive_mutex` and `std::once_flag` are
+constant-initialised and lower to `__gthread_mutex_t` — a `pthread_mutex_t` with
+static init. Any namespace-scope or function-local-static `std::mutex` in the
+engine, Skia or tonic hits this. That is the next thing to check, and the search
+should cover the whole tree rather than three directories.
