@@ -501,3 +501,26 @@ The engine links. It does not run, and one thing is already known to stop it:
 `MessageLoopImpl::Create()` returns `nullptr` on this platform, so the first
 thread that asks for a loop fails an `FML_CHECK`. That is the first Phase 3
 item, not an M2 one.
+
+## `dart:ui` needs no work — and `dart:vita` may not either
+
+The plan carried "add `dart:ui` to the platform dill" over from Phase 1. **It was
+wrong.** The engine already builds its own:
+`compile_platform("strong_platform")` in `flutter/lib/snapshot/BUILD.gn`, from
+the engine's `libraries.json`, with `--target=flutter` rather than the plain VM
+target. It builds for vita unchanged — 9.95 MiB `platform_strong.dill`, `ninja`
+exit 0 — which is unsurprising once said out loud, because a kernel dill is
+host-side and contains no target code.
+
+The three-edit procedure (library file, `libraries.json`,
+`extraRequiredLibraries`) still applies to adding a library to *that* dill, and
+the third edit still fails silently.
+
+**The more useful consequence is a question, recorded before Phase 3 acts on
+reflex: `dart:vita` may no longer be needed at all.** It exists only because
+Phase 1 excluded `dart:io`, so nothing supplied `_printClosure`, the microtask
+closure, the timer hooks or `platformScript`, and each had to be installed by
+hand from C. `runtime/bin` is in the build now and supplies all four the way it
+does on every other platform. Verify at runtime — but do not port `dart:vita`
+forward without checking, or four workarounds get carried into a phase that may
+need none of them.
