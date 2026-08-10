@@ -74,8 +74,12 @@ void startIsolateTest() {
     if (_isoMarker == 0) _isoMarker = -2;  // nothing came back
     rp.close();
   });
+  // Print the actual exception. The previous version discarded it and just set
+  // -1, which told us spawn failed but never why -- and the callbacks the VM
+  // was supposedly missing turned out never to be reached at all.
   Isolate.spawn(_isolateWorker, rp.sendPort).catchError((Object e) {
-    _isoMarker = -1;  // spawn refused
+    print('isolate spawn failed: $e');
+    _isoMarker = -1;
     rp.close();
     return Isolate.current;
   });

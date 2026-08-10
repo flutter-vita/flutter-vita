@@ -284,6 +284,43 @@ static void tls_probe_test(void) {
      after_vita == 111 ? "PER-THREAD OK" : "SHARED GLOBAL -- BROKEN");
 }
 
+// Isolate.spawn needs the embedder to say how a new isolate comes into being.
+// Without these, Dart_Initialize has no way to build one and spawn is refused
+// outright -- isoMarker came back -1 for exactly that reason.
+//
+// Two callbacks, for two different cases:
+//   create_group        a whole new isolate group (Isolate.spawnUri)
+//   initialize_isolate  a new isolate inside the existing group, which is what
+//                       Isolate.spawn does
+//
+// Deliberately minimal for now. The child isolate gets no print closure, no
+// microtask scheduler and no timer hooks -- those are per-isolate state and
+// would each need installing here. The test only sends an integer back down a
+// port, so if it needs more we will see a specific error rather than a guess.
+static Dart_Isolate vita_create_group(const char* script_uri,
+                                      const char* main_name,
+                                      const char* package_root,
+                                      const char* package_config,
+                                      Dart_IsolateFlags* flags,
+                                      void* isolate_data,
+                                      char** error) {
+  (void)package_root;
+  (void)package_config;
+  (void)isolate_data;
+  lg("  [isolate] create_group for %s\n", script_uri ? script_uri : "(null)");
+  return Dart_CreateIsolateGroup(script_uri, main_name,
+                                 _kDartIsolateSnapshotData,
+                                 _kDartIsolateSnapshotInstructions, flags, NULL,
+                                 NULL, error);
+}
+
+static bool vita_initialize_isolate(void** child_isolate_data, char** error) {
+  (void)child_isolate_data;
+  (void)error;
+  lg("  [isolate] initialize_isolate\n");
+  return true;
+}
+
 static void lg_line(const char* msg) {
   lg("%s", msg);
 }
@@ -390,6 +427,8 @@ int main(void) {
   params.version = DART_INITIALIZE_PARAMS_CURRENT_VERSION;
   params.vm_snapshot_data = _kDartVmSnapshotData;
   params.vm_snapshot_instructions = _kDartVmSnapshotInstructions;
+  params.create_group = vita_create_group;
+  params.initialize_isolate = vita_initialize_isolate;
 
   err = Dart_Initialize(&params);
   if (err != NULL) {
@@ -570,6 +609,19 @@ int main(void) {
   sceKernelStartThread(timer_thread, 0, NULL);
   lg("  timer hooks installed, timer thread started\n");
 
+  // Isolate.spawn refuses in Dart when VMLibraryHooks.platformScript is null,
+  // long before any embedder callback runs -- runtime/bin fills it from
+  // dart:io's Platform._nativeScript, which this port excludes. dart:vita sets
+  // it directly, since an SDK library may import dart:_internal.
+  lg("  [checkpoint] installing platformScript\n");
+  Dart_Handle ps = Dart_Invoke(
+      vita_lib, Dart_NewStringFromCString("installPlatformScript"), 0, NULL);
+  if (Dart_IsError(ps)) {
+    lg("  FAIL installPlatformScript: %s\n", Dart_GetError(ps));
+  } else {
+    lg("  platformScript installed\n");
+  }
+
   lg("  [checkpoint] Dart_NewStringFromCString\n");
   Dart_Handle name = Dart_NewStringFromCString("main");
   if (Dart_IsError(name)) {
@@ -664,7 +716,7 @@ int main(void) {
       !Dart_IsError(Dart_IntegerToInt64(iso_marker, &iso_value))) {
     lg("  isoMarker() = %lld  %s\n", (long long)iso_value,
        iso_value == 7777  ? "PASS -- second isolate ran"
-       : iso_value == -1  ? "spawn refused (no create_group callback)"
+       : iso_value == -1  ? "spawn threw -- see the printed error above"
        : iso_value == -2  ? "spawn silent -- nothing came back in 3s"
                           : "not run");
   }

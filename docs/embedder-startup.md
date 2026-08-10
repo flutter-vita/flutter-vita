@@ -116,6 +116,41 @@ UTF-8 work; the SDK uses the same shape in `concurrent_patch.dart`.
 That FFI channel matters beyond print: it is how `dart:ui` reaches its embedder,
 so Phase 2 now has a proven Dart-to-C path rather than an assumed one.
 
+## `platformScript`, and the shape of all of these
+
+`Isolate.spawn` threw `Unsupported operation: Isolate.spawn`, and the throw is in
+Dart, not the embedder:
+
+```dart
+var script = VMLibraryHooks.platformScript;
+if (script == null) throw UnsupportedError("Isolate.spawn");
+```
+
+`runtime/bin` fills that from `dart:io`'s `Platform._nativeScript`. This port has
+no `dart:io`, so it was never set. `dart:vita` now assigns it directly — being a
+real SDK library, it may import `dart:_internal`, which is far simpler than
+reaching `VMLibraryHooks` through `Dart_SetField` from C.
+
+Spawning **also** needs `Dart_InitializeParams.initialize_isolate` (and
+`create_group` for `spawnUri`). Both are required: the callback alone is never
+reached, because Dart refuses first; the hook alone leaves the VM with no way to
+build an isolate.
+
+**That is now four hooks of identical shape:**
+
+| Hook | Symptom when unset |
+|---|---|
+| `_printClosure` | `print()` throws |
+| `_setScheduleImmediateClosure` | "Microtasks are not supported" |
+| `timerFactory` and friends | "Timer interface not supported" |
+| `platformScript` | "Unsupported operation: Isolate.spawn" |
+
+Each is something `runtime/bin` supplies from `dart:io` or `dart:_builtin`, and
+each presents as a mysterious runtime failure rather than "you did not install
+X". **When Dart says "unsupported", ask which hook is null before suspecting the
+port.** Worth auditing every `VMLibraryHooks` field before Phase 2 — `dart:ui`
+will lean on more of them.
+
 ## The lesson
 
 The port was essentially correct long before M1 passed. Three consecutive
