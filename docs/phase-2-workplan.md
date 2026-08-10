@@ -73,6 +73,47 @@ and `nanosleep` are all real. Absent: `symlink`, `readlink`, `tcgetattr`,
 Realistically **1500–2000 lines of new code**, most of it mechanical, with the
 event handler as the only piece needing design.
 
+### What the compile probe found
+
+Rather than guess how portable each module is, all twelve "port" modules had
+`DART_HOST_OS_VITA` temporarily added to their `#if` guard and the tree was
+built once. That is a five-minute experiment and it turns the estimate into a
+list. The probe was then reverted; only the findings are kept.
+
+Every module is *close*. In full, the reasons they do not compile as-is:
+
+| Module | Errors | What is actually missing |
+|---|---:|---|
+| `crypto` | 1 | `<sys/syscall.h>` — it reaches `getrandom` through a raw syscall. Use `sceKernelGetRandomNumber` |
+| `fdutils` | 1 | `<sys/ioctl.h>` — `FIONREAD` backs `SocketBase::Available`. **Needs a real alternative**, not a stub |
+| `file` | 1 | `<sys/mman.h>` — the same call already made twice, in Skia and fml |
+| `platform` | 1 | `<sys/prctl.h>` — thread naming. Drop it |
+| `socket_base` | 1 | `<ifaddrs.h>` — no interface enumeration |
+| `stdio`, `sync_socket` | 1 each | terminal and socket ioctls |
+| `namespace` | 2 | `open64`, `openat64` — the LFS-64 spellings; plain `open`/`openat` exist |
+| `socket` | 12 | Only missing constants: `SOCK_CLOEXEC`, `SOCK_NONBLOCK`, `SOMAXCONN`, `ENONET` |
+| `directory` | 36 | The LFS-64 names again (`stat64`, `fstatat64`, `ino64_t`), plus `DT_*` and `dirent::d_type` — **newlib's `dirent` has no `d_type`, so listing must `stat` each entry** |
+
+Two of those are genuine gaps needing a design choice — `FIONREAD` and
+`d_type`. Everything else is a missing constant, a missing header, or an LFS-64
+alias.
+
+### Therefore: a compat header, not twelve forked files
+
+The obvious move is to copy each `*_linux.cc` to `*_vita.cc`. That would
+duplicate roughly 4600 lines to change perhaps eighty of them, and every engine
+roll would then be a twelve-way merge.
+
+Instead: **one small `bin/vita_compat.h`** supplying the LFS-64 aliases, the
+`DT_*` values, `SOCK_CLOEXEC`/`SOMAXCONN` and friends, and `DART_HOST_OS_VITA`
+added to the shared guards — with `#if` only around the handful of places that
+are genuinely absent. Dart already shares this way: `socket_base_posix.cc` spans
+three operating systems and `console_posix.cc` four.
+
+`directory` is the one module where a fork may still be right, because
+`d_type`'s absence changes the shape of the listing loop rather than just its
+spelling.
+
 Three shared `*_posix.cc` files gate on an OS list and could take a `vita` arm
 instead of being duplicated: `console_posix.cc`, `socket_base_posix.cc` and
 `virtual_memory_posix.cc`. `socket_base_posix.cc` needs its `SCM_RIGHTS` and

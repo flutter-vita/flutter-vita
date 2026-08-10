@@ -322,15 +322,41 @@ port was about to hand-roll.
 returns `EINVAL`. More than 255 concurrent sockets does not degrade, it stops
 working.
 
+### `eventhandler_vita.cc`
+
+Written and compiling. It is `eventhandler_linux.cc` with epoll and timerfd
+removed, and three differences worth knowing:
+
+- **The poll array is rebuilt every iteration** instead of a kernel-side epoll
+  set being edited incrementally. `poll()` takes the whole array anyway, so a
+  mask change needs no bookkeeping and `UpdateEpollInstance` disappears
+  entirely.
+- **poll() is level-triggered**, where Linux asks for `EPOLLET`. That is safe
+  only because of Dart's token mechanism: when a descriptor's tokens run out its
+  mask drops the event bit, so it leaves the poll set until Dart returns a
+  token. Without that, level-triggering would spin.
+- **The wakeup is a socket, so the write is not atomic.** Linux relies on a pipe
+  write below `PIPE_BUF` being indivisible and takes no lock; TCP makes no such
+  promise, so the send loops and the reasoning is written at the call site.
+
+It also does not include `platform/signal_blocker.h`, which every other POSIX
+backend does. VitaSDK has no `pthread_sigmask`, `sigemptyset` or `sigaddset`, so
+`ThreadSignalBlocker` cannot be built — and the EINTR-retry macros come with it,
+hence the local `VITA_RETRY_EINTR`.
+
+One trap: unqualified `realloc` is ambiguous inside `namespace dart::bin`,
+between the global one and `dart::realloc` from `platform/allocation.h`. The
+Dart one is what is wanted — it calls `OUT_OF_MEMORY()` itself.
+
 ### Still to write
 
-- **`eventhandler_vita.cc`** — the header is in; the definitions are not, so
-  `EventHandlerImplementation`'s methods are undefined at link.
+- **The twelve remaining modules.** A compile probe has turned this from an
+  estimate into a list; see
+  [the Phase 2 work plan](../../docs/phase-2-workplan.md). The conclusion is a
+  small `bin/vita_compat.h` plus widened guards, not twelve forked files.
 - **`process_vita.cc`** — `process.cc` compiles, but nothing defines
   `Process::Start` and friends. An honest failure is the right implementation;
-  there is no `fork` here.
-
-Both surface at **link**, not compile, which is precisely what M2 is for.
+  there is no `fork` here. Surfaces at **link**, not compile.
 
 ### `-latomic`
 

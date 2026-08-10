@@ -11,6 +11,434 @@ index 7da269ca..21368db6 100644
  #else
  #error Unknown target os.
  #endif
+diff --git a/runtime/bin/eventhandler_vita.cc b/runtime/bin/eventhandler_vita.cc
+new file mode 100644
+index 00000000..796b2d3c
+--- /dev/null
++++ b/runtime/bin/eventhandler_vita.cc
+@@ -0,0 +1,422 @@
++// Copyright (c) 2026, the Dart project authors.  Please see the AUTHORS file
++// for details. All rights reserved. Use of this source code is governed by a
++// BSD-style license that can be found in the LICENSE file.
++
++#include "platform/globals.h"
++#if defined(DART_HOST_OS_VITA)
++
++#include "bin/eventhandler.h"
++#include "bin/eventhandler_vita.h"
++
++#include <errno.h>       // NOLINT
++#include <fcntl.h>       // NOLINT
++#include <netinet/in.h>  // NOLINT
++#include <poll.h>        // NOLINT
++#include <stdio.h>       // NOLINT
++#include <string.h>      // NOLINT
++#include <sys/socket.h>  // NOLINT
++#include <unistd.h>      // NOLINT
++
++#include "bin/dartutils.h"
++#include "bin/fdutils.h"
++#include "bin/lockers.h"
++#include "bin/socket.h"
++#include "bin/thread.h"
++#include "bin/utils.h"
++#include "platform/syslog.h"
++#include "platform/utils.h"
++
++// Deliberately *not* platform/signal_blocker.h, which every other POSIX backend
++// includes. VitaSDK has no pthread_sigmask, sigemptyset or sigaddset, so
++// ThreadSignalBlocker cannot be built and NO_RETRY_EXPECTED's siblings come
++// with it. There are no signals to block here either, so nothing is lost --
++// but the EINTR retry those macros provide still has to exist, because a
++// blocking call can return EINTR for reasons other than signals.
++#define VITA_RETRY_EINTR(expression)                                           \
++  ({                                                                           \
++    intptr_t __result;                                                         \
++    do {                                                                       \
++      __result = (expression);                                                 \
++    } while ((__result == -1L) && (errno == EINTR));                           \
++    __result;                                                                  \
++  })
++
++namespace dart {
++namespace bin {
++
++intptr_t DescriptorInfo::GetPollEvents() {
++  // POLLERR and POLLHUP are reported whether or not they are requested, so
++  // asking for them explicitly would be redundant -- and POLLERR is not even a
++  // legal request flag.
++  intptr_t events = 0;
++  if ((Mask() & (1 << kInEvent)) != 0) {
++    events |= POLLIN;
++  }
++  if ((Mask() & (1 << kOutEvent)) != 0) {
++    events |= POLLOUT;
++  }
++  return events;
++}
++
++EventHandlerImplementation::EventHandlerImplementation()
++    : socket_map_(&SimpleHashMap::SamePointerValue, 16),
++      poll_fds_(nullptr),
++      poll_fds_capacity_(0),
++      poll_fds_length_(0) {
++  // A socket pair, not a pipe. pipe() does exist on this platform and is a real
++  // implementation, but it is built on sceKernelCreateMsgPipe and a
++  // message-pipe descriptor is not a socket -- poll() is sceNetEpoll
++  // underneath, and would reject it.
++  //
++  // socketpair() works because VitaSDK implements it as a loopback TCP pair:
++  // socket/bind/listen/connect/accept on 127.0.0.1, AF_INET. Both ends are
++  // therefore ordinary sockets that poll() is happy to wait on.
++  if (socketpair(AF_INET, SOCK_STREAM, 0, interrupt_fds_) != 0) {
++    FATAL("Interrupt socket pair creation failed: %s", strerror(errno));
++  }
++  if (!FDUtils::SetNonBlocking(interrupt_fds_[0])) {
++    FATAL("Failed to set interrupt socket non blocking");
++  }
++  shutdown_ = false;
++}
++
++static void DeleteDescriptorInfo(void* info) {
++  DescriptorInfo* di = reinterpret_cast<DescriptorInfo*>(info);
++  di->Close();
++  delete di;
++}
++
++EventHandlerImplementation::~EventHandlerImplementation() {
++  socket_map_.Clear(DeleteDescriptorInfo);
++  close(interrupt_fds_[0]);
++  close(interrupt_fds_[1]);
++  ::free(poll_fds_);
++}
++
++DescriptorInfo* EventHandlerImplementation::GetDescriptorInfo(
++    intptr_t fd,
++    bool is_listening) {
++  ASSERT(fd >= 0);
++  SimpleHashMap::Entry* entry = socket_map_.Lookup(
++      GetHashmapKeyFromFd(fd), GetHashmapHashFromFd(fd), true);
++  ASSERT(entry != nullptr);
++  DescriptorInfo* di = reinterpret_cast<DescriptorInfo*>(entry->value);
++  if (di == nullptr) {
++    // If there is no data in the hash map for this file descriptor a
++    // new DescriptorInfo for the file descriptor is inserted.
++    if (is_listening) {
++      di = new DescriptorInfoMultiple(fd);
++    } else {
++      di = new DescriptorInfoSingle(fd);
++    }
++    entry->value = di;
++  }
++  ASSERT(fd == di->fd());
++  return di;
++}
++
++void EventHandlerImplementation::WakeupHandler(intptr_t id,
++                                               Dart_Port dart_port,
++                                               int64_t data) {
++  InterruptMessage msg;
++  msg.id = id;
++  msg.dart_port = dart_port;
++  msg.data = data;
++
++  // The Linux backend relies on a pipe write of less than PIPE_BUF being
++  // atomic, so it needs no lock. A TCP socket makes no such promise: two
++  // concurrent senders could interleave and the reader would see a torn
++  // message. The messages are tiny and this is not a hot path, so the whole
++  // send is done in one loop and callers are expected to be serialised by
++  // Dart's own event-handler port -- if that ever stops being true, this is
++  // where a mutex belongs.
++  const char* buffer = reinterpret_cast<const char*>(&msg);
++  intptr_t remaining = kInterruptMessageSize;
++  while (remaining > 0) {
++    intptr_t written =
++        VITA_RETRY_EINTR(send(interrupt_fds_[1], buffer, remaining, 0));
++    if (written < 0) {
++      FATAL("Interrupt message failure: %s", strerror(errno));
++    }
++    buffer += written;
++    remaining -= written;
++  }
++}
++
++void EventHandlerImplementation::HandleInterruptFd() {
++  const intptr_t kMaxMessages = kInterruptMessageSize;
++  InterruptMessage msg[kMaxMessages];
++  ssize_t bytes = VITA_RETRY_EINTR(
++      recv(interrupt_fds_[0], msg, kMaxMessages * kInterruptMessageSize, 0));
++  for (ssize_t i = 0; i < bytes / kInterruptMessageSize; i++) {
++    if (msg[i].id == kTimerId) {
++      // No timerfd to re-arm. The deadline is read straight out of
++      // timeout_queue_ when poll()'s timeout is computed, so updating the
++      // queue is the whole job.
++      timeout_queue_.UpdateTimeout(msg[i].dart_port, msg[i].data);
++    } else if (msg[i].id == kShutdownId) {
++      shutdown_ = true;
++    } else {
++      ASSERT((msg[i].data & COMMAND_MASK) != 0);
++      Socket* socket = reinterpret_cast<Socket*>(msg[i].id);
++      RefCntReleaseScope<Socket> rs(socket);
++      if (socket->fd() == -1) {
++        continue;
++      }
++      DescriptorInfo* di =
++          GetDescriptorInfo(socket->fd(), IS_LISTENING_SOCKET(msg[i].data));
++      if (IS_COMMAND(msg[i].data, kShutdownReadCommand)) {
++        ASSERT(!di->IsListeningSocket());
++        shutdown(di->fd(), SHUT_RD);
++      } else if (IS_COMMAND(msg[i].data, kShutdownWriteCommand)) {
++        ASSERT(!di->IsListeningSocket());
++        shutdown(di->fd(), SHUT_WR);
++      } else if (IS_COMMAND(msg[i].data, kCloseCommand)) {
++        // Process::ClearSignalHandlerByFd has no counterpart here: there are no
++        // signals on this platform, so no socket can be a signal socket.
++        Dart_Port port = msg[i].dart_port;
++        if (port != ILLEGAL_PORT) {
++          di->RemovePort(port);
++        }
++        intptr_t new_mask = di->Mask();
++
++        intptr_t fd = di->fd();
++        ASSERT(fd == socket->fd());
++        if (di->IsListeningSocket()) {
++          // Only close the descriptor if no other Dart socket object is
++          // listening on the same (address, port).
++          ListeningSocketRegistry* registry =
++              ListeningSocketRegistry::Instance();
++
++          MutexLocker locker(registry->mutex());
++
++          if (registry->CloseSafe(socket)) {
++            ASSERT(new_mask == 0);
++            socket_map_.Remove(GetHashmapKeyFromFd(fd),
++                               GetHashmapHashFromFd(fd));
++            di->Close();
++            delete di;
++          }
++          socket->CloseFd();
++        } else {
++          ASSERT(new_mask == 0);
++          socket_map_.Remove(GetHashmapKeyFromFd(fd), GetHashmapHashFromFd(fd));
++          di->Close();
++          delete di;
++          socket->CloseFd();
++        }
++        DartUtils::PostInt32(port, 1 << kDestroyedEvent);
++      } else if (IS_COMMAND(msg[i].data, kReturnTokenCommand)) {
++        int count = TOKEN_COUNT(msg[i].data);
++        di->ReturnTokens(msg[i].dart_port, count);
++      } else if (IS_COMMAND(msg[i].data, kSetEventMaskCommand)) {
++        // `events` can only have kInEvent/kOutEvent flags set.
++        intptr_t events = msg[i].data & EVENT_MASK;
++        ASSERT(0 == (events & ~(1 << kInEvent | 1 << kOutEvent)));
++
++        di->SetPortAndMask(msg[i].dart_port, msg[i].data & EVENT_MASK);
++      } else {
++        UNREACHABLE();
++      }
++    }
++  }
++}
++
++void EventHandlerImplementation::BuildPollArray() {
++  // The Linux backend keeps a kernel-side epoll set and edits it incrementally,
++  // which is why it needs UpdateEpollInstance on every mask change. poll() is
++  // handed the whole array on each call, so there is nothing to keep in sync:
++  // the array is rebuilt from the masks each time round, and a mask change
++  // needs no bookkeeping at all.
++  intptr_t needed = 1;  // slot 0 is always the interrupt socket
++  for (SimpleHashMap::Entry* entry = socket_map_.Start(); entry != nullptr;
++       entry = socket_map_.Next(entry)) {
++    DescriptorInfo* di = reinterpret_cast<DescriptorInfo*>(entry->value);
++    if (di != nullptr && di->Mask() != 0) {
++      needed++;
++    }
++  }
++
++  if (needed > poll_fds_capacity_) {
++    intptr_t capacity = (poll_fds_capacity_ == 0) ? 16 : poll_fds_capacity_;
++    while (capacity < needed) {
++      capacity *= 2;
++    }
++    // dart::realloc, explicitly. Unqualified, this is ambiguous between
++    // platform/allocation.h's and the global one -- and dart::realloc is the
++    // one wanted, because it calls OUT_OF_MEMORY() itself rather than handing
++    // back a null that would need checking here.
++    poll_fds_ = reinterpret_cast<struct pollfd*>(dart::realloc(
++        poll_fds_, static_cast<size_t>(capacity) * sizeof(struct pollfd)));
++    poll_fds_capacity_ = capacity;
++  }
++
++  poll_fds_[0].fd = interrupt_fds_[0];
++  poll_fds_[0].events = POLLIN;
++  poll_fds_[0].revents = 0;
++
++  intptr_t n = 1;
++  for (SimpleHashMap::Entry* entry = socket_map_.Start(); entry != nullptr;
++       entry = socket_map_.Next(entry)) {
++    DescriptorInfo* di = reinterpret_cast<DescriptorInfo*>(entry->value);
++    if (di == nullptr || di->Mask() == 0) {
++      continue;
++    }
++    if (n >= kMaxPollDescriptors) {
++      // VitaSDK's poll() rejects nfds > 255 outright with EINVAL, so going over
++      // is not a slow path, it is a dead one. Say so rather than silently
++      // dropping sockets from the set and leaving them to hang for ever.
++      Syslog::PrintErr(
++          "dart:io: more than %" Pd " concurrent sockets; this platform's "
++          "poll() cannot wait on them all and the excess will not be "
++          "serviced\n",
++          kMaxPollDescriptors);
++      break;
++    }
++    poll_fds_[n].fd = di->fd();
++    poll_fds_[n].events = di->GetPollEvents();
++    poll_fds_[n].revents = 0;
++    n++;
++  }
++  poll_fds_length_ = n;
++}
++
++intptr_t EventHandlerImplementation::GetPollEvents(intptr_t events,
++                                                   DescriptorInfo* di) {
++  if ((events & POLLERR) != 0) {
++    // Mirrors the Linux backend: report an error only when there is also
++    // something to read, so that a pending error is delivered in order with the
++    // data that preceded it.
++    return ((events & POLLIN) != 0) ? (1 << kErrorEvent) : 0;
++  }
++  intptr_t event_mask = 0;
++  if ((events & POLLIN) != 0) {
++    event_mask |= (1 << kInEvent);
++  }
++  if ((events & POLLOUT) != 0) {
++    event_mask |= (1 << kOutEvent);
++  }
++  if ((events & POLLHUP) != 0) {
++    event_mask |= (1 << kCloseEvent);
++  }
++  // No POLLRDHUP on this platform. A half-close therefore arrives as a
++  // zero-length read rather than as an event, which dart:io already handles --
++  // it is how the macOS backend behaves too.
++  return event_mask;
++}
++
++void EventHandlerImplementation::HandleEvents() {
++  bool interrupt_seen = false;
++
++  if ((poll_fds_[0].revents & POLLIN) != 0) {
++    interrupt_seen = true;
++  }
++
++  for (intptr_t i = 1; i < poll_fds_length_; i++) {
++    if (poll_fds_[i].revents == 0) {
++      continue;
++    }
++    SimpleHashMap::Entry* entry =
++        socket_map_.Lookup(GetHashmapKeyFromFd(poll_fds_[i].fd),
++                           GetHashmapHashFromFd(poll_fds_[i].fd), false);
++    if (entry == nullptr) {
++      // Closed while we were waiting.
++      continue;
++    }
++    DescriptorInfo* di = reinterpret_cast<DescriptorInfo*>(entry->value);
++    if (di == nullptr) {
++      continue;
++    }
++    const intptr_t event_mask = GetPollEvents(poll_fds_[i].revents, di);
++    if ((event_mask & (1 << kErrorEvent)) != 0) {
++      di->NotifyAllDartPorts(event_mask);
++    } else if (event_mask != 0) {
++      Dart_Port port = di->NextNotifyDartPort(event_mask);
++      ASSERT(port != 0);
++      DartUtils::PostInt32(port, event_mask);
++    }
++  }
++
++  if (interrupt_seen) {
++    // After the socket events, so that a socket is not closed before the events
++    // already collected for it have been delivered.
++    HandleInterruptFd();
++  }
++}
++
++void EventHandlerImplementation::Poll(uword args) {
++  EventHandler* handler = reinterpret_cast<EventHandler*>(args);
++  EventHandlerImplementation* handler_impl = &handler->delegate_;
++  ASSERT(handler_impl != nullptr);
++
++  while (!handler_impl->shutdown_) {
++    handler_impl->BuildPollArray();
++
++    // timerfd's replacement. The queue holds absolute times in milliseconds on
++    // the same clock as GetCurrentTimeMillis, so the wait is the difference --
++    // clamped at zero, because a deadline already in the past must not become a
++    // negative timeout, which poll() reads as "wait for ever".
++    int timeout = -1;
++    if (handler_impl->timeout_queue_.HasTimeout()) {
++      int64_t millis = handler_impl->timeout_queue_.CurrentTimeout() -
++                       TimerUtils::GetCurrentMonotonicMillis();
++      timeout = (millis < 0) ? 0 : static_cast<int>(millis);
++    }
++
++    intptr_t result = VITA_RETRY_EINTR(
++        poll(handler_impl->poll_fds_,
++             static_cast<unsigned int>(handler_impl->poll_fds_length_),
++             timeout));
++
++    if (result < 0) {
++      Syslog::PrintErr("dart:io: poll failed: %s\n", strerror(errno));
++      continue;
++    }
++
++    if (result == 0) {
++      // Timed out: fire every deadline that has come due. More than one can
++      // expire in a single wait, so this drains rather than firing once.
++      while (handler_impl->timeout_queue_.HasTimeout() &&
++             handler_impl->timeout_queue_.CurrentTimeout() <=
++                 TimerUtils::GetCurrentMonotonicMillis()) {
++        DartUtils::PostNull(handler_impl->timeout_queue_.CurrentPort());
++        handler_impl->timeout_queue_.RemoveCurrent();
++      }
++      continue;
++    }
++
++    handler_impl->HandleEvents();
++  }
++  DEBUG_ASSERT(ReferenceCounted<Socket>::instances() == 0);
++  handler->NotifyShutdownDone();
++}
++
++void EventHandlerImplementation::Start(EventHandler* handler) {
++  Thread::Start("dart:io EventHandler", &EventHandlerImplementation::Poll,
++                reinterpret_cast<uword>(handler));
++}
++
++void EventHandlerImplementation::Shutdown() {
++  SendData(kShutdownId, 0, 0);
++}
++
++void EventHandlerImplementation::SendData(intptr_t id,
++                                          Dart_Port dart_port,
++                                          int64_t data) {
++  WakeupHandler(id, dart_port, data);
++}
++
++void* EventHandlerImplementation::GetHashmapKeyFromFd(intptr_t fd) {
++  // The hashmap does not support keys with value 0.
++  return reinterpret_cast<void*>(fd + 1);
++}
++
++uint32_t EventHandlerImplementation::GetHashmapHashFromFd(intptr_t fd) {
++  // The hashmap does not support keys with value 0.
++  return dart::Utils::WordHash(fd + 1);
++}
++
++}  // namespace bin
++}  // namespace dart
++
++#endif  // defined(DART_HOST_OS_VITA)
 diff --git a/runtime/bin/eventhandler_vita.h b/runtime/bin/eventhandler_vita.h
 new file mode 100644
 index 00000000..8dfce668
@@ -149,6 +577,19 @@ index 00000000..8dfce668
 +}  // namespace dart
 +
 +#endif  // RUNTIME_BIN_EVENTHANDLER_VITA_H_
+diff --git a/runtime/bin/io_impl_sources.gni b/runtime/bin/io_impl_sources.gni
+index d3ace672..95704ec3 100644
+--- a/runtime/bin/io_impl_sources.gni
++++ b/runtime/bin/io_impl_sources.gni
+@@ -13,6 +13,8 @@ io_impl_sources = [
+   "eventhandler_fuchsia.cc",
+   "eventhandler_fuchsia.h",
+   "eventhandler_linux.cc",
++  "eventhandler_vita.cc",
++  "eventhandler_vita.h",
+   "eventhandler_linux.h",
+   "eventhandler_macos.cc",
+   "eventhandler_macos.h",
 diff --git a/runtime/bin/native_assets_api_impl.cc b/runtime/bin/native_assets_api_impl.cc
 index 7f5255dc..6fb6b014 100644
 --- a/runtime/bin/native_assets_api_impl.cc
