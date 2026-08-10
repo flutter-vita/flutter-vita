@@ -680,3 +680,45 @@ constant-initialised and lower to `__gthread_mutex_t` — a `pthread_mutex_t` wi
 static init. Any namespace-scope or function-local-static `std::mutex` in the
 engine, Skia or tonic hits this. That is the next thing to check, and the search
 should cover the whole tree rather than three directories.
+
+## And the static-initialiser theory is wrong too
+
+VitaSDK's static initialiser is a **sentinel, not a struct**:
+
+```c
+// sys/_pthreadtypes.h:87
+#define _PTHREAD_MUTEX_INITIALIZER ((pthread_mutex_t) -1)
+```
+
+`pthread_mutex_t` is a handle, and `-1` means "not created yet". libstdc++'s
+`__GTHREAD_MUTEX_INIT` is that sentinel, so a statically initialised
+`std::mutex` would arrive at `pthread_mutex_lock` as **`0xFFFFFFFF`**.
+
+`R0` is `0x6f742d65`. So it is not a static initialiser either.
+
+### What is actually established
+
+- The mutex **handle itself** is `0x6f742d65` — not a struct containing junk, a
+  *pointer-sized handle* whose value is ASCII (`e-to`).
+- It is **identical every boot**, so it is not uninitialised heap and not ASLR.
+- It happens on the **main thread**, with three threads alive, before the
+  engine's pool exists.
+- Two mechanisms are ruled out by evidence rather than by argument:
+  uninitialised arena memory (the value would vary) and static initialisation
+  (the value would be `-1`).
+
+Something reads string data and uses it as a mutex handle, deterministically, at
+the same point every run. That is type confusion or a struct-layout mismatch —
+a field read at the wrong offset — rather than a lifecycle bug.
+
+**Where to look next:** a struct shared across a boundary where our port changed
+the layout. The candidates this port actually altered are `struct stat`
+(second-resolution, no `st_atim`), `struct dirent` (no `d_type`), and
+`sockaddr_un` (declared locally in `socket_base_vita.h` and *not* the platform's
+type). A `sizeof` or `offsetof` mismatch between a header one file sees and
+another does not would produce exactly this: a consistent wrong offset, reading
+adjacent string data.
+
+`socket_base_vita.h` is the one to suspect first, because it **invents** a type
+the platform does not have, and `RawAddr` is a union — get its size wrong and
+every field after it in any containing struct shifts.
