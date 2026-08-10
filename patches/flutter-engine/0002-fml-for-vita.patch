@@ -1,5 +1,5 @@
 diff --git a/engine/src/flutter/fml/BUILD.gn b/engine/src/flutter/fml/BUILD.gn
-index 69f88e48..b50d8681 100644
+index 69f88e48..225e6e3b 100644
 --- a/engine/src/flutter/fml/BUILD.gn
 +++ b/engine/src/flutter/fml/BUILD.gn
 @@ -202,6 +202,14 @@ source_set("fml") {
@@ -7,11 +7,11 @@ index 69f88e48..b50d8681 100644
    }
  
 +  if (is_vita) {
-+    # No message loop here yet -- MessageLoopImpl::Create() returns nullptr on
-+    # this platform, which links and then fails the first time a thread wants a
-+    # loop. See the note in patches/flutter-engine/README.md; it is a Phase 3
-+    # prerequisite, not an M2 one.
-+    sources += [ "platform/vita/paths_vita.cc" ]
++    sources += [
++      "platform/vita/message_loop_vita.cc",
++      "platform/vita/message_loop_vita.h",
++      "platform/vita/paths_vita.cc",
++    ]
 +  }
 +
    if (is_fuchsia) {
@@ -51,6 +51,28 @@ index aa2f0d7b..2069aec7 100644
  #define FML_OS_POSIX 1
  #endif
  
+diff --git a/engine/src/flutter/fml/message_loop_impl.cc b/engine/src/flutter/fml/message_loop_impl.cc
+index 01f4d58d..7a2c9103 100644
+--- a/engine/src/flutter/fml/message_loop_impl.cc
++++ b/engine/src/flutter/fml/message_loop_impl.cc
+@@ -22,6 +22,8 @@
+ #include "flutter/fml/platform/linux/message_loop_linux.h"
+ #elif FML_OS_WIN
+ #include "flutter/fml/platform/win/message_loop_win.h"
++#elif FML_OS_VITA
++#include "flutter/fml/platform/vita/message_loop_vita.h"
+ #endif
+ 
+ namespace fml {
+@@ -37,6 +39,8 @@ fml::RefPtr<MessageLoopImpl> MessageLoopImpl::Create() {
+   return fml::MakeRefCounted<MessageLoopLinux>();
+ #elif FML_OS_WIN
+   return fml::MakeRefCounted<MessageLoopWin>();
++#elif FML_OS_VITA
++  return fml::MakeRefCounted<MessageLoopVita>();
+ #else
+   return nullptr;
+ #endif
 diff --git a/engine/src/flutter/fml/platform/posix/file_posix.cc b/engine/src/flutter/fml/platform/posix/file_posix.cc
 index 110ef558..eb34f40f 100644
 --- a/engine/src/flutter/fml/platform/posix/file_posix.cc
@@ -214,6 +236,176 @@ index 74895cbf..6659a52e 100644
  #include "flutter/fml/logging.h"
  
  namespace fml {
+diff --git a/engine/src/flutter/fml/platform/vita/message_loop_vita.cc b/engine/src/flutter/fml/platform/vita/message_loop_vita.cc
+new file mode 100644
+index 00000000..5e3e2741
+--- /dev/null
++++ b/engine/src/flutter/fml/platform/vita/message_loop_vita.cc
+@@ -0,0 +1,97 @@
++// Copyright 2013 The Flutter Authors. All rights reserved.
++// Use of this source code is governed by a BSD-style license that can be
++// found in the LICENSE file.
++
++#include "flutter/fml/platform/vita/message_loop_vita.h"
++
++#include <psp2/kernel/error.h>
++#include <psp2/kernel/threadmgr.h>
++
++#include "flutter/fml/logging.h"
++
++namespace fml {
++
++// The one bit of the event flag this loop uses. An event flag carries 32, and
++// only "something happened" is needed.
++static constexpr unsigned int kWakeBit = 1u;
++
++MessageLoopVita::MessageLoopVita() {
++  event_flag_ = sceKernelCreateEventFlag("flutter_loop", 0, 0, nullptr);
++  FML_CHECK(event_flag_ >= 0)
++      << "sceKernelCreateEventFlag failed: " << event_flag_;
++}
++
++MessageLoopVita::~MessageLoopVita() {
++  if (event_flag_ >= 0) {
++    sceKernelDeleteEventFlag(event_flag_);
++    event_flag_ = -1;
++  }
++}
++
++// |fml::MessageLoopImpl|
++void MessageLoopVita::Run() {
++  running_ = true;
++
++  while (running_) {
++    // Clear before reading the wake time, not after. If WakeUp lands in the
++    // window between the two, the bit it sets survives into the wait below and
++    // returns immediately -- which is the correct outcome. Clearing afterwards
++    // would swallow that wakeup and the loop would sleep through it.
++    sceKernelClearEventFlag(event_flag_, ~kWakeBit);
++
++    const int64_t wake_us = wake_time_us_.load(std::memory_order_acquire);
++    const int64_t now_us = TimePoint::Now().ToEpochDelta().ToMicroseconds();
++
++    if (wake_us <= now_us) {
++      // Reset before running, so that a WakeUp issued *by* one of these tasks
++      // is not overwritten when they finish.
++      wake_time_us_.store(kNoWakeUp, std::memory_order_release);
++      RunExpiredTasksNow();
++      continue;
++    }
++
++    SceUInt timeout_us_storage = 0;
++    SceUInt* timeout = nullptr;  // nullptr means wait indefinitely.
++    if (wake_us != kNoWakeUp) {
++      const int64_t delta = wake_us - now_us;
++      // SceUInt is 32-bit, so a deadline more than ~71 minutes out would
++      // overflow. Cap it and wake early instead: the loop re-reads the deadline
++      // and sleeps again, so a spurious wakeup costs one cheap iteration and
++      // an overflowed timeout would cost a missed one.
++      constexpr int64_t kMaxTimeoutUs = 0x7FFFFFFF;
++      timeout_us_storage =
++          static_cast<SceUInt>(delta > kMaxTimeoutUs ? kMaxTimeoutUs : delta);
++      timeout = &timeout_us_storage;
++    }
++
++    unsigned int out_bits = 0;
++    const int result =
++        sceKernelWaitEventFlag(event_flag_, kWakeBit, SCE_EVENT_WAITOR,
++                               &out_bits, timeout);
++
++    // A timeout is the ordinary case -- it means the deadline arrived -- so it
++    // is not an error. Anything else that is not success is, and unlike the
++    // Linux loop this says so rather than silently dropping out of the loop:
++    // a message loop that stops running is not a condition to discover later.
++    if (result < 0 &&
++        static_cast<unsigned int>(result) != SCE_KERNEL_ERROR_WAIT_TIMEOUT) {
++      FML_LOG(ERROR) << "sceKernelWaitEventFlag failed: " << result;
++      running_ = false;
++    }
++  }
++}
++
++// |fml::MessageLoopImpl|
++void MessageLoopVita::Terminate() {
++  running_ = false;
++  WakeUp(TimePoint::Now());
++}
++
++// |fml::MessageLoopImpl|
++void MessageLoopVita::WakeUp(fml::TimePoint time_point) {
++  wake_time_us_.store(time_point.ToEpochDelta().ToMicroseconds(),
++                      std::memory_order_release);
++  sceKernelSetEventFlag(event_flag_, kWakeBit);
++}
++
++}  // namespace fml
+diff --git a/engine/src/flutter/fml/platform/vita/message_loop_vita.h b/engine/src/flutter/fml/platform/vita/message_loop_vita.h
+new file mode 100644
+index 00000000..79b5e7b2
+--- /dev/null
++++ b/engine/src/flutter/fml/platform/vita/message_loop_vita.h
+@@ -0,0 +1,61 @@
++// Copyright 2013 The Flutter Authors. All rights reserved.
++// Use of this source code is governed by a BSD-style license that can be
++// found in the LICENSE file.
++
++#ifndef FLUTTER_FML_PLATFORM_VITA_MESSAGE_LOOP_VITA_H_
++#define FLUTTER_FML_PLATFORM_VITA_MESSAGE_LOOP_VITA_H_
++
++#include <psp2/types.h>
++
++#include <atomic>
++
++#include "flutter/fml/macros.h"
++#include "flutter/fml/message_loop_impl.h"
++
++namespace fml {
++
++// The Vita's message loop, on a sceKernel event flag.
++//
++// MessageLoopLinux is built on epoll plus timerfd. Neither exists here, and
++// unlike the dart:io event handler this loop waits on no descriptors at all --
++// it only ever needs "sleep until a time, or until someone wakes me". A
++// sceKernel event flag is exactly that primitive, and it is the one the M1
++// timer thread already used, so its behaviour on this device is known rather
++// than assumed.
++//
++// Until this class existed, MessageLoopImpl::Create() fell through to
++// `#else return nullptr`, which links cleanly and then fails an FML_CHECK on
++// the first thread that asks for a loop.
++class MessageLoopVita : public MessageLoopImpl {
++ private:
++  SceUID event_flag_ = -1;
++
++  // Microseconds on fml::TimePoint's epoch. Read by the loop thread, written by
++  // any thread calling WakeUp, hence atomic. kNoWakeUp means "nothing pending":
++  // wait indefinitely.
++  static constexpr int64_t kNoWakeUp = INT64_MAX;
++  std::atomic<int64_t> wake_time_us_{kNoWakeUp};
++
++  std::atomic<bool> running_{false};
++
++  MessageLoopVita();
++
++  ~MessageLoopVita() override;
++
++  // |fml::MessageLoopImpl|
++  void Run() override;
++
++  // |fml::MessageLoopImpl|
++  void Terminate() override;
++
++  // |fml::MessageLoopImpl|
++  void WakeUp(fml::TimePoint time_point) override;
++
++  FML_FRIEND_MAKE_REF_COUNTED(MessageLoopVita);
++  FML_FRIEND_REF_COUNTED_THREAD_SAFE(MessageLoopVita);
++  FML_DISALLOW_COPY_AND_ASSIGN(MessageLoopVita);
++};
++
++}  // namespace fml
++
++#endif  // FLUTTER_FML_PLATFORM_VITA_MESSAGE_LOOP_VITA_H_
 diff --git a/engine/src/flutter/fml/platform/vita/paths_vita.cc b/engine/src/flutter/fml/platform/vita/paths_vita.cc
 new file mode 100644
 index 00000000..30e873c9

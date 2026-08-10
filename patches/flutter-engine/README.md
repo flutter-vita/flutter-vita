@@ -15,6 +15,7 @@ disposable; these patches are the artifact.
 | 0002 | [fml-for-vita](0002-fml-for-vita.patch) | Teaches `fml` the platform, and gets it off `mmap`. **Read the message-loop note** |
 | 0003 | [engine-sources-for-vita](0003-engine-sources-for-vita.patch) | Clang-only flags, missing `<cstring>`, two more platform chains, one Skia type |
 | 0004 | [m2-link-check](0004-m2-link-check.patch) | An executable that makes the linker answer the M2 question |
+| 0005 | [skia-target-for-vita](0005-skia-target-for-vita.patch) | `flutter/skia/BUILD.gn` — the log backend, and where `-ldl` was hiding |
 
 ## Applying
 
@@ -176,7 +177,29 @@ back. Emulating it would make the persistent shader cache appear to work while
 discarding everything. Callers check `IsValid()`, so refusing degrades a feature
 instead of corrupting data.
 
-### Compiles is not runs: `MessageLoopImpl::Create()` returns nullptr
+### ~~Compiles is not runs: `MessageLoopImpl::Create()` returns nullptr~~ — fixed
+
+`platform/vita/message_loop_vita.{cc,h}` now exists and `MessageLoopImpl::Create()`
+returns it. It is a sceKernel event flag rather than epoll plus timerfd, because
+this loop waits on no descriptors at all — only "sleep until a time, or until
+someone wakes me", which is exactly what an event flag is, and it is the
+primitive the M1 timer thread already proved on this device.
+
+Two details worth not undoing:
+
+- **The flag is cleared before the wake time is read, not after.** A `WakeUp`
+  landing in that window leaves the bit set, so the wait returns immediately —
+  correct. Clearing afterwards would swallow it and the loop would sleep through
+  a pending task.
+- **`SceUInt` timeouts are 32-bit**, so a deadline beyond ~71 minutes is capped
+  rather than allowed to overflow. Waking early costs one cheap iteration;
+  overflowing would cost a missed one.
+
+Unlike the Linux loop, a failed wait logs and stops rather than dropping out
+silently — a message loop that has quietly stopped running is not something to
+discover three layers up.
+
+### The original note, for context
 
 `fml/message_loop_impl.cc` dispatches on `FML_OS_*` and ends in
 `#else return nullptr`. Vita takes that branch. **This is not a build error and
