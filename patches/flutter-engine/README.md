@@ -13,6 +13,7 @@ disposable; these patches are the artifact.
 |---|---|---|
 | 0001 | [gn-vita-toolchain](0001-gn-vita-toolchain.patch) | Teaches the engine's GN about `target_os=vita` |
 | 0002 | [fml-for-vita](0002-fml-for-vita.patch) | Teaches `fml` the platform, and gets it off `mmap`. **Read the message-loop note** |
+| 0003 | [engine-sources-for-vita](0003-engine-sources-for-vita.patch) | Clang-only flags, missing `<cstring>`, two more platform chains, one Skia type |
 
 ## Applying
 
@@ -47,12 +48,22 @@ awk '/^diff --git a\/runtime\//{p=1} /^diff --git a\/build\//{p=0} p' \
 the later one is a superset of the earlier. That is fine when applying the whole
 series in order, and a trap when applying a subset.
 
-Finally, zlib, also its own repo:
+Finally the three other DEPS-managed repos inside the checkout, each with its
+own series:
 
 ```bash
-cd third_party/flutter/engine/src/flutter/third_party/zlib
-git apply ../../../../../../../patches/dart-sdk/0005-zlib-no-armv8-on-vita.patch
+cd engine/src/flutter/third_party/zlib
+git apply .../patches/dart-sdk/0005-zlib-no-armv8-on-vita.patch
+
+cd engine/src/flutter/third_party/skia
+git apply .../patches/skia/0001-vita-platform-detection-and-no-mmap.patch
+
+cd engine/src/third_party/abseil-cpp
+git apply .../patches/abseil/0001-vita-has-no-elf-introspection-or-tm-gmtoff.patch
 ```
+
+`flutter/third_party/tonic` is **not** one of these — it lives in the monorepo,
+so its changes are in 0003 above.
 
 ---
 
@@ -178,3 +189,59 @@ already written for the M1 timer thread (`spikes/m1-vpk/src/main.c`), so the
 mechanism is known. Tracked as a Phase 3 prerequisite, recorded here because a
 silent `nullptr` is exactly the kind of thing that gets found on hardware at the
 worst moment.
+
+## 0003 — engine sources for vita
+
+Ten files across `flutter/assets`, `flutter/display_list`, `flutter/lib`,
+`flutter/third_party/tonic` and `flutter/shell/platform/embedder`. None is
+interesting on its own; together they are most of what stood between a
+configured build and a compiling one. Four themes:
+
+**Clang-only warning flags.** `flutter/lib/ui` and `flutter/lib/gpu` add
+`-Wimplicit-float-conversion`, which GCC rejects outright — 74 of the 102
+failures in the first full build were this one flag. It is now gated on
+`is_clang`. GCC's nearest relative, `-Wfloat-conversion`, is much broader and
+would bury the porting work under warnings from headers this port does not own;
+the diagnostic is a developer aid for the `dart:ui` boundary, not a correctness
+gate.
+
+(`-Wno-newline-eof` also appears on the command line and is *not* an error —
+GCC ignores unrecognised `-Wno-*` unless another diagnostic fires, in which case
+it emits a note about it. That note is noise, not a cause.)
+
+**Missing `<cstring>`** in four `display_list` files that call `memcpy`,
+`memset`, `memcmp` and `memmove`. libc++ and glibc pull it in transitively;
+newlib's libstdc++ does not. These are latent upstream bugs that only a
+libstdc++-on-newlib build can see.
+
+**Two more platform-detection chains**, each with its own `#error`:
+`tonic/common/build_config.h` (a near-copy of fml's) and
+`flutter/assets/native_assets.cc`. The latter defines a string used as a key
+into the native-assets manifest; nothing emits a `vita_arm` entry, so the lookup
+never matches, and naming it is what lets the file compile rather than what
+makes native assets work.
+
+**`embedder_surface.cc` and `GrDirectContext`.** `sk_sp<T>`'s destructor needs a
+complete `T`, and the header only forward-declares it. Every other embedder
+target picks up the definition transitively through a GPU backend header; a
+software-only build has none, so the include has to be explicit. The pointer is
+always null here — the GL, Vulkan and Metal surfaces that override
+`CreateResourceContext` are all excluded.
+
+## Keeping the two Dart trees identical
+
+`third_party/sdk` (Phase 1's standalone checkout, still used by
+`spikes/m1-vpk`) and `third_party/flutter/engine/src/flutter/third_party/dart`
+are the same pinned commit and must carry the same changes. Check it:
+
+```bash
+A=third_party/sdk
+B=third_party/flutter/engine/src/flutter/third_party/dart
+(cd $B && git diff --name-only; cd $B && git ls-files --others --exclude-standard) \
+  | sort -u | while read -r f; do
+      diff -q "$A/$f" "$B/$f" >/dev/null 2>&1 || echo "DIVERGED: $f"
+    done
+```
+
+Running this on the fresh engine checkout is what caught that patch 0008 had
+gone stale. It is worth running after every change to either tree.

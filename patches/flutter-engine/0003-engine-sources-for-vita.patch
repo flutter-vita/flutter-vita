@@ -1,0 +1,219 @@
+diff --git a/engine/src/flutter/assets/native_assets.cc b/engine/src/flutter/assets/native_assets.cc
+index 28865f34..b800863f 100644
+--- a/engine/src/flutter/assets/native_assets.cc
++++ b/engine/src/flutter/assets/native_assets.cc
+@@ -37,6 +37,14 @@ namespace flutter {
+ #define kTargetOperatingSystemName "macos"
+ #elif defined(FML_OS_WIN)
+ #define kTargetOperatingSystemName "windows"
++#elif defined(FML_OS_VITA)
++// This string is a key into the native-assets manifest that `dart build`
++// writes, so it has to match whatever the tooling emits for this target. There
++// is no upstream Dart target triple for the Vita, and this port does not
++// support native assets at all yet -- nothing produces a "vita_arm" entry, so
++// the lookup simply never matches. Naming it here is what lets the file
++// compile; making native assets work is a separate piece of work.
++#define kTargetOperatingSystemName "vita"
+ #else
+ #error Target operating system detection failed.
+ #endif
+diff --git a/engine/src/flutter/display_list/dl_storage.cc b/engine/src/flutter/display_list/dl_storage.cc
+index 6fc6afb2..444cff29 100644
+--- a/engine/src/flutter/display_list/dl_storage.cc
++++ b/engine/src/flutter/display_list/dl_storage.cc
+@@ -4,6 +4,10 @@
+ 
+ #include "flutter/display_list/dl_storage.h"
+ 
++// memcpy/memset/memcmp. libc++ and glibc pull <cstring> in transitively;
++// newlib's libstdc++ does not, so this is only visible on the Vita build.
++#include <cstring>
++
+ namespace flutter {
+ 
+ static constexpr inline bool is_power_of_two(int value) {
+diff --git a/engine/src/flutter/display_list/dl_vertices.cc b/engine/src/flutter/display_list/dl_vertices.cc
+index a55c9f7d..59c40a24 100644
+--- a/engine/src/flutter/display_list/dl_vertices.cc
++++ b/engine/src/flutter/display_list/dl_vertices.cc
+@@ -4,6 +4,10 @@
+ 
+ #include "flutter/display_list/dl_vertices.h"
+ 
++// memcpy/memset/memcmp. libc++ and glibc pull <cstring> in transitively;
++// newlib's libstdc++ does not, so this is only visible on the Vita build.
++#include <cstring>
++
+ #include "flutter/display_list/utils/dl_accumulation_rect.h"
+ #include "flutter/fml/logging.h"
+ 
+diff --git a/engine/src/flutter/display_list/effects/color_filters/dl_matrix_color_filter.h b/engine/src/flutter/display_list/effects/color_filters/dl_matrix_color_filter.h
+index 271fa8ca..7cc059e9 100644
+--- a/engine/src/flutter/display_list/effects/color_filters/dl_matrix_color_filter.h
++++ b/engine/src/flutter/display_list/effects/color_filters/dl_matrix_color_filter.h
+@@ -7,6 +7,10 @@
+ 
+ #include "flutter/display_list/effects/dl_color_filter.h"
+ 
++// memcpy/memset/memcmp. libc++ and glibc pull <cstring> in transitively;
++// newlib's libstdc++ does not, so this is only visible on the Vita build.
++#include <cstring>
++
+ namespace flutter {
+ 
+ // The Matrix type of ColorFilter which runs every pixel drawn by
+diff --git a/engine/src/flutter/display_list/geometry/dl_region.cc b/engine/src/flutter/display_list/geometry/dl_region.cc
+index 24fed57d..d35af5f3 100644
+--- a/engine/src/flutter/display_list/geometry/dl_region.cc
++++ b/engine/src/flutter/display_list/geometry/dl_region.cc
+@@ -4,6 +4,10 @@
+ 
+ #include "flutter/display_list/geometry/dl_region.h"
+ 
++// memcpy/memset/memcmp. libc++ and glibc pull <cstring> in transitively;
++// newlib's libstdc++ does not, so this is only visible on the Vita build.
++#include <cstring>
++
+ #include "flutter/fml/logging.h"
+ 
+ namespace flutter {
+diff --git a/engine/src/flutter/lib/gpu/BUILD.gn b/engine/src/flutter/lib/gpu/BUILD.gn
+index d094d8ef..9fb97ff9 100644
+--- a/engine/src/flutter/lib/gpu/BUILD.gn
++++ b/engine/src/flutter/lib/gpu/BUILD.gn
+@@ -7,15 +7,22 @@ import("//flutter/impeller/tools/impeller.gni")
+ import("//flutter/testing/testing.gni")
+ 
+ source_set("gpu") {
+-  cflags = [
+-    # Dart gives us doubles. Skia and Impeller work in floats.
+-    # If Dart gives us a double > FLT_MAX or < -FLT_MAX, implicit conversion
+-    # will convert it to either inf/-inf or FLT_MAX/-FLT_MAX (undefined
+-    # behavior). This can result in surprising and difficult to debug behavior
+-    # for Flutter application developers, so it should be explicitly handled
+-    # via SafeNarrow.
+-    "-Wimplicit-float-conversion",
+-  ]
++  cflags = []
++
++  # Dart gives us doubles. Skia and Impeller work in floats. If Dart gives us a
++  # double > FLT_MAX or < -FLT_MAX, implicit conversion will convert it to
++  # either inf/-inf or FLT_MAX/-FLT_MAX (undefined behavior). This can result in
++  # surprising and difficult to debug behavior for Flutter application
++  # developers, so it should be explicitly handled via SafeNarrow.
++  #
++  # GCC has no -Wimplicit-float-conversion and rejects it outright. Its nearest
++  # relative, -Wfloat-conversion, is much broader and would bury the porting
++  # work under warnings from headers this port does not own. The diagnostic is a
++  # developer aid for the dart:ui boundary rather than a correctness gate, and
++  # upstream builds this with Clang.
++  if (is_clang) {
++    cflags += [ "-Wimplicit-float-conversion" ]
++  }
+ 
+   if (is_win) {
+     # This causes build failures in third_party dependencies on Windows.
+diff --git a/engine/src/flutter/lib/ui/BUILD.gn b/engine/src/flutter/lib/ui/BUILD.gn
+index 3bad6b4e..0674853d 100644
+--- a/engine/src/flutter/lib/ui/BUILD.gn
++++ b/engine/src/flutter/lib/ui/BUILD.gn
+@@ -12,15 +12,22 @@ if (is_fuchsia) {
+ }
+ 
+ source_set("ui") {
+-  cflags = [
+-    # Dart gives us doubles. Skia and Impeller work in floats.
+-    # If Dart gives us a double > FLT_MAX or < -FLT_MAX, implicit conversion
+-    # will convert it to either inf/-inf or FLT_MAX/-FLT_MAX (undefined
+-    # behavior). This can result in surprising and difficult to debug behavior
+-    # for Flutter application developers, so it should be explicitly handled
+-    # via SafeNarrow.
+-    "-Wimplicit-float-conversion",
+-  ]
++  cflags = []
++
++  # Dart gives us doubles. Skia and Impeller work in floats. If Dart gives us a
++  # double > FLT_MAX or < -FLT_MAX, implicit conversion will convert it to
++  # either inf/-inf or FLT_MAX/-FLT_MAX (undefined behavior). This can result in
++  # surprising and difficult to debug behavior for Flutter application
++  # developers, so it should be explicitly handled via SafeNarrow.
++  #
++  # GCC has no -Wimplicit-float-conversion and rejects it outright. Its nearest
++  # relative, -Wfloat-conversion, is much broader and would bury the porting
++  # work under warnings from headers this port does not own. The diagnostic is a
++  # developer aid for the dart:ui boundary rather than a correctness gate, and
++  # upstream builds this with Clang.
++  if (is_clang) {
++    cflags += [ "-Wimplicit-float-conversion" ]
++  }
+ 
+   if (is_win) {
+     # This causes build failures in third_party dependencies on Windows.
+diff --git a/engine/src/flutter/shell/platform/embedder/embedder_surface.cc b/engine/src/flutter/shell/platform/embedder/embedder_surface.cc
+index 029833f7..1bb0308f 100644
+--- a/engine/src/flutter/shell/platform/embedder/embedder_surface.cc
++++ b/engine/src/flutter/shell/platform/embedder/embedder_surface.cc
+@@ -4,6 +4,16 @@
+ 
+ #include "flutter/shell/platform/embedder/embedder_surface.h"
+ 
++// sk_sp<GrDirectContext>'s destructor needs the complete type, and the header
++// only forward-declares it. Every other embedder target gets the definition
++// transitively through a GPU backend header; this port has none enabled
++// (skia_enable_ganesh = false), so it has to be named here.
++//
++// The pointer is always null on this platform -- CreateResourceContext below is
++// never overridden, because the GL, Vulkan and Metal surfaces that override it
++// are all excluded from a software-only build.
++#include "third_party/skia/include/gpu/ganesh/GrDirectContext.h"
++
+ namespace flutter {
+ 
+ EmbedderSurface::EmbedderSurface() = default;
+diff --git a/engine/src/flutter/third_party/tonic/common/build_config.h b/engine/src/flutter/third_party/tonic/common/build_config.h
+index 7174b618..16fc6731 100644
+--- a/engine/src/flutter/third_party/tonic/common/build_config.h
++++ b/engine/src/flutter/third_party/tonic/common/build_config.h
+@@ -46,6 +46,10 @@
+ #define OS_SOLARIS 1
+ #elif defined(__QNXNTO__)
+ #define OS_QNX 1
++#elif defined(__vita__)
++// PlayStation Vita (VitaSDK, newlib). Its GCC defines neither __linux__ nor
++// __unix__, so without this the chain reaches the #error below.
++#define OS_VITA 1
+ #else
+ #error Please add support for your platform in tonic/common/build_config.h
+ #endif
+@@ -58,9 +62,12 @@
+ 
+ // For access to standard POSIXish features, use OS_POSIX instead of a
+ // more specific macro.
++// OS_VITA is here for the same reason FML_OS_VITA is in fml's equivalent: what
++// this gates is open/read/close and pthreads, all of which newlib supplies. It
++// is not a claim that the platform is POSIX.
+ #if defined(OS_MACOSX) || defined(OS_LINUX) || defined(OS_FREEBSD) ||    \
+     defined(OS_OPENBSD) || defined(OS_SOLARIS) || defined(OS_ANDROID) || \
+-    defined(OS_NACL) || defined(OS_QNX)
++    defined(OS_NACL) || defined(OS_QNX) || defined(OS_VITA)
+ #define OS_POSIX 1
+ #endif
+ 
+diff --git a/engine/src/flutter/third_party/tonic/filesystem/filesystem/path_posix.cc b/engine/src/flutter/third_party/tonic/filesystem/filesystem/path_posix.cc
+index 8b1639e9..a1a9270a 100644
+--- a/engine/src/flutter/third_party/tonic/filesystem/filesystem/path_posix.cc
++++ b/engine/src/flutter/third_party/tonic/filesystem/filesystem/path_posix.cc
+@@ -9,6 +9,13 @@
+ #include <sys/types.h>
+ #include <unistd.h>
+ 
++#if defined(__vita__)
++// PATH_MAX. VitaSDK ships a <limits.h> that defines it, but GCC's own limits.h
++// shadows that one and the include_next chain never reaches it, so <climits>
++// below leaves PATH_MAX undefined. Same story as fml/platform/posix.
++#include <sys/syslimits.h>
++#endif
++
+ #include <cerrno>
+ #include <climits>
+ #include <cstdlib>

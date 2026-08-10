@@ -19,6 +19,15 @@ disposable; these patches are the real artifact.
 | 0008 | [dart-vita-embedder-library](0008-dart-vita-embedder-library.patch) | Adds `dart:vita`, the Dart-side embedder shim. **Three files**: the library, `libraries.json`, and the VM target's `extraRequiredLibraries` — omitting the last produces a byte-identical dill with no error |
 | 0009 | [vita-emulated-tls](0009-vita-emulated-tls.patch) | Replaces libgcc's `__emutls_get_address`. **Without this every `thread_local` in the runtime is one shared global**, because `__gthread_active_p()` is a weak reference to `pthread_cancel` that never links — and forcing it in crashes instead, since emutls uses a statically initialised pthread mutex VitaSDK does not support |
 
+| 0010 | [runtime-bin-for-vita](0010-runtime-bin-for-vita.patch) | `dart:io`'s native layer. **New in Phase 2** — the engine's embedder depends on `runtime/bin` unconditionally, which Phase 1 excluded |
+
+> **Two trees now hold this series.** `third_party/sdk` is Phase 1's standalone
+> checkout, still used by `spikes/m1-vpk`; `third_party/flutter/engine/src/flutter/third_party/dart`
+> is the engine's, at the same pinned commit. They must stay byte-identical, and
+> there is a one-liner that checks it — see
+> [the engine patch notes](../flutter-engine/README.md#keeping-the-two-dart-trees-identical).
+> Patch 0008 was found stale exactly this way.
+
 All three are verified to compile with
 [`spikes/p1-compile-check/check.sh`](../../spikes/p1-compile-check/check.sh).
 

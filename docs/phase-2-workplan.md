@@ -43,11 +43,23 @@ security_context  socket  socket_base  stdio  sync_socket
 ```
 
 So the shape is: **~11 new `*_vita.cc` files**, comparable in size to Phase 1's
-eight. Not all need to be real. Sockets exist on Vita and are already used by
-the dev tooling; `process` and `file_system_watcher` can fail honestly.
-`security_context` pulls BoringSSL, and `dart_disable_secure_socket` is a
-declared GN arg — turning it off is likely right and should be decided
-deliberately rather than discovered at link time.
+eight. Not all need to be real. `process` and `file_system_watcher` can fail
+honestly; `security_context` pulls BoringSSL, and `dart_disable_secure_socket`
+is a declared GN arg — turning it off is likely right, and should be a decision
+rather than something discovered at link time.
+
+**Sockets are much less work than they look.** VitaSDK ships the BSD headers,
+so `socket_base_vita.h` is `socket_base_linux.h` with one line removed:
+
+| header | |
+|---|---|
+| `sys/socket.h`, `netinet/in.h`, `netinet/tcp.h`, `arpa/inet.h`, `netdb.h` | present |
+| `poll.h`, `sys/select.h` | present |
+| `sys/un.h` | **absent** — no Unix domain sockets |
+| `ifaddrs.h` | **absent** — no `getifaddrs`, so `NetworkInterface.list` needs another route |
+
+The `.cc` side should follow the Linux implementation closely, minus the
+Unix-domain paths and interface enumeration.
 
 ### 2. `fml` needs a platform layer, and its POSIX fallback is not portable
 
@@ -83,8 +95,9 @@ for the AOT snapshot.
 | zlib, libpng, freetype2, harfbuzz, expat, ICU | build clean |
 | Skia | **builds** — 544 objects, [two files patched](../patches/skia/README.md) |
 | `fml` | **compiles** — but `MessageLoopImpl::Create()` returns nullptr, see below |
-| Dart runtime under the engine's GN | not started |
-| `dart:io` for vita | not started — the largest new item |
+| Everything else in the engine | **compiles** — display_list, lib/ui, lib/gpu, tonic, abseil, shell, flow, txt |
+| Dart runtime under the engine's GN | **compiles** — it came for free, as hoped |
+| `dart:io` for vita | **the only thing left before the link** — 12 objects in `runtime/bin` |
 | `dart:ui` in the platform dill | not started |
 | Link `flutter_engine` | **M2** |
 
@@ -99,11 +112,11 @@ for the AOT snapshot.
    and then fail `MessageLoop::EnsureInitializedForCurrentThread` the first
    time any thread wants a loop. A real `message_loop_vita` is a prerequisite
    for anything running, not for M2.
-3. **The Dart runtime under the engine's GN.** Release mode resolves
-   `//flutter/runtime:libdart` to `libdart_aotruntime`, which is the target
-   Phase 1 already builds — this should be close to free, and if it is not, the
-   reason is worth knowing early.
-4. **`dart:io`**, the eleven platform files.
+3. ~~**The Dart runtime under the engine's GN**~~ — free, as predicted. Release
+   mode resolves `//flutter/runtime:libdart` to `libdart_aotruntime`, the target
+   Phase 1 already builds, and Phase 1's patches carried it.
+4. **`dart:io`**, the platform files. This is now the whole remainder: of 1458
+   build edges, 12 failing objects are in `runtime/bin` and nothing else fails.
 5. **`dart:ui` into the platform dill**, via the same three-edit procedure
    `dart:vita` needed — library file, `libraries.json`, and
    `extraRequiredLibraries` in `pkg/vm/lib/modular/target/vm.dart`. Omitting the

@@ -1,0 +1,19 @@
+diff --git a/runtime/bin/native_assets_api_impl.cc b/runtime/bin/native_assets_api_impl.cc
+index 7f5255dc..6fb6b014 100644
+--- a/runtime/bin/native_assets_api_impl.cc
++++ b/runtime/bin/native_assets_api_impl.cc
+@@ -151,6 +151,14 @@ void* NativeAssets::DlopenProcess(char** error) {
+ #if defined(DART_HOST_OS_LINUX) || defined(DART_HOST_OS_MACOS) ||              \
+     defined(DART_HOST_OS_ANDROID) || defined(DART_HOST_OS_FUCHSIA)
+   return RTLD_DEFAULT;
++#elif defined(DART_HOST_OS_VITA)
++  // The Vita has no dynamic loader at all: homebrew is one statically linked
++  // eboot.bin, so there is no process handle to hand back and nothing to look
++  // symbols up in. The trailing #else below assumed anything that is not one of
++  // the dlfcn platforms must be Windows.
++  SET_ERROR_MSG(error, "%s",
++                "Native assets are not supported on this platform.");
++  return nullptr;
+ #else
+   return kWindowsDynamicLibraryProcessPtr;
+ #endif
