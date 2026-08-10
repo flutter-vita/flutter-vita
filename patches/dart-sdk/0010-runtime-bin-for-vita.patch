@@ -1,3 +1,154 @@
+diff --git a/runtime/bin/eventhandler.h b/runtime/bin/eventhandler.h
+index 7da269ca..21368db6 100644
+--- a/runtime/bin/eventhandler.h
++++ b/runtime/bin/eventhandler.h
+@@ -602,6 +602,8 @@ class DescriptorInfoMultipleMixin : public DI {
+ #include "bin/eventhandler_macos.h"
+ #elif defined(DART_HOST_OS_WINDOWS)
+ #include "bin/eventhandler_win.h"
++#elif defined(DART_HOST_OS_VITA)
++#include "bin/eventhandler_vita.h"
+ #else
+ #error Unknown target os.
+ #endif
+diff --git a/runtime/bin/eventhandler_vita.h b/runtime/bin/eventhandler_vita.h
+new file mode 100644
+index 00000000..8dfce668
+--- /dev/null
++++ b/runtime/bin/eventhandler_vita.h
+@@ -0,0 +1,132 @@
++// Copyright (c) 2026, the Dart project authors.  Please see the AUTHORS file
++// for details. All rights reserved. Use of this source code is governed by a
++// BSD-style license that can be found in the LICENSE file.
++
++#ifndef RUNTIME_BIN_EVENTHANDLER_VITA_H_
++#define RUNTIME_BIN_EVENTHANDLER_VITA_H_
++
++#if !defined(RUNTIME_BIN_EVENTHANDLER_H_)
++#error Do not include eventhandler_vita.h directly; use eventhandler.h instead.
++#endif
++
++#include <errno.h>
++#include <poll.h>
++#include <sys/socket.h>
++#include <unistd.h>
++
++#include "platform/hashmap.h"
++
++namespace dart {
++namespace bin {
++
++// This is eventhandler_linux.h with epoll and timerfd replaced by poll() and a
++// computed timeout. The three Linux primitives its sibling is built on all have
++// a Vita answer, and each was checked against VitaSDK's own libc rather than
++// assumed -- "the header declares it" has been wrong here before.
++//
++//   epoll_create  -> absent. poll() is present and is *itself* implemented over
++//                    sceNetEpoll, going through VitaSDK's descriptor table
++//                    (__vita_fd_grab), so it accepts the fds socket() returns.
++//                    It builds and tears down an epoll instance per call, which
++//                    is a cost per iteration rather than a correctness problem.
++//
++//   pipe2         -> pipe() exists and is real, but it is built on
++//                    sceKernelCreateMsgPipe, and a message-pipe descriptor is
++//                    not a socket -- sceNetEpoll would reject it. Unusable as
++//                    the wakeup channel even though it works.
++//
++//                    socketpair() is the answer, and it works for a reason
++//                    worth knowing: VitaSDK implements it as a loopback TCP
++//                    pair -- socket/bind/listen/connect/accept on 127.0.0.1,
++//                    AF_INET, not AF_UNIX. Both ends are therefore ordinary
++//                    sockets that poll() can wait on.
++//
++//   timerfd       -> absent, and not needed. TimeoutQueue already knows the
++//                    next deadline; it becomes poll()'s timeout argument.
++//
++// One hard limit to respect: **poll() fails with EINVAL when nfds > 255.**
++// VitaSDK checks this before doing anything else. An application holding more
++// than 255 sockets at once will not merely be slow, it will stop working, so
++// the implementation reports that case rather than silently truncating.
++static constexpr intptr_t kMaxPollDescriptors = 255;
++
++class DescriptorInfo : public DescriptorInfoBase {
++ public:
++  explicit DescriptorInfo(intptr_t fd) : DescriptorInfoBase(fd) {}
++
++  virtual ~DescriptorInfo() {}
++
++  intptr_t GetPollEvents();
++
++  virtual void Close() {
++    close(fd_);
++    fd_ = -1;
++  }
++
++ private:
++  DISALLOW_COPY_AND_ASSIGN(DescriptorInfo);
++};
++
++class DescriptorInfoSingle : public DescriptorInfoSingleMixin<DescriptorInfo> {
++ public:
++  explicit DescriptorInfoSingle(intptr_t fd) : DescriptorInfoSingleMixin(fd) {}
++  virtual ~DescriptorInfoSingle() {}
++
++ private:
++  DISALLOW_COPY_AND_ASSIGN(DescriptorInfoSingle);
++};
++
++class DescriptorInfoMultiple
++    : public DescriptorInfoMultipleMixin<DescriptorInfo> {
++ public:
++  explicit DescriptorInfoMultiple(intptr_t fd)
++      : DescriptorInfoMultipleMixin(fd) {}
++  virtual ~DescriptorInfoMultiple() {}
++
++ private:
++  DISALLOW_COPY_AND_ASSIGN(DescriptorInfoMultiple);
++};
++
++class EventHandlerImplementation {
++ public:
++  EventHandlerImplementation();
++  ~EventHandlerImplementation();
++
++  // Gets the socket data structure for a given file descriptor. Creates a new
++  // one if one is not found.
++  DescriptorInfo* GetDescriptorInfo(intptr_t fd, bool is_listening);
++  void SendData(intptr_t id, Dart_Port dart_port, int64_t data);
++  void Start(EventHandler* handler);
++  void Shutdown();
++
++ private:
++  // Rebuilds poll_fds_ from socket_map_. The Linux version instead edits a
++  // kernel-side epoll set incrementally; here the set is rebuilt each wait,
++  // because poll() takes the whole array anyway.
++  void BuildPollArray();
++  void HandleEvents();
++  static void Poll(uword args);
++  void WakeupHandler(intptr_t id, Dart_Port dart_port, int64_t data);
++  void HandleInterruptFd();
++  void SetPort(intptr_t fd, Dart_Port dart_port, intptr_t mask);
++  intptr_t GetPollEvents(intptr_t events, DescriptorInfo* di);
++  static void* GetHashmapKeyFromFd(intptr_t fd);
++  static uint32_t GetHashmapHashFromFd(intptr_t fd);
++
++  SimpleHashMap socket_map_;
++  TimeoutQueue timeout_queue_;
++  bool shutdown_;
++  int interrupt_fds_[2];
++
++  // Rebuilt on every wait. Entry 0 is always interrupt_fds_[0].
++  struct pollfd* poll_fds_;
++  intptr_t poll_fds_capacity_;
++  intptr_t poll_fds_length_;
++
++  DISALLOW_COPY_AND_ASSIGN(EventHandlerImplementation);
++};
++
++}  // namespace bin
++}  // namespace dart
++
++#endif  // RUNTIME_BIN_EVENTHANDLER_VITA_H_
 diff --git a/runtime/bin/native_assets_api_impl.cc b/runtime/bin/native_assets_api_impl.cc
 index 7f5255dc..6fb6b014 100644
 --- a/runtime/bin/native_assets_api_impl.cc
@@ -135,3 +286,23 @@ index 00000000..cc8b674d
 +typedef struct dart::bin::vita_sockaddr_un sockaddr_un;
 +
 +#endif  // RUNTIME_BIN_SOCKET_BASE_VITA_H_
+diff --git a/runtime/vm/BUILD.gn b/runtime/vm/BUILD.gn
+index 39749fad..67e99611 100644
+--- a/runtime/vm/BUILD.gn
++++ b/runtime/vm/BUILD.gn
+@@ -63,7 +63,14 @@ config("libdart_vm_config") {
+ 
+     # Clang with libc++ does not require an explicit atomic library reference.
+     # (similar to https://github.com/flutter/buildroot/blob/master/build/config/compiler/BUILD.gn#L562)
+-    if (!is_clang) {
++    #
++    # Nor does VitaSDK, which simply has no libatomic: GCC 15.2 targeting
++    # armv7-a emits the atomic operations Dart uses inline, so there is nothing
++    # for a support library to provide. Asking for it fails the link outright
++    # with "cannot find -latomic". If a future change does need an out-of-line
++    # atomic, it will show up as an undefined __atomic_* symbol, which is a
++    # clearer error than this one.
++    if (!is_clang && target_os != "vita") {
+       libs += [ "atomic" ]
+     }
+   }

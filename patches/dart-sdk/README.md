@@ -19,7 +19,7 @@ disposable; these patches are the real artifact.
 | 0008 | [dart-vita-embedder-library](0008-dart-vita-embedder-library.patch) | Adds `dart:vita`, the Dart-side embedder shim. **Three files**: the library, `libraries.json`, and the VM target's `extraRequiredLibraries` — omitting the last produces a byte-identical dill with no error |
 | 0009 | [vita-emulated-tls](0009-vita-emulated-tls.patch) | Replaces libgcc's `__emutls_get_address`. **Without this every `thread_local` in the runtime is one shared global**, because `__gthread_active_p()` is a weak reference to `pthread_cancel` that never links — and forcing it in crashes instead, since emutls uses a statically initialised pthread mutex VitaSDK does not support |
 
-| 0010 | [runtime-bin-for-vita](0010-runtime-bin-for-vita.patch) | `dart:io`'s native layer. **New in Phase 2** — the engine's embedder depends on `runtime/bin` unconditionally, which Phase 1 excluded |
+| 0010 | [runtime-bin-for-vita](0010-runtime-bin-for-vita.patch) | `dart:io`'s native layer, plus dropping `-latomic`. **New in Phase 2** — the engine's embedder depends on `runtime/bin` unconditionally, which Phase 1 excluded |
 
 > **Two trees now hold this series.** `third_party/sdk` is Phase 1's standalone
 > checkout, still used by `spikes/m1-vpk`; `third_party/flutter/engine/src/flutter/third_party/dart`
@@ -295,13 +295,50 @@ against a control message's type, and no control message can exist.
 
 This one header took the failing objects from eight to three.
 
+### `eventhandler_vita.h`, and how the design was settled
+
+`eventhandler_linux.cc` stands on three Linux primitives. Each has a Vita
+answer, and every one was checked against **VitaSDK's own compiled libc** rather
+than against its headers — `arm-vita-eabi-ar x libc.a` and `objdump -dr` on the
+result. That is worth doing, because on this platform a declaration proves
+nothing, and the disassembly settled in minutes what would otherwise have needed
+a device round-trip.
+
+| Linux | Vita |
+|---|---|
+| `epoll_create` | absent — but **`poll()` is real and is itself implemented over `sceNetEpoll`**, going through VitaSDK's descriptor table (`__vita_fd_grab`), so it accepts what `socket()` returns |
+| `pipe2` self-pipe | `pipe()` is real but built on `sceKernelCreateMsgPipe`; a message-pipe descriptor is not a socket, so `sceNetEpoll` would reject it. Real, and unusable here |
+| `timerfd` | absent, and unnecessary — `TimeoutQueue` already knows the next deadline, so it becomes `poll()`'s timeout |
+
+**`socketpair()` is the wakeup channel, and it works.** An earlier note in this
+project claimed it could not, on the reasoning that a socket pair needs
+`AF_UNIX`. That was wrong, and the relocation table says so plainly: VitaSDK
+implements `socketpair` as `socket` / `bind` / `listen` / `getsockname` /
+`socket` / `connect` / `accept` on `127.0.0.1`, family `AF_INET`. Both ends are
+ordinary sockets that `poll()` can wait on — exactly the loopback trick this
+port was about to hand-roll.
+
+**One hard limit:** `poll()` checks `nfds > 255` before anything else and
+returns `EINVAL`. More than 255 concurrent sockets does not degrade, it stops
+working.
+
 ### Still to write
 
-- **`eventhandler_vita.{h,cc}`** — the substantial one, and a design decision is
-  open. See the note in [the Phase 2 work plan](../../docs/phase-2-workplan.md).
+- **`eventhandler_vita.cc`** — the header is in; the definitions are not, so
+  `EventHandlerImplementation`'s methods are undefined at link.
 - **`process_vita.cc`** — `process.cc` compiles, but nothing defines
-  `Process::Start` and friends, so this surfaces at link rather than at compile.
-  An honest failure is the right implementation; there is no `fork` here.
+  `Process::Start` and friends. An honest failure is the right implementation;
+  there is no `fork` here.
+
+Both surface at **link**, not compile, which is precisely what M2 is for.
+
+### `-latomic`
+
+`runtime/vm/BUILD.gn` adds `libs += [ "atomic" ]` for any non-Clang build.
+VitaSDK has no `libatomic` — GCC 15.2 targeting armv7-a emits the atomics Dart
+uses inline — so the link failed with `cannot find -latomic` before reporting a
+single real symbol. If something ever does need an out-of-line atomic it will
+appear as an undefined `__atomic_*`, which is a far clearer error than this one.
 
 ### Gotcha: do not apply a later patch onto an already-patched tree
 

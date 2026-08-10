@@ -97,8 +97,8 @@ for the AOT snapshot.
 | `fml` | **compiles** — but `MessageLoopImpl::Create()` returns nullptr, see below |
 | Everything else in the engine | **compiles** — display_list, lib/ui, lib/gpu, tonic, abseil, shell, flow, txt |
 | Dart runtime under the engine's GN | **compiles** — it came for free, as hoped |
-| `dart:io` for vita | **3 objects left** — down from 12. Secure sockets off, `socket_base_vita.h` written |
-| `dart:ui` in the platform dill | not started |
+| `dart:io` for vita | headers done; `eventhandler_vita.cc` and `process_vita.cc` still to write |
+| **Every source file in the engine** | **compiles — 2680 objects, `ninja` exit 0** |
 | Link `flutter_engine` | **M2** |
 
 ## Order of work
@@ -126,35 +126,38 @@ for the AOT snapshot.
    `process.cc` builds fine, but nothing defines `Process::Start`. There is no
    `fork` here, so an honest failure is the implementation.
 
-   ### The event handler decision
+   ### The event handler: settled, without the device
 
-   Dart's `eventhandler_linux.cc` is built on three Linux primitives, and the
-   Vita has none of them: `epoll`, a `pipe2` self-pipe for interrupts, and
-   `timerfd` for timeouts. Two candidate mechanisms, and the choice is not yet
-   made because **each has an unverified assumption**:
+   `eventhandler_linux.cc` stands on `epoll`, a `pipe2` self-pipe and
+   `timerfd`. All three were resolved by disassembling VitaSDK's own libc
+   (`ar x libc.a`, then `objdump -dr`) rather than by reading headers or
+   waiting for hardware:
 
-   - **`poll()`** — compiles *and links* against VitaSDK. `sys/poll.h` is real
-     (`poll.h` is a one-line forwarder to it, which is why a first grep made it
-     look empty). Unverified: whether it actually works on sceNet descriptors.
-   - **`sceNetEpollCreate` / `sceNetEpollWait`** — the native mechanism, and a
-     much closer match to the code being replaced. Unverified: it almost
-     certainly accepts *only* sceNet sockets, which breaks the self-pipe.
+   - **`poll()` is real, and is itself implemented over `sceNetEpoll`**, via
+     VitaSDK's descriptor table. It accepts what `socket()` returns.
+   - **`socketpair()` is real**, implemented as a loopback TCP pair on
+     `127.0.0.1` with `AF_INET` — *not* `AF_UNIX`, contrary to an earlier note
+     in this project. Both ends are pollable sockets, which is exactly the
+     wakeup channel needed.
+   - **`pipe()` is real but unusable**: it is built on
+     `sceKernelCreateMsgPipe`, and a message-pipe descriptor is not a socket.
+   - **`timerfd` is absent and unnecessary** — `TimeoutQueue` already knows the
+     next deadline, so it becomes `poll()`'s timeout.
 
-   **Linking is not working.** `socketpair()` is declared in VitaSDK's
-   `sys/socket.h` and cannot possibly work, because it needs `AF_UNIX`. Whatever
-   is chosen, prove it with a five-line on-device probe first — the dev loop
-   makes that cheap, and this project has already paid for the difference twice.
+   **Hard limit:** `poll()` returns `EINVAL` when `nfds > 255`. More than 255
+   concurrent sockets does not get slow, it stops working.
 
-   The interrupt channel needs solving either way. A loopback UDP socket is the
-   conventional answer and works under both mechanisms.
+   The lesson worth keeping is the method, not the answer: on this platform a
+   declaration proves nothing — `pipe` and `socketpair` are both declared, one
+   is usable and one is not — and the compiled library says which in minutes.
 
-   Timeouts are the easy part: `TimeoutQueue` already tracks the next deadline,
-   so it can be passed as the wait timeout instead of arming a `timerfd`.
-5. **`dart:ui` into the platform dill**, via the same three-edit procedure
-   `dart:vita` needed — library file, `libraries.json`, and
-   `extraRequiredLibraries` in `pkg/vm/lib/modular/target/vm.dart`. Omitting the
-   third produces a byte-identical dill with no error.
-6. **Link.**
+5. **The link, for M2.** Not the engine's `flutter_engine_library`: it is a
+   `shared_library`, and on Vita that fails immediately (`crt0.o` and
+   `crtbegin.o` are not PIC, and correctly so — homebrew is statically linked).
+   A shared link would also *tolerate* undefined symbols, so passing it would
+   prove nothing. M2 needs an executable that pulls in the object closure, in a
+   new `spikes/m2-link-check/`, following the pattern `spikes/m1-vpk` already
+   uses for Dart.
 
 ## Things to carry forward from Phase 1
 
