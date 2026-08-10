@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 # Drive the Vita. No FTP, no taps in the normal case.
 #
+#   APP=m1 (default) or APP=m3 selects which build is driven; both install into
+#   FVTA00002, because there is one slot and the loader hard-codes it.
+#
 #   M1     FVTA00002, port 1339 — the app under test
 #   loader FVTA00003, port 1341 — installs and launches M1
 #
@@ -26,9 +29,26 @@ DEV=1339
 LDR=1341
 SUP=1342   # background supervisor (eboot2.bin), survives crashes
 HERE="$(cd "$(dirname "$0")" && pwd)"
-EBOOT="$HERE/out/staging/eboot.bin"
-ELF="$HERE/build/flutter_vita_m1"
-DUMPS="$HERE/out/dumps"
+
+# Which app this drives. Defaults to M1, because that is what every existing
+# note and habit assumes; APP=m3 switches to the Flutter engine build.
+#
+# Both install into FVTA00002 -- there is one slot and the loader hard-codes it
+# (vita-loader/src/main.c:51). So this chooses which eboot.bin gets staged and,
+# just as importantly, which ELF analyse-crash.sh symbolicates against. Pointing
+# a dump at the wrong ELF produces plausible, wrong function names, which cost
+# real time in Phase 1.
+APP="${APP:-m1}"
+case "$APP" in
+  m1) APPDIR="$HERE";              ELF_NAME="flutter_vita_m1" ;;
+  m3) APPDIR="$HERE/../m3-vpk";    ELF_NAME="flutter_vita_m3" ;;
+  *)  echo "APP must be m1 or m3, not '$APP'" >&2; exit 2 ;;
+esac
+APPDIR="$(cd "$APPDIR" && pwd)"
+
+EBOOT="$APPDIR/out/staging/eboot.bin"
+ELF="$APPDIR/build/$ELF_NAME"
+DUMPS="$APPDIR/out/dumps"
 # How long to keep watching for the loader after a crash.
 #
 # Long on purpose. Three minutes was too short: the app crashes, the loader gets

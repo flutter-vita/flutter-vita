@@ -600,3 +600,48 @@ What is still missing is `flutter_assets`. A real bundle needs
 `flutter build bundle` against an app, which is Phase 4 tooling. Until then the
 engine will start and fail to find its assets, which is the expected first-run
 outcome and not worth working around.
+
+---
+
+# First run on hardware: a data abort
+
+The engine reached the device and crashed. Dump kept at
+`spikes/m3-vpk/out/dumps/psp2core-1786386797-…psp2dmp`.
+
+```
+Stop reason: 0x30004 (Data abort exception)
+PC:          0x81bc5e22  (flutter_vita_m3@1 + 0xb7be22)
+R0:          0x6f742d65
+```
+
+Nearest symbols are `pthread_mutex_lock` and `pte_osSemaphoreCancellablePend` —
+VitaSDK's pthread shim.
+
+**`R0` is ASCII.** `65 2d 74 6f` little-endian reads `e-to`: a pointer into
+string data being used as an object. That is the signature of a `this` or a
+mutex pointer that was never what the caller thought it was.
+
+## A hypothesis, tested and rejected
+
+This looks like Phase 1's emutls crash, which was `pthread_mutex_unlock`
+faulting on a garbage pointer because emutls guards its table with a
+**statically initialised** mutex and VitaSDK's pthread does not support
+`PTHREAD_MUTEX_INITIALIZER`.
+
+Grepping `fml`, `runtime`, and abseil for `PTHREAD_MUTEX_INITIALIZER`,
+`PTHREAD_COND_INITIALIZER` and `PTHREAD_ONCE_INIT` finds **nothing**. So it is
+not that, and the resemblance is misleading. Recorded because the resemblance is
+strong enough that someone will reach for it again.
+
+## Where to start
+
+1. **Get the full backtrace.** The output above was truncated; `analyse-crash.sh`
+   prints a frame chain and it was not read.
+2. **`0xb7be22` is a module-relative offset**, already slide-adjusted by the
+   tool, so it can go straight to `addr2line` against
+   `spikes/m3-vpk/build/flutter_vita_m3`. Do not subtract a slide again — Phase 1
+   lost time to exactly that, resolving an address to obvious nonsense.
+3. **Suspect the thread pool before the mutex.** The engine starts four task
+   runners immediately; M1 ran essentially single-threaded. `MessageLoopVita` is
+   new and unexercised, and `Thread::TryStart` came from `thread_linux.cc` with
+   its `pthread_setname_np` call newly stubbed out.
