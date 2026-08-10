@@ -357,15 +357,57 @@ is wrong. Generated code and the THR register are exonerated; this is purely
 the thread through `Thread::Current()`, so the barrier dereferences null and
 takes the process down.
 
-**The fix (patch 0009, not yet written):** `Thread::Current()` must not depend
+### The one-line fix does not work, and here is why
+
+`-u pthread_cancel` forces the symbol in, `__gthread_active_p()` becomes true,
+and emutls switches from its shared-global path to real `pthread_getspecific`.
+Tested on hardware: **M1 crashes at startup.**
+
+```asm
+8121a098 <pthread_mutex_unlock>:
+    ldr r3, [r0, #0]     ; the mutex's internal pointer
+    ldr r1, [r3, #12]    ; <- data abort, r3 is garbage
+```
+
+emutls guards its table with a **statically initialised** mutex
+(`__GTHREAD_MUTEX_INIT`). VitaSDK's pthread does not support static mutex
+initialisers — a mutex must go through `pthread_mutex_init()`. While threads
+were "inactive" that mutex was never touched; making them active means emutls
+uses it, and it faults on the first unlock.
+
+**Both states are therefore broken:**
+
+| | |
+|---|---|
+| without the flag | every `thread_local` is one shared global |
+| with the flag | uninitialised mutex, crash at startup |
+
+`-u pthread_cancel` has been removed from `spikes/m1-vpk/CMakeLists.txt`, with
+this reasoning recorded there so it is not restored on its own.
+
+**The actual fix (patch 0009, not yet written):** `Thread::Current()` must not depend
 on emulated TLS. It is read from allocation slow paths, GC and no-safepoint
 scopes, and `__emutls_get_address` mallocs a thread's block on first access —
 allocating on a path that must never allocate.
 
-Replace the two `thread_local`s in `runtime/vm/os_thread.h` with Vita-specific
-storage that cannot allocate: a fixed-size table keyed by
-`sceKernelGetThreadId()`, linear-scanned. Dart uses few threads, so a small
-array is enough and it is allocation-free by construction.
+**Provide our own `__emutls_get_address` and stop using libgcc's.** It is a
+plain ABI function, so defining it in our own binary overrides the library one,
+and it fixes every `thread_local` in the runtime at once rather than patching
+Dart:
+
+```c
+struct __emutls_object { size_t size; size_t align; void *loc; void *templ; };
+void *__emutls_get_address(struct __emutls_object *obj);
+```
+
+Key it on `sceKernelGetThreadId()` with a small fixed table — Dart uses few
+threads — and use a Vita mutex (`sceKernelCreateMutex`), which needs no static
+initialiser. That sidesteps both failures: no shared global, and no
+pthread mutex that was never initialised.
+
+This is preferable to editing `os_thread.h`, which would fix only
+`Thread::Current()` and leave every other `thread_local` in the runtime
+silently sharing state.
 
 **This is a platform-layer defect affecting every `thread_local` in the
 runtime**, not just this one call site. Anything else reading TLS on an

@@ -85,22 +85,23 @@ target_link_libraries(${PROJECT_NAME}
 # UNSAFE so this app can write ux0:app too, which is what lets it install a new
 # loader. Without it only the loader could update M1, and updating the loader
 # itself would still need an FTP server.
-# -u pthread_cancel is load-bearing, not housekeeping.
+# -u pthread_cancel is REMOVED, and must not be restored on its own.
 #
-# VitaSDK has no ELF TLS, so every thread_local compiles to
-# __emutls_get_address. That function asks __gthread_active_p() whether threads
-# exist, and __gthread_active_p is literally "is the address of pthread_cancel
-# non-null?" -- a *weak* reference. Weak undefined references do not pull a
-# member out of a static archive, so pthread_cancel stayed null, emutls decided
-# the program was single-threaded, and every thread_local became ONE SHARED
-# GLOBAL across all threads.
+# It does what it claims: __gthread_active_p() is literally "is pthread_cancel
+# non-null?", and forcing the symbol in switches emulated TLS from its
+# single-threaded path (one shared global per thread_local) to the real
+# pthread_getspecific path. But emutls guards its table with a *statically*
+# initialised mutex, and VitaSDK's pthread does not support static mutex
+# initialisers -- so the mutex is never valid and pthread_mutex_unlock faults on
+# first use:
 #
-# That is what made Thread::Current() return null: Dart_RunLoop moves the
-# isolate to a worker thread, the worker writes the shared global, and the main
-# thread then reads what the worker left. Forcing the symbol in flips emutls to
-# the real pthread_getspecific path and fixes every thread_local at once.
-target_link_options(${PROJECT_NAME} PRIVATE -u pthread_cancel)
-
+#   8121a098 <pthread_mutex_unlock>:
+#     ldr r3, [r0, #0]
+#     ldr r1, [r3, #12]   <- data abort, r3 garbage
+#
+# So both states are broken: without the flag thread_local is a shared global,
+# with it the app crashes at startup. The real fix is to provide our own
+# __emutls_get_address and stop using libgcc's -- see docs/HANDOFF.md.
 vita_create_self(${PROJECT_NAME}.self ${PROJECT_NAME} UNSAFE)
 
 # The four blobs ship as data files next to eboot.bin; main() reads them from
