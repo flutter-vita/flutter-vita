@@ -547,6 +547,26 @@ covers the host tool as well as the target runtime. The bespoke
 `gen_snapshot_product_vita_arm` target is still in the tree from Phase 1 and is
 **not** what the engine uses.
 
-**Configured is not built.** This is GN's answer, not the compiler's; building
-the host tool is a large Dart VM build and has not been run yet. Do that before
-relying on it.
+### Built and exercised
+
+`flutter/lib/snapshot:create_arm_gen_snapshot` is the target — the engine's own
+answer for 32-bit ARM, producing `clang_arm64/gen_snapshot_armv7`: a host arm64
+binary that emits armv7 snapshots. 1158 edges, no failures.
+
+Note the ninja target name. `gen_snapshot(//build/toolchain/mac:clang_arm64)` is
+GN's label, not a ninja target; ninja mangles the `//` and rejects it. Use
+`ninja -t targets all | grep gen_snapshot` to find the real name.
+
+Verified rather than assumed:
+
+- `strings` finds **`vita`** as the only OS name in the binary — no `linux`,
+  `macos` or `android`. That is `kTargetOperatingSystemName`, the string Dart
+  bakes into a snapshot's features and validates on load.
+- Run against Phase 1's `hello.dill` it produced a 5,344,351-byte
+  `snapshot.S`, exit 0 — within 8 KB of the 5,336,479 that Phase 1's purpose-built
+  `gen_snapshot_product_vita_arm` produced from the same input.
+
+**What that does not prove:** the `.S` is `.long` blobs rather than mnemonics —
+`app-aot-assembly` emits the instructions image as raw words — so nothing here
+disassembles armv7 and confirms it. Matching size and a clean exit are strong
+circumstantial evidence, not execution. The proof is the device.
