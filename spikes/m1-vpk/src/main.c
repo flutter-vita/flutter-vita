@@ -246,6 +246,44 @@ static void start_power_tick(void) {
   if (t >= 0) sceKernelStartThread(t, 0, NULL);
 }
 
+// Proof that thread_local is genuinely per-thread. Before the emutls
+// replacement this printed 222 and 333 -- a worker's writes visible on main.
+static __thread int g_tls_probe = 0;
+
+static void* tls_pthread_worker(void* arg) {
+  (void)arg;
+  g_tls_probe = 222;
+  return NULL;
+}
+
+static int tls_vita_worker(SceSize args, void* argp) {
+  (void)args;
+  (void)argp;
+  g_tls_probe = 333;
+  return 0;
+}
+
+static void tls_probe_test(void) {
+  g_tls_probe = 111;
+  pthread_t th;
+  if (pthread_create(&th, NULL, tls_pthread_worker, NULL) == 0) {
+    pthread_join(th, NULL);
+  }
+  const int after_pthread = g_tls_probe;
+  const SceUID vt = sceKernelCreateThread("tls_probe", tls_vita_worker,
+                                          0x10000100, 0x1000, 0, 0, NULL);
+  if (vt >= 0) {
+    sceKernelStartThread(vt, 0, NULL);
+    sceKernelWaitThreadEnd(vt, NULL, NULL);
+  }
+  const int after_vita = g_tls_probe;
+  lg("thread_local probe (main set 111):\n");
+  lg("  pthread worker set 222 -> main reads %d  %s\n", after_pthread,
+     after_pthread == 111 ? "PER-THREAD OK" : "SHARED GLOBAL -- BROKEN");
+  lg("  vita thread set 333    -> main reads %d  %s\n", after_vita,
+     after_vita == 111 ? "PER-THREAD OK" : "SHARED GLOBAL -- BROKEN");
+}
+
 static void lg_line(const char* msg) {
   lg("%s", msg);
 }
@@ -315,6 +353,7 @@ int main(void) {
       lg("main thread stack: sceKernelGetThreadInfo failed\n");
     }
   }
+  tls_probe_test();
   lg("flutter-vita M1: Dart AOT on Vita\n");
   lg("=================================\n");
   lg("ADR-0005 option A: snapshot linked into eboot.bin\n\n");
@@ -578,7 +617,6 @@ int main(void) {
 // Leaving it on only crashes the app that hosts the dev server, costing a
 // manual relaunch per cycle. Re-enable after the TLS fix, as the regression
 // test for it.
-#if 0
   lg("  [checkpoint] gcStress\n");
   Dart_Handle gc = Dart_Invoke(root, Dart_NewStringFromCString("gcStress"), 0, NULL);
   int64_t gc_value = -1;
@@ -590,7 +628,6 @@ int main(void) {
   }
 
 
-#endif
 
   lg("  [checkpoint] draining microtasks\n");
   Dart_Handle drain = Dart_Invoke(

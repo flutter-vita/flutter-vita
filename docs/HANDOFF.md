@@ -282,7 +282,7 @@ Both were listed as never executed. They are now, and both found something.
 worth having measured: **Flutter spawns isolates**, so this is a Phase 2
 prerequisite, not a curiosity.
 
-**GC stress: crashes the process — root cause narrowed to emulated TLS.** `gcStress()` allocates ~8 MB in a tight loop
+**GC stress: FIXED.** `gcStress() = 1999000` on hardware — 2000 iterations, ~8 MB of churn, where it previously died at ~200 every time. `gcStress()` allocates ~8 MB in a tight loop
 and dies with a data abort in `DRT_AllocateArray`, sometimes preceded by a
 spurious-looking `StackOverflowError`. **Currently disabled** behind `#if 0` in
 `spikes/m1-vpk/src/main.c` because it takes down the app that hosts the dev

@@ -49,6 +49,7 @@ endif()
 add_executable(${PROJECT_NAME}
   src/main.c
   src/devserver.c
+  src/emutls_vita.c
   ${SNAPSHOT_S}
   ${VITA_SAMPLES_COMMON}/debugScreen.c
 )
