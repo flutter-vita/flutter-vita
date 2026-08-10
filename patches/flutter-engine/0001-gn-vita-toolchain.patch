@@ -198,6 +198,67 @@ index e06cf625..ffb13255 100644
      default_warning_flags += [
        "-Werror",  # Warnings as errors.
      ]
+diff --git a/engine/src/build/toolchain/vita/BUILD.gn b/engine/src/build/toolchain/vita/BUILD.gn
+new file mode 100644
+index 00000000..26b26044
+--- /dev/null
++++ b/engine/src/build/toolchain/vita/BUILD.gn
+@@ -0,0 +1,55 @@
++# Copyright 2013 The Flutter Authors. All rights reserved.
++# Use of this source code is governed by a BSD-style license that can be
++# found in the LICENSE file.
++
++# Toolchain for PlayStation Vita homebrew: VitaSDK's arm-vita-eabi GCC.
++#
++# Modelled on ../qnx/BUILD.gn, which is the engine's own precedent for a
++# non-Clang embedded target. Two differences from that one:
++#
++#   * The tool prefix is absolute, taken from $VITASDK, because VitaSDK is not
++#     on PATH by default and a wrong toolchain here fails as link errors much
++#     later rather than as "command not found".
++#   * The Dart SDK vendored under //flutter/third_party/dart carries an
++#     identical toolchain of its own (patch 0004). Both must agree: the Dart
++#     runtime and gen_snapshot hash their build configuration into the snapshot
++#     version, and a mismatch surfaces at startup as "Wrong full snapshot
++#     version" rather than at build time.
++
++import("//build/toolchain/ccache.gni")
++import("//build/toolchain/gcc_toolchain.gni")
++
++declare_args() {
++  # Absolute path to the VitaSDK installation. Defaults to the conventional
++  # location; override with `gn gen --args='vitasdk_root="/path/to/vitasdk"'`.
++  vitasdk_root = getenv("VITASDK")
++}
++
++assert(vitasdk_root != "",
++       "vitasdk_root is empty: set the VITASDK environment variable or pass " +
++           "--args='vitasdk_root=\"/path/to/vitasdk\"'. " +
++           "See docs/dev-environment.md")
++
++if (use_ccache) {
++  compiler_prefix = "ccache "
++} else {
++  compiler_prefix = ""
++}
++
++gcc_toolchain("arm") {
++  prefix = "$vitasdk_root/bin/arm-vita-eabi-"
++
++  cc = "${compiler_prefix}${prefix}gcc"
++  cxx = "${compiler_prefix}${prefix}g++"
++  asm = "${compiler_prefix}${prefix}gcc"
++
++  ar = "${prefix}ar"
++  ld = "${prefix}g++"
++  readelf = "${prefix}readelf"
++  nm = "${prefix}nm"
++  strip = "${prefix}strip"
++
++  toolchain_cpu = "arm"
++  toolchain_os = "vita"
++  is_clang = false
++}
 diff --git a/engine/src/flutter/shell/platform/BUILD.gn b/engine/src/flutter/shell/platform/BUILD.gn
 index b5196cb9..baf3d3ee 100644
 --- a/engine/src/flutter/shell/platform/BUILD.gn
