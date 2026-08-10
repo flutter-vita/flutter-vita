@@ -1,0 +1,42 @@
+diff --git a/engine/src/flutter/shell/platform/embedder/BUILD.gn b/engine/src/flutter/shell/platform/embedder/BUILD.gn
+index 61abe64a..f990b1a1 100644
+--- a/engine/src/flutter/shell/platform/embedder/BUILD.gn
++++ b/engine/src/flutter/shell/platform/embedder/BUILD.gn
+@@ -562,6 +562,16 @@ if (is_mac && !embedder_for_target) {
+   }
+ }
+ 
++# M2's gate. See vita_link_check.cc for why an executable rather than the
++# shared_library below.
++if (is_vita) {
++  executable("vita_link_check") {
++    sources = [ "vita_link_check.cc" ]
++    deps = [ ":embedder" ]
++    public_configs = [ "//flutter:config" ]
++  }
++}
++
+ group("flutter_engine") {
+   deps = []
+ 
+diff --git a/engine/src/flutter/shell/platform/embedder/embedder_surface.cc b/engine/src/flutter/shell/platform/embedder/embedder_surface.cc
+index 029833f7..1bb0308f 100644
+--- a/engine/src/flutter/shell/platform/embedder/embedder_surface.cc
++++ b/engine/src/flutter/shell/platform/embedder/embedder_surface.cc
+@@ -4,6 +4,16 @@
+ 
+ #include "flutter/shell/platform/embedder/embedder_surface.h"
+ 
++// sk_sp<GrDirectContext>'s destructor needs the complete type, and the header
++// only forward-declares it. Every other embedder target gets the definition
++// transitively through a GPU backend header; this port has none enabled
++// (skia_enable_ganesh = false), so it has to be named here.
++//
++// The pointer is always null on this platform -- CreateResourceContext below is
++// never overridden, because the GL, Vulkan and Metal surfaces that override it
++// are all excluded from a software-only build.
++#include "third_party/skia/include/gpu/ganesh/GrDirectContext.h"
++
+ namespace flutter {
+ 
+ EmbedderSurface::EmbedderSurface() = default;

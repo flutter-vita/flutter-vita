@@ -1,0 +1,66 @@
+AbslInternalPerThreadSemPost
+AbslInternalPerThreadSemWait
+GrBackendTexture::GrBackendTexture()
+GrBackendTexture::GrBackendTexture(GrBackendTexture const&)
+GrBackendTexture::operator=(GrBackendTexture const&)
+GrBackendTexture::~GrBackendTexture()
+GrContext_Base::backend() const
+GrDirectContext::createBackendTexture(int, int, SkColorType, skgpu::Mipmapped, skgpu::Renderable, skgpu::Protected, std::basic_string_view<char, std::char_traits<char> >)
+GrDirectContext::deleteBackendTexture(GrBackendTexture const&)
+GrDirectContext::flush(GrFlushInfo const&)
+GrDirectContext::performDeferredCleanup(std::chrono::duration<long long, std::ratio<1ll, 1000ll> >, GrPurgeResourceOptions)
+GrDirectContext::purgeUnlockedResources(GrPurgeResourceOptions)
+GrDirectContext::resetContext(unsigned int)
+GrDirectContext::setResourceCacheLimit(unsigned int)
+GrDirectContext::submit(GrSubmitInfo const&)
+GrRecordingContext::maxRenderTargetSize() const
+SkImages::BorrowTextureFrom(GrRecordingContext*, GrBackendTexture const&, GrSurfaceOrigin, SkColorType, SkAlphaType, sk_sp<SkColorSpace>, void (*)(void*), void*)
+SkImages::CrossContextTextureFromPixmap(GrDirectContext*, SkPixmap const&, bool, bool)
+SkLogVAList(SkLogPriority, char const*, std::__va_list)
+SkSurfaces::RenderTarget(GrRecordingContext*, skgpu::Budgeted, SkImageInfo const&, int, GrSurfaceOrigin, SkSurfaceProps const*, bool, bool)
+SkSurfaces::WrapBackendTexture(GrRecordingContext*, GrBackendTexture const&, GrSurfaceOrigin, int, SkColorType, sk_sp<SkColorSpace>, SkSurfaceProps const*, void (*)(void*), void*)
+absl::base_internal::InitSigSafeArena()
+absl::base_internal::LowLevelAlloc::AllocWithArena(unsigned int, absl::base_internal::LowLevelAlloc::Arena*)
+absl::base_internal::LowLevelAlloc::Free(void*)
+absl::base_internal::SigSafeArena()
+absl::synchronization_internal::CreateThreadIdentity()
+dart::bin::Console::RestoreConfig()
+dart::bin::FileSystemWatcher::Cleanup()
+dart::bin::FileSystemWatcher::GetSocketId(int, int)
+dart::bin::FileSystemWatcher::Init()
+dart::bin::FileSystemWatcher::InitOnce()
+dart::bin::FileSystemWatcher::IsSupported()
+dart::bin::FileSystemWatcher::ReadEvents(int, int)
+dart::bin::FileSystemWatcher::UnwatchPath(int, int)
+dart::bin::FileSystemWatcher::WatchPath(int, dart::bin::Namespace*, char const*, int, bool)
+dart::bin::Process::Cleanup()
+dart::bin::Process::ClearSignalHandler(int, long long)
+dart::bin::Process::CurrentProcessId()
+dart::bin::Process::CurrentRSS()
+dart::bin::Process::Init()
+dart::bin::Process::Kill(int, int)
+dart::bin::Process::MaxRSS()
+dart::bin::Process::SetSignalHandler(int)
+dart::bin::Process::Start(dart::bin::Namespace*, char const*, char const**, int, char const*, char**, int, dart::bin::ProcessStartMode, int*, int*, int*, int*, int*, char**)
+dart::bin::Process::TerminateExitCodeHandler()
+dart::bin::Process::Wait(int, int, int, int, int, dart::bin::ProcessResult*)
+dart::bin::Process::exit_hook_
+dart::bin::Process::global_exit_code_
+dart::bin::Process::global_exit_code_mutex_
+dart::bin::Thread::TryStart(char const*, void (*)(unsigned int), unsigned int)
+dup2
+faccessat
+fml::paths::GetCachesDirectory()
+fml::paths::GetExecutablePath[abi:cxx11]()
+fstatat
+mkdirat
+openat
+readlink
+readlinkat
+renameat
+sceSblDmac5HashTransform
+symlinkat
+taiGetModuleInfo
+uname(utsname*)
+unlinkat
+utimensat

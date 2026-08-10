@@ -192,7 +192,7 @@ for the AOT snapshot.
 | Dart runtime under the engine's GN | **compiles** — it came for free, as hoped |
 | `dart:io` for vita | **compiles — all 16 modules plus `socket_base_posix.cc`.** `process` still undefined at link |
 | **Every source file in the engine** | **compiles — 2682 objects, `ninja` exit 0** |
-| Link `flutter_engine` | **M2** |
+| Link the engine | **attempted — 66 undefined symbols, listed in [m2-undefined-symbols.txt](m2-undefined-symbols.txt)** |
 
 ## Order of work
 
@@ -267,3 +267,61 @@ for the AOT snapshot.
   moving into the engine checkout caught that patch 0008 was stale — the
   `installPlatformScript` that makes `Isolate.spawn` work had never been written
   back, and a fresh checkout would have silently lost it.
+
+
+---
+
+## The link, and what it found
+
+`//flutter/shell/platform/embedder:vita_link_check` is an executable that names
+the four embedder entry points a real host cannot do without. It exists because
+the engine's own `flutter_engine_library` cannot answer the M2 question: it is a
+`shared_library`, VitaSDK's `crt0.o` is not PIC, and a shared link tolerates
+undefined symbols anyway, so succeeding would prove nothing.
+
+It links to **66 undefined symbols**, in six groups. That list is the honest
+remainder of Phase 2.
+
+**1. `dart:io`'s process and watcher layers (26).** `Process::Start`, `Wait`,
+`Kill`, the signal handlers, `FileSystemWatcher::*`, `Console::RestoreConfig`.
+Expected — these are the stubs already scheduled. `Thread::TryStart` is here
+too, which was missed: `thread_linux.cc` has a different guard shape from the
+other eleven and was never widened.
+
+**2. The `*at()` family (12), and this is the find.** `openat`, `fstatat`,
+`mkdirat`, `unlinkat`, `renameat`, `symlinkat`, `readlinkat`, `faccessat`,
+`utimensat`, plus `dup2`, `readlink` and `uname`. Every one is **declared** in
+VitaSDK's headers — which is why everything compiled — and **none is
+implemented**.
+
+That is the third time this platform has drawn the distinction today, after
+`socketpair` (declared, and real) and `pipe` (declared, real, and unusable
+here). It is worth stating as a rule: *on this target, compiling proves
+nothing about a libc function; only the archive does.*
+
+It matters more than the count suggests, because `runtime/bin` uses the `*at`
+family throughout for namespace-relative paths — `Namespace` exists precisely to
+hold a directory fd. Two routes: implement the dozen on top of `sceIo`, or make
+`Namespace` resolve to absolute paths on this platform and use the plain calls.
+The second is less code and loses the isolation `Namespace` provides, which
+nothing in a single-app homebrew build appears to need. **Decide before
+writing.**
+
+**3. Ganesh (17).** `GrDirectContext`, `GrBackendTexture`,
+`SkSurfaces::RenderTarget`, `SkImages::BorrowTextureFrom`. `skia_enable_ganesh`
+is false, so Skia does not build them, but the engine references them anyway
+from paths that a software-only build should never reach. The earlier
+`embedder_surface.cc` include made the *compile* work; this is the other half.
+Likely answers: `slimpeller`-style exclusion, or a small stub translation unit.
+
+**4. abseil internals (6).** `LowLevelAlloc`, `SigSafeArena`,
+`CreateThreadIdentity`, `AbslInternalPerThreadSem*`. Sources gated on an OS list
+that has no vita arm, the same shape as everything else here.
+
+**5. `SkLogVAList` (1).** Skia's logging backend, from a file that is not being
+compiled.
+
+**6. Two Vita libraries (2).** `sceSblDmac5HashTransform` and
+`taiGetModuleInfo` — these are just link flags, `-lSceSblSsMgr_stub` and
+`-ltaihen_stub`. The first is reached by Dart's crypto path; the second by
+something in the toolchain's startup.
