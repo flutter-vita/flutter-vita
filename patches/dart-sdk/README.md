@@ -366,6 +366,29 @@ uses inline — so the link failed with `cannot find -latomic` before reporting 
 single real symbol. If something ever does need an out-of-line atomic it will
 appear as an undefined `__atomic_*`, which is a far clearer error than this one.
 
+### One file, one patch — and a way to check
+
+Every file now belongs to exactly one patch in the series, which is what makes
+the whole thing replayable:
+
+```bash
+cd third_party/sdk
+git reset && git checkout -- . && git clean -fd
+for n in 0001 0002 0003 0004 0006 0007 0008 0009 0010; do
+  git apply ../../patches/dart-sdk/$n-*.patch || echo "FAIL $n"
+done
+```
+
+That now runs clean from pristine. Getting there needed two files reassigned:
+`runtime/bin/BUILD.gn` moved from 0004 to 0010, and
+`runtime/platform/platform_sources.gni` from 0004 to 0009. Both had been in two
+patches at once, and because each patch is a `git diff` against the **pristine**
+tree, the later one is a superset — so applying them in order either failed or,
+worse, applied twice.
+
+Note `git clean -fd` alone is not enough if files have been `git add -N`'d:
+intent-to-add makes them tracked, and clean skips them. `git reset` first.
+
 ### Gotcha: do not apply a later patch onto an already-patched tree
 
 The patches are each generated with `git diff` against the **pristine** tree, so

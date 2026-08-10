@@ -1,18 +1,53 @@
 diff --git a/engine/src/flutter/shell/platform/embedder/BUILD.gn b/engine/src/flutter/shell/platform/embedder/BUILD.gn
-index 61abe64a..f990b1a1 100644
+index 61abe64a..9558048d 100644
 --- a/engine/src/flutter/shell/platform/embedder/BUILD.gn
 +++ b/engine/src/flutter/shell/platform/embedder/BUILD.gn
-@@ -562,6 +562,16 @@ if (is_mac && !embedder_for_target) {
+@@ -562,6 +562,51 @@ if (is_mac && !embedder_for_target) {
    }
  }
  
 +# M2's gate. See vita_link_check.cc for why an executable rather than the
 +# shared_library below.
 +if (is_vita) {
++  # UNRESOLVED -- kept so the next attempt does not repeat these two.
++  #
++  # VitaSDK's libdl.a implements dlsym on taiHEN, so it needs these archives.
++  # They are on the link line and the symbols are still undefined, because
++  # static archives resolve left to right and GN emits them *before* -ldl:
++  #
++  #   libs = -lSceSblSsMgr_stub -ltaihen_stub -ldl -lpthread
++  #
++  # By the time ld reaches libdl.a and finds its undefined references, both
++  # stub archives are behind it. Tried and did not change the order: `libs` on
++  # the target itself, and `libs` on this config.
++  #
++  # The better fix is upstream of the ordering problem -- stop linking -ldl at
++  # all, since nothing in this port can use dlsym. Two `libs = [ "dl" ]` sites
++  # in runtime/vm and runtime/bin are already excluded for vita and -ldl
++  # survives both, so a third source exists and has not been found. Failing
++  # that, --start-group around the library list would work, but GN offers no
++  # way to append a flag after `libs`.
++  config("vita_dl_backing") {
++    libs = [
++      "SceSblSsMgr_stub",
++      "taihen_stub",
++    ]
++  }
++
 +  executable("vita_link_check") {
 +    sources = [ "vita_link_check.cc" ]
 +    deps = [ ":embedder" ]
 +    public_configs = [ "//flutter:config" ]
++
++    # VitaSDK's libdl.a implements dlsym on top of taiHEN, so it needs these
++    # two stub libraries. They are here rather than excluded at the source
++    # because -ldl reaches this link line from somewhere in the Dart config
++    # graph that resisted being found: the two obvious `libs = [ "dl" ]` sites
++    # in runtime/bin and runtime/vm are both excluded for vita and -ldl
++    # survives both. Worth returning to -- nothing in this port can use dlsym,
++    # so the library is dead weight -- but two stub libraries is a small price
++    # next to leaving M2 unmet over it.
++    configs += [ ":vita_dl_backing" ]
 +  }
 +}
 +

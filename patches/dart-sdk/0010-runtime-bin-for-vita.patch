@@ -1,3 +1,78 @@
+diff --git a/runtime/bin/BUILD.gn b/runtime/bin/BUILD.gn
+index 0eedc427..aa94a35d 100644
+--- a/runtime/bin/BUILD.gn
++++ b/runtime/bin/BUILD.gn
+@@ -22,6 +22,18 @@ import("native_assets_impl_sources.gni")
+ config("libdart_builtin_config") {
+   if (is_win) {
+     libs = [ "bcrypt.lib" ]
++  } else if (is_vita) {
++    # No -ldl. There is no dynamic loader here, LoadDynamicLibrary already
++    # reports unsupported, and linking it is worse than useless: VitaSDK's
++    # libdl.a implements dlsym on top of taiGetModuleInfo and
++    # sceSblDmac5HashTransform, so it pulls in two stub libraries to support a
++    # function that can never succeed. Those arrive at the link as two
++    # undefined symbols referenced by nothing in the engine.
++    #
++    # This config is the one that reaches the final executable. runtime/vm's
++    # copy has the same exclusion, and fixing only that one changes nothing --
++    # worth knowing, because the symptom is identical either way.
++    libs = []
+   } else {
+     libs = [ "dl" ]
+   }
+@@ -119,6 +131,13 @@ build_libdart_builtin("libdart_builtin_product_linux_arm") {
+   ]
+ }
+ 
++build_libdart_builtin("libdart_builtin_product_vita_arm") {
++  extra_configs = [
++    "..:dart_product_config",
++    "..:dart_vita_arm_config",
++  ]
++}
++
+ build_libdart_builtin("libdart_builtin_product_linux_riscv64") {
+   extra_configs = [
+     "..:dart_product_config",
+@@ -397,6 +416,23 @@ build_gen_snapshot("gen_snapshot_product_linux_arm") {
+   ]
+ }
+ 
++# A gen_snapshot that runs on the host and emits armv7 AOT snapshots whose
++# features string says "vita". Dart validates that string when loading a
++# snapshot, so a linux-arm gen_snapshot's output is rejected by a vita runtime
++# -- this target is what makes M1 possible at all.
++build_gen_snapshot("gen_snapshot_product_vita_arm") {
++  extra_configs = [
++    "..:dart_product_config",
++    "..:dart_vita_arm_config",
++  ]
++  extra_deps = [
++    ":gen_snapshot_dart_io_product_vita_arm",
++    ":libdart_builtin_product_vita_arm",
++    "..:libdart_precompiler_product_vita_arm",
++    "../platform:libdart_platform_precompiler_product_vita_arm",
++  ]
++}
++
+ build_gen_snapshot("gen_snapshot_product_linux_riscv64") {
+   extra_configs = [
+     "..:dart_product_config",
+@@ -518,6 +554,13 @@ build_gen_snapshot_dart_io("gen_snapshot_dart_io_product_linux_arm") {
+   ]
+ }
+ 
++build_gen_snapshot_dart_io("gen_snapshot_dart_io_product_vita_arm") {
++  extra_configs = [
++    "..:dart_product_config",
++    "..:dart_vita_arm_config",
++  ]
++}
++
+ build_gen_snapshot_dart_io("gen_snapshot_dart_io_product_linux_riscv64") {
+   extra_configs = [
+     "..:dart_product_config",
 diff --git a/runtime/bin/console_posix.cc b/runtime/bin/console_posix.cc
 index 0c795c49..ac6209b7 100644
 --- a/runtime/bin/console_posix.cc
@@ -2325,7 +2400,7 @@ index 00000000..0b64c6a5
 +
 +#endif  // defined(DART_HOST_OS_VITA)
 diff --git a/runtime/vm/BUILD.gn b/runtime/vm/BUILD.gn
-index 39749fad..2d0c9869 100644
+index 39749fad..e65d0e77 100644
 --- a/runtime/vm/BUILD.gn
 +++ b/runtime/vm/BUILD.gn
 @@ -56,14 +56,31 @@ config("libdart_vm_config") {
@@ -2339,7 +2414,7 @@ index 39749fad..2d0c9869 100644
 +    # sceSblDmac5HashTransform, so it drags in two stub libraries to support a
 +    # function that can never succeed. Those arrived at the link as two
 +    # undefined symbols with no obvious owner.
-+    if (target_os == "vita") {
++    if (is_vita) {
 +      libs = []
 +    } else {
 +      libs = [ "dl" ]
@@ -2358,7 +2433,7 @@ index 39749fad..2d0c9869 100644
 +    # with "cannot find -latomic". If a future change does need an out-of-line
 +    # atomic, it will show up as an undefined __atomic_* symbol, which is a
 +    # clearer error than this one.
-+    if (!is_clang && target_os != "vita") {
++    if (!is_clang && !is_vita) {
        libs += [ "atomic" ]
      }
    }
