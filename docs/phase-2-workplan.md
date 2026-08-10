@@ -192,7 +192,7 @@ for the AOT snapshot.
 | Dart runtime under the engine's GN | **compiles** — it came for free, as hoped |
 | `dart:io` for vita | **compiles — all 16 modules plus `socket_base_posix.cc`.** `process` still undefined at link |
 | **Every source file in the engine** | **compiles — 2682 objects, `ninja` exit 0** |
-| Link the engine | **28 undefined symbols**, down from 66 — [the list](m2-undefined-symbols.txt) |
+| Link the engine | **10 undefined symbols**, down from 66 — [the list](m2-undefined-symbols.txt) |
 
 ## Order of work
 
@@ -364,3 +364,77 @@ stub libraries to support a function that can never succeed.
 from the link line, **and the symbols persist** — so `libdl.a` is entering by
 another route not yet identified. Worth finding rather than papering over with
 `-lSceSblSsMgr_stub`: something is linking a library this port has no use for.
+
+
+## The Ganesh decision: on, with no backend
+
+The link's largest group was seventeen Ganesh symbols — `GrDirectContext`,
+`GrBackendTexture`, `SkSurfaces::RenderTarget`, `SkImages::BorrowTextureFrom`.
+
+**My first reading of them was wrong.** I said they all arrived through
+`flutter::ConvertToRasterUsingResourceContext` and that a single `#if` would
+clear them. Guarding that function on Skia's own `SK_GANESH` was correct and
+changed nothing: the symbols come from **twelve** translation units across
+`flow`, `lib/ui`, `shell/common` and the embedder. The engine assumes
+`GrDirectContext` exists *as a type* far more widely than it assumes a GPU is
+present, and excluding all of it would mean forking a dozen engine files.
+
+The alternative considered was a stub translation unit defining the nineteen
+symbols to abort. Rejected: it converts a link error into a runtime crash, and
+`GrBackendTexture`'s constructors are value-type operations that can legitimately
+run on empty objects, so some stubs would have to be silent no-ops — a mix of
+"loud" and "silent" stubs in one file is exactly the sort of thing that is
+misread later.
+
+**What was done instead: `skia_enable_ganesh = true` with every backend off.**
+
+That reads as a contradiction and is not. Ganesh's core is backend-agnostic;
+`skia_use_gl`, `skia_use_vulkan` and `skia_use_metal` are what select a driver,
+and all three stay false. Nothing can construct a `GrDirectContext` without a
+backend, so **every GPU path stays dead at runtime exactly as ADR-0003
+intends** — this changes what links, not what executes.
+
+The cost is compile time and binary size, and the size number matters on a
+device with 188 MiB: it should be measured against the `.text` budget once M2
+is met, and recorded next to the 12.41 MiB armv7 engine figure in the roadmap.
+If it is unacceptable, the stub translation unit is still available as the
+fallback, with the tradeoff above understood.
+
+
+## The last ten
+
+Ganesh-with-no-backend worked: all seventeen GPU symbols resolved, 28 → 10.
+
+**Six are abseil, and this one is a real platform conflict rather than a
+misconfiguration.** `LowLevelAlloc::AllocWithArena`, `SigSafeArena`,
+`CreateThreadIdentity`, `AbslInternalPerThreadSem*`.
+
+The objects are built. They are **empty** — `nm` reports zero defined symbols in
+both `low_level_alloc.o` and `create_thread_identity.o` — because abseil sets
+`ABSL_LOW_LEVEL_ALLOC_MISSING` when neither `ABSL_HAVE_MMAP` nor `_WIN32` is
+defined, and `__vita__` is correctly absent from its mmap list. So abseil has
+concluded, correctly, that this platform cannot support LowLevelAlloc, and
+compiled it out. Its own `absl::Mutex` machinery then references it anyway.
+
+Do **not** fix this by adding `__vita__` to abseil's `ABSL_HAVE_MMAP` list. That
+would be a lie in the one place the codebase asks the question directly, and it
+would break anything else keyed on it.
+
+The principled fix is a malloc-backed `LowLevelAlloc` for vita. LowLevelAlloc
+exists to allocate without touching malloc — so a malloc hook cannot recurse —
+and to be async-signal-safe. Neither guarantee has content here: nothing in this
+port hooks malloc, and there are no signals at all. Worth writing that reasoning
+into the patch, because "we replaced the async-signal-safe allocator with malloc"
+reads as reckless without it.
+
+**`SkLogVAList` is one symbol and is not yet resolved.** Skia picks a logging
+backend per platform and has no arm for an unknown one. `is_vita` was added
+to the `is_linux || is_wasm` branch that selects `SkLog_stdio.cpp`, at line 2030
+of `flutter/third_party/skia/BUILD.gn`, inside `skia_component("skia")` — and
+after a `gn gen` **no `SkLog_stdio` object is produced**. The edit is in the
+file and is not taking effect; why is not yet known. Start there rather than
+assuming the branch is wrong.
+
+**Two are the taiHEN pair**, unchanged and diagnosed in
+`patches/flutter-engine/0004`: `libdl.a` is linked, needs those archives, and
+GN emits them before `-ldl` where static resolution cannot use them.
