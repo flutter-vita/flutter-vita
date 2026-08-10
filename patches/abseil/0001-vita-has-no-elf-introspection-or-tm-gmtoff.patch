@@ -1,5 +1,5 @@
 diff --git a/absl/base/internal/low_level_alloc.cc b/absl/base/internal/low_level_alloc.cc
-index a5bd71d..0ed1558 100644
+index a5bd71d..bb2fa00 100644
 --- a/absl/base/internal/low_level_alloc.cc
 +++ b/absl/base/internal/low_level_alloc.cc
 @@ -26,7 +26,11 @@
@@ -49,7 +49,7 @@ index a5bd71d..0ed1558 100644
      if (munmap_result != 0) {
        ABSL_RAW_LOG(FATAL, "LowLevelAlloc::DeleteArena: munmap failed: %d",
                     errno);
-@@ -583,6 +596,14 @@ static void *DoAllocWithArena(size_t request, LowLevelAlloc::Arena *arena) {
+@@ -583,6 +596,25 @@ static void *DoAllocWithArena(size_t request, LowLevelAlloc::Arena *arena) {
                                 MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
        ABSL_RAW_CHECK(new_pages != nullptr, "VirtualAlloc failed");
  #else
@@ -60,11 +60,22 @@ index a5bd71d..0ed1558 100644
 +      if (new_pages == nullptr) {
 +        ABSL_RAW_LOG(FATAL, "memalign error: %d", errno);
 +      }
++      // **Zero it.** This is not tidiness, it is the whole difference between
++      // mmap and memalign: MAP_ANONYMOUS pages arrive zero-filled and heap
++      // memory arrives holding whatever was there before. Abseil's callers --
++      // CreateThreadIdentity in particular -- take fresh arena memory and use
++      // fields without initialising every one, which is correct against mmap
++      // and silently wrong here.
++      //
++      // The symptom was a data abort in pte_osAtomicExchange with a pointer of
++      // 0x6f742d65, which is ASCII: a synchronisation object holding recycled
++      // string data. Missing this cost a device round trip.
++      memset(new_pages, 0, new_pages_size);
 +#else
  #ifndef ABSL_LOW_LEVEL_ALLOC_ASYNC_SIGNAL_SAFE_MISSING
        if ((arena->flags & LowLevelAlloc::kAsyncSignalSafe) != 0) {
          new_pages = base_internal::DirectMmap(nullptr, new_pages_size,
-@@ -598,6 +619,7 @@ static void *DoAllocWithArena(size_t request, LowLevelAlloc::Arena *arena) {
+@@ -598,6 +630,7 @@ static void *DoAllocWithArena(size_t request, LowLevelAlloc::Arena *arena) {
        if (new_pages == MAP_FAILED) {
          ABSL_RAW_LOG(FATAL, "mmap error: %d", errno);
        }
