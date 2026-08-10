@@ -151,6 +151,31 @@ X". **When Dart says "unsupported", ask which hook is null before suspecting the
 port.** Worth auditing every `VMLibraryHooks` field before Phase 2 — `dart:ui`
 will lean on more of them.
 
+## VMLibraryHooks audit
+
+Done before Phase 2, since `dart:ui` will lean on more of these. All eight
+fields:
+
+| Field | State | If unset |
+|---|---|---|
+| `timerFactory` | set — `dart:isolate`'s `_setupHooks` | timers throw |
+| `eventHandlerSendData` | set — `dart:vita` | timers throw |
+| `timerMillisecondClock` | set — `dart:vita` | timers throw |
+| `platformScript` | set — `dart:vita` | `Isolate.spawn` throws |
+| `packageConfigString` | **unset** | harmless — `spawn` reads it and tolerates null |
+| `packageRootString` | **unset** | harmless — nothing in `sdk/lib` reads it |
+| `packageConfigUriSync` | **unset** | `Isolate.packageConfig` throws `UnsupportedError` |
+| `resolvePackageUriSync` | **unset** | `Isolate.resolvePackageUriSync` throws `UnsupportedError` |
+
+The four unset ones are all package resolution, and they are **not silent**:
+each throws an `UnsupportedError` naming itself, and only if application code
+calls those APIs directly. In AOT the package URIs are resolved at compile time
+and baked into the snapshot, so Flutter has no reason to reach for them.
+
+Left unset deliberately. Implementing them would mean inventing a package
+config for a snapshot that has none, and the failure mode if that assumption is
+ever wrong is a clearly named exception rather than a crash.
+
 ## The lesson
 
 The port was essentially correct long before M1 passed. Three consecutive
