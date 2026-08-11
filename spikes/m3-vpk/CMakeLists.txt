@@ -151,11 +151,26 @@ vita_create_self(${PROJECT_NAME}.self ${PROJECT_NAME} UNSAFE)
 # an already-slimmed ICU dataset at third_party/icu/flutter/ rather than the
 # full one. So "slim icudtl.dat" comes off the Phase 2 list -- upstream did it.
 #
-# flutter_assets is still missing. A real bundle needs `flutter build bundle`
-# against an app, which is Phase 4 tooling; until then the engine will start and
-# fail to find its assets, which is the expected first-run outcome.
+# flutter_assets comes from `flutter build bundle` against the B2 counter app,
+# the same app whose kernel becomes the snapshot. The two must be generated
+# from the same source tree: the asset manifest is looked up by keys the
+# compiled code asks for, so a bundle from a different app fails at runtime in
+# ways that look like asset-loading bugs rather than a mismatch.
+#
+# Only the files the engine actually reads are listed. kernel_blob.bin is
+# deliberately absent -- it is the JIT path's copy of the program, and this
+# build links its snapshot into eboot.bin instead (ADR-0005). Shipping it would
+# add megabytes the engine never opens.
+set(FLUTTER_ASSETS ${CMAKE_CURRENT_SOURCE_DIR}/../b2-flutter-snapshot/out/counter_app/build/flutter_assets)
+
 vita_create_vpk(${PROJECT_NAME}.vpk ${VITA_TITLEID} ${PROJECT_NAME}.self
   VERSION ${VITA_VERSION}
   NAME ${VITA_APP_NAME}
   FILE ${ENGINE_SRC}/flutter/third_party/icu/flutter/icudtl.dat icudtl.dat
+  FILE ${FLUTTER_ASSETS}/AssetManifest.bin flutter_assets/AssetManifest.bin
+  FILE ${FLUTTER_ASSETS}/FontManifest.json flutter_assets/FontManifest.json
+  FILE ${FLUTTER_ASSETS}/NOTICES.Z flutter_assets/NOTICES.Z
+  FILE ${FLUTTER_ASSETS}/NativeAssetsManifest.json flutter_assets/NativeAssetsManifest.json
+  FILE ${FLUTTER_ASSETS}/fonts/MaterialIcons-Regular.otf flutter_assets/fonts/MaterialIcons-Regular.otf
+  FILE ${FLUTTER_ASSETS}/packages/cupertino_icons/assets/CupertinoIcons.ttf flutter_assets/packages/cupertino_icons/assets/CupertinoIcons.ttf
 )

@@ -111,6 +111,13 @@ newest_dump() {
     | sort -t- -k2 -n | tail -1
 }
 
+refresh_eboot() {
+  local vpk="$APPDIR/build/$ELF_NAME.vpk"
+  [ -f "$vpk" ] || return 0   # m1 stages by other means; leave it alone
+  mkdir -p "$APPDIR/out/staging"
+  ( cd "$APPDIR/out/staging" && rm -f eboot.bin && unzip -o -q "$vpk" eboot.bin )
+}
+
 cmd_put() {  # <local path> <device path>
   local size; size=$(wc -c <"$1" | tr -d ' ')
   { printf 'put %s %s\n' "$size" "$2"; cat "$1"; } | nc -w 120 "$VITA" "$LDR" | grep -q OK
@@ -118,28 +125,37 @@ cmd_put() {  # <local path> <device path>
 
 # Everything in the .vpk that is not eboot.bin, kept in step with the device.
 #
-# The hash file next to the payload is what makes this cheap: icudtl.dat is
-# 862 KiB and never changes between builds, so re-sending it every cycle would
-# add a transfer to every iteration for nothing.
+# `install` replaces eboot.bin only, so these would otherwise be whatever the
+# last full .vpk install left behind. Each file carries a hash file recording
+# what the device confirmed receiving, because icudtl.dat and the fonts are
+# 2.7 MiB between them and never change between builds -- re-sending them every
+# cycle would add a transfer to every iteration for nothing.
 push_data() {
   [ "$APP" = m3 ] || return 0
   local vpk="$APPDIR/build/$ELF_NAME.vpk"
   local stage="$APPDIR/out/staging"
   [ -f "$vpk" ] || return 0
 
-  ( cd "$stage" && unzip -o -q "$vpk" icudtl.dat ) || return 1
-  local want; want=$(shasum -a 1 "$stage/icudtl.dat" | cut -d' ' -f1)
-  local have=""; [ -f "$stage/.icudtl.on-device" ] && have=$(cat "$stage/.icudtl.on-device")
-  if [ "$want" = "$have" ]; then
-    return 0
-  fi
+  # Whatever the .vpk carries besides eboot.bin and the Sony metadata, so
+  # adding an asset to CMakeLists is enough -- this does not need editing too.
+  local files; files=$(unzip -Z1 "$vpk" | grep -v '^eboot.bin$' | grep -v '^sce_sys/')
+  [ -n "$files" ] || return 0
+  ( cd "$stage" && unzip -o -q "$vpk" $(echo "$files") ) || return 1
 
-  echo "pushing icudtl.dat…"
-  cmd_put "$stage/icudtl.dat" "ux0:app/$TITLEID/icudtl.dat" || {
-    echo "!! icudtl.dat push failed" >&2; return 1; }
-  # Written only after the device confirmed, so a failed push retries next time
-  # rather than being remembered as done.
-  echo "$want" > "$stage/.icudtl.on-device"
+  local f want have
+  for f in $files; do
+    want=$(shasum -a 1 "$stage/$f" | cut -d' ' -f1)
+    have=""; [ -f "$stage/.pushed/$f" ] && have=$(cat "$stage/.pushed/$f")
+    [ "$want" = "$have" ] && continue
+
+    echo "pushing $f…"
+    cmd_put "$stage/$f" "ux0:app/$TITLEID/$f" || {
+      echo "!! push failed: $f" >&2; return 1; }
+    # Recorded only after the device confirmed, so a failed push retries next
+    # time rather than being remembered as done.
+    mkdir -p "$(dirname "$stage/.pushed/$f")"
+    echo "$want" > "$stage/.pushed/$f"
+  done
 }
 
 cmd_get() {  # <device path> <local path>
@@ -164,6 +180,14 @@ cmd_crash() {
 }
 
 cycle() {
+  # Refresh the staged eboot from the .vpk the build just produced.
+  #
+  # This used to be a manual `unzip` step, and on 2026-08-11 that cost a full
+  # deploy: the build had swapped in a different Dart snapshot and grown the
+  # binary by a megabyte, the stale staging copy went out instead, and the log
+  # showed the *previous* build's failure. Nothing in the output said so --
+  # a stale artifact deploys exactly as cleanly as a fresh one.
+  refresh_eboot || return 1
   [ -f "$EBOOT" ] || { echo "no $EBOOT — build first" >&2; return 1; }
 
   # Nothing alive means a previous run crashed. Say so, and wait rather than
