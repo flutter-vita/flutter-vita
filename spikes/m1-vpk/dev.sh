@@ -158,6 +158,21 @@ push_data() {
   done
 }
 
+cmd_shot() {  # <local png path>
+  local p; p="$(live)"; [ -z "$p" ] && { echo "nothing running" >&2; return 1; }
+
+  # The descriptor first, and print it whatever happens. It says whether the
+  # display controller is holding *our* buffer and whether it is scanning at
+  # all -- a picture without that line is only evidence about memory we wrote.
+  echo "  $(printf 'shotinfo\n' | nc -w 20 "$VITA" "$p")"
+
+  local raw="${1%.png}.raw"
+  mkdir -p "$(dirname "$1")"
+  printf 'shot\n' | nc -w 60 "$VITA" "$p" > "$raw"
+  python3 "$HERE/../../tools/rgba2png.py" "$raw" "$1" || return 1
+  rm -f "$raw"
+}
+
 cmd_get() {  # <device path> <local path>
   local p; p="$(live)"; [ -z "$p" ] && { echo "nothing running" >&2; return 1; }
   mkdir -p "$(dirname "$2")"
@@ -252,6 +267,7 @@ case "${1:-}" in
   launch)  say "$LDR" launch ;;
   crash)   cmd_crash ;;
   get)     cmd_get "${2:?device path}" "${3:?local path}" ;;
+  shot)    cmd_shot "${2:-$APPDIR/out/screen.png}" ;;
   watch)   wait_for_tap && { p="$(live)"; echo "up on port $p"; } ;;
   cycle)   cycle ;;
   *) sed -n '2,18p' "$0" | sed 's/^# \{0,1\}//'; exit 1 ;;

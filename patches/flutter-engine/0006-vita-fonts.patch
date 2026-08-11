@@ -1,0 +1,104 @@
+diff --git a/engine/src/flutter/lib/ui/text/asset_manager_font_provider.cc b/engine/src/flutter/lib/ui/text/asset_manager_font_provider.cc
+index 519da372..1619c385 100644
+--- a/engine/src/flutter/lib/ui/text/asset_manager_font_provider.cc
++++ b/engine/src/flutter/lib/ui/text/asset_manager_font_provider.cc
+@@ -109,6 +109,12 @@ auto AssetManagerFontStyleSet::createTypeface(int i) -> CreateTypefaceRet {
+     std::unique_ptr<fml::Mapping> asset_mapping =
+         asset_manager_->GetAsMapping(asset.asset);
+     if (asset_mapping == nullptr) {
++      // Temporary probe, remove with the rest of the vita font bring-up.
++      // FML_DLOG compiles away in release and this port only builds release,
++      // so both of this function's failure paths were silent -- an icon font
++      // that never registered looked identical to one that rendered tofu.
++      FML_LOG(ERROR) << "vita-probe: no mapping for font asset " << asset.asset
++                     << " family=" << family_name_;
+       return nullptr;
+     }
+ 
+@@ -122,8 +128,9 @@ auto AssetManagerFontStyleSet::createTypeface(int i) -> CreateTypefaceRet {
+     // Ownership of the stream is transferred.
+     asset.typeface = font_mgr->makeFromStream(std::move(stream));
+     if (!asset.typeface) {
+-      FML_DLOG(ERROR) << "Unable to load font asset for family: "
+-                      << family_name_;
++      FML_LOG(ERROR) << "vita-probe: makeFromStream failed for " << asset.asset
++                     << " family=" << family_name_ << " bytes="
++                     << asset_mapping_ptr->GetSize();
+       return nullptr;
+     }
+   }
+diff --git a/engine/src/flutter/lib/ui/text/font_collection.cc b/engine/src/flutter/lib/ui/text/font_collection.cc
+index 34ff63ea..c42822cd 100644
+--- a/engine/src/flutter/lib/ui/text/font_collection.cc
++++ b/engine/src/flutter/lib/ui/text/font_collection.cc
+@@ -74,7 +74,7 @@ void FontCollection::RegisterFonts(
+   std::unique_ptr<fml::Mapping> manifest_mapping =
+       asset_manager->GetAsMapping("FontManifest.json");
+   if (manifest_mapping == nullptr) {
+-    FML_DLOG(WARNING) << "Could not find the font manifest in the asset store.";
++    FML_LOG(ERROR) << "vita-probe: no FontManifest.json in the asset store";
+     return;
+   }
+ 
+diff --git a/engine/src/flutter/txt/BUILD.gn b/engine/src/flutter/txt/BUILD.gn
+index 142a19de..8ca28bc7 100644
+--- a/engine/src/flutter/txt/BUILD.gn
++++ b/engine/src/flutter/txt/BUILD.gn
+@@ -110,6 +110,10 @@ source_set("txt") {
+     deps += [ "${fuchsia_sdk}/fidl/fuchsia.fonts" ]
+   } else if (is_win) {
+     sources += [ "src/txt/platform_windows.cc" ]
++  } else if (is_vita) {
++    # Not the generic platform.cc below: that returns an *empty* font manager
++    # and "Arial" as the default family, so nothing resolves and no text draws.
++    sources += [ "src/txt/platform_vita.cc" ]
+   } else {
+     sources += [ "src/txt/platform.cc" ]
+   }
+diff --git a/engine/src/flutter/txt/src/txt/platform_vita.cc b/engine/src/flutter/txt/src/txt/platform_vita.cc
+new file mode 100644
+index 00000000..42194c70
+--- /dev/null
++++ b/engine/src/flutter/txt/src/txt/platform_vita.cc
+@@ -0,0 +1,41 @@
++// Copyright 2013 The Flutter Authors. All rights reserved.
++// Use of this source code is governed by a BSD-style license that can be
++// found in the LICENSE file.
++
++#include "txt/platform.h"
++
++#include "third_party/skia/include/ports/SkFontMgr_directory.h"
++
++namespace txt {
++
++// Where the port keeps its fonts, and why it is not flutter_assets.
++//
++// `app0:` is the read-only mount of the installed .vpk, so anything here ships
++// with the application and is found by path -- there is no fontconfig on this
++// platform and no system font store to enumerate.
++//
++// It is deliberately a directory of its own rather than
++// `app0:/flutter_assets/fonts`. That directory belongs to the asset bundle:
++// `flutter build bundle` owns its contents, and it holds icon fonts like
++// MaterialIcons that are meant to be looked up by asset key, not offered as
++// system families. Scanning it would make every icon font a candidate for text
++// fallback, which produces text rendered in icons -- a failure that looks like
++// a font bug and is a configuration one.
++constexpr char kFontDirectory[] = "app0:/fonts";
++
++std::vector<std::string> GetDefaultFontFamilies() {
++  // The generic implementation answers "Arial", which exists on no platform
++  // this project will ever run on. Roboto is what ships in kFontDirectory, and
++  // it is also what the Material defaults ask for, so naming it here means the
++  // fallback path and the common path resolve to the same file.
++  return {"Roboto"};
++}
++
++sk_sp<SkFontMgr> GetDefaultFontManager(uint32_t font_initialization_data) {
++  // Built once. The directory manager scans on construction, and on a memory
++  // card that is slow enough to be worth not repeating.
++  static sk_sp<SkFontMgr> mgr = SkFontMgr_New_Custom_Directory(kFontDirectory);
++  return mgr;
++}
++
++}  // namespace txt

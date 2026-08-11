@@ -179,6 +179,10 @@ vita_create_vpk(${PROJECT_NAME}.vpk ${VITA_TITLEID} ${PROJECT_NAME}.self
   VERSION ${VITA_VERSION}
   NAME ${VITA_APP_NAME}
   FILE ${ENGINE_SRC}/flutter/third_party/icu/flutter/icudtl.dat icudtl.dat
+  # The system font, scanned from app0:/fonts by txt/src/txt/platform_vita.cc.
+  # This is not part of the asset bundle on purpose -- see that file for why
+  # icon fonts must not be offered as system families.
+  FILE ${ENGINE_SRC}/flutter/txt/third_party/fonts/Roboto-Regular.ttf fonts/Roboto-Regular.ttf
   FILE ${FLUTTER_ASSETS}/AssetManifest.bin flutter_assets/AssetManifest.bin
   FILE ${FLUTTER_ASSETS}/FontManifest.json flutter_assets/FontManifest.json
   FILE ${FLUTTER_ASSETS}/NOTICES.Z flutter_assets/NOTICES.Z

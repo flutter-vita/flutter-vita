@@ -22,6 +22,22 @@ static char g_net_pool[16 * 1024];
 
 static void (*g_log)(const char*) = NULL;
 
+static const void* (*g_read_framebuffer)(unsigned int*, char*, unsigned int) =
+    NULL;
+
+static void (*g_tap)(int, int) = NULL;
+
+void dev_server_set_tap_handler(void (*tap)(int x, int y)) {
+  g_tap = tap;
+}
+
+void dev_server_set_framebuffer_source(
+    const void* (*read_framebuffer)(unsigned int* size,
+                                    char* describe,
+                                    unsigned int describe_size)) {
+  g_read_framebuffer = read_framebuffer;
+}
+
 static void logf_(const char* fmt, ...) {
   if (g_log == NULL) return;
   char buf[256];
@@ -257,6 +273,53 @@ static int serve(int sock, const char* log_path, const char* eboot_path) {
       // Only reached if LoadExec refused.
       logf_("  [dev] sceAppMgrLoadExec returned -- relaunch refused\n");
       return 1;
+    } else if (strcmp(line, "shot") == 0 || strcmp(line, "shotinfo") == 0) {
+      // Raw framebuffer, no header, so the host can wrap it in a PNG.
+      //
+      // `shotinfo` returns only the description line, which is the part that
+      // says whether the capture means anything: if the pointer the display
+      // controller holds is not the one the app drew into, then the pixels
+      // below are real but nobody is looking at them.
+      char describe[192];
+      describe[0] = '\0';
+      unsigned int size = 0;
+      const void* pixels =
+          g_read_framebuffer == NULL
+              ? NULL
+              : g_read_framebuffer(&size, describe, sizeof describe);
+
+      if (line[4] == 'i') {  // shotinfo
+        send_str(sock, describe[0] != '\0' ? describe : "ERR no framebuffer\n");
+      } else if (pixels == NULL || size == 0) {
+        send_str(sock, "ERR no framebuffer\n");
+      } else {
+        // Straight out the socket. sceNetSend can short-write on a 2 MB
+        // payload, so loop -- a partial frame decodes as a skewed image, which
+        // looks like a rendering bug rather than a truncated transfer.
+        const char* p = (const char*)pixels;
+        unsigned int sent = 0;
+        while (sent < size) {
+          const int n = sceNetSend(sock, p + sent, size - sent, 0);
+          if (n <= 0) {
+            break;
+          }
+          sent += (unsigned int)n;
+        }
+        logf_("  [dev] shot %u/%u bytes\n", sent, size);
+      }
+      return 0;
+    } else if (strncmp(line, "tap ", 4) == 0) {
+      int x = 0, y = 0;
+      if (sscanf(line + 4, "%d %d", &x, &y) != 2) {
+        send_str(sock, "ERR tap <x> <y>\n");
+      } else if (g_tap == NULL) {
+        send_str(sock, "ERR no tap handler\n");
+      } else {
+        g_tap(x, y);
+        char m[64];
+        snprintf(m, sizeof m, "OK tap %d %d\n", x, y);
+        send_str(sock, m);
+      }
     } else if (strcmp(line, "crash") == 0) {
       // Deliberately fault, to get a crash dump out of a process that is not
       // crashing.
@@ -273,7 +336,7 @@ static int serve(int sock, const char* log_path, const char* eboot_path) {
       *(volatile unsigned int*)0 = 0xDEAD;
       return 1;  // not reached
     } else if (n > 0) {
-      send_str(sock, "ERR unknown (ping|probe|log|get <path>|put <n> <path>|handoff|relaunch|crash|exit)\n");
+      send_str(sock, "ERR unknown (ping|probe|log|get|put|shot|shotinfo|tap <x> <y>|handoff|relaunch|crash|exit)\n");
     }
   }
 }

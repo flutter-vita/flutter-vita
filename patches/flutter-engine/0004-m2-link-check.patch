@@ -70,10 +70,10 @@ index 61abe64a..b92ae80c 100644
  
 diff --git a/engine/src/flutter/shell/platform/embedder/vita_embedder.cc b/engine/src/flutter/shell/platform/embedder/vita_embedder.cc
 new file mode 100644
-index 00000000..b10a0269
+index 00000000..841463ac
 --- /dev/null
 +++ b/engine/src/flutter/shell/platform/embedder/vita_embedder.cc
-@@ -0,0 +1,331 @@
+@@ -0,0 +1,532 @@
 +// Copyright (c) 2026, the Flutter Authors. All rights reserved.
 +// Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
@@ -113,6 +113,7 @@ index 00000000..b10a0269
 +#include <psp2/io/stat.h>
 +#include <psp2/kernel/sysmem.h>
 +#include <psp2/kernel/threadmgr.h>
++#include <psp2/touch.h>
 +
 +#include <unistd.h>
 +
@@ -133,8 +134,36 @@ index 00000000..b10a0269
 +extern "C" int dev_server_run(void (*log_line)(const char* msg),
 +                              const char* log_path,
 +                              const char* eboot_path);
++extern "C" void dev_server_set_framebuffer_source(
++    const void* (*read_framebuffer)(unsigned int* size,
++                                    char* describe,
++                                    unsigned int describe_size));
++extern "C" void dev_server_set_tap_handler(void (*tap)(int x, int y));
 +
 +namespace {
++
++// The Vita's panel. ADR-0006 records that native resolution cannot hold 60 fps
++// and that 720x408 upscaled reaches 68 -- when the reduced-resolution path
++// lands, this is the constant that changes, plus a GXM scale on present.
++constexpr int kWidth = 960;
++constexpr int kHeight = 544;
++
++// sceDisplaySetFrameBuf requires the pitch to be a multiple of 64 pixels; 960
++// already is, but the constant is named rather than assumed because it stops
++// being true the moment the resolution changes.
++constexpr int kPitch = 960;
++
++// SCE_DISPLAY_PIXELFORMAT_A8B8G8R8 is R,G,B,A in memory order on a
++// little-endian target, which is byte-identical to
++// kFlutterSoftwarePixelFormatRGBA8888. VERSIONS.md flagged this as "verify, do
++// not assume" in Phase 0.5; it held, and it is why the present below is a plain
++// copy with no channel swizzle.
++struct VitaDisplay {
++  SceUID memblock = -1;
++  void* base = nullptr;
++};
++
++VitaDisplay g_display;
 +
 +// The log channel, owning its own file handle and using none of stdio.
 +//
@@ -198,7 +227,199 @@ index 00000000..b10a0269
 +  return sceKernelExitDeleteThread(0);
 +}
 +
++// Touch, polled from the front panel and translated into pointer events.
++//
++// The front panel reports in its own coordinate space, which is **twice the
++// display resolution** -- 1920x1088 against 960x544. The panel info is queried
++// rather than hard-coded to that factor: the numbers come from the hardware,
++// and a constant here would be an assumption that silently halves or doubles
++// every tap if it were ever wrong.
++//
++// Only the first contact is forwarded. Flutter's pointer protocol handles
++// multitouch by device id, and adding that without a way to test it would be
++// speculative -- a second finger is a change to make when there is something
++// on screen that needs one.
++struct TouchState {
++  bool down = false;
++  double x = 0;
++  double y = 0;
++  int scale_min_x = 0;
++  int scale_min_y = 0;
++  double scale_x = 0.5;  // replaced by panel info at init
++  double scale_y = 0.5;
++};
++
++TouchState g_touch;
++
++void InitTouch() {
++  sceTouchSetSamplingState(SCE_TOUCH_PORT_FRONT,
++                           SCE_TOUCH_SAMPLING_STATE_START);
++
++  SceTouchPanelInfo info = {};
++  if (sceTouchGetPanelInfo(SCE_TOUCH_PORT_FRONT, &info) < 0) {
++    VLog("flutter-vita: sceTouchGetPanelInfo failed, assuming 2x\n");
++    return;
++  }
++
++  const int span_x = info.maxAaX - info.minAaX;
++  const int span_y = info.maxAaY - info.minAaY;
++  if (span_x <= 0 || span_y <= 0) {
++    VLog("flutter-vita: touch panel span %dx%d is unusable, assuming 2x\n",
++         span_x, span_y);
++    return;
++  }
++
++  g_touch.scale_min_x = info.minAaX;
++  g_touch.scale_min_y = info.minAaY;
++  g_touch.scale_x = static_cast<double>(kWidth) / span_x;
++  g_touch.scale_y = static_cast<double>(kHeight) / span_y;
++  VLog("flutter-vita: touch aa=[%d,%d..%d,%d] scale=%.4f,%.4f\n", info.minAaX,
++       info.minAaY, info.maxAaX, info.maxAaY, g_touch.scale_x, g_touch.scale_y);
++}
++
++void SendPointer(FlutterEngine engine,
++                 FlutterPointerPhase phase,
++                 double x,
++                 double y) {
++  FlutterPointerEvent event = {};
++  event.struct_size = sizeof(FlutterPointerEvent);
++  event.phase = phase;
++  // Microseconds since epoch, which is what the engine expects here -- not the
++  // monotonic clock the message loop uses.
++  event.timestamp =
++      static_cast<size_t>(FlutterEngineGetCurrentTime() / 1000);
++  event.x = x;
++  event.y = y;
++  event.device_kind = kFlutterPointerDeviceKindTouch;
++  event.device = 0;
++  // A touch screen has no buttons, and reporting one makes Flutter treat the
++  // gesture as a mouse drag with a held button.
++  event.buttons = 0;
++  FlutterEngineSendPointerEvent(engine, &event, 1);
++}
++
++// Poll once and emit whatever transition happened since the last call.
++//
++// Flutter wants kDown / kMove / kUp, not a level. Sending kDown every frame a
++// finger is present makes every tap look like a fresh gesture and nothing
++// recognises as a press, so the previous state is what this is really about.
++void PumpTouch(FlutterEngine engine) {
++  SceTouchData data = {};
++  if (sceTouchPeek(SCE_TOUCH_PORT_FRONT, &data, 1) < 0) {
++    return;
++  }
++
++  const bool down = data.reportNum > 0;
++  if (down) {
++    const SceTouchReport& report = data.report[0];
++    g_touch.x = (report.x - g_touch.scale_min_x) * g_touch.scale_x;
++    g_touch.y = (report.y - g_touch.scale_min_y) * g_touch.scale_y;
++  }
++
++  if (down && !g_touch.down) {
++    SendPointer(engine, kDown, g_touch.x, g_touch.y);
++    VLog("flutter-vita: touch down %.1f,%.1f\n", g_touch.x, g_touch.y);
++  } else if (down && g_touch.down) {
++    SendPointer(engine, kMove, g_touch.x, g_touch.y);
++  } else if (!down && g_touch.down) {
++    // Released at the last known position: the panel stops reporting
++    // coordinates the moment contact ends, so the alternative is lifting at
++    // 0,0 and cancelling every tap.
++    SendPointer(engine, kUp, g_touch.x, g_touch.y);
++    VLog("flutter-vita: touch up %.1f,%.1f\n", g_touch.x, g_touch.y);
++  }
++  g_touch.down = down;
++}
++
++// Synthetic taps, so input can be verified with nobody holding the console.
++//
++// The dev server calls InjectTap from its own thread, and pointer events must
++// be sent from the thread that owns the engine handle -- so this only records
++// the request, and the main loop turns it into a down/up pair on its next
++// pass. A single int pair guarded by nothing is deliberate: one writer, one
++// reader, and a dropped tap under a race costs a retry rather than corruption.
++//
++// This bypasses sceTouch entirely. It proves the engine's pointer path and
++// says nothing about coordinate scaling or panel sampling, which is why the
++// real thing still has to be tried by hand at least once.
++volatile bool g_injected_tap_pending = false;
++volatile int g_injected_tap_x = 0;
++volatile int g_injected_tap_y = 0;
++
++void InjectTap(int x, int y) {
++  g_injected_tap_x = x;
++  g_injected_tap_y = y;
++  g_injected_tap_pending = true;
++}
++
++void DrainInjectedTaps(FlutterEngine engine) {
++  if (!g_injected_tap_pending) {
++    return;
++  }
++  const double x = g_injected_tap_x;
++  const double y = g_injected_tap_y;
++  g_injected_tap_pending = false;
++
++  // Down and up in one pass. A real tap spans several frames, but Flutter's
++  // gesture recogniser keys on the event sequence rather than the wall-clock
++  // gap between them, so a tap arrives as a tap.
++  SendPointer(engine, kDown, x, y);
++  SendPointer(engine, kUp, x, y);
++  VLog("flutter-vita: injected tap %.0f,%.0f\n", x, y);
++}
++
++// Capture what the display controller is scanning out, not what we drew.
++//
++// The distinction is the whole point. Dumping g_display.base proves only that
++// we wrote pixels into memory we own; if sceDisplaySetFrameBuf never took
++// effect, that dump is a perfect picture of a buffer nobody is reading, over a
++// black panel. sceDisplayGetFrameBuf asks the hardware which buffer it
++// actually holds, and comparing the two answers the real question.
++//
++// The description line carries that comparison plus the vertical retrace
++// count, which separates "configured but parked" from "actively scanning".
++//
++// **Limit, stated so nobody trusts this further than it goes:** this is the
++// app's registered framebuffer, not the composited panel output. System
++// overlays -- notifications, the power dialog, LiveArea -- composite above it
++// and are invisible to a user-mode app. Capturing those needs a kernel plugin.
++const void* ReadFramebuffer(unsigned int* size,
++                            char* describe,
++                            unsigned int describe_size) {
++  SceDisplayFrameBuf fb = {};
++  fb.size = sizeof(fb);
++  const int result = sceDisplayGetFrameBuf(&fb, SCE_DISPLAY_SETBUF_NEXTFRAME);
++
++  const int vcount_before = sceDisplayGetVcount();
++  sceKernelDelayThread(20 * 1000);  // longer than one 60 Hz frame
++  const int vcount_after = sceDisplayGetVcount();
++
++  if (result < 0 || fb.base == nullptr) {
++    std::snprintf(describe, describe_size,
++                  "ERR sceDisplayGetFrameBuf=0x%08X base=%p\n", result,
++                  fb.base);
++    *size = 0;
++    return nullptr;
++  }
++
++  std::snprintf(describe, describe_size,
++                "base=%p ours=%p match=%s %ux%u pitch=%u fmt=0x%08X "
++                "vcount=%d->%d scanning=%s\n",
++                fb.base, g_display.base,
++                fb.base == g_display.base ? "yes" : "NO", fb.width, fb.height,
++                fb.pitch, fb.pixelformat, vcount_before, vcount_after,
++                vcount_after != vcount_before ? "yes" : "NO");
++
++  // Deliberately sized from the descriptor the hardware returned rather than
++  // from our own constants, so a mismatch shows up as a wrong-sized capture
++  // instead of being silently papered over.
++  *size = fb.pitch * fb.height * 4;
++  return fb.base;
++}
++
 +void StartDevServer() {
++  dev_server_set_framebuffer_source(ReadFramebuffer);
++  dev_server_set_tap_handler(InjectTap);
 +  // 64 KiB of stack because the server's `put` path holds a 32 KiB buffer.
 +  const SceUID thread = sceKernelCreateThread(
 +      "m3_devserver", DevServerThread, 0x10000100, 64 * 1024, 0, 0, nullptr);
@@ -208,29 +429,6 @@ index 00000000..b10a0269
 +  }
 +  sceKernelStartThread(thread, 0, nullptr);
 +}
-+
-+// The Vita's panel. ADR-0006 records that native resolution cannot hold 60 fps
-+// and that 720x408 upscaled reaches 68 -- when the reduced-resolution path
-+// lands, this is the constant that changes, plus a GXM scale on present.
-+constexpr int kWidth = 960;
-+constexpr int kHeight = 544;
-+
-+// sceDisplaySetFrameBuf requires the pitch to be a multiple of 64 pixels; 960
-+// already is, but the constant is named rather than assumed because it stops
-+// being true the moment the resolution changes.
-+constexpr int kPitch = 960;
-+
-+// SCE_DISPLAY_PIXELFORMAT_A8B8G8R8 is R,G,B,A in memory order on a
-+// little-endian target, which is byte-identical to
-+// kFlutterSoftwarePixelFormatRGBA8888. VERSIONS.md flagged this as "verify, do
-+// not assume" in Phase 0.5; it held, and it is why the present below is a plain
-+// copy with no channel swizzle.
-+struct VitaDisplay {
-+  SceUID memblock = -1;
-+  void* base = nullptr;
-+};
-+
-+VitaDisplay g_display;
 +
 +bool InitDisplay() {
 +  // CDRAM is the fast path for the display controller. The framebuffer must be
@@ -395,11 +593,14 @@ index 00000000..b10a0269
 +  metrics.pixel_ratio = 1.0;
 +  FlutterEngineSendWindowMetricsEvent(engine, &metrics);
 +
-+  // Nothing drives this loop yet -- no input, no vsync. It exists so the
-+  // process stays alive while the engine's own threads render, which is enough
-+  // to answer the only question that matters on the first run: does anything
-+  // reach the screen.
++  InitTouch();
++
++  // Polled input, no vsync yet. Frames are still presented as the engine
++  // produces them rather than paced against sceDisplayWaitVblankStart, so this
++  // loop's period is an input sampling rate and not a frame budget.
 +  for (;;) {
++    PumpTouch(engine);
++    DrainInjectedTaps(engine);
 +    sceKernelDelayThread(16 * 1000);
 +  }
 +

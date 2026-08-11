@@ -16,6 +16,7 @@ disposable; these patches are the artifact.
 | 0003 | [engine-sources-for-vita](0003-engine-sources-for-vita.patch) | Clang-only flags, missing `<cstring>`, two more platform chains, one Skia type |
 | 0004 | [m2-link-check](0004-m2-link-check.patch) | An executable that makes the linker answer the M2 question |
 | 0005 | [skia-target-for-vita](0005-skia-target-for-vita.patch) | `flutter/skia/BUILD.gn` — the log backend, and where `-ldl` was hiding |
+| 0006 | [vita-fonts](0006-vita-fonts.patch) | `txt` gets a real font manager, plus two probes promoted out of `FML_DLOG` |
 
 ## Applying
 

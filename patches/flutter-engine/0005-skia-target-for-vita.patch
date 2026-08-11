@@ -1,8 +1,39 @@
 diff --git a/engine/src/flutter/skia/BUILD.gn b/engine/src/flutter/skia/BUILD.gn
-index 1ef44cbe..a766ab29 100644
+index 1ef44cbe..a932f80b 100644
 --- a/engine/src/flutter/skia/BUILD.gn
 +++ b/engine/src/flutter/skia/BUILD.gn
-@@ -725,7 +725,17 @@ skia_component("skia") {
+@@ -25,6 +25,30 @@ if (is_fuchsia) {
+   skia_use_dng_sdk = false
+ }
+ 
++if (is_vita) {
++  # Without this the port draws no text at all, and the reason is one line in
++  # skia.gni:
++  #
++  #   skia_use_freetype = is_android || is_linux || is_canvaskit
++  #
++  # Vita is none of those, so Skia built with **no font backend**. The symptom
++  # on hardware was a counter app with a visible app bar and button and not a
++  # single glyph, and the misleading part is that shipping fonts in
++  # flutter_assets does not help: the asset font manager still needs a backend
++  # to turn bytes into a typeface, so asset fonts fail exactly as silently as
++  # system ones. The binary told the real story -- `SkFontMgr.o` and
++  # `SkOrderedFontMgr.o` were the only font objects in the whole build.
++  skia_use_freetype = true
++
++  # The directory manager is the one that suits this platform. There is no
++  # fontconfig and no system font store to enumerate, but there is a read-only
++  # app mount, so fonts ship with the app and are found by path. `_empty` stays
++  # on because Skia's own code paths expect it to exist.
++  skia_enable_fontmgr_custom_directory = true
++  skia_enable_fontmgr_custom_empty = true
++  skia_enable_fontmgr_custom_embedded = false
++}
++
+ # Skia public API, generally provided by :skia.
+ config("skia_public") {
+   include_dirs = [ "$_skia_root" ]
+@@ -725,7 +749,17 @@ skia_component("skia") {
      }
    } else {
      sources += [ "$_skia_root/src/ports/SkOSFile_posix.cpp" ]
@@ -21,7 +52,7 @@ index 1ef44cbe..a766ab29 100644
        libs += [ "dl" ]
      }
    }
-@@ -740,7 +750,10 @@ skia_component("skia") {
+@@ -740,7 +774,10 @@ skia_component("skia") {
      ]
    }
  

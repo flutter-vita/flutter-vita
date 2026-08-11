@@ -908,3 +908,56 @@ usefully:
 
 The engine reaches Dart isolate creation on hardware. What is left before
 something appears on the panel is tooling, not porting.
+
+## Text: Skia was built with no font backend at all
+
+The first frame reached the panel with an app bar and a button and **not one
+glyph**. The obvious guess -- a missing font file -- is wrong, and the way it is
+wrong matters, because shipping fonts would not have fixed it.
+
+`skia_use_freetype` is set in `gn/skia.gni` as:
+
+```gn
+skia_use_freetype = is_android || is_linux || is_canvaskit
+```
+
+Vita is none of the three, so every FreeType-dependent Skia target switched
+itself off. The binary says so plainly -- of the whole build, the only font
+objects present were:
+
+```
+obj/flutter/third_party/skia/src/core/skia.SkFontMgr.o
+obj/flutter/third_party/skia/src/utils/skia.SkOrderedFontMgr.o
+```
+
+No `SkTypeface_FreeType`, no `SkFontMgr_custom_*`, and `nm` on the linked ELF
+found no `SkFontMgr_New_Custom_*` at all. FreeType itself *was* compiled --
+`libfreetype2.*.o` are all there, pulled in by another dependency -- which is
+what makes this easy to misread: the library is present and unused.
+
+**Asset fonts would not have helped.** The asset font manager still needs a
+backend to turn font bytes into a typeface, so with no FreeType in Skia the
+MaterialIcons font shipped in `flutter_assets` fails exactly as silently as a
+system font would. Any amount of adding files to the bundle would have produced
+the same blank text.
+
+Downstream of that, `txt` had already fallen back to the generic
+`src/txt/platform.cc`, which returns `SkFontMgr::RefEmpty()` and names `"Arial"`
+as the default family -- an empty manager asked for a font that does not exist.
+
+Three changes, and they have to go together:
+
+1. `flutter/skia/BUILD.gn` turns on `skia_use_freetype` and
+   `skia_enable_fontmgr_custom_directory` for `is_vita`. The directory manager
+   is the right one here: no fontconfig, no system font store, but a read-only
+   app mount, so fonts ship with the app and are found by path.
+2. `txt/src/txt/platform_vita.cc` returns
+   `SkFontMgr_New_Custom_Directory("app0:/fonts")` and `{"Roboto"}` as the
+   default families.
+3. The `.vpk` ships `Roboto-Regular.ttf` into `app0:/fonts`.
+
+`app0:/fonts` is deliberately **not** `app0:/flutter_assets/fonts`. That
+directory belongs to `flutter build bundle` and holds icon fonts meant to be
+looked up by asset key. Scanning it would offer MaterialIcons as a candidate for
+text fallback, and text rendered in icons is a failure that looks like a font
+bug and is a configuration one.
