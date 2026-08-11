@@ -1,5 +1,5 @@
 diff --git a/runtime/platform/globals.h b/runtime/platform/globals.h
-index 66c3f273..a9c392ec 100644
+index 66c3f273..d87ba988 100644
 --- a/runtime/platform/globals.h
 +++ b/runtime/platform/globals.h
 @@ -138,6 +138,11 @@
@@ -48,16 +48,45 @@ index 66c3f273..a9c392ec 100644
  #ifndef PATH_MAX
  // Most platforms use PATH_MAX, but in Windows it's called MAX_PATH.
  #define PATH_MAX MAX_PATH
-@@ -717,6 +733,8 @@ DART_FORCE_INLINE D bit_copy(const S& source) {
+@@ -717,6 +733,37 @@ DART_FORCE_INLINE D bit_copy(const S& source) {
  #define kHostOperatingSystemName "macos"
  #elif defined(DART_HOST_OS_WINDOWS)
  #define kHostOperatingSystemName "windows"
 +#elif defined(DART_HOST_OS_VITA)
-+#define kHostOperatingSystemName "vita"
++// Reported as "linux", not "vita", and the reason is the Flutter framework
++// rather than Dart.
++//
++// `defaultTargetPlatform` in package:flutter/src/foundation/_platform_io.dart
++// is a chain of Platform.isAndroid / isIOS / isLinux / ... and it *throws*
++// when none match:
++//
++//     Unhandled Exception: Unknown platform.
++//     #0  defaultTargetPlatform (_platform_io.dart:39)
++//     ...
++//     #16 runApp (binding.dart:1884)
++//
++// That fires inside `new FocusManager`, before the first frame, so with an
++// honest "vita" no Flutter app can start at all. The override is not
++// available: `debugDefaultTargetPlatformOverride` is ignored in release, and
++// this port only builds AOT release.
++//
++// TargetPlatform.linux is also the right *behavioural* answer -- it selects
++// desktop text-editing shortcuts, desktop scrollbars, and no mobile overscroll
++// glow, which is what a handheld with buttons and a touchscreen but no mobile
++// OS should get. flutter-pi and flutter-elinux report linux for the same
++// reason.
++//
++// The cost is real and belongs written down: `Platform.operatingSystem` now
++// lies to application code, and anything that branches on it -- including
++// packages reaching for /proc or /sys -- will take the Linux path. The honest
++// fix is a TargetPlatform.vita in the framework, which means a case in every
++// switch over TargetPlatform; that is a framework patch, not an engine one,
++// and it is tracked as its own piece of work.
++#define kHostOperatingSystemName "linux"
  #else
  #error Host operating system detection failed.
  #endif
-@@ -769,6 +787,8 @@ DART_FORCE_INLINE D bit_copy(const S& source) {
+@@ -769,6 +816,8 @@ DART_FORCE_INLINE D bit_copy(const S& source) {
  #define kTargetOperatingSystemName "macos"
  #elif defined(DART_TARGET_OS_WINDOWS)
  #define kTargetOperatingSystemName "windows"

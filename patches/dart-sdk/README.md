@@ -400,3 +400,30 @@ where there should be ten, and no error.
 
 Regenerating 0010 with `':!runtime/bin/BUILD.gn'` fixed the overlap. The
 tree-comparison one-liner is what caught it; run it after touching either tree.
+
+## Regenerating: diff against the pin, never against HEAD
+
+The vendored Dart checkout has a **local commit on top of the pin**
+(`ec223733`, from an earlier session where the shell's working directory was
+inside `third_party/flutter`). Most of this series is inside it, which means
+`git diff` with no revision reports those files as clean:
+
+```
+$ git status --short runtime/platform/utils.h      # says nothing
+$ grep -n VITA runtime/platform/utils.h            # line 609, the change is there
+```
+
+Regenerating with a bare `git diff` therefore produces a patch that is missing
+files, silently and with a plausible-looking result. On 2026-08-11 that turned
+0001 from three files into one, and only a file-count check caught it.
+
+Always name the pinned commit:
+
+```bash
+cd third_party/flutter/engine/src/flutter/third_party/dart
+git diff d684a576 -- <files owned by the patch> > ../../../../../../../patches/dart-sdk/000N-*.patch
+```
+
+**And check the file count against the patch you replaced**, every time. Untracked
+new files are the other half of the same trap: `git diff` skips them unless they
+have been `git add -N`'d, so a patch can lose the very file it exists to add.

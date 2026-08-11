@@ -257,11 +257,23 @@ static int serve(int sock, const char* log_path, const char* eboot_path) {
       // Only reached if LoadExec refused.
       logf_("  [dev] sceAppMgrLoadExec returned -- relaunch refused\n");
       return 1;
-    } else if (strcmp(line, "exit") == 0) {
-      send_str(sock, "OK\n");
-      return 1;
+    } else if (strcmp(line, "crash") == 0) {
+      // Deliberately fault, to get a crash dump out of a process that is not
+      // crashing.
+      //
+      // A hang is the one failure the log cannot describe: it says what
+      // happened last, never what everything is currently blocked on. The
+      // dump does -- it carries every thread's PC, which is exactly the
+      // question a deadlock poses. m3 hung inside FlutterEngineRun after
+      // starting its threads and there was no other way to see where.
+      //
+      // Kept out of the way of ordinary use: nothing sends this by accident,
+      // and the alternative was waiting for a fault that may never come.
+      send_str(sock, "OK faulting\n");
+      *(volatile unsigned int*)0 = 0xDEAD;
+      return 1;  // not reached
     } else if (n > 0) {
-      send_str(sock, "ERR unknown (ping|probe|log|get <path>|put <n> <path>|handoff|relaunch|exit)\n");
+      send_str(sock, "ERR unknown (ping|probe|log|get <path>|put <n> <path>|handoff|relaunch|crash|exit)\n");
     }
   }
 }

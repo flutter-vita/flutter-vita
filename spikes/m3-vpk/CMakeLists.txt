@@ -53,8 +53,20 @@ endif()
 
 # ADR-0005 option A: the snapshot is assembled and linked in rather than loaded.
 # The four _kDart* symbols vita_embedder.cc declares extern come from here.
+# M1's on-device dev server, reused rather than reimplemented.
+#
+# Without it m3 is invisible while it runs: it opens no port, so `cycle` always
+# reported "CRASHED (never opened 1339)" even on a healthy run, and reading the
+# log meant asking a human to exit the app and tap the loader. On 2026-08-11
+# that cost several round trips on the one question the log would have answered
+# in a second. The server gives back `ping`, `log`, `get` and `handoff` while
+# the engine is up, which is what makes the loop autonomous.
 add_executable(${PROJECT_NAME}
   ${SNAPSHOT_S}
+  ${CMAKE_CURRENT_SOURCE_DIR}/../m1-vpk/src/devserver.c
+)
+target_include_directories(${PROJECT_NAME} PRIVATE
+  ${CMAKE_CURRENT_SOURCE_DIR}/../m1-vpk/src
 )
 
 # Link as C++. Skia, ICU and the engine are all C++, and ICU in particular is

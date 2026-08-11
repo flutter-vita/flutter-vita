@@ -70,10 +70,10 @@ index 61abe64a..b92ae80c 100644
  
 diff --git a/engine/src/flutter/shell/platform/embedder/vita_embedder.cc b/engine/src/flutter/shell/platform/embedder/vita_embedder.cc
 new file mode 100644
-index 00000000..25f42ff9
+index 00000000..b10a0269
 --- /dev/null
 +++ b/engine/src/flutter/shell/platform/embedder/vita_embedder.cc
-@@ -0,0 +1,208 @@
+@@ -0,0 +1,331 @@
 +// Copyright (c) 2026, the Flutter Authors. All rights reserved.
 +// Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
@@ -109,18 +109,105 @@ index 00000000..25f42ff9
 +// copy, not a different renderer.
 +
 +#include <psp2/display.h>
++#include <psp2/io/fcntl.h>
 +#include <psp2/io/stat.h>
 +#include <psp2/kernel/sysmem.h>
 +#include <psp2/kernel/threadmgr.h>
 +
 +#include <unistd.h>
 +
++#include <cstdarg>
 +#include <cstdio>
 +#include <cstring>
 +
 +#include "flutter/shell/platform/embedder/embedder.h"
 +
++// M1's on-device dev server, at spikes/m1-vpk/src/devserver.{c,h}, compiled
++// into this binary by the m3 spike's CMakeLists.
++//
++// Declared here rather than included. The header lives in the project repo,
++// outside the engine checkout, and ninja compiles this file with the engine's
++// own include paths -- reaching out of the tree would mean teaching GN about a
++// directory that only exists in one developer layout. One prototype is cheaper
++// and the linker still checks it.
++extern "C" int dev_server_run(void (*log_line)(const char* msg),
++                              const char* log_path,
++                              const char* eboot_path);
++
 +namespace {
++
++// The log channel, owning its own file handle and using none of stdio.
++//
++// Three attempts at this failed in three different ways, and the pattern is
++// worth writing down because it will catch the next person.
++//
++//   _IOLBF with a null buffer -- newlib did not give line buffering, so a run
++//   that hung produced a zero-byte file.
++//
++//   freopen on stdout -- newlib here gives each thread its own reentrancy
++//   struct, so it rebinds only the calling thread's FILE. Output from one
++//   thread landed and output from another vanished, which reads like a
++//   buffering bug and is not one.
++//
++//   write(1, ...) -- freopen does not put the reopened stream on fd 1. The
++//   VitaSDK fd table hands out its own slots, so fd 1 is not the log and the
++//   writes went nowhere at all.
++//
++// A diagnostic channel must not have failure modes subtler than the bugs it
++// exists to find. sceIoWrite against a handle this file opened has none of
++// them: no buffering, no per-thread state, no descriptor mapping.
++SceUID g_log_fd = -1;
++
++void VLogRaw(const char* data, size_t len) {
++  if (g_log_fd < 0) {
++    return;
++  }
++  sceIoWrite(g_log_fd, data, len);
++}
++
++void VLog(const char* fmt, ...) __attribute__((format(printf, 1, 2)));
++void VLog(const char* fmt, ...) {
++  char buf[512];
++  va_list ap;
++  va_start(ap, fmt);
++  const int n = std::vsnprintf(buf, sizeof buf, fmt, ap);
++  va_end(ap);
++  if (n > 0) {
++    VLogRaw(buf, n < static_cast<int>(sizeof buf) ? n : sizeof buf - 1);
++  }
++}
++
++// Serve the dev protocol on its own thread, because dev_server_run blocks
++// until it is told to exit and the engine needs main() to keep running.
++//
++// Without this m3 answers nothing while it is alive, so a healthy run and a
++// hung one look identical from the host: no port, no log, no way in. Reading
++// the log meant asking someone to close the app and tap the loader, which is
++// exactly the round trip this loop exists to avoid.
++//
++// The server appends its own newline, so this must not add one.
++void DevServerLog(const char* msg) {
++  VLogRaw(msg, std::strlen(msg));
++}
++
++int DevServerThread(SceSize /* args */, void* /* argp */) {
++  dev_server_run(DevServerLog, "ux0:data/flutter-vita/m3.log",
++                 "ux0:app/FVTA00002/eboot.bin");
++  // Asked to exit, or the socket never came up. Either way the engine keeps
++  // going; losing the dev channel is not a reason to take the app down.
++  return sceKernelExitDeleteThread(0);
++}
++
++void StartDevServer() {
++  // 64 KiB of stack because the server's `put` path holds a 32 KiB buffer.
++  const SceUID thread = sceKernelCreateThread(
++      "m3_devserver", DevServerThread, 0x10000100, 64 * 1024, 0, 0, nullptr);
++  if (thread < 0) {
++    VLog("flutter-vita: dev server thread failed: 0x%08X\n", thread);
++    return;
++  }
++  sceKernelStartThread(thread, 0, nullptr);
++}
 +
 +// The Vita's panel. ADR-0006 records that native resolution cannot hold 60 fps
 +// and that 720x408 upscaled reaches 68 -- when the reduced-resolution path
@@ -154,11 +241,11 @@ index 00000000..25f42ff9
 +  g_display.memblock = sceKernelAllocMemBlock(
 +      "flutter_fb", SCE_KERNEL_MEMBLOCK_TYPE_USER_CDRAM_RW, aligned, nullptr);
 +  if (g_display.memblock < 0) {
-+    std::printf("sceKernelAllocMemBlock failed: 0x%08X\n", g_display.memblock);
++    VLog("sceKernelAllocMemBlock failed: 0x%08X\n", g_display.memblock);
 +    return false;
 +  }
 +  if (sceKernelGetMemBlockBase(g_display.memblock, &g_display.base) < 0) {
-+    std::printf("sceKernelGetMemBlockBase failed\n");
++    VLog("sceKernelGetMemBlockBase failed\n");
 +    return false;
 +  }
 +  std::memset(g_display.base, 0, aligned);
@@ -178,6 +265,17 @@ index 00000000..25f42ff9
 +                    const void* allocation,
 +                    size_t row_bytes,
 +                    size_t height) {
++  // A black panel has two very different causes and this separates them: the
++  // engine never producing a frame, or producing frames that are themselves
++  // black. Logging the first present and then every 60th keeps the answer in
++  // the log without the unbuffered writes becoming the frame budget.
++  static unsigned frames = 0;
++  if (frames == 0 || frames % 60 == 0) {
++    VLog("flutter-vita: present #%u row_bytes=%u height=%u\n", frames,
++         static_cast<unsigned>(row_bytes), static_cast<unsigned>(height));
++  }
++  frames++;
++
 +  if (g_display.base == nullptr) {
 +    return false;
 +  }
@@ -216,28 +314,53 @@ index 00000000..25f42ff9
 +// anything else runs, so `dev.sh get ux0:data/flutter-vita/m3.log` works even
 +// after a crash -- the loader is up by then and serves the file.
 +//
-+// Line buffering matters more than it looks. A crash discards whatever is
-+// still in the FILE buffer, and the interesting line is always the last one.
++// Unbuffered, not line buffered, and that is a deliberate downgrade.
++//
++// The first version asked for _IOLBF with a null buffer and size 0. POSIX
++// leaves that combination implementation-defined, newlib did not give line
++// buffering, and a run that hung produced a log file of zero bytes -- the app
++// had truncated it on open and never flushed a byte. A log that is empty
++// exactly when the program misbehaves is worse than no log, because it looks
++// like evidence.
++//
++// _IONBF sends every write straight through to sceIoWrite. It is slow, and on
++// a memory card it is very slow, but a diagnostic channel that cannot lose its
++// last line is the entire point of having one. Revisit only once the boot is
++// quiet enough that logging volume matters.
 +static void OpenLog() {
++  static const char* const kPath = "ux0:data/flutter-vita/m3.log";
 +  sceIoMkdir("ux0:data/flutter-vita", 0777);
-+  std::freopen("ux0:data/flutter-vita/m3.log", "w", stdout);
-+  std::setvbuf(stdout, nullptr, _IOLBF, 0);
-+  // stderr must share stdout's *file description*, not merely open the same
-+  // path. Two freopens give two descriptions with independent offsets, and the
-+  // second stream then writes over the first's output from byte zero -- which
-+  // is how the first run of this lost "flutter-vita: starting" entirely and
-+  // began the log at the first FML_LOG line. dup2 makes one offset serve both,
-+  // so writes interleave in the order they happened.
-+  dup2(fileno(stdout), fileno(stderr));
-+  std::setvbuf(stderr, nullptr, _IOLBF, 0);
++
++  // Truncate once, then hold an append handle. Append matters because the
++  // engine's own logging goes through std::cerr, which is a different writer
++  // with a different offset -- two writers each tracking their own position
++  // would overwrite each other rather than interleave.
++  const SceUID truncate =
++      sceIoOpen(kPath, SCE_O_WRONLY | SCE_O_CREAT | SCE_O_TRUNC, 0777);
++  if (truncate >= 0) {
++    sceIoClose(truncate);
++  }
++  g_log_fd = sceIoOpen(kPath, SCE_O_WRONLY | SCE_O_APPEND, 0777);
++
++  // FML_LOG writes to std::cerr, and there is no hook to redirect it, so the
++  // engine's diagnostics still have to come through stdio. Append mode and no
++  // buffering, for the same two reasons as above.
++  std::freopen(kPath, "a", stderr);
++  std::setvbuf(stderr, nullptr, _IONBF, 0);
++  std::freopen(kPath, "a", stdout);
++  std::setvbuf(stdout, nullptr, _IONBF, 0);
 +}
 +
 +int main(int argc, char** argv) {
 +  OpenLog();
-+  std::printf("flutter-vita: starting\n");
++  VLog("flutter-vita: starting\n");
++
++  // Before the engine, deliberately. If startup hangs or dies, the dev server
++  // is already answering and the log can be pulled without the app exiting.
++  StartDevServer();
 +
 +  if (!InitDisplay()) {
-+    std::printf("flutter-vita: display init failed\n");
++    VLog("flutter-vita: display init failed\n");
 +    return 1;
 +  }
 +
@@ -260,10 +383,10 @@ index 00000000..25f42ff9
 +  FlutterEngineResult result =
 +      FlutterEngineRun(FLUTTER_ENGINE_VERSION, &config, &args, nullptr, &engine);
 +  if (result != kSuccess || engine == nullptr) {
-+    std::printf("flutter-vita: FlutterEngineRun failed: %d\n", result);
++    VLog("flutter-vita: FlutterEngineRun failed: %d\n", result);
 +    return 1;
 +  }
-+  std::printf("flutter-vita: engine running\n");
++  VLog("flutter-vita: engine running\n");
 +
 +  FlutterWindowMetricsEvent metrics = {};
 +  metrics.struct_size = sizeof(FlutterWindowMetricsEvent);
