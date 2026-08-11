@@ -70,10 +70,10 @@ index 61abe64a..b92ae80c 100644
  
 diff --git a/engine/src/flutter/shell/platform/embedder/vita_embedder.cc b/engine/src/flutter/shell/platform/embedder/vita_embedder.cc
 new file mode 100644
-index 00000000..86168d7d
+index 00000000..25f42ff9
 --- /dev/null
 +++ b/engine/src/flutter/shell/platform/embedder/vita_embedder.cc
-@@ -0,0 +1,203 @@
+@@ -0,0 +1,208 @@
 +// Copyright (c) 2026, the Flutter Authors. All rights reserved.
 +// Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
@@ -112,6 +112,8 @@ index 00000000..86168d7d
 +#include <psp2/io/stat.h>
 +#include <psp2/kernel/sysmem.h>
 +#include <psp2/kernel/threadmgr.h>
++
++#include <unistd.h>
 +
 +#include <cstdio>
 +#include <cstring>
@@ -220,10 +222,13 @@ index 00000000..86168d7d
 +  sceIoMkdir("ux0:data/flutter-vita", 0777);
 +  std::freopen("ux0:data/flutter-vita/m3.log", "w", stdout);
 +  std::setvbuf(stdout, nullptr, _IOLBF, 0);
-+  // stderr shares the file rather than getting its own, so FML_LOG output and
-+  // the embedder's own printfs interleave in write order. Two files would make
-+  // the ordering between them guesswork.
-+  std::freopen("ux0:data/flutter-vita/m3.log", "a", stderr);
++  // stderr must share stdout's *file description*, not merely open the same
++  // path. Two freopens give two descriptions with independent offsets, and the
++  // second stream then writes over the first's output from byte zero -- which
++  // is how the first run of this lost "flutter-vita: starting" entirely and
++  // began the log at the first FML_LOG line. dup2 makes one offset serve both,
++  // so writes interleave in the order they happened.
++  dup2(fileno(stdout), fileno(stderr));
 +  std::setvbuf(stderr, nullptr, _IOLBF, 0);
 +}
 +

@@ -810,3 +810,101 @@ as a literal-pool constant, so it is materialised at runtime.
 3. Put a guard word on either side of the latch in `fml::Thread`'s ctor and
    check it after `Wait()` returns. That converts "something writes the stack"
    into a bounded range.
+
+### The bug: libstdc++ never knew this program had threads
+
+The probe answered on the first run, and it answered the opposite of what the
+last three theories assumed. The handle was already wrong **on entry to
+`Wait()`**, before anything waited:
+
+```
+ARWE 0x8204029c enter handle=81c44604 signaled=0     x3
+terminate called after throwing an instance of 'std::system_error'
+```
+
+`0x81c44604` less that run's module base is ELF `0x81c20604`, and `0x81c20604`
+is the first byte of `"trace-to-file"` — the *same string literal* as the first
+crash, in a binary whose `.rodata` had shifted by `0x280`. A value that follows
+a string across a relink is not a coincidence and not corruption. It is the
+literal's address, materialised at runtime, sitting in a stack slot that
+`SettingsFromCommandLine` used earlier and that the latch was later placed on
+top of.
+
+Which means the mutex was **never initialised**, and the two locks that
+"succeeded" never happened:
+
+```
+$ arm-vita-eabi-nm flutter_vita_m3 | grep pthread
+         w pthread_cancel        <-- weak, unresolved, address 0
+81b7a5d4 T pthread_create
+81b7a4a0 T pthread_mutex_lock
+```
+
+GCC's `gthr-default.h` decides whether a program is threaded by taking the
+address of a proxy symbol — `__pthread_key_create` on glibc, and everywhere
+else `pthread_cancel`, declared as a weak reference. **A weak reference does
+not pull a member out of an archive.** Nothing in the engine calls
+`pthread_cancel`, so it linked with no address, `__gthread_active_p()` returned
+0, and libstdc++ compiled the entire engine down to its single-threaded path:
+
+```c
+static inline int __gthread_mutex_lock (__gthread_mutex_t *__mutex) {
+  if (__gthread_active_p ()) return __gthrw_(pthread_mutex_lock) (__mutex);
+  else return 0;                                  /* <- what was running */
+}
+```
+
+Every `std::mutex::lock()` in the engine and in Skia was `return 0` without
+touching the handle. That is why the handle kept its stack garbage, why two
+locks appeared to succeed, and why only one path ever faulted:
+**`std::condition_variable::wait` is not gated on `__gthread_active_p`.** It
+calls `pthread_cond_wait` for real, which locks the mutex it is handed for
+real, and that mutex was a pointer to `.rodata`. The `strex` in
+`pte_osAtomicExchange` then wrote to a read-only page.
+
+The fix is one linker flag, in `spikes/m3-vpk/CMakeLists.txt`:
+
+```
+"-Wl,-u,pthread_cancel"
+```
+
+`-u` makes the reference strong enough to pull the archive member in. After it:
+
+```
+81b7b9ec T pthread_cancel
+```
+
+and the log shows every wait completing:
+
+```
+ARWE 0x8204029c enter     handle=82106c20 signaled=0
+ARWE 0x8204029c pre-wait  handle=82106c20
+ARWE 0x8204029c post-wait handle=82106c20
+```
+
+Real heap handles, three latches, no fault.
+
+**This was never only a crash.** A silently single-threaded libstdc++ means
+every mutex in a multi-threaded renderer is a no-op, so the crash was the
+lucky outcome — the alternative was months of unreproducible corruption. Any
+Vita C++ project that uses `std::mutex` across threads has this bug and has no
+symptom pointing at it. The check is one command: `nm | grep pthread_cancel`,
+and a `w` is the defect.
+
+### Then, in order, the ordinary failures
+
+With threads working the engine started and failed twice more, each time
+usefully:
+
+1. `Check failed: context->IsValid() ... Tried: app0:/icudtl.dat`. The loader's
+   `install` replaces `eboot.bin` and nothing else, so the app directory still
+   held M1's contents. `dev.sh` now pushes `icudtl.dat` after install, hashed so
+   it transfers only when it changes.
+2. `Dart_LookupLibrary: library 'dart:ui' not found`, then
+   `Check failed: !CheckAndHandleError(http_connection_hook_closure)`. Expected:
+   the snapshot is built from `spikes/b1-aot-snapshot/out/hello.dill`, a plain
+   Dart program. A Flutter app kernel has to come from the flutter frontend
+   server, with `dart:ui` in it, alongside a real `flutter_assets`.
+
+The engine reaches Dart isolate creation on hardware. What is left before
+something appears on the panel is tooling, not porting.

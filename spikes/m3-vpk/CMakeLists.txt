@@ -76,6 +76,29 @@ set_target_properties(${PROJECT_NAME} PROPERTIES LINKER_LANGUAGE CXX)
 target_link_options(${PROJECT_NAME} PRIVATE
   "-Wl,-z,max-page-size=0x10000"
   "-Wl,-z,common-page-size=0x10000"
+  # Force pthread_cancel out of libpthread.a, and read the next paragraph
+  # before deleting this line -- nothing in this program calls it.
+  #
+  # GCC's gthr-default.h decides whether the program is threaded by taking the
+  # address of a proxy symbol. On glibc that is __pthread_key_create; here it
+  # falls through to `pthread_cancel`, declared as a **weak** reference. A weak
+  # reference does not pull a member out of an archive, so the symbol links as
+  # `w pthread_cancel` with no address, __gthread_active_p() returns 0, and
+  # libstdc++ quietly compiles the whole engine down to its single-threaded
+  # path: every std::mutex::lock() becomes `return 0` without touching the
+  # handle.
+  #
+  # That is not merely slow, it is wrong in a way that hides. The mutex is
+  # never initialised, so it keeps whatever the stack slot held before -- and
+  # std::condition_variable::wait is *not* gated on __gthread_active_p, so it
+  # hands that uninitialised handle to a real pthread_cond_wait. The first
+  # crash of this port was that exact path: an atomic exchange against a string
+  # literal in .rodata, deterministic because it is a string literal.
+  #
+  # -u makes the reference strong enough to pull the member in. It costs one
+  # object nobody calls, and it is the difference between the engine's mutexes
+  # existing and not.
+  "-Wl,-u,pthread_cancel"
 )
 
 # GN emits source_sets whose objects link directly; there is no single archive

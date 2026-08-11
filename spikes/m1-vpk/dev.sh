@@ -45,6 +45,9 @@ case "$APP" in
   *)  echo "APP must be m1 or m3, not '$APP'" >&2; exit 2 ;;
 esac
 APPDIR="$(cd "$APPDIR" && pwd)"
+# One slot, hard-coded in the loader at vita-loader/src/main.c:51. Named here
+# rather than repeated, because it is the destination for every file push.
+TITLEID="FVTA00002"
 
 EBOOT="$APPDIR/out/staging/eboot.bin"
 ELF="$APPDIR/build/$ELF_NAME"
@@ -108,6 +111,37 @@ newest_dump() {
     | sort -t- -k2 -n | tail -1
 }
 
+cmd_put() {  # <local path> <device path>
+  local size; size=$(wc -c <"$1" | tr -d ' ')
+  { printf 'put %s %s\n' "$size" "$2"; cat "$1"; } | nc -w 120 "$VITA" "$LDR" | grep -q OK
+}
+
+# Everything in the .vpk that is not eboot.bin, kept in step with the device.
+#
+# The hash file next to the payload is what makes this cheap: icudtl.dat is
+# 862 KiB and never changes between builds, so re-sending it every cycle would
+# add a transfer to every iteration for nothing.
+push_data() {
+  [ "$APP" = m3 ] || return 0
+  local vpk="$APPDIR/build/$ELF_NAME.vpk"
+  local stage="$APPDIR/out/staging"
+  [ -f "$vpk" ] || return 0
+
+  ( cd "$stage" && unzip -o -q "$vpk" icudtl.dat ) || return 1
+  local want; want=$(shasum -a 1 "$stage/icudtl.dat" | cut -d' ' -f1)
+  local have=""; [ -f "$stage/.icudtl.on-device" ] && have=$(cat "$stage/.icudtl.on-device")
+  if [ "$want" = "$have" ]; then
+    return 0
+  fi
+
+  echo "pushing icudtl.dat…"
+  cmd_put "$stage/icudtl.dat" "ux0:app/$TITLEID/icudtl.dat" || {
+    echo "!! icudtl.dat push failed" >&2; return 1; }
+  # Written only after the device confirmed, so a failed push retries next time
+  # rather than being remembered as done.
+  echo "$want" > "$stage/.icudtl.on-device"
+}
+
 cmd_get() {  # <device path> <local path>
   local p; p="$(live)"; [ -z "$p" ] && { echo "nothing running" >&2; return 1; }
   mkdir -p "$(dirname "$2")"
@@ -156,6 +190,15 @@ cycle() {
   fi
   echo "installing…"
   say "$LDR" install | grep -q OK || { echo "!! install failed" >&2; return 1; }
+
+  # `install` replaces eboot.bin and nothing else, which is right for the inner
+  # loop -- it is the only file that changes between builds. But the app dir is
+  # whatever the last full .vpk install left behind, and for m3 that was M1's:
+  # no icudtl.dat, so the engine died on
+  #   Check failed: context->IsValid() ... Tried: app0:/icudtl.dat
+  # after every other startup problem had been fixed. Push the data files too,
+  # and only when they differ, so the common case stays one transfer.
+  push_data || return 1
 
   echo "launching…"
   say "$LDR" launch >/dev/null
