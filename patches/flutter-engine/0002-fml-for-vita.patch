@@ -1,13 +1,15 @@
 diff --git a/engine/src/flutter/fml/BUILD.gn b/engine/src/flutter/fml/BUILD.gn
-index 69f88e48..225e6e3b 100644
+index 69f88e48..90440837 100644
 --- a/engine/src/flutter/fml/BUILD.gn
 +++ b/engine/src/flutter/fml/BUILD.gn
-@@ -202,6 +202,14 @@ source_set("fml") {
+@@ -202,6 +202,16 @@ source_set("fml") {
      sources += [ "platform/qnx/paths_qnx.cc" ]
    }
  
 +  if (is_vita) {
 +    sources += [
++      "platform/vita/dir_fd_vita.cc",
++      "platform/vita/dir_fd_vita.h",
 +      "platform/vita/message_loop_vita.cc",
 +      "platform/vita/message_loop_vita.h",
 +      "platform/vita/paths_vita.cc",
@@ -74,7 +76,7 @@ index 01f4d58d..7a2c9103 100644
    return nullptr;
  #endif
 diff --git a/engine/src/flutter/fml/platform/posix/file_posix.cc b/engine/src/flutter/fml/platform/posix/file_posix.cc
-index 110ef558..eb34f40f 100644
+index 110ef558..a670fbc3 100644
 --- a/engine/src/flutter/fml/platform/posix/file_posix.cc
 +++ b/engine/src/flutter/fml/platform/posix/file_posix.cc
 @@ -6,7 +6,11 @@
@@ -88,6 +90,183 @@ index 110ef558..eb34f40f 100644
 +#endif
  #include <sys/stat.h>
  #include <unistd.h>
+ 
+@@ -20,6 +24,94 @@
+ #include "flutter/fml/trace_event.h"
+ #include "flutter/fml/unique_fd.h"
+ 
++#if defined(FML_OS_VITA)
++#include "flutter/fml/platform/vita/dir_fd_vita.h"
++
++// The *at* family, re-expressed as path resolution.
++//
++// This platform has no directory descriptors, so each of these turns
++// (dirfd, relative) into an absolute path via the registry and then calls the
++// plain form. An unresolvable dirfd yields an empty path and the call fails,
++// which is the point: the alternative is resolving against the process cwd and
++// quietly operating on the wrong file. See dir_fd_vita.h.
++namespace {
++
++// mode defaults because openat is variadic and O_DIRECTORY callers omit it.
++int VitaOpenAt(int dirfd, const char* path, int flags, int mode = 0) {
++  const std::string resolved = fml::VitaResolveAt(dirfd, path);
++  if (resolved.empty()) {
++    errno = EBADF;
++    return -1;
++  }
++  // O_DIRECTORY is the one flag that cannot be passed through: sceIo will not
++  // open a directory as a file. Hand back a registry token instead, which is
++  // what every subsequent *at* call against it expects.
++  if ((flags & O_DIRECTORY) != 0) {
++    const int fd = fml::VitaOpenDirFd(resolved);
++    if (fd < 0) {
++      errno = ENOENT;
++    }
++    return fd;
++  }
++  return ::open(resolved.c_str(), flags, mode);
++}
++
++int VitaMkdirAt(int dirfd, const char* path, int mode) {
++  const std::string resolved = fml::VitaResolveAt(dirfd, path);
++  if (resolved.empty()) {
++    errno = EBADF;
++    return -1;
++  }
++  return ::mkdir(resolved.c_str(), mode);
++}
++
++int VitaUnlinkAt(int dirfd, const char* path, int flags) {
++  const std::string resolved = fml::VitaResolveAt(dirfd, path);
++  if (resolved.empty()) {
++    errno = EBADF;
++    return -1;
++  }
++  return (flags & AT_REMOVEDIR) != 0 ? ::rmdir(resolved.c_str())
++                                     : ::unlink(resolved.c_str());
++}
++
++int VitaAccessAt(int dirfd, const char* path, int mode) {
++  const std::string resolved = fml::VitaResolveAt(dirfd, path);
++  if (resolved.empty()) {
++    errno = EBADF;
++    return -1;
++  }
++  return ::access(resolved.c_str(), mode);
++}
++
++int VitaRenameAt(int from_dirfd,
++                 const char* from,
++                 int to_dirfd,
++                 const char* to) {
++  const std::string resolved_from = fml::VitaResolveAt(from_dirfd, from);
++  const std::string resolved_to = fml::VitaResolveAt(to_dirfd, to);
++  if (resolved_from.empty() || resolved_to.empty()) {
++    errno = EBADF;
++    return -1;
++  }
++  return ::rename(resolved_from.c_str(), resolved_to.c_str());
++}
++
++}  // namespace
++
++#define FML_OPENAT VitaOpenAt
++#define FML_MKDIRAT VitaMkdirAt
++#define FML_UNLINKAT VitaUnlinkAt
++#define FML_ACCESSAT(d, p, m, f) VitaAccessAt(d, p, m)
++#define FML_RENAMEAT VitaRenameAt
++#else
++#define FML_OPENAT ::openat
++#define FML_MKDIRAT ::mkdirat
++#define FML_UNLINKAT ::unlinkat
++#define FML_ACCESSAT ::faccessat
++#define FML_RENAMEAT ::renameat
++#endif  // defined(FML_OS_VITA)
++
+ namespace fml {
+ 
+ std::string CreateTemporaryDirectory() {
+@@ -91,7 +183,7 @@ fml::UniqueFD OpenFile(const fml::UniqueFD& base_directory,
+   }
+ 
+   return fml::UniqueFD{
+-      FML_HANDLE_EINTR(::openat(base_directory.get(), path, flags, mode))};
++      FML_HANDLE_EINTR(FML_OPENAT(base_directory.get(), path, flags, mode))};
+ }
+ 
+ fml::UniqueFD OpenDirectory(const char* path,
+@@ -110,14 +202,14 @@ fml::UniqueFD OpenDirectory(const fml::UniqueFD& base_directory,
+   }
+ 
+   if (create_if_necessary && !FileExists(base_directory, path)) {
+-    if (::mkdirat(base_directory.get(), path,
++    if (FML_MKDIRAT(base_directory.get(), path,
+                   ToPosixCreateModeFlags(permission) | S_IXUSR) != 0) {
+       return {};
+     }
+   }
+ 
+   return fml::UniqueFD{FML_HANDLE_EINTR(
+-      ::openat(base_directory.get(), path, O_RDONLY | O_DIRECTORY))};
++      FML_OPENAT(base_directory.get(), path, O_RDONLY | O_DIRECTORY))};
+ }
+ 
+ fml::UniqueFD Duplicate(fml::UniqueFD::element_type descriptor) {
+@@ -129,6 +221,19 @@ bool IsDirectory(const fml::UniqueFD& directory) {
+     return false;
+   }
+ 
++#if defined(FML_OS_VITA)
++  // A registry token *is* a directory -- it cannot be created for anything
++  // else, because VitaOpenDirFd only hands one out after sceIoDopen succeeds.
++  // fstat would fail on it, and DirectoryAssetBundle calls this to decide
++  // whether it is usable at all: with fstat's answer the bundle declared
++  // itself invalid and every asset lookup returned null before touching the
++  // filesystem. That is what kept FontManifest.json "missing" while it sat on
++  // the device at exactly the path being asked for.
++  if (IsVitaDirFd(directory.get())) {
++    return true;
++  }
++#endif
++
+   struct stat stat_result = {};
+ 
+   if (::fstat(directory.get(), &stat_result) != 0) {
+@@ -165,7 +270,7 @@ bool UnlinkDirectory(const char* path) {
+ }
+ 
+ bool UnlinkDirectory(const fml::UniqueFD& base_directory, const char* path) {
+-  return ::unlinkat(base_directory.get(), path, AT_REMOVEDIR) == 0;
++  return FML_UNLINKAT(base_directory.get(), path, AT_REMOVEDIR) == 0;
+ }
+ 
+ bool UnlinkFile(const char* path) {
+@@ -173,7 +278,7 @@ bool UnlinkFile(const char* path) {
+ }
+ 
+ bool UnlinkFile(const fml::UniqueFD& base_directory, const char* path) {
+-  int code = ::unlinkat(base_directory.get(), path, 0);
++  int code = FML_UNLINKAT(base_directory.get(), path, 0);
+   if (code != 0) {
+     FML_DLOG(ERROR) << strerror(errno);
+   }
+@@ -185,7 +290,7 @@ bool FileExists(const fml::UniqueFD& base_directory, const char* path) {
+     return false;
+   }
+ 
+-  return ::faccessat(base_directory.get(), path, F_OK, 0) == 0;
++  return FML_ACCESSAT(base_directory.get(), path, F_OK, 0) == 0;
+ }
+ 
+ bool WriteAtomically(const fml::UniqueFD& base_directory,
+@@ -229,7 +334,7 @@ bool WriteAtomically(const fml::UniqueFD& base_directory,
+     return false;
+   }
+ 
+-  return ::renameat(base_directory.get(), temp_file_name.c_str(),
++  return FML_RENAMEAT(base_directory.get(), temp_file_name.c_str(),
+                     base_directory.get(), file_name) == 0;
+ }
  
 diff --git a/engine/src/flutter/fml/platform/posix/mapping_posix.cc b/engine/src/flutter/fml/platform/posix/mapping_posix.cc
 index 53969c10..0aa0ece3 100644
@@ -236,6 +415,204 @@ index 74895cbf..6659a52e 100644
  #include "flutter/fml/logging.h"
  
  namespace fml {
+diff --git a/engine/src/flutter/fml/platform/vita/dir_fd_vita.cc b/engine/src/flutter/fml/platform/vita/dir_fd_vita.cc
+new file mode 100644
+index 00000000..028a0ba1
+--- /dev/null
++++ b/engine/src/flutter/fml/platform/vita/dir_fd_vita.cc
+@@ -0,0 +1,125 @@
++// Copyright 2013 The Flutter Authors. All rights reserved.
++// Use of this source code is governed by a BSD-style license that can be
++// found in the LICENSE file.
++
++#include "flutter/fml/platform/vita/dir_fd_vita.h"
++
++#include <fcntl.h>
++#include <psp2/io/dirent.h>
++
++#include <mutex>
++#include <vector>
++
++namespace fml {
++namespace {
++
++// Tokens start well above anything newlib will ever hand out, so a token used
++// by mistake as a real descriptor fails loudly instead of acting on an
++// unrelated open file. newlib's table here is a few dozen entries.
++constexpr int kDirFdBase = 0x40000000;
++
++struct Registry {
++  std::mutex mutex;
++  // Index is the token minus kDirFdBase. An empty string marks a free slot,
++  // and freed slots are reused, so a program that opens and closes bundles in
++  // a loop does not grow this without bound.
++  std::vector<std::string> paths;
++};
++
++Registry& GetRegistry() {
++  static Registry* registry = new Registry();
++  return *registry;
++}
++
++// Trailing separators would produce "app0:/dir//file". Harmless on most
++// filesystems and not worth relying on here.
++std::string StripTrailingSlash(const std::string& path) {
++  if (path.size() > 1 && path.back() == '/') {
++    return path.substr(0, path.size() - 1);
++  }
++  return path;
++}
++
++bool DirectoryExists(const std::string& path) {
++  // sceIoDopen is the only call on this platform that will open a directory,
++  // which is precisely why fml's `open(..., O_DIRECTORY)` route cannot work.
++  const SceUID handle = sceIoDopen(path.c_str());
++  if (handle < 0) {
++    return false;
++  }
++  sceIoDclose(handle);
++  return true;
++}
++
++}  // namespace
++
++bool IsVitaDirFd(int fd) {
++  return fd >= kDirFdBase;
++}
++
++int VitaOpenDirFd(const std::string& path) {
++  if (!DirectoryExists(path)) {
++    return -1;
++  }
++
++  const std::string normalised = StripTrailingSlash(path);
++
++  Registry& registry = GetRegistry();
++  std::scoped_lock lock(registry.mutex);
++  for (size_t i = 0; i < registry.paths.size(); i++) {
++    if (registry.paths[i].empty()) {
++      registry.paths[i] = normalised;
++      return kDirFdBase + static_cast<int>(i);
++    }
++  }
++  registry.paths.push_back(normalised);
++  return kDirFdBase + static_cast<int>(registry.paths.size() - 1);
++}
++
++void VitaCloseDirFd(int fd) {
++  if (!IsVitaDirFd(fd)) {
++    return;
++  }
++  const size_t index = static_cast<size_t>(fd - kDirFdBase);
++
++  Registry& registry = GetRegistry();
++  std::scoped_lock lock(registry.mutex);
++  if (index < registry.paths.size()) {
++    registry.paths[index].clear();
++  }
++}
++
++std::string VitaResolveAt(int dirfd, const char* path) {
++  if (path == nullptr) {
++    return {};
++  }
++
++  // An absolute path ignores the directory, exactly as openat does. On this
++  // platform "absolute" means a device prefix -- `app0:/x`, `ux0:/x` -- rather
++  // than a leading slash, so the test is for the colon.
++  const std::string relative(path);
++  if (relative.find(':') != std::string::npos) {
++    return relative;
++  }
++
++  if (dirfd == AT_FDCWD) {
++    return relative;
++  }
++
++  if (!IsVitaDirFd(dirfd)) {
++    // A real file descriptor used as a directory. Nothing sensible to do:
++    // returning the bare relative path would resolve it against the process
++    // cwd, which is the silent wrong answer this whole file exists to avoid.
++    return {};
++  }
++
++  const size_t index = static_cast<size_t>(dirfd - kDirFdBase);
++  Registry& registry = GetRegistry();
++  std::scoped_lock lock(registry.mutex);
++  if (index >= registry.paths.size() || registry.paths[index].empty()) {
++    return {};
++  }
++  return registry.paths[index] + "/" + relative;
++}
++
++}  // namespace fml
+diff --git a/engine/src/flutter/fml/platform/vita/dir_fd_vita.h b/engine/src/flutter/fml/platform/vita/dir_fd_vita.h
+new file mode 100644
+index 00000000..bed4dac9
+--- /dev/null
++++ b/engine/src/flutter/fml/platform/vita/dir_fd_vita.h
+@@ -0,0 +1,61 @@
++// Copyright 2013 The Flutter Authors. All rights reserved.
++// Use of this source code is governed by a BSD-style license that can be
++// found in the LICENSE file.
++
++#ifndef FLUTTER_FML_PLATFORM_VITA_DIR_FD_VITA_H_
++#define FLUTTER_FML_PLATFORM_VITA_DIR_FD_VITA_H_
++
++#include <string>
++
++// Directory descriptors for a platform that has none.
++//
++// fml addresses files as (directory fd, relative path) and calls the POSIX
++// *at* family to resolve them -- `openat`, `mkdirat`, `unlinkat`, `faccessat`,
++// `renameat`. The Vita cannot express that. sceIo has no notion of a
++// descriptor that names a directory: `open()` fails on one outright, and
++// directories are walked with a separate sceIoDopen handle that no *at* call
++// accepts. `vita_posix_shims.cc` therefore rejects any dirfd other than
++// AT_FDCWD, deliberately, on the grounds that resolving against the process
++// cwd would silently produce the wrong path.
++//
++// That is right for `dart:io` and fatal for assets. `DirectoryAssetBundle`
++// opens `app0:/flutter_assets` and then asks for every asset relative to it,
++// so with no dirfd support **no asset loads at all** -- the symptom was a
++// counter app rendering in Roboto with a tofu box where its icon should be,
++// and a log line saying FontManifest.json could not be found while the file
++// sat on the device, intact, at the path the bundle was looking in.
++//
++// The registry gives back the missing concept: a directory fd is a token this
++// layer hands out, and every *at* call resolves it to a path prefix before
++// falling through to the ordinary sceIo-backed call. Tokens come from a
++// private high range so they can never be confused with a real descriptor, and
++// they are released through fml::UniqueFD's own closer, which is the single
++// point every directory fd passes through on its way out.
++//
++// **File** descriptors are untouched. Once a path is resolved, opening it
++// returns a real fd from newlib, which is what mapping and reading need.
++
++namespace fml {
++
++// True if `fd` is one of ours rather than a descriptor from the C library.
++bool IsVitaDirFd(int fd);
++
++// Take a directory path and return a token for it, or -1 if the directory does
++// not exist. The path is stored normalised without a trailing separator.
++int VitaOpenDirFd(const std::string& path);
++
++// Release a token. Safe to call with anything -- a real fd, an already-freed
++// token, or -1 -- so the UniqueFD closer can call it unconditionally.
++void VitaCloseDirFd(int fd);
++
++// Resolve (dirfd, path) to an absolute path.
++//
++// Returns `path` unchanged when it is already absolute or when `dirfd` is
++// AT_FDCWD, which keeps the AT_FDCWD callers behaving exactly as before.
++// Returns an empty string when `dirfd` is a token this registry does not know,
++// so callers fail rather than reaching for a path built from garbage.
++std::string VitaResolveAt(int dirfd, const char* path);
++
++}  // namespace fml
++
++#endif  // FLUTTER_FML_PLATFORM_VITA_DIR_FD_VITA_H_
 diff --git a/engine/src/flutter/fml/platform/vita/message_loop_vita.cc b/engine/src/flutter/fml/platform/vita/message_loop_vita.cc
 new file mode 100644
 index 00000000..5e3e2741
@@ -504,3 +881,35 @@ index b912bf50..53d91583 100644
    }
    signaled_ = false;
  }
+diff --git a/engine/src/flutter/fml/unique_fd.cc b/engine/src/flutter/fml/unique_fd.cc
+index bb9243d0..ce01eca0 100644
+--- a/engine/src/flutter/fml/unique_fd.cc
++++ b/engine/src/flutter/fml/unique_fd.cc
+@@ -6,6 +6,10 @@
+ 
+ #include "flutter/fml/eintr_wrapper.h"
+ 
++#if defined(FML_OS_VITA)
++#include "flutter/fml/platform/vita/dir_fd_vita.h"
++#endif
++
+ namespace fml {
+ namespace internal {
+ 
+@@ -27,6 +31,16 @@ void UniqueFDTraits::Free_Handle(HANDLE fd) {
+ namespace os_unix {
+ 
+ void UniqueFDTraits::Free(int fd) {
++#if defined(FML_OS_VITA)
++  // Directory descriptors on this platform are registry tokens rather than
++  // anything the C library knows about, and this is the one place every one of
++  // them passes through on the way out -- so it is where the slot is released.
++  // Handing a token to close() would just return EBADF and leak the entry.
++  if (IsVitaDirFd(fd)) {
++    VitaCloseDirFd(fd);
++    return;
++  }
++#endif
+   close(fd);
+ }
+ 
