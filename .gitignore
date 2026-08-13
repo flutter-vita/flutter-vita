@@ -29,3 +29,7 @@ spikes/p1-link-check/out/
 spikes/m1-snapshot/out/
 spikes/m1-vpk/build/
 spikes/m1-vpk/out/
+
+# Packaged engine artifacts — 20 MB tarball plus a 1.1 GB staging tree.
+# Built by tools/package-engine.sh and published as a release, not committed.
+out/artifacts/

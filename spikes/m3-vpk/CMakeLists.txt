@@ -121,6 +121,21 @@ target_link_options(${PROJECT_NAME} PRIVATE
 # this glob does not reach, because ninja writes host output there rather than
 # under obj/. If that ever changes, this glob starts feeding Mach-O objects to
 # an ARM linker and the error will be spectacular rather than subtle.
+# ENGINE_ARCHIVE points at a prebuilt libflutter_engine_vita.a from
+# tools/package-engine.sh, for anyone who has not built the engine themselves.
+# Unset, the build globs the local object tree as before.
+#
+# --whole-archive is not optional here. The engine relies on static
+# initialisers in translation units that nothing references by symbol, and
+# ordinary archive semantics pull in only members that resolve an undefined
+# reference -- so a plain link drops them, succeeds, and fails at runtime.
+# Linking loose objects has whole-archive semantics already, which is why this
+# only needs saying on the archive path.
+if(ENGINE_ARCHIVE)
+  message(STATUS "Linking prebuilt engine: ${ENGINE_ARCHIVE}")
+  set(ENGINE_OBJECTS
+    "-Wl,--whole-archive" "${ENGINE_ARCHIVE}" "-Wl,--no-whole-archive")
+else()
 file(GLOB_RECURSE ENGINE_OBJECTS "${ENGINE_OUT}/obj/*.o")
 # vita_link_check has its own main(). Both it and vita_embedder.o are in the
 # tree, and globbing both gives a duplicate-symbol link error that names
@@ -130,6 +145,7 @@ list(FILTER ENGINE_OBJECTS EXCLUDE REGEX "vita_link_check")
 
 list(LENGTH ENGINE_OBJECTS ENGINE_OBJECT_COUNT)
 message(STATUS "Linking ${ENGINE_OBJECT_COUNT} engine objects")
+endif()
 
 target_link_libraries(${PROJECT_NAME}
   ${ENGINE_OBJECTS}

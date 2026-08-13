@@ -88,9 +88,8 @@ screenshot — most of a device interface exists.
 
 Two things gate it regardless of which shape the tool takes:
 
-1. **Prebuilt engine artifacts.** Nobody will try this if step one is a 12 GB
-   checkout and a 30 minute build. Versioned tarballs pinned to a Flutter
-   release, the way ardera publishes for ARM, are the actual unlock.
+1. ~~**Prebuilt engine artifacts.**~~ Done — `tools/package-engine.sh`. See
+   below.
 2. **A documented app template.** `spikes/m3-vpk` hardcodes the B2 counter
    app's `.dill` and asset bundle. Until an arbitrary Flutter app can be pointed
    at the toolchain, there is nothing to distribute.
@@ -108,3 +107,59 @@ Any target not on that list gets an engine with **no font backend at all**, and
 it fails silently — text simply does not draw, and shipping fonts does not help
 because the asset font manager needs a backend to decode them. Worth filing
 whether or not Vita ever lands upstream.
+
+
+---
+
+## The engine artifact
+
+`tools/package-engine.sh` turns a finished build into a 20 MB tarball:
+
+```
+flutter-engine-vita-3.44.8/
+  lib/libflutter_engine_vita.a     63 MB, 2939 objects
+  include/embedder.h
+  data/icudtl.dat, Roboto-Regular.ttf
+  host-darwin-arm64/gen_snapshot_armv7
+  MANIFEST.txt                     pins, read from args.gn
+```
+
+**1.1 GB of objects becomes 63 MB** because the build carries `-g2` and the
+DWARF dwarfs the code. Stripping it costs engine-level symbolication in crash
+dumps, which is the right trade: anyone debugging the engine is building it
+anyway, and anyone building an app is not.
+
+`gen_snapshot` is a build-machine binary, so it is tagged by host rather than
+shipped with the target artifacts. A Linux user needs their own.
+
+### Verified, not just produced
+
+`spikes/m3-vpk` accepts `-DENGINE_ARCHIVE=<path>` and links the archive instead
+of globbing the local object tree. Both paths were compared:
+
+| | archive | objects |
+|---|---|---|
+| `.text` | 14,483,780 | 14,485,818 |
+| defined symbols | 91,719 | 91,719 |
+
+Sizes differ by 2 KB in 14.5 MB, and exactly one symbol differs in each
+direction — both compiler-generated COMDAT variants (`.isra.0` clones and
+inlined template instantiations) where the linker kept a different copy because
+member order changed. No translation unit is missing.
+
+Linking the archive also takes **4 seconds** against opening 2939 separate
+objects, which is a real improvement to every iteration.
+
+### The two flags that must survive
+
+Both are in `MANIFEST.txt`, because both fail in ways that do not look like
+their cause.
+
+`--whole-archive`, because the engine relies on static initialisers in
+translation units nothing references by symbol. Ordinary archive semantics pull
+in only members that resolve an undefined reference, so a plain `-l` link
+succeeds and fails at runtime. Linking loose objects has whole-archive
+semantics already, which is why this only needs saying now.
+
+`-Wl,-u,pthread_cancel`, because without it every `std::mutex::lock()` in the
+engine compiles to a no-op. See [phase-2-workplan.md](phase-2-workplan.md).
