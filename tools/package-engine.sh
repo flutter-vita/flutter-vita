@@ -54,6 +54,17 @@ echo "==> stripping debug info"
 arm-vita-eabi-strip --strip-debug "$STAGE/lib/libflutter_engine_vita.a"
 
 cp "$ENGINE_SRC/flutter/shell/platform/embedder/embedder.h" "$STAGE/include/"
+
+# The embedder inside the archive calls into the dev server, so the archive has
+# three undefined symbols an app must satisfy:
+#
+#   U dev_server_run  dev_server_set_framebuffer_source  dev_server_set_tap_handler
+#
+# It lives in this repo rather than the engine tree, so it ships as source. That
+# is deliberate for now: it is the piece most likely to be swapped out — a
+# shipping app wants no listening socket at all, and can link a stub instead.
+mkdir -p "$STAGE/src"
+cp "$ROOT/spikes/m1-vpk/src/devserver.c" "$ROOT/spikes/m1-vpk/src/devserver.h" "$STAGE/src/"
 cp "$ENGINE_SRC/flutter/third_party/icu/flutter/icudtl.dat" "$STAGE/data/"
 cp "$ENGINE_SRC/flutter/txt/third_party/fonts/Roboto-Regular.ttf" "$STAGE/data/"
 
