@@ -25,7 +25,7 @@ before the measurement.
 | Rendering, text, assets | **works** | M3 |
 | `dart:io` File / Directory | **works** | [audited on hardware](phase-5-capability-audit.md) — read, stat, mkdir, write, append, list, rename, delete |
 | `dart:io` Socket / HttpClient | **works** | audited — DNS, TCP, and `HTTP 200` from the open internet |
-| TLS / HTTPS | **off, and we know why** | audited — `secure_socket_unsupported.o` is the one winning the link |
+| TLS / HTTPS | **on, still crashing** | [four causes fixed](phase-7-tls.md); handshake itself still dies, verification exonerated |
 | `Directory.systemTemp` | **wrong** | returns `/tmp`, which does not exist |
 | `Platform.numberOfProcessors` | **wrong** | returns −1; Dart sizes thread pools from it |
 | Dart `print` / stderr | **broken** | `Bad file descriptor` — never reaches the log |

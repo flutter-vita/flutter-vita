@@ -175,6 +175,28 @@ List<Probe> buildProbes() => [
     final ctx = SecurityContext(withTrustedRoots: true);
     return ctx.runtimeType.toString();
   }),
+  // Splits the handshake from the chain verification that follows it.
+  //
+  // An empty context with onBadCertificate accepting everything still does the
+  // full key exchange and cipher negotiation, but skips building and walking
+  // the trust chain -- which is the recursive, allocation-heavy half. If this
+  // passes and the verifying one below dies, the problem is verification, not
+  // TLS; if both die, it is the handshake itself.
+  //
+  // Not a configuration anything should ship: it accepts any certificate, so
+  // it proves reachability, never security.
+  Probe('tls', 'handshake, no verify', () async {
+    final s = await SecureSocket.connect(
+      'example.com',
+      443,
+      context: SecurityContext(withTrustedRoots: false),
+      onBadCertificate: (_) => true,
+      timeout: const Duration(seconds: 20),
+    );
+    final proto = s.selectedProtocol ?? 'connected';
+    s.destroy();
+    return proto;
+  }),
   Probe('tls', 'SecureSocket handshake', () async {
     final s = await SecureSocket.connect('example.com', 443,
         timeout: const Duration(seconds: 20));
