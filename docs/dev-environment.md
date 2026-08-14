@@ -160,7 +160,7 @@ side, and IDE *navigation* matters much more. Optimise your setup for reading.
 
 Where a real debugger does earn its keep:
 
-- host-side Dart tooling (`flutter_vita_tool`)
+- host-side Dart tooling (`flutter-vita`, in `tools/flutter_vita/`)
 - the `linux-arm` engine build from
   [Phase 0.5 track B3](phase-0.5-feasibility.md#sequencing), which runs under a
   normal debugger and is a much cheaper place to find Dart-runtime bugs than a Vita

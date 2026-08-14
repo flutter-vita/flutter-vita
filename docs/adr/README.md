@@ -19,6 +19,7 @@ ADR-0001 through ADR-0004 are back-filled from §1 of `Flutter Vita Plan.md`
 | [0007](0007-enable-partial-repaint-in-software-path.md) | Patch the engine to enable partial repaint in the software path | **Accepted** — measurement makes it load-bearing |
 | [0008](0008-app-visible-platform-identity.md) | How an app learns it is running on a Vita | **Option A** — keep the linux identity; B is one line if ever needed |
 | [0009](0009-plugins-via-non-endorsed-vita-implementations.md) | `pubspec.yaml` as opt-in surface: build config + three non-endorsed plugins | Accepted — 19% → 50% of surveyed apps |
+| [0010](0010-input-layering-and-psvita-api.md) | Input in two layers; only the second is a package | Accepted — D-pad navigation needs no dependency |
 
 ## Open questions not yet decided
 
@@ -69,14 +70,13 @@ Nothing here needs a rebuild to decide.
 - ~~**Audience**~~ — **adoption.** Which is what makes the forked-SDK cost in
   ADR-0008 decisive rather than a detail, and what makes the open-sourcing
   deferral below expensive rather than neutral.
-- **`psvita` API surface is undesigned.** Its *shape* is settled — a pure-Dart
-  package over channels the embedder owns, needing no plugin infrastructure
-  ([ADR-0008](0008-app-visible-platform-identity.md)) — but not its contents.
-  Flutter has no gamepad, rear-touchpad, or dual-analog concept, so a
-  "touches every hardware thing" conformance app is a test of an API that does
-  not exist yet, and **the API precedes the app.** Open sub-question: mirror
-  community conventions (`sensors_plus`, `gamepads`) so apps port unchanged, or
-  design something Vita-shaped?
+- ~~**`psvita` API surface**~~ — **closed by [ADR-0010](0010-input-layering-and-psvita-api.md).**
+  The premise was wrong: Flutter already wires arrow keys to focus traversal and
+  `gameButtonA` to activation, so D-pad navigation belongs in the embedder and
+  needs no package at all. `psvita` covers only what Flutter has no concept of.
+- **Stick deadzone and response curve are unset.** ADR-0010 maps the left stick
+  to scroll events; how much stick travel is how much scroll is a guess until it
+  is tried on hardware. Belongs on the conformance app's checklist.
 - **Title ID allocation.** `FVTA00002` is hard-coded, so any two flutter-vita
   apps on one device overwrite each other. ADR-0009 puts the ID in `pubspec.yaml`
   but does not decide whether the developer picks one or it is derived from a
