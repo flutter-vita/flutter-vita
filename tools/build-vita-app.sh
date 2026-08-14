@@ -3,11 +3,22 @@
 #
 #   ./tools/build-vita-app.sh <app-dir> [options]
 #
-#   --title-id ID     nine characters, default FVTA00002 (the dev loader's slot)
-#   --name "Name"     LiveArea display name, default from pubspec
+#   --title-id ID     nine characters; see resolution order below
+#   --name "Name"     LiveArea display name
 #   --engine DIR      unpacked flutter-engine-vita-<version>/
 #   --flutter DIR     Flutter SDK, default $HOME/fvm/versions/<pinned>
 #   --out DIR         default <app-dir>/build/vita
+#
+# The app configures itself in pubspec.yaml, which is the opt-in surface:
+#
+#   vita:
+#     title_id: FVTA00003        # optional; derived from the package name
+#     name: My App               # optional; defaults to the package name
+#
+# Title id resolution: --title-id, then pubspec vita.title_id, then a value
+# derived from the package name if a vita: block exists, then FVTA00002 -- the
+# slot the dev loader installs into, which is what the counter app and the
+# spikes want.
 #
 # This is the whole pipeline in one place: Dart to kernel, kernel to armv7
 # assembly, assembly plus engine to an ELF, ELF to a signed .vpk. It is what a
@@ -20,7 +31,7 @@ ROOT="$(cd "$HERE/.." && pwd)"
 
 FLUTTER_PIN="$(grep -m1 -oE '3\.[0-9]+\.[0-9]+' "$ROOT/VERSIONS.md" || echo 3.44.8)"
 APP_DIR=""
-TITLE_ID="FVTA00002"
+TITLE_ID=""
 APP_NAME=""
 ENGINE_DIR="$ROOT/out/artifacts/flutter-engine-vita-$FLUTTER_PIN"
 FLUTTER_DIR="$HOME/fvm/versions/$FLUTTER_PIN"
@@ -50,6 +61,66 @@ OUT_DIR="${OUT_DIR:-$APP_DIR/build/vita}"
 SDK="$FLUTTER_DIR/bin/cache/dart-sdk"
 PATCHED_SDK="$FLUTTER_DIR/bin/cache/artifacts/engine/common/flutter_patched_sdk_product"
 
+# ---------------------------------------------------------------- vita: block
+#
+# The app's own configuration lives in the app, not in flags the developer has
+# to remember and cannot commit (ADR-0009). The block is deliberately flat:
+#
+#   vita:
+#     title_id: FVTA00003
+#     name: My App
+#
+# Flat because this parser and the Dart one must never disagree, and a flat
+# block is the largest shape both can read identically. Anything needing
+# nesting should become a separate top-level key instead.
+# `|| true` is load-bearing: an absent key is the normal case, but grep exits 1
+# on no match and `set -o pipefail` propagates that, so without it a pubspec
+# lacking `title_id` kills the script before it prints anything at all.
+vita_key() {
+  sed -n '/^vita:[[:space:]]*$/,/^[^[:space:]#]/p' "$APP_DIR/pubspec.yaml" \
+    | grep -m1 "^[[:space:]]\+$1:" \
+    | sed "s/^[[:space:]]*$1:[[:space:]]*//; s/[[:space:]]*$//" \
+    | tr -d "\"'" || true
+}
+HAS_VITA_BLOCK=0
+if grep -q '^vita:[[:space:]]*$' "$APP_DIR/pubspec.yaml"; then HAS_VITA_BLOCK=1; fi
+
+# Precedence: explicit flag, then the app's own pubspec, then a default.
+[ -n "$TITLE_ID" ]  || TITLE_ID="$(vita_key title_id)"
+[ -n "$APP_NAME" ]  || APP_NAME="$(vita_key name)"
+
+# The package name and the display name are different things and only one of
+# them is safe in a path. `vita.name: Counter Demo` is correct as a LiveArea
+# title and produces "Counter Demo.vpk" if it also names the file.
+PKG_NAME="$(grep -m1 '^name:' "$APP_DIR/pubspec.yaml" | sed 's/^name: *//' | tr -d "\"'")"
+
+# Derive a title id from the package name when the app opted in but did not
+# pick one. Nine characters, four letters and five digits, deterministic -- the
+# same app always lands in the same slot, so reinstalling replaces rather than
+# accumulates, and two different apps essentially never collide.
+#
+# Only for apps with a vita: block. Without one, the default stays FVTA00002,
+# which is the slot the dev loader installs into: deriving there would break the
+# edit-run loop for the counter app and every spike.
+derive_title_id() {
+  local n l1 l2
+  n=$((16#$(printf '%s' "$1" | shasum -a 1 | cut -c1-8)))
+  l1=$((n / 26 % 26)); l2=$((n % 26))
+  printf 'FV%b%b%05d' \
+    "\\0$(printf '%o' $((65 + l1)))" \
+    "\\0$(printf '%o' $((65 + l2)))" \
+    "$((n / 676 % 100000))"
+}
+if [ -z "$TITLE_ID" ]; then
+  if [ "$HAS_VITA_BLOCK" -eq 1 ]; then
+    # Keyed on the package name, not the display name: renaming the LiveArea
+    # tile should not move the app to a different install slot.
+    TITLE_ID="$(derive_title_id "$PKG_NAME")"
+  else
+    TITLE_ID="FVTA00002"
+  fi
+fi
+
 # Title IDs are exactly nine characters and the packer produces a broken .vpk
 # rather than complaining, so check here where the message can be useful.
 [ "${#TITLE_ID}" -eq 9 ] || { echo "TITLE_ID must be 9 characters, got '$TITLE_ID'" >&2; exit 1; }
@@ -65,6 +136,42 @@ PATCHED_SDK="$FLUTTER_DIR/bin/cache/artifacts/engine/common/flutter_patched_sdk_
   exit 1
 }
 
+# ------------------------------------------------------- engine/SDK lockstep
+#
+# dart:ui and the engine are one source tree cut in half. A framework from a
+# different revision links and builds and packages without complaint, then
+# misbehaves at runtime in ways that look like anything but a version skew.
+#
+# So this refuses rather than warns. A warning here is worth nothing: it scrolls
+# past in a build log and the failure it predicts arrives hours later wearing a
+# different face.
+MANIFEST="$ENGINE_DIR/MANIFEST.txt"
+ENGINE_REV="$(grep -m1 '^framework_rev ' "$MANIFEST" 2>/dev/null | awk '{print $2}' || true)"
+SDK_JSON="$FLUTTER_DIR/bin/cache/flutter.version.json"
+SDK_REV="$(grep -o '"frameworkRevision": *"[^"]*"' "$SDK_JSON" 2>/dev/null | sed 's/.*: *"//; s/"$//' || true)"
+
+if [ -z "$ENGINE_REV" ]; then
+  # Artifacts built before framework_rev existed. Nothing to check against, and
+  # guessing would defeat the point of checking.
+  echo "!! $MANIFEST has no framework_rev — cannot verify SDK compatibility" >&2
+  echo "   Repackage with tools/package-engine.sh to get a checkable artifact." >&2
+elif [ -z "$SDK_REV" ]; then
+  echo "!! no frameworkRevision in $SDK_JSON — cannot verify SDK compatibility" >&2
+elif [ "$ENGINE_REV" != "$SDK_REV" ]; then
+  echo "!! Flutter SDK does not match the engine artifact." >&2
+  echo >&2
+  echo "   engine artifact was built against  $ENGINE_REV" >&2
+  echo "   your Flutter SDK is                $SDK_REV" >&2
+  echo "   ($FLUTTER_DIR)" >&2
+  echo >&2
+  echo "   dart:ui and the engine are one source tree cut in half. Building" >&2
+  echo "   across a mismatch produces a .vpk that links cleanly and then fails" >&2
+  echo "   at runtime for reasons that will not look like this." >&2
+  echo >&2
+  echo "   Use the matching SDK, or an engine artifact built against yours." >&2
+  exit 1
+fi
+
 # gen_snapshot is a build-machine binary, so it is per host in the artifact.
 HOST="$(uname -s | tr '[:upper:]' '[:lower:]')-$(uname -m)"
 GEN_SNAPSHOT="$ENGINE_DIR/host-$HOST/gen_snapshot_armv7"
@@ -74,9 +181,7 @@ GEN_SNAPSHOT="$ENGINE_DIR/host-$HOST/gen_snapshot_armv7"
   exit 1
 }
 
-if [ -z "$APP_NAME" ]; then
-  APP_NAME="$(grep -m1 '^name:' "$APP_DIR/pubspec.yaml" | sed 's/^name: *//' | tr -d '"'"'")"
-fi
+[ -n "$APP_NAME" ] || APP_NAME="$PKG_NAME"
 
 mkdir -p "$OUT_DIR"
 echo "==> $APP_NAME [$TITLE_ID]"
@@ -133,8 +238,8 @@ cmake --build "$OUT_DIR/cmake" -j"$(getconf _NPROCESSORS_ONLN 2>/dev/null || ech
 
 VPK="$(find "$OUT_DIR/cmake" -name '*.vpk' | head -1)"
 [ -n "$VPK" ] || { echo "No .vpk produced" >&2; exit 1; }
-cp "$VPK" "$OUT_DIR/$APP_NAME.vpk"
+cp "$VPK" "$OUT_DIR/$PKG_NAME.vpk"
 
 echo
-echo "==> $OUT_DIR/$APP_NAME.vpk  $(du -h "$OUT_DIR/$APP_NAME.vpk" | cut -f1)"
+echo "==> $OUT_DIR/$PKG_NAME.vpk  $(du -h "$OUT_DIR/$PKG_NAME.vpk" | cut -f1)"
 arm-vita-eabi-size -A "$OUT_DIR/cmake/flutter_vita_app" | grep -E "^\.text|^\.rodata|^\.bss"

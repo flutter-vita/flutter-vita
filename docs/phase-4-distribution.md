@@ -246,3 +246,86 @@ the previous app, which looks like a build that silently did nothing.
 
 This is the inner loop, not first-time setup: a slot has to already exist.
 Installing a `.vpk` from scratch is still VitaShell's job.
+
+---
+
+## The opt-in surface: `pubspec.yaml`
+
+Per [ADR-0009](adr/0009-plugins-via-non-endorsed-vita-implementations.md), the
+app configures itself in the app:
+
+```yaml
+vita:
+  title_id: FVTA00003        # optional
+  name: My App               # optional, LiveArea tile
+```
+
+**Title id resolution**, in order: `--title-id`, then `vita.title_id`, then a
+value derived from the *package* name if a `vita:` block exists, then
+`FVTA00002`.
+
+The last step is why an existing app keeps working untouched. `FVTA00002` is
+the slot the dev loader installs into, so deriving unconditionally would break
+the edit-run loop for the counter app and every spike. Adding a `vita:` block
+is the signal that this is a real app wanting a real identity.
+
+Derivation is `FV` plus two letters and five digits from a SHA-1 of the package
+name — deterministic, so reinstalling replaces rather than accumulates, and two
+apps essentially never collide. Keyed on the **package** name rather than the
+display name, so renaming the LiveArea tile does not silently move the app to a
+different install slot.
+
+Verified end to end: a `vita:` block with `name: Counter Demo` and no title id
+produced `FVDM77520` in the built `param.sfo`, with the tile reading "Counter
+Demo" and the file still named `counter_app.vpk` — the display name is not
+path-safe and does not name files.
+
+Two parsers read this block, bash in `build-vita-app.sh` and Dart in the CLI,
+which is why it is deliberately **flat**. Anything needing nesting should
+become a separate top-level key rather than a nested one, because the cheapest
+way to keep two parsers agreeing is to give them nothing to disagree about.
+
+## Engine/SDK lockstep
+
+`dart:ui` and the engine are one source tree cut in half. A framework from a
+different revision links, builds, packages, and installs without complaint,
+then misbehaves at runtime in a way that looks like anything except a version
+skew.
+
+`package-engine.sh` records `framework_rev` in `MANIFEST.txt`, read from the
+building SDK's `bin/cache/flutter.version.json`. `build-vita-app.sh` reads the
+consumer's copy of the same file, compares, and **refuses**:
+
+```
+!! Flutter SDK does not match the engine artifact.
+
+   engine artifact was built against  deadbeef…
+   your Flutter SDK is                058e0af2…
+```
+
+A warning would be worth nothing here: it scrolls past in a build log and the
+failure it predicts arrives hours later wearing a different face.
+
+Same file and same key on both sides, so the comparison is between like and
+like rather than between two notions of "version". `doctor` reports it too, so
+it is caught before a build rather than during one. An artifact predating
+`framework_rev` degrades to a warning rather than a refusal — there is nothing
+to check against, and inventing something would defeat the point.
+
+**The consequence to accept: one engine artifact per Flutter revision.** Every
+Flutter release a user wants is a rebuild by us. That is the project's real
+long-term maintenance cost, and it is now enforced rather than hoped for.
+
+## Licences
+
+A `.vpk` statically links Flutter, Skia, Dart, ICU, HarfBuzz and their
+dependencies into `eboot.bin`. That makes it a binary distribution of
+BSD-3 software, and clause 2 requires the notice to travel with it. This is a
+live obligation the moment a `.vpk` is shared, independent of whether this repo
+is public.
+
+The artifact therefore ships `LICENSE`, `NOTICE`, and `LICENSE.engine` — the
+last being Flutter's own generated aggregate, 30,200 lines covering every
+third-party component in the engine. It is copied from the pinned SDK rather
+than composed here on purpose: an inventory assembled from memory would be both
+incomplete and unverifiable, and upstream's is neither.

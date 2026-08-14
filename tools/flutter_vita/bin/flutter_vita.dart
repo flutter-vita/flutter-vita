@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_vita/src/device.dart';
@@ -119,6 +120,22 @@ Future<int> _doctor(Map<String, String> opts) async {
       Directory('$flutter/bin/cache/artifacts/engine/common/flutter_patched_sdk_product')
           .existsSync(),
       'run: $flutter/bin/flutter precache');
+
+  // build-vita-app.sh refuses a mismatch, so this is not the enforcement point
+  // -- it is the one that reports it before a build rather than during one.
+  final engineRev = _manifestValue(engine, 'framework_rev');
+  final sdkRev = _sdkRevision(flutter);
+  if (engineRev == null) {
+    stdout.writeln('  --   engine/sdk lockstep');
+    stdout.writeln('       artifact predates framework_rev; repackage to make it checkable');
+  } else {
+    check('engine/sdk lockstep', engineRev == sdkRev);
+    if (engineRev != sdkRev) {
+      stdout.writeln('       artifact: $engineRev');
+      stdout.writeln('       your sdk: ${sdkRev ?? "unknown"}');
+      stdout.writeln('       dart:ui and the engine are one source tree cut in half.');
+    }
+  }
 
   final device = await _findDevice(opts, quiet: true);
   check('device', device != null,
@@ -347,6 +364,33 @@ String _engineDir() {
 String _flutterDir() =>
     Platform.environment['FLUTTER_ROOT'] ??
     '${Platform.environment['HOME']}/fvm/versions/${_flutterPin()}';
+
+/// A key from the engine artifact's `MANIFEST.txt`, or null.
+String? _manifestValue(String engineDir, String key) {
+  final manifest = File('$engineDir/MANIFEST.txt');
+  if (!manifest.existsSync()) return null;
+  for (final line in manifest.readAsLinesSync()) {
+    if (line.startsWith('$key ')) {
+      final value = line.substring(key.length).trim();
+      if (value.isNotEmpty) return value;
+    }
+  }
+  return null;
+}
+
+/// The developer's Flutter SDK revision, read the same way package-engine.sh
+/// reads the one it records — same file, same key, so the comparison is
+/// between like and like rather than between two different notions of version.
+String? _sdkRevision(String flutterDir) {
+  final file = File('$flutterDir/bin/cache/flutter.version.json');
+  if (!file.existsSync()) return null;
+  try {
+    final json = jsonDecode(file.readAsStringSync()) as Map<String, dynamic>;
+    return json['frameworkRevision'] as String?;
+  } on Object {
+    return null;
+  }
+}
 
 String _flutterPin() {
   final versions = File('$repoRoot/VERSIONS.md');

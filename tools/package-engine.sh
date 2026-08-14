@@ -29,6 +29,27 @@ SKIA_VERSION="$(read_arg skia_version)"
 DART_VERSION="$(read_arg dart_version)"
 FLUTTER_VERSION="$(grep -m1 -oE '3\.[0-9]+\.[0-9]+' "$ROOT/VERSIONS.md" || echo unknown)"
 
+# The revision of the Flutter SDK these objects were built against.
+#
+# This is the artifact's compatibility key, and it has to be a revision rather
+# than a version string: dart:ui and the engine are one source tree cut in half,
+# so a framework that does not match this exactly is undefined behaviour at
+# runtime with no error at build time. Read from bin/cache/flutter.version.json
+# because that is the same file, in the same format, that the *consumer* reads
+# to identify their own SDK -- comparing like with like.
+FLUTTER_DIR="${FLUTTER_DIR:-$HOME/fvm/versions/$FLUTTER_VERSION}"
+VERSION_JSON="$FLUTTER_DIR/bin/cache/flutter.version.json"
+read_json() { grep -o "\"$1\": *\"[^\"]*\"" "$VERSION_JSON" | sed 's/.*: *"//; s/"$//'; }
+if [ -f "$VERSION_JSON" ]; then
+  FRAMEWORK_REVISION="$(read_json frameworkRevision)"
+  FLUTTER_VERSION="$(read_json frameworkVersion)"
+else
+  echo "!! no $VERSION_JSON" >&2
+  echo "   The artifact would ship without a compatibility key, and every" >&2
+  echo "   consumer would have to trust that their SDK matches. Set FLUTTER_DIR." >&2
+  exit 1
+fi
+
 STAGE="$OUT/flutter-engine-vita-$FLUTTER_VERSION"
 rm -rf "$STAGE"
 mkdir -p "$STAGE/lib" "$STAGE/include" "$STAGE/data"
@@ -76,10 +97,26 @@ if [ -x "$ENGINE_OUT/clang_arm64/gen_snapshot_armv7" ]; then
   cp "$ENGINE_OUT/clang_arm64/gen_snapshot_armv7" "$STAGE/host-$HOST/"
 fi
 
+# Licences travel with the artifact, because the artifact is what gets linked
+# into a .vpk and the .vpk is the binary distribution BSD-3 clause 2 is about.
+# LICENSE.engine is Flutter's own generated aggregate of every third-party
+# licence in the engine -- upstream's tooling produced it from these same
+# sources, which is why it is copied rather than composed here.
+cp "$ROOT/LICENSE" "$STAGE/LICENSE"
+cp "$ROOT/NOTICE" "$STAGE/NOTICE"
+SKY_LICENSE="$FLUTTER_DIR/bin/cache/pkg/sky_engine/LICENSE"
+if [ -f "$SKY_LICENSE" ]; then
+  cp "$SKY_LICENSE" "$STAGE/LICENSE.engine"
+else
+  echo "!! no $SKY_LICENSE -- run: $FLUTTER_DIR/bin/flutter precache" >&2
+  exit 1
+fi
+
 cat > "$STAGE/MANIFEST.txt" <<EOF
 flutter-engine-vita
 
 flutter          $FLUTTER_VERSION
+framework_rev    $FRAMEWORK_REVISION
 engine           $ENGINE_VERSION
 skia             $SKIA_VERSION
 dart             $DART_VERSION
@@ -87,6 +124,11 @@ target           arm-vita-eabi, armv7-a hard-float, neon
 objects archived $COUNT
 built on         $HOST
 built at         $(date -u +%Y-%m-%dT%H:%M:%SZ)
+
+framework_rev is the compatibility key. Build an app with a Flutter SDK at any
+other revision and dart:ui will not match the engine it is calling into: no
+build error, undefined behaviour at runtime. tools/build-vita-app.sh refuses
+the mismatch rather than warning about it.
 
 Link with --whole-archive. The engine relies on static initialisers in
 translation units nothing references by symbol, and ordinary archive semantics
