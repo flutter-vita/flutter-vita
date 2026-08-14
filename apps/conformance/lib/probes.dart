@@ -153,11 +153,37 @@ List<Probe> buildProbes() => [
     c.close();
     return 'HTTP ${res.statusCode}';
   }),
-  // The one most likely to fail, and for a reason worth distinguishing:
-  // BoringSSL is linked, but Dart takes trust roots from /etc/ssl/certs on
-  // Linux and there is no such path here. A handshake failure and a
-  // certificate-verification failure mean very different amounts of work.
-  Probe('net', 'HTTPS GET', () async {
+  // TLS is split into four, smallest first, because the single combined probe
+  // took the whole process down and a hard fault names nothing. Each of these
+  // is a different suspect, and the journal records which one was running:
+  //
+  //   1. does BoringSSL initialise at all
+  //   2. does parsing ~240 KB of compiled-in PEM into an X509 store survive
+  //   3. does a handshake survive
+  //   4. does the HTTP layer on top of it survive
+  //
+  // Splitting it costs one app rebuild and replaces a guess about stack sizes
+  // with an answer.
+  Probe('tls', 'empty SecurityContext', () async {
+    final ctx = SecurityContext(withTrustedRoots: false);
+    return ctx.runtimeType.toString();
+  }),
+  Probe('tls', 'built-in roots', () async {
+    // Triggers TrustBuiltinRoots -> AddCompiledInCerts -> PEM parse of the
+    // whole Mozilla bundle. The heaviest allocation in the TLS path, and the
+    // part that is newly present in this build.
+    final ctx = SecurityContext(withTrustedRoots: true);
+    return ctx.runtimeType.toString();
+  }),
+  Probe('tls', 'SecureSocket handshake', () async {
+    final s = await SecureSocket.connect('example.com', 443,
+        timeout: const Duration(seconds: 20));
+    final proto = s.selectedProtocol ?? 'negotiated';
+    final peer = s.peerCertificate?.subject ?? 'no cert';
+    s.destroy();
+    return '$proto, $peer';
+  }),
+  Probe('tls', 'HTTPS GET', () async {
     final c = HttpClient()..connectionTimeout = const Duration(seconds: 10);
     final req = await c.getUrl(Uri.parse('https://example.com/'));
     final res = await req.close().timeout(const Duration(seconds: 20));

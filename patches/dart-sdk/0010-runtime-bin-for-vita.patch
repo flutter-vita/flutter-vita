@@ -1,5 +1,5 @@
 diff --git a/runtime/bin/BUILD.gn b/runtime/bin/BUILD.gn
-index 0eedc427..ed9cc665 100644
+index 0eedc427..54a75afc 100644
 --- a/runtime/bin/BUILD.gn
 +++ b/runtime/bin/BUILD.gn
 @@ -22,6 +22,18 @@ import("native_assets_impl_sources.gni")
@@ -89,6 +89,32 @@ index 0eedc427..ed9cc665 100644
  build_gen_snapshot_dart_io("gen_snapshot_dart_io_product_linux_riscv64") {
    extra_configs = [
      "..:dart_product_config",
+@@ -581,7 +626,24 @@ template("dart_io") {
+       ]
+     }
+ 
+-    if (is_linux || is_win || is_fuchsia) {
++    # is_vita is here for the certificates, not the platform dispatch.
++    #
++    # Vita has no system trust store a Dart program can read -- no
++    # /etc/ssl/certs, and the console's own CA set lives behind sceSsl in a
++    # format BoringSSL does not speak. Without this branch vita gets neither
++    # the compiled-in bundle nor DART_IO_ROOT_CERTS_DISABLED, so
++    # root_certificates_pem is never defined and AddCompiledInCerts finds
++    # nothing to add: every HTTPS request then fails verification with an
++    # empty trust store, which looks like a certificate problem on the remote
++    # end rather than a missing bundle on ours.
++    #
++    # Note this is unrelated to the Vita's well-known TLS 1.0/1.1 ceiling and
++    # the iTLS-Enso plugin that works around it. That ceiling belongs to
++    # sceSsl, which the browser and system services use; we link BoringSSL and
++    # speak TLS ourselves over raw sceNetSocket, so the system stack's version
++    # limit is not ours. Only the certificate half of that problem carries
++    # over, and dart_use_fallback_root_certificates is the answer to it.
++    if (is_linux || is_win || is_fuchsia || is_vita) {
+       if (dart_use_fallback_root_certificates) {
+         deps += [ "../../third_party/fallback_root_certificates" ]
+       } else {
 diff --git a/runtime/bin/console_posix.cc b/runtime/bin/console_posix.cc
 index 0c795c49..ac6209b7 100644
 --- a/runtime/bin/console_posix.cc

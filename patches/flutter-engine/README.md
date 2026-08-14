@@ -257,16 +257,42 @@ always null here — the GL, Vulkan and Metal surfaces that override
 
 `third_party/sdk` (Phase 1's standalone checkout, still used by
 `spikes/m1-vpk`) and `third_party/flutter/engine/src/flutter/third_party/dart`
-are the same pinned commit and must carry the same changes. Check it:
+are the same pinned commit and must carry the same changes.
 
 ```bash
-A=third_party/sdk
-B=third_party/flutter/engine/src/flutter/third_party/dart
-(cd $B && git diff --name-only; cd $B && git ls-files --others --exclude-standard) \
-  | sort -u | while read -r f; do
-      diff -q "$A/$f" "$B/$f" >/dev/null 2>&1 || echo "DIVERGED: $f"
-    done
+./tools/check-dart-trees.sh
 ```
+
+**The check that used to live here was wrong**, and on 2026-08-14 it let real
+drift through. It compared files reported by `git diff --name-only` from HEAD —
+but the engine's tree carries a local commit above the pin, so anything changed
+*inside that commit* is neither dirty nor untracked and was never compared.
+`runtime/bin/virtual_memory_vita.cc` sat in that blind spot: present in the
+engine tree, absent from `third_party/sdk`. Regenerating patch 0010 from `sdk`
+would have dropped the file from the patch with no error at all.
+
+The script diffs against the pin instead, compares the union of both trees'
+changed files, and fails only on files the patch series owns — those being the
+ones a bad regeneration can destroy.
+
+### Known drift, not yet triaged
+
+The first run of the fixed check reports five differences beyond the one it was
+written for, all in the GN and toolchain patches:
+
+```
+differs         build/config/BUILDCONFIG.gn
+differs         build/config/arm.gni
+differs         build/config/compiler/BUILD.gn
+only in sdk     build/toolchain/vita/BUILD.gn
+differs         runtime/platform/globals.h
+```
+
+**These may be correct.** The two trees build different things — `sdk` builds
+Dart standalone and needs a toolchain definition the engine supplies from its
+own patch series — so some divergence here is expected rather than a defect.
+They are left alone until someone establishes which, because syncing them
+blindly is how a working build gets broken to satisfy a checker.
 
 Running this on the fresh engine checkout is what caught that patch 0008 had
 gone stale. It is worth running after every change to either tree.
