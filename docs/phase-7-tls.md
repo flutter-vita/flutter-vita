@@ -90,21 +90,55 @@ line.
   `__ARM_NEON`, and NEON is genuinely present on this CPU. Marked probable
   rather than certain because it has not been tested by disabling it.
 
+## Stack: investigated, and it is not obviously the problem
+
+`fml::Thread::GetDefaultStackSize()` returns **2 MB**, and every fml thread is
+created with it via `pthread_attr_setstacksize`. Dart's own threads get 512 KB
+the same way, set explicitly in `os_thread_vita.cc`. A TLS handshake needs tens
+of kilobytes. So the leading hypothesis from the previous pass is weak, and no
+longer leading.
+
+## What the dumps say, now that they have been counted
+
+52 `psp2core` files on the device: **36 complete, 16 truncated**. So the dump
+pipeline works most of the time, and the truncation is not a broken tool.
+
+The 16 truncated ones cluster, and today's cluster is ours. Every
+TLS-handshake crash truncated. One crash today did **not** — the teardown crash
+after `== run complete ==`, from the same binary an hour earlier, which wrote a
+complete 363 KB dump and parses fine.
+
+**That contrast is the finding.** The same process, same build, same console:
+an ordinary fault produces a readable dump, and the handshake crash does not.
+Whatever kills the handshake also stops the core writer finishing — which is a
+resource-exhaustion signature rather than a plain bad pointer, and points away
+from illegal instructions and towards memory.
+
+The complete one is worth recording even though it is a different bug: **data
+abort exception, R0 = 0x0**, a null-pointer dereference during teardown.
+Function names from it are discarded — the only ELF still on disk is from a
+later build, its PC does not match the disassembly range, and this project has
+already been burned once by plausible wrong symbols.
+
 ## The leading hypothesis, untested
 
-**Stack.** A TLS handshake does elliptic-curve and big-integer arithmetic with
-large stack frames, and it runs on the Dart mutator thread — Dart performs the
-handshake there deliberately, so that a bad-certificate callback can run Dart
-code.
+**Memory.** The truncation contrast above is the evidence: the handshake crash
+takes the core writer with it, and an ordinary null dereference in the same
+binary does not.
 
-`OSThread::GetMaxStackSize()` in `os_thread_vita.cc` returns 512 KB, but that is
-the value Dart *reports*, not the stack a thread was actually created with. The
-real size comes from thread creation, and on this platform that bottoms out in
-`sceKernelCreateThread`, which takes an explicit size. Nobody has measured it.
+This app is large before TLS — 14.6 MB `.text`, 3.5 MB `.rodata` — and the
+build does not request extended memory in `param.sfo`. The compiled-in CA
+bundle adds 224 KB of `.rodata` and, once parsed, an X509 store holding on the
+order of 150 certificates as live objects, which is several times that in heap.
 
-That is the next thing to check, and it is checkable without guessing: read the
-size the mutator thread is created with, and if it is small, raise it and rerun
-one probe.
+The cheapest test is not a code change: **request extended memory** and see
+whether the handshake survives. Whether homebrew reliably receives it is
+already an open question in Phase 0.5, so the experiment settles two things.
+
+The next cheapest is to stop testing against the open internet. A TLS server on
+the LAN with a self-signed certificate and no verification separates *TLS at
+all* from *real-world chains, TLS 1.3, and large cipher negotiations*. The Vita
+dials out, so nothing about the macOS Local Network restriction blocks it.
 
 ## Cheaper diagnosis than any of this would have been
 
