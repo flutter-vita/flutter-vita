@@ -70,10 +70,10 @@ index 61abe64a..b92ae80c 100644
  
 diff --git a/engine/src/flutter/shell/platform/embedder/vita_embedder.cc b/engine/src/flutter/shell/platform/embedder/vita_embedder.cc
 new file mode 100644
-index 00000000..841463ac
+index 00000000..35bfa4c4
 --- /dev/null
 +++ b/engine/src/flutter/shell/platform/embedder/vita_embedder.cc
-@@ -0,0 +1,532 @@
+@@ -0,0 +1,551 @@
 +// Copyright (c) 2026, the Flutter Authors. All rights reserved.
 +// Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
@@ -469,8 +469,27 @@ index 00000000..841463ac
 +  // the log without the unbuffered writes becoming the frame budget.
 +  static unsigned frames = 0;
 +  if (frames == 0 || frames % 60 == 0) {
-+    VLog("flutter-vita: present #%u row_bytes=%u height=%u\n", frames,
-+         static_cast<unsigned>(row_bytes), static_cast<unsigned>(height));
++    // Free memory rides along with the frame log, because the alternative is
++    // guessing. The TLS handshake crash leaves a truncated core dump every
++    // time while an ordinary fault in the same binary leaves a complete one,
++    // which reads as the process running out of memory rather than touching a
++    // bad pointer -- and nothing so far has actually measured that.
++    //
++    // size_user is the budget the app allocates from. phycont is separate and
++    // small, and worth watching because the framebuffer lives there.
++    SceKernelFreeMemorySizeInfo mem;
++    mem.size = sizeof(mem);
++    if (sceKernelGetFreeMemorySize(&mem) >= 0) {
++      VLog("flutter-vita: present #%u row_bytes=%u height=%u "
++           "free user=%dK cdram=%dK phycont=%dK\n",
++           frames, static_cast<unsigned>(row_bytes),
++           static_cast<unsigned>(height), mem.size_user / 1024,
++           mem.size_cdram / 1024, mem.size_phycont / 1024);
++    } else {
++      VLog("flutter-vita: present #%u row_bytes=%u height=%u\n", frames,
++           static_cast<unsigned>(row_bytes),
++           static_cast<unsigned>(height));
++    }
 +  }
 +  frames++;
 +
