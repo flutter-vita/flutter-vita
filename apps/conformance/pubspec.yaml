@@ -1,0 +1,21 @@
+name: conformance
+description: What this port can actually do, measured on hardware.
+publish_to: none
+version: 0.1.0
+
+environment:
+  sdk: ^3.5.0
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+# Pinned to the dev loader's slot on purpose. The loader installs into
+# FVTA00002 and nothing else, so a derived id would build a correct .vpk that
+# the fast loop cannot deploy. Also exercises the vita: block itself.
+vita:
+  title_id: FVTA00002
+  name: Vita Conformance
+
+flutter:
+  uses-material-design: true

@@ -1,0 +1,10 @@
+# Real Flutter apps cloned for bug-finding, by URL and pinned commit.
+#
+# The checkouts beside this file are gitignored; this list is not. An app that
+# exposed a bug has to stay identifiable, or the bug cannot be regression-tested
+# and the fix cannot be shown to have worked.
+#
+# Format: owner/repo <commit-sha> [# note]
+#
+# Empty until the capability audit says which apps can get far enough to fail
+# interestingly. tools/plugin-survey/apps.txt is the candidate pool.
