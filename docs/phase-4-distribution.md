@@ -199,8 +199,10 @@ asset the toolchain had never seen:
 | custom name | `AssetTest` on the LiveArea |
 | `.text` | 14,483,780 — identical to the known-good build |
 
-**Still unverified: neither generated `.vpk` has run on hardware.** `.text` is
-byte-identical to a binary that does run, which is good evidence and not proof.
+**Verified on hardware.** The template-built `Counter.vpk` was installed with
+`tools/install-vpk.sh` and runs: text in Roboto, the `+` icon from
+MaterialIcons, and touch driving the counter. Byte-identical `.text` turned out
+to be good evidence, but it was evidence rather than proof until this ran.
 
 ### What an app has to provide
 
@@ -217,3 +219,30 @@ The dev server lives in this repo rather than the engine tree, so it ships as
 source in the artifact and the template compiles it. That is the right shape
 rather than a workaround: a released app wants no listening socket on the
 device, and can link a stub with the same three entry points.
+
+
+---
+
+## Installing
+
+```
+./tools/install-vpk.sh path/to/App.vpk
+```
+
+Unpacks the `.vpk`, stages `eboot.bin` through the loader, pushes every other
+file, and launches.
+
+**It pushes the data files by reading the archive**, not from a list. The
+loader's `install` replaces `eboot.bin` and nothing else, so an app otherwise
+runs against whatever the previous install left behind — which is exactly how
+an engine spent an afternoon failing on a missing `icudtl.dat` that had never
+been pushed at all, and then on a `flutter_assets` directory it could not
+reach.
+
+It also refuses a `.vpk` whose `param.sfo` title id does not match the slot the
+loader writes into. The loader hard-codes `FVTA00002`; the asset-test build was
+`FVTA00009`. Without the check that installs into the wrong slot and launches
+the previous app, which looks like a build that silently did nothing.
+
+This is the inner loop, not first-time setup: a slot has to already exist.
+Installing a `.vpk` from scratch is still VitaShell's job.
