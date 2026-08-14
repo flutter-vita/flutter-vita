@@ -1,0 +1,51 @@
+# Real Flutter apps, surveyed for plugin dependencies.
+#
+# Format: owner/repo[#subdir][@ref]
+#
+# These are public repositories, listed by URL only -- nothing is vendored and
+# no app source is committed. The list is the committed half of the app corpus
+# (see the glossary): the checkouts are disposable, the list is not, because a
+# bug found in an app you cannot name again is a bug you cannot regression-test.
+#
+# Selection bias, stated up front: these skew toward apps that are popular
+# enough to be findable, which correlates with being polished, which correlates
+# with using more plugins. A survey of hobby apps would look different. The
+# number this produces is therefore pessimistic for our purposes, and should be
+# read as "how bad is it at the high end", not "the average app".
+
+# --- Google's own samples. Curated, well-maintained, deliberately minimal
+# --- dependency sets. The optimistic end of the range.
+flutter/samples#animations
+flutter/samples#form_app
+flutter/samples#infinite_list
+flutter/samples#isolate_example
+flutter/samples#material_3_demo
+flutter/samples#navigation_and_routing
+flutter/samples#place_tracker
+flutter/samples#provider_counter
+flutter/samples#provider_shopper
+flutter/samples#simplistic_calculator
+flutter/samples#simplistic_editor
+flutter/samples#testing_app
+flutter/samples#veggieseasons
+flutter/samples#game_template
+flutter/samples#platform_design
+
+# --- UI-heavy templates and showcases. Little device access by design, so if
+# --- anything is plugin-free it is these.
+mitesh77/Best-Flutter-UI-Templates
+TheAlphamerc/flutter_ecommerce_app
+TheAlphamerc/flutter_twitter_clone
+X-Wei/flutter_catalog
+
+# --- Real shipped applications. The bar the "unmodified app" goal is aimed at.
+gskinnerTeam/flutter-wonderous-app
+KRTirtho/spotube
+localsend/localsend#app
+JideGuru/FlutterEbookApp#mobile
+deckerst/aves
+openfoodfacts/smooth-app#packages/smooth_app
+AppFlowy-IO/AppFlowy#frontend/appflowy_flutter
+immich-app/immich#mobile
+ente-io/ente#mobile/apps/photos
+brianegan/flutter_architecture_samples#example/vanilla

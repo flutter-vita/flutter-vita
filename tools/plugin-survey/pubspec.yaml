@@ -1,0 +1,10 @@
+name: plugin_survey
+description: >-
+  Measures how many real Flutter apps are reachable without plugin support.
+publish_to: none
+
+environment:
+  sdk: ^3.5.0
+
+dependencies:
+  yaml: ^3.1.2

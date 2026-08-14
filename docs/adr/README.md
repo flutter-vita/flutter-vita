@@ -17,6 +17,8 @@ ADR-0001 through ADR-0004 are back-filled from §1 of `Flutter Vita Plan.md`
 | [0005](0005-aot-snapshot-delivery.md) | How the Dart AOT snapshot gets into the process | **Option A** — Option B defeated by a writable-BSS requirement |
 | [0006](0006-performance-bar-set-from-measurement.md) | Performance bar set from measurement, not asserted | Accepted |
 | [0007](0007-enable-partial-repaint-in-software-path.md) | Patch the engine to enable partial repaint in the software path | **Accepted** — measurement makes it load-bearing |
+| [0008](0008-app-visible-platform-identity.md) | How an app learns it is running on a Vita | **Option A** — keep the linux identity; B is one line if ever needed |
+| [0009](0009-plugins-via-non-endorsed-vita-implementations.md) | `pubspec.yaml` as opt-in surface: build config + three non-endorsed plugins | Accepted — 19% → 50% of surveyed apps |
 
 ## Open questions not yet decided
 
@@ -52,23 +54,34 @@ questions between that and the stated goal — *"a Flutter developer can easily
 run their app on a Vita"* — which is a distribution problem, not a porting one.
 Nothing here needs a rebuild to decide.
 
-- **The goal has no exit criterion.** M4 is "third party can reproduce the
-  build", which delivers *our* app to *their* device. The goal is *their* app on
-  *their* device. Needs a falsifiable statement before anything is planned
-  against it. **Blocking — it decides the priority of everything below.**
-- **Plugin support: in scope or explicitly not?** Verified: the toolchain's
-  entire engagement with `pubspec.yaml` is one `grep` for `name:`
-  ([build-vita-app.sh:78](../../tools/build-vita-app.sh:78)). No plugin
-  resolution, no registrant, no per-plugin native build convention — and
-  [ADR-0004](0004-static-single-binary.md)'s single static ELF removes the
-  dynamic registration every other platform relies on. Nearly every real app
-  transitively needs `path_provider`. "Run real apps from GitHub" is blocked on
-  this, and the corpus of plugin-free apps is small. **ADR-sized either way.**
-- **`vita_platform` API surface is undesigned.** Flutter's framework has no
-  gamepad, rear-touchpad, or dual-analog concept, so a "touches every hardware
-  thing" conformance app is really a test of a Dart API that does not exist yet.
-  The API precedes the app. Open sub-question: mirror community conventions
-  (`sensors_plus`, `gamepads`) so apps port unchanged, or design Vita-shaped?
+- ~~**The goal has no exit criterion**~~ — **closed 2026-08-14.** The bar is
+  *their app, plus a declared opt-in*: a `vita:` block in `pubspec.yaml`, and
+  optionally a `psvita` dependency. Not "unmodified" — that was briefly chosen
+  and then correctly rejected as more expensive than it was worth, since the
+  opt-in edit is what makes non-endorsed plugin implementations legal
+  ([ADR-0009](0009-plugins-via-non-endorsed-vita-implementations.md)) and what
+  lets an app ask whether it is on a Vita at all
+  ([ADR-0008](0008-app-visible-platform-identity.md)).
+- ~~**Plugin support**~~ — **closed by [ADR-0009](0009-plugins-via-non-endorsed-vita-implementations.md).**
+  Measured rather than argued: 5 of 26 real apps are plugin-free, and
+  `path_provider` + `url_launcher` + `shared_preferences` take that to 13. Three
+  non-endorsed implementations, no general plugin system.
+- ~~**Audience**~~ — **adoption.** Which is what makes the forked-SDK cost in
+  ADR-0008 decisive rather than a detail, and what makes the open-sourcing
+  deferral below expensive rather than neutral.
+- **`psvita` API surface is undesigned.** Its *shape* is settled — a pure-Dart
+  package over channels the embedder owns, needing no plugin infrastructure
+  ([ADR-0008](0008-app-visible-platform-identity.md)) — but not its contents.
+  Flutter has no gamepad, rear-touchpad, or dual-analog concept, so a
+  "touches every hardware thing" conformance app is a test of an API that does
+  not exist yet, and **the API precedes the app.** Open sub-question: mirror
+  community conventions (`sensors_plus`, `gamepads`) so apps port unchanged, or
+  design something Vita-shaped?
+- **Title ID allocation.** `FVTA00002` is hard-coded, so any two flutter-vita
+  apps on one device overwrite each other. ADR-0009 puts the ID in `pubspec.yaml`
+  but does not decide whether the developer picks one or it is derived from a
+  hash of the package name. Only bites with more than one user — which is to say,
+  exactly when it is most expensive to fix.
 - **Engine/framework version coupling is unenforced.** `dart:ui` and the engine
   are one source tree cut in half; a mismatch fails at runtime, not build time.
   `package-engine.sh` writes the pins into `MANIFEST.txt` and **nothing reads
@@ -89,13 +102,13 @@ Nothing here needs a rebuild to decide.
   code, all BSD-3, whose binary-distribution clause requires the notice to
   accompany the binary. This is a live obligation the moment a `.vpk` is shared,
   independent of when the repo opens. Cheapest item on this list.
-- **Open-sourcing is scheduled last; it is the mitigation for the top-rated
-  risk.** The register rates single-maintainer burnout High. Also: the stated
-  blocker is scrubbing "dangerous data" from history, and a scan finds none —
-  `third_party/` is gitignored, `.git` is 5.6 MB, no credentials on any branch,
-  one author. The cost of the rewrite only grows.
-- **Audience: adoption or craft?** The market is *Flutter developers* ∩ *hacked
-  Vita owners*, and the homebrew scene is a C/C++ population. Not a rhetorical
-  question — "adoption" makes early open-sourcing the product and the CLI
-  central; "craft" makes a legible, well-documented repo worth more than CLI
-  polish. The two answers fund different work.
+- **Open-sourcing: deferred to the end, with a cost that is now named.** Not an
+  open question — a decision, made 2026-08-14: *"decided later, when all steps
+  are done."* Recorded here because the cost is worth seeing when the deferral
+  is revisited. The stated blocker is scrubbing "dangerous data" from history,
+  and a scan finds none — `third_party/` is gitignored, `.git` is 5.6 MB, no
+  credentials on any branch, one author. The real cost is not danger, it is
+  **feedback latency**: with adoption as the audience, no external user can
+  exercise any of this until the repo opens, so every decision between now and
+  then is made blind and is discovered to be wrong all at once, at the end. The
+  secondary cost is that the history rewrite grows monotonically.
