@@ -54,6 +54,28 @@ STAGE="$OUT/flutter-engine-vita-$FLUTTER_VERSION"
 rm -rf "$STAGE"
 mkdir -p "$STAGE/lib" "$STAGE/include" "$STAGE/data"
 
+# Drop outputs the build no longer produces, before archiving anything.
+#
+# The archive is `find obj -name '*.o'`, which cannot tell a current object from
+# an orphan. Anything ninja stops building stays on disk forever and keeps
+# shipping, and `--whole-archive` then forces every orphan into the app.
+#
+# This has been wrong three times in one day. The worst was a TLS bisect:
+# BoringSSL was switched to pure C, 316 objects rebuilt cleanly, and 123
+# assembly objects from the previous configuration were still archived --
+# `ChaCha20_ctr32_neon` was in the final binary. The experiment would have run,
+# crashed, and produced the confident and wrong conclusion that assembly was
+# not the cause.
+#
+# `cleandead` reads the whole build graph rather than what was last built, so it
+# only removes genuinely orphaned outputs and is safe after a partial build.
+if [ "${SKIP_CLEANDEAD:-0}" != "1" ]; then
+  echo "==> pruning dead objects"
+  ( cd "$ENGINE_SRC/.." && ninja -C "$(basename "$ENGINE_OUT" | sed 's|^|out/|')" -t cleandead 2>/dev/null ) \
+    || ninja -C "$ENGINE_OUT" -t cleandead 2>/dev/null \
+    || echo "   (cleandead unavailable — archive may contain orphans)"
+fi
+
 echo "==> archiving engine objects"
 # The host-toolchain tree under clang_arm64/ is deliberately not here: those are
 # macOS binaries for the build machine, and they go in the host bundle below.
