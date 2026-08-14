@@ -1,0 +1,375 @@
+import 'dart:io';
+
+import 'package:flutter_vita/src/device.dart';
+import 'package:flutter_vita/src/discovery.dart';
+import 'package:flutter_vita/src/png.dart';
+
+/// One entry point for building, installing and driving Flutter on a Vita.
+///
+/// The pieces already existed as shell scripts in tools/ with the device
+/// address written into two of them, under two different variable names. This
+/// keeps the build orchestration as subprocesses — it genuinely is cmake,
+/// gen_snapshot and flutter — and takes over everything that talks to the
+/// device, which is where the hardcoded addresses were.
+const usage = '''
+flutter-vita — build and run Flutter apps on a PlayStation Vita
+
+  doctor                    check the toolchain and find a device
+  devices                   sweep the subnet for Vitas
+  build <app>               app directory -> .vpk
+  install <app|vpk>         build if needed, install, launch
+  run <app>                 install, then follow the log
+  logs                      dump the running app's log
+  screenshot [file]         capture the panel, with its descriptor
+  tap <x> <y>               inject a pointer event
+
+Options
+  --host IP                 skip discovery
+  --subnet 192.168.1        sweep a different /24
+  --name "App Name"         LiveArea name (build)
+  --title-id FVTA00002      target slot (build)
+''';
+
+late final String repoRoot = () {
+  // bin/ -> flutter_vita/ -> tools/ -> repo
+  var dir = File.fromUri(Platform.script).parent.parent.parent.parent;
+  return dir.path;
+}();
+
+Future<int> main(List<String> argv) async {
+  final args = <String>[];
+  final opts = <String, String>{};
+  for (var i = 0; i < argv.length; i++) {
+    if (argv[i].startsWith('--')) {
+      final key = argv[i].substring(2);
+      if (i + 1 < argv.length && !argv[i + 1].startsWith('--')) {
+        opts[key] = argv[++i];
+      } else {
+        opts[key] = 'true';
+      }
+    } else {
+      args.add(argv[i]);
+    }
+  }
+
+  if (args.isEmpty || opts.containsKey('help')) {
+    stdout.write(usage);
+    return args.isEmpty ? 2 : 0;
+  }
+
+  try {
+    switch (args.first) {
+      case 'doctor':
+        return await _doctor(opts);
+      case 'devices':
+        return await _devices(opts);
+      case 'build':
+        return await _build(args, opts) == null ? 1 : 0;
+      case 'install':
+        return await _install(args, opts, follow: false);
+      case 'run':
+        return await _install(args, opts, follow: true);
+      case 'logs':
+        return await _logs(opts);
+      case 'screenshot':
+        return await _screenshot(args, opts);
+      case 'tap':
+        return await _tap(args, opts);
+      default:
+        stderr.writeln('unknown command: ${args.first}\n');
+        stdout.write(usage);
+        return 2;
+    }
+  } on VitaException catch (e) {
+    stderr.writeln('!! $e');
+    return 1;
+  }
+}
+
+/// Every failure this pipeline has, checked up front.
+///
+/// Each of these has cost real time by surfacing as something else: a missing
+/// patched SDK as a frontend_server crash, a wrong-host gen_snapshot as an
+/// exec format error, a missing engine artifact as a cmake error about a path
+/// nobody recognises.
+Future<int> _doctor(Map<String, String> opts) async {
+  var ok = true;
+  void check(String label, bool passed, [String? hint]) {
+    stdout.writeln('${passed ? "  ok  " : "  --  "} $label');
+    if (!passed && hint != null) stdout.writeln('       $hint');
+    ok = ok && passed;
+  }
+
+  final vitasdk = Platform.environment['VITASDK'];
+  check('VITASDK', vitasdk != null && Directory(vitasdk).existsSync(),
+      'export VITASDK=\$HOME/vitasdk — see docs/dev-environment.md');
+
+  final engine = _engineDir();
+  check('engine artifact', File('$engine/lib/libflutter_engine_vita.a').existsSync(),
+      'unpack flutter-engine-vita-*.tar.gz, or run tools/package-engine.sh');
+
+  final host = '${_hostOs()}-${_arch()}';
+  check('gen_snapshot for $host',
+      File('$engine/host-$host/gen_snapshot_armv7').existsSync(),
+      'the artifact was built on another host; build one here');
+
+  final flutter = _flutterDir();
+  check('flutter sdk', Directory(flutter).existsSync(), 'looked in $flutter');
+  check('flutter_patched_sdk_product',
+      Directory('$flutter/bin/cache/artifacts/engine/common/flutter_patched_sdk_product')
+          .existsSync(),
+      'run: $flutter/bin/flutter precache');
+
+  final device = await _findDevice(opts, quiet: true);
+  check('device', device != null,
+      'power on the Vita and open the loader, or pass --host');
+  if (device != null) {
+    stdout.writeln('       $device');
+  } else if (await _localNetworkBlocked()) {
+    // Worth separating from "no device", because it looks identical and is
+    // not the same problem at all.
+    stdout.writeln();
+    stdout.writeln('  !!   macOS is blocking local network access for dart');
+    stdout.writeln('       Connections to other hosts on the LAN fail instantly with');
+    stdout.writeln('       "No route to host" while the internet works. That is the');
+    stdout.writeln('       Local Network privacy control, granted per binary.');
+    stdout.writeln();
+    stdout.writeln('       System Settings > Privacy & Security > Local Network,');
+    stdout.writeln('       and enable the terminal you are running from.');
+    stdout.writeln();
+    stdout.writeln('       The shell tools work meanwhile: they use nc, which is');
+    stdout.writeln('       already permitted. tools/install-vpk.sh, spikes/m1-vpk/dev.sh');
+    ok = false;
+  }
+
+  return ok ? 0 : 1;
+}
+
+Future<int> _devices(Map<String, String> opts) async {
+  stdout.writeln('sweeping${opts['subnet'] != null ? " ${opts['subnet']}.0/24" : ""}…');
+  final found = await discover(subnet: opts['subnet']);
+  if (found.isEmpty) {
+    stdout.writeln('no devices found');
+    stdout.writeln('  the Vita must be awake with the loader or an app running');
+    return 1;
+  }
+  for (final device in found) {
+    stdout.writeln('  $device');
+  }
+  return 0;
+}
+
+Future<String?> _build(List<String> args, Map<String, String> opts) async {
+  if (args.length < 2) {
+    stderr.writeln('usage: flutter-vita build <app-dir>');
+    return null;
+  }
+  final app = args[1];
+
+  // Already a .vpk: nothing to build.
+  if (app.endsWith('.vpk')) return app;
+
+  final cmd = [
+    '$repoRoot/tools/build-vita-app.sh',
+    app,
+    if (opts['name'] != null) ...['--name', opts['name']!],
+    if (opts['title-id'] != null) ...['--title-id', opts['title-id']!],
+  ];
+  final result = await Process.start(cmd.first, cmd.skip(1).toList(),
+      mode: ProcessStartMode.inheritStdio);
+  if (await result.exitCode != 0) return null;
+
+  final out = Directory('$app/build/vita');
+  final vpk = out
+      .listSync()
+      .whereType<File>()
+      .where((f) => f.path.endsWith('.vpk'))
+      .toList();
+  if (vpk.isEmpty) {
+    stderr.writeln('!! build reported success but produced no .vpk');
+    return null;
+  }
+  return vpk.first.path;
+}
+
+Future<int> _install(
+  List<String> args,
+  Map<String, String> opts, {
+  required bool follow,
+}) async {
+  final vpk = await _build(args, opts);
+  if (vpk == null) return 1;
+
+  // The loader is what installs, so hand off if the app is what is running.
+  var device = await _findDevice(opts);
+  if (device == null) return 1;
+  if (device.role == VitaRole.app) {
+    stdout.writeln('==> handing off to the loader');
+    await device.handoff();
+    final loader = await VitaDevice.waitFor(device.host, VitaRole.loader);
+    if (loader == null) {
+      stderr.writeln('!! the loader never came up — tap it on the device');
+      return 1;
+    }
+    device = loader;
+  }
+
+  final result = await Process.start(
+    '$repoRoot/tools/install-vpk.sh',
+    [vpk, '--host', device.host, if (opts['title-id'] != null) ...['--title-id', opts['title-id']!]],
+    mode: ProcessStartMode.inheritStdio,
+  );
+  if (await result.exitCode != 0) return 1;
+
+  final app = await VitaDevice.waitFor(device.host, VitaRole.app);
+  if (app == null) {
+    stderr.writeln('!! the app never opened its port — it may have crashed');
+    stderr.writeln('   open the loader and run: flutter-vita logs');
+    return 1;
+  }
+  stdout.writeln('==> running on ${app.host}');
+
+  if (follow) {
+    stdout.writeln('--- log ---');
+    stdout.write(await app.log());
+  }
+  return 0;
+}
+
+Future<int> _logs(Map<String, String> opts) async {
+  final device = await _findDevice(opts, role: VitaRole.app);
+  if (device == null) return 1;
+  stdout.write(await device.log());
+  return 0;
+}
+
+Future<int> _screenshot(List<String> args, Map<String, String> opts) async {
+  final device = await _findDevice(opts, role: VitaRole.app);
+  if (device == null) return 1;
+
+  // The descriptor first, and printed whether or not the capture works. It is
+  // what says the pixels are on the panel rather than merely in memory we own.
+  stdout.write('  ${await device.shotInfo()}');
+
+  final path = args.length > 1 ? args[1] : 'vita-screen.png';
+  final png = encodePng(await device.screenshot());
+  File(path).writeAsBytesSync(png);
+  stdout.writeln('  $path  ${png.length} B');
+  return 0;
+}
+
+Future<int> _tap(List<String> args, Map<String, String> opts) async {
+  if (args.length < 3) {
+    stderr.writeln('usage: flutter-vita tap <x> <y>');
+    return 2;
+  }
+  final device = await _findDevice(opts, role: VitaRole.app);
+  if (device == null) return 1;
+  stdout.write(await device.tap(int.parse(args[1]), int.parse(args[2])));
+  return 0;
+}
+
+/// Locate a device: an explicit --host, else a sweep.
+///
+/// [role] narrows it when the command only makes sense against one — `logs`
+/// needs the app, and finding the loader instead should say so rather than
+/// failing on a refused connection.
+Future<VitaDevice?> _findDevice(
+  Map<String, String> opts, {
+  VitaRole? role,
+  bool quiet = false,
+}) async {
+  final host = opts['host'] ?? Platform.environment['VITA_HOST'];
+  if (host != null) {
+    for (final candidate in role != null ? [role] : VitaRole.values) {
+      final device = await VitaDevice.probe(host, candidate,
+          timeout: const Duration(seconds: 4));
+      if (device != null) return device;
+    }
+    if (!quiet) stderr.writeln('!! nothing answering on $host');
+    return null;
+  }
+
+  final found = await discover(subnet: opts['subnet']);
+  final match = role == null
+      ? (found.isEmpty ? null : found.first)
+      : found.where((d) => d.role == role).firstOrNull;
+
+  if (match == null && !quiet) {
+    if (found.isEmpty) {
+      stderr.writeln('!! no Vita found — is it awake, with the loader open?');
+    } else {
+      stderr.writeln('!! found ${found.first} but this needs the ${role!.label}');
+      stderr.writeln(
+          role == VitaRole.app ? '   launch the app first' : '   hand off to the loader first');
+    }
+  }
+  return match;
+}
+
+/// Distinguish "nothing on the network" from "macOS will not let us look".
+///
+/// The symptom is specific enough to test for: reaching a public address
+/// succeeds while any other host on the LAN fails in about a millisecond,
+/// with no round trip. A device that is merely absent takes the full connect
+/// timeout instead.
+Future<bool> _localNetworkBlocked() async {
+  if (!Platform.isMacOS) return false;
+
+  Future<bool> reachable(String host, int port) async {
+    try {
+      final socket = await Socket.connect(host, port,
+          timeout: const Duration(seconds: 5));
+      socket.destroy();
+      return true;
+    } on Exception {
+      return false;
+    }
+  }
+
+  // A public host proves the process has networking at all. Without this an
+  // offline machine would be told to change a privacy setting.
+  if (!await reachable('1.1.1.1', 80)) return false;
+
+  final subnet = await localSubnet();
+  if (subnet == null) return false;
+
+  // The router is the one LAN host almost certain to exist and answer.
+  return !await reachable('$subnet.1', 80) && !await reachable('$subnet.1', 443);
+}
+
+String _engineDir() {
+  final override = Platform.environment['FLUTTER_VITA_ENGINE'];
+  if (override != null) return override;
+  return '$repoRoot/out/artifacts/flutter-engine-vita-${_flutterPin()}';
+}
+
+String _flutterDir() =>
+    Platform.environment['FLUTTER_ROOT'] ??
+    '${Platform.environment['HOME']}/fvm/versions/${_flutterPin()}';
+
+String _flutterPin() {
+  final versions = File('$repoRoot/VERSIONS.md');
+  if (versions.existsSync()) {
+    final match =
+        RegExp(r'3\.\d+\.\d+').firstMatch(versions.readAsStringSync());
+    if (match != null) return match.group(0)!;
+  }
+  return '3.44.8';
+}
+
+/// Matches `uname -s | tr '[:upper:]' '[:lower:]'`, which is what
+/// package-engine.sh and build-vita-app.sh use to name the host bundle. Dart
+/// says "macos" where uname says "darwin", and disagreeing here reports a
+/// perfectly good gen_snapshot as missing.
+String _hostOs() =>
+    Platform.isMacOS ? 'darwin' : Platform.operatingSystem;
+
+String _arch() {
+  final v = Platform.version;
+  return v.contains('arm64') ? 'arm64' : 'x64';
+}
+
+extension<T> on Iterable<T> {
+  T? get firstOrNull => isEmpty ? null : first;
+}

@@ -1,0 +1,18 @@
+#!/usr/bin/env bash
+# Thin launcher, so the CLI is one command rather than a dart invocation.
+#
+# Uses the pinned SDK's dart when one is not on PATH -- a Flutter developer has
+# a Dart runtime, but it is usually inside the Flutter SDK rather than exported.
+set -euo pipefail
+HERE="$(cd "$(dirname "$0")" && pwd)"
+ROOT="$(cd "$HERE/.." && pwd)"
+
+if command -v dart >/dev/null 2>&1; then
+  DART=dart
+else
+  PIN="$(grep -m1 -oE '3\.[0-9]+\.[0-9]+' "$ROOT/VERSIONS.md" 2>/dev/null || echo 3.44.8)"
+  DART="${FLUTTER_ROOT:-$HOME/fvm/versions/$PIN}/bin/cache/dart-sdk/bin/dart"
+  [ -x "$DART" ] || { echo "No dart found. Install Flutter or set FLUTTER_ROOT." >&2; exit 1; }
+fi
+
+exec "$DART" run "$HERE/flutter_vita/bin/flutter_vita.dart" "$@"
