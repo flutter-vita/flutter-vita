@@ -8,19 +8,27 @@ Controls are deliberately late. Touch is enough to operate an app, the design is
 already settled in [ADR-0010](adr/0010-input-layering-and-psvita-api.md), and
 nothing else is waiting on it.
 
-## The status table, before any planning
+## The status table
 
-The important column is the middle one, because **"built" and "works" are
-different things here.** Most of `runtime/bin` was ported in Phase 2 to make the
-engine *link*. Almost none of it has ever been executed.
+**Measured, not assumed** — everything marked *works*, *wrong* or *off* below
+was [run on hardware on 2026-08-14](phase-5-capability-audit.md).
+
+That was the point of doing the audit first. `runtime/bin` was ported in Phase 2
+to make the engine *link*, and the working assumption was that little of it
+would actually run. Most of it does, and the three things that do not are
+specific enough to name — which is a very different plan from the one written
+before the measurement.
 
 | Capability | Status | Evidence |
 |---|---|---|
 | Front touch | **works** | M3, on hardware |
 | Rendering, text, assets | **works** | M3 |
-| `dart:io` File / Directory | **built, never run** | `file_linux.cc`, `directory_linux.cc` reused for vita in patch 0010 |
-| `dart:io` Socket / HttpClient | **built, never run** | `eventhandler_vita.cc` on `sceNetEpoll*`, `socket_linux.cc` |
-| TLS / HTTPS | **ambiguous** | 440 BoringSSL objects archived, but *both* `secure_socket_filter.o` and `secure_socket_unsupported.o` are in the archive |
+| `dart:io` File / Directory | **works** | [audited on hardware](phase-5-capability-audit.md) — read, stat, mkdir, write, append, list, rename, delete |
+| `dart:io` Socket / HttpClient | **works** | audited — DNS, TCP, and `HTTP 200` from the open internet |
+| TLS / HTTPS | **off, and we know why** | audited — `secure_socket_unsupported.o` is the one winning the link |
+| `Directory.systemTemp` | **wrong** | returns `/tmp`, which does not exist |
+| `Platform.numberOfProcessors` | **wrong** | returns −1; Dart sizes thread pools from it |
+| Dart `print` / stderr | **broken** | `Bad file descriptor` — never reaches the log |
 | `Process` | **refused, correctly** | `process_vita.cc` — no fork, no exec, documented as an implementation not a placeholder |
 | Text input / IME | **not started** | `sceIme` exists |
 | Audio | **not started** | `sceAudioOut` exists |
@@ -47,9 +55,13 @@ involvement, and it arrives as ordinary `sceCtrl` input.
 
 ---
 
-## Phase 5 — Capability audit
+## Phase 5 — Capability audit — **DONE**
 
-**First, because everything below is currently a guess.**
+Ran 2026-08-14. **28 of 31 probes pass**; see
+[the results](phase-5-capability-audit.md). Filesystem and networking both
+substantially work, which shrinks Phases 6 and 7 from "port a subsystem" to
+"fix four specific things". The section below is kept as written, because the
+argument for measuring before planning is what the outcome vindicates.
 
 One Flutter app that exercises `dart:io` end to end and reports over the log
 channel the dev server already has:

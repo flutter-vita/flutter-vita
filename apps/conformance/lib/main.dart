@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:flutter/material.dart';
 
@@ -6,11 +7,18 @@ import 'probes.dart';
 
 /// The conformance app: what this port can actually do, shown on the panel.
 ///
-/// The screen is the reporting channel, deliberately. Every other way of
-/// getting results off the device is one of the things being tested — files,
-/// sockets, and `print` are all probes here, so reporting through them would be
-/// circular. Rendering and `shot` are what M3 already proved, so they are the
-/// only honest place to put the answers.
+/// Results go to two places, because the first run proved one is not enough.
+///
+/// The screen was the original channel — files, sockets and `print` are all
+/// things under test, so reporting through them is circular, while rendering
+/// and `shot` were already proved by M3. What that reasoning missed is that a
+/// crash takes the app down *and the screen with it*: after the first run died
+/// partway through, `shot` had nothing left to capture and the only record was
+/// what the user happened to have seen.
+///
+/// So results are also appended to a file as they complete. That is circular
+/// for the filesystem probes and honest about it: if the file exists at all,
+/// the filesystem works, and the rows inside it speak for everything after.
 void main() => runApp(const ConformanceApp());
 
 class ConformanceApp extends StatelessWidget {
@@ -45,7 +53,12 @@ class _ProbeRunnerState extends State<ProbeRunner> {
   }
 
   Future<void> _runAll() async {
+    _journalStart();
     for (final result in _results) {
+      // Written *before* the probe runs, so the crashing probe names itself.
+      // The first run left no evidence of which one killed it, and the whole
+      // point of a journal is to still be there when the app is not.
+      _journal('.... ${result.probe.group}/${result.probe.name}');
       try {
         // A probe that hangs would stall every one after it and the run would
         // report nothing at all, so each gets its own ceiling on top of any
@@ -58,13 +71,41 @@ class _ProbeRunnerState extends State<ProbeRunner> {
         result.outcome = Outcome.fail;
         result.detail = _short(e);
       }
-      // Repainted after every probe: a native crash later in the run still
-      // leaves everything up to that point on the panel, where a screenshot
-      // can reach it.
+      _journal('${result.outcome == Outcome.pass ? "PASS" : "FAIL"} '
+          '${result.probe.group}/${result.probe.name}  ${result.detail}');
       if (mounted) setState(() {});
       await Future<void>.delayed(const Duration(milliseconds: 16));
     }
+    _journal('== run complete ==');
     if (mounted) setState(() => _done = true);
+  }
+
+  /// Append-only record that survives the process.
+  ///
+  /// Best-effort by design: this is the reporting channel *and* partly the
+  /// thing under test, so it must never be the reason a run fails. A throw here
+  /// means the filesystem is broken, which the absent file already says.
+  static const _journalPath = 'ux0:data/flutter-vita/conformance.txt';
+
+  void _journalStart() {
+    try {
+      Directory('ux0:data/flutter-vita').createSync(recursive: true);
+      File(_journalPath).writeAsStringSync(
+          'flutter-vita conformance ${DateTime.now()}\n');
+    } on Object {
+      // Nothing to do. The screen is still a channel while the app lives.
+    }
+  }
+
+  void _journal(String line) {
+    try {
+      // Synchronous and unbuffered: an async write scheduled just before a
+      // native crash is a write that never happens.
+      File(_journalPath)
+          .writeAsStringSync('$line\n', mode: FileMode.append, flush: true);
+    } on Object {
+      // Deliberately silent, see above.
+    }
   }
 
   /// Exception text is often long and the useful part is at the front.
@@ -94,6 +135,22 @@ class _ProbeRunnerState extends State<ProbeRunner> {
                           fontSize: 15,
                           fontWeight: FontWeight.bold,
                           color: Color(0xFFE6EAF2))),
+                  const SizedBox(width: 10),
+                  // The logical size and device pixel ratio, because the first
+                  // run overflowed the panel and nothing recorded whether the
+                  // surface was 960x544 or 480x272 at DPR 2.
+                  Builder(builder: (context) {
+                    final mq = MediaQuery.of(context);
+                    return Text(
+                      '${mq.size.width.toStringAsFixed(0)}'
+                      'x${mq.size.height.toStringAsFixed(0)} '
+                      '@${mq.devicePixelRatio}',
+                      style: const TextStyle(
+                          fontSize: 11,
+                          fontFamily: 'monospace',
+                          color: Color(0xFF6B7488)),
+                    );
+                  }),
                   const Spacer(),
                   Text(
                     _done
@@ -110,11 +167,33 @@ class _ProbeRunnerState extends State<ProbeRunner> {
               ),
             ),
             const Divider(height: 1, color: Color(0xFF262B36)),
+            // Two columns and a computed row height, because the first run
+            // ran off the bottom of the panel with no way to scroll it: there
+            // is no pointer to drag and no keyboard to page with, so anything
+            // below the fold is simply lost. Fitting is not cosmetic here, it
+            // is whether the result is readable at all.
             Expanded(
-              child: ListView.builder(
-                padding: EdgeInsets.zero,
-                itemCount: _results.length,
-                itemBuilder: (_, i) => _Row(_results[i]),
+              child: LayoutBuilder(
+                builder: (context, box) {
+                  final perColumn = (_results.length / 2).ceil();
+                  final rowHeight =
+                      (box.maxHeight / perColumn).clamp(9.0, 16.0);
+                  return Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Expanded(
+                        child: _Column(
+                            _results.take(perColumn).toList(), rowHeight),
+                      ),
+                      const VerticalDivider(
+                          width: 1, color: Color(0xFF262B36)),
+                      Expanded(
+                        child: _Column(
+                            _results.skip(perColumn).toList(), rowHeight),
+                      ),
+                    ],
+                  );
+                },
               ),
             ),
           ],
@@ -122,6 +201,20 @@ class _ProbeRunnerState extends State<ProbeRunner> {
       ),
     );
   }
+}
+
+class _Column extends StatelessWidget {
+  const _Column(this.results, this.rowHeight);
+  final List<ProbeResult> results;
+  final double rowHeight;
+
+  @override
+  Widget build(BuildContext context) => Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          for (final r in results) SizedBox(height: rowHeight, child: _Row(r)),
+        ],
+      );
 }
 
 class _Row extends StatelessWidget {
@@ -137,11 +230,11 @@ class _Row extends StatelessWidget {
     };
 
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 1),
+      padding: const EdgeInsets.symmetric(horizontal: 6),
       child: Row(
         children: [
           SizedBox(
-            width: 62,
+            width: 48,
             child: Text(result.probe.group,
                 style: const TextStyle(
                     fontSize: 11,
@@ -149,7 +242,7 @@ class _Row extends StatelessWidget {
                     color: Color(0xFF6B7488))),
           ),
           SizedBox(
-            width: 168,
+            width: 124,
             child: Text(result.probe.name,
                 overflow: TextOverflow.ellipsis,
                 style: const TextStyle(
@@ -158,7 +251,7 @@ class _Row extends StatelessWidget {
                     color: Color(0xFFC7CEDB))),
           ),
           SizedBox(
-            width: 38,
+            width: 32,
             child: Text(label,
                 style: TextStyle(
                     fontSize: 11,

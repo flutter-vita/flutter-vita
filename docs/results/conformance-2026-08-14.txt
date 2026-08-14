@@ -1,0 +1,66 @@
+flutter-vita conformance 2026-08-14 18:06:24.566058
+.... dart/async/Future
+PASS dart/async/Future  ok
+.... dart/Timer
+PASS dart/Timer  ok
+.... dart/DateTime.now
+PASS dart/DateTime.now  2026-08-14T18:06:25
+.... platform/operatingSystem
+PASS platform/operatingSystem  linux
+.... platform/version
+PASS platform/version  3.12.2
+.... platform/numberOfProcessors
+PASS platform/numberOfProcessors  -1
+.... platform/pathSeparator
+PASS platform/pathSeparator  "/"
+.... platform/localHostname
+PASS platform/localHostname  localhost
+.... platform/environment
+PASS platform/environment  0 vars
+.... platform/resolvedExecutable
+PASS platform/resolvedExecutable  Platform_ResolvedExecutableName
+.... platform/script
+PASS platform/script  app0%3A/main.dart
+.... fs/Directory.current
+PASS fs/Directory.current  app0:
+.... fs/app0 exists
+PASS fs/app0 exists  yes
+.... fs/app0 list
+PASS fs/app0 list  9 entries
+.... fs/read app0 file
+PASS fs/read app0 file  862304 B, starts 4B
+.... fs/stat app0 file
+PASS fs/stat app0 file  file, 862304 B
+.... fs/mkdir ux0:data
+PASS fs/mkdir ux0:data  exists
+.... fs/write file
+PASS fs/write file  37 B
+.... fs/read back
+PASS fs/read back  written at 2026-08-14 18…
+.... fs/append
+PASS fs/append  42 B
+.... fs/list ux0:data
+PASS fs/list ux0:data  14 entries
+.... fs/rename
+PASS fs/rename  ok
+.... fs/delete
+PASS fs/delete  ok
+.... fs/systemTemp
+PASS fs/systemTemp  /tmp
+.... fs/createTempSync
+FAIL fs/createTempSync  PathNotFoundException: Creation of temporary directory failed, path…
+.... net/ServerSocket.bind
+PASS net/ServerSocket.bind  port 52226
+.... net/DNS lookup
+PASS net/DNS lookup  104.20.23.154
+.... net/TCP connect (no DNS)
+PASS net/TCP connect (no DNS)  1.1.1.1:80
+.... net/HTTP GET
+PASS net/HTTP GET  HTTP 200
+.... net/HTTPS GET
+FAIL net/HTTPS GET  Invalid argument(s): Secure Sockets unsupported on this platform
+.... process/Process.run refuses
+PASS process/Process.run refuses  ProcessException: Starting a process is not supported on this platform
+.... io/print to log
+FAIL io/print to log  Failed to get type of stdio handle (fd 2), path = '' (OS Error: Bad…
+== run complete ==

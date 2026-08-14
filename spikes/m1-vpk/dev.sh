@@ -104,10 +104,20 @@ wait_for_tap() {
 }
 
 # Newest psp2core dump name, via whichever app is alive.
+#
+# The optional `.tmp` matters. The core writer writes to `<name>.psp2dmp.tmp`
+# and renames on completion, so a dump from an app that died hard keeps the
+# suffix -- and a pattern anchored on `\.psp2dmp` silently truncates the name,
+# producing a path that does not exist. That fails as `ERR open 0x80010002`,
+# which reads like a missing dump rather than a bad filename, and on 2026-08-14
+# it sent an investigation to an unrelated app's month-old crash instead.
+#
+# A `.tmp` dump is usually still worth pulling -- it is gzip either way -- but
+# expect it to be truncated, and expect the parser to fail on the ELF notes.
 newest_dump() {
   local p; p="$(live)"; [ -z "$p" ] && return 1
   printf 'ls ux0:data\n' | nc -w 25 "$VITA" "$p" 2>/dev/null \
-    | grep -o "psp2core-[0-9]*-0x[0-9a-f]*-[^ ]*\.psp2dmp" \
+    | grep -oE "psp2core-[0-9]+-0x[0-9a-f]+-[^[:space:]]+\.psp2dmp(\.tmp)?" \
     | sort -t- -k2 -n | tail -1
 }
 
