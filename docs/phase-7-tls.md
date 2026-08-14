@@ -120,7 +120,62 @@ Function names from it are discarded — the only ELF still on disk is from a
 later build, its PC does not match the disassembly range, and this project has
 already been burned once by plausible wrong symbols.
 
-## The leading hypothesis, untested
+## Memory: measured, and it is not the problem
+
+The embedder logs `sceKernelGetFreeMemorySize` alongside its frame counter.
+Across a full probe run, up to and including the frame before the crash:
+
+```
+present #0    free user=93184K   cdram=112640K   phycont=26624K
+present #31   free user=91136K   cdram=112640K   phycont=26624K
+```
+
+**2 MB consumed for the entire run** — including parsing the 240 KB CA bundle
+into an X509 store — with **89 MB still free** when the process died. `cdram`
+and `phycont` never move at all. Exhaustion is ruled out, and with it the
+inference drawn from the truncated dumps: the core writer failing is a symptom
+of something else, not of a full heap.
+
+Worth recording how nearly this measured nothing. The first version logged
+every sixtieth frame, which is right for an app that paints continuously and
+useless for this one: the conformance app repaints once per probe and reaches
+about thirty-five frames in its whole life, so frame sixty never arrived and
+the run produced a single sample, at startup, before anything had happened.
+Painting is the only clock that log has, so the rate has to match the app being
+watched rather than the display.
+
+## What is actually left
+
+Everything cheap has been eliminated by measurement rather than argument:
+
+| | |
+|---|---|
+| Secure sockets disabled | fixed |
+| Root certificates missing | fixed |
+| `security_context_linux.cc` unrouted | fixed |
+| Entropy `abort()` | fixed — **and not the bug** |
+| Certificate verification | ruled out — the no-verify probe dies identically |
+| Stack | ruled out — 2 MB fml threads, 512 KB Dart threads |
+| Memory | ruled out — 89 MB free at the crash |
+
+That leaves the crypto itself, and one thing was dismissed too early.
+`CRYPTO_is_NEON_capable()` returns 1 **unconditionally** on this build, because
+`-mfpu=neon` defines `__ARM_NEON` and the inline function short-circuits on it.
+So every handshake executes hand-written NEON assembly on a Cortex-A9 that has
+never run any of it.
+
+The earlier dismissal was of ARMv8 *extensions* — AES, PMULL, SHA — and that
+still holds: those resolve through `OPENSSL_get_armcap()` to zero. It said
+nothing about the ARM assembly in general, which is selected separately and is
+very much in the path.
+
+[`patches/flutter-engine/0007`](../patches/flutter-engine/0007-boringssl-no-asm-for-vita.patch)
+puts Vita on BoringSSL's `no_asm_config` — pure C, no hand-written assembly
+anywhere. **It is a diagnostic, not a decision.** If it fixes the handshake the
+real change is narrower, because pure-C bignum and curve25519 on a 444 MHz A9 is
+a real per-handshake cost. If it does not, the patch comes back out.
+
+## Superseded hypothesis, kept for the record
 
 **Memory.** The truncation contrast above is the evidence: the handshake crash
 takes the core writer with it, and an ordinary null dereference in the same

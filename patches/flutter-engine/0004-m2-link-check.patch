@@ -70,10 +70,10 @@ index 61abe64a..b92ae80c 100644
  
 diff --git a/engine/src/flutter/shell/platform/embedder/vita_embedder.cc b/engine/src/flutter/shell/platform/embedder/vita_embedder.cc
 new file mode 100644
-index 00000000..35bfa4c4
+index 00000000..e34a1381
 --- /dev/null
 +++ b/engine/src/flutter/shell/platform/embedder/vita_embedder.cc
-@@ -0,0 +1,551 @@
+@@ -0,0 +1,560 @@
 +// Copyright (c) 2026, the Flutter Authors. All rights reserved.
 +// Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
@@ -468,7 +468,16 @@ index 00000000..35bfa4c4
 +  // black. Logging the first present and then every 60th keeps the answer in
 +  // the log without the unbuffered writes becoming the frame budget.
 +  static unsigned frames = 0;
-+  if (frames == 0 || frames % 60 == 0) {
++  // Every frame for the first 200, then every sixtieth.
++  //
++  // The interval used to be sixty throughout, which was tuned for an app that
++  // paints continuously and is useless for one that does not: the conformance
++  // app repaints once per probe, roughly thirty-five times in its whole life,
++  // so frame sixty never arrived and a run produced exactly one sample -- at
++  // startup, before anything interesting had happened. Painting is the only
++  // clock this log has, so the rate has to match the app being watched, not
++  // the display.
++  if (frames < 200 || frames % 60 == 0) {
 +    // Free memory rides along with the frame log, because the alternative is
 +    // guessing. The TLS handshake crash leaves a truncated core dump every
 +    // time while an ordinary fault in the same binary leaves a complete one,
