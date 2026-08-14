@@ -1409,6 +1409,53 @@ index 00000000..2c5ccc60
 +}  // namespace dart
 +
 +#endif  // defined(DART_HOST_OS_VITA)
+diff --git a/runtime/bin/security_context_linux.cc b/runtime/bin/security_context_linux.cc
+index 2e710d37..8ed04162 100644
+--- a/runtime/bin/security_context_linux.cc
++++ b/runtime/bin/security_context_linux.cc
+@@ -5,7 +5,13 @@
+ #if !defined(DART_IO_SECURE_SOCKET_DISABLED)
+ 
+ #include "platform/globals.h"
+-#if defined(DART_HOST_OS_LINUX) || defined(DART_HOST_OS_ANDROID)
++// Vita joins the linux dispatch here for the same reason as the eleven other
++// _linux.cc files patch 0002 routed: the POSIX shape is close enough and the
++// differences are guarded inline. This one was missed because
++// dart_disable_secure_socket was on, so nothing referenced it and the absent
++// TrustBuiltinRoots only surfaced when TLS was turned on.
++#if defined(DART_HOST_OS_LINUX) || defined(DART_HOST_OS_ANDROID) ||            \
++    defined(DART_HOST_OS_VITA)
+ 
+ #include "bin/security_context.h"
+ 
+@@ -56,6 +62,16 @@ void SSLCertContext::TrustBuiltinRoots() {
+     const char* android_cacerts = "/system/etc/security/cacerts";
+     LoadRootCertCache(android_cacerts);
+     return;
++#elif defined(DART_HOST_OS_VITA)
++    // Nothing to probe for. A Vita has no /etc, so every path below would miss,
++    // and each miss is a File::Exists against a memory card -- fifteen of them,
++    // synchronously, every time a SecurityContext is built. Fall straight
++    // through to the compiled-in bundle, which is the only trust store this
++    // platform has.
++    //
++    // The console *does* have a CA set, but it lives behind sceSsl in a format
++    // BoringSSL cannot read, and it is the stale one that iTLS-Enso exists to
++    // replace. Compiling Mozilla's bundle in sidesteps both problems.
+ #else
+     // On Linux, we use the compiled-in trusted certs as a last resort. First,
+     // we try to find the trusted certs in various standard locations. A good
+@@ -93,8 +109,9 @@ void SSLCertContext::TrustBuiltinRoots() {
+ #endif
+   }
+ 
+-#if defined(DART_HOST_OS_LINUX)
++#if defined(DART_HOST_OS_LINUX) || defined(DART_HOST_OS_VITA)
+   // Fall back on the compiled-in certs if the standard locations don't exist.
++  // On vita this is not a fallback, it is the only path.
+   if (SSL_LOG_STATUS) {
+     Syslog::Print("Trusting compiled-in roots\n");
+   }
 diff --git a/runtime/bin/socket_base.h b/runtime/bin/socket_base.h
 index 904b73ac..08bd63c0 100644
 --- a/runtime/bin/socket_base.h
