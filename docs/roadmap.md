@@ -1,5 +1,13 @@
 # Roadmap — from here to a `.vpk` with Flutter inside
 
+> **Historical.** This road was walked: M1, M2 and M3 are met and a Flutter app
+> runs on hardware. It is kept because the reasoning — especially about what was
+> *not* blocking, and which estimates deserved distrust — is worth being able to
+> check against what actually happened.
+>
+> For what comes next, see
+> [roadmap-capabilities.md](roadmap-capabilities.md).
+
 The question this answers: *what stands between today and a `.vpk` containing a
 working Flutter hello world?*
 
