@@ -90,9 +90,8 @@ Two things gate it regardless of which shape the tool takes:
 
 1. ~~**Prebuilt engine artifacts.**~~ Done — `tools/package-engine.sh`. See
    below.
-2. **A documented app template.** `spikes/m3-vpk` hardcodes the B2 counter
-   app's `.dill` and asset bundle. Until an arbitrary Flutter app can be pointed
-   at the toolchain, there is nothing to distribute.
+2. ~~**A documented app template.**~~ Done — `templates/vita-app` plus
+   `tools/build-vita-app.sh`. See below.
 
 ## Not blocking, worth reporting anyway
 
@@ -163,3 +162,58 @@ semantics already, which is why this only needs saying now.
 
 `-Wl,-u,pthread_cancel`, because without it every `std::mutex::lock()` in the
 engine compiles to a no-op. See [phase-2-workplan.md](phase-2-workplan.md).
+
+
+---
+
+## The app template
+
+```
+./tools/build-vita-app.sh path/to/app --name "Counter"
+==> Counter.vpk  13M
+```
+
+`templates/vita-app` is `spikes/m3-vpk` with the spike removed: no hardcoded
+app, no hardcoded asset list, and the engine comes from the packaged artifact
+rather than a local object tree. `tools/build-vita-app.sh` runs the whole
+pipeline — `flutter build bundle`, frontend_server to a kernel, `gen_snapshot`
+to armv7 assembly, link, package — and skips the snapshot step when the kernel
+hash has not moved.
+
+Assets are globbed from the bundle rather than listed, so whatever
+`flutter build bundle` produced comes along. `kernel_blob.bin` is filtered out:
+it is the JIT path's copy of the program, and this build links its AOT snapshot
+into `eboot.bin` instead.
+
+### Verified on an app that did not exist beforehand
+
+Building the counter app again would only have proved the pipeline works on the
+app it was written against. So the test was a fresh `flutter create` with an
+asset the toolchain had never seen:
+
+| | |
+|---|---|
+| custom asset | `flutter_assets/assets/logo.png`, 4898 B |
+| manifest regenerated | `AssetManifest.bin` 117 → 162 B |
+| custom title id | `FVTA00009` in `param.sfo` |
+| custom name | `AssetTest` on the LiveArea |
+| `.text` | 14,483,780 — identical to the known-good build |
+
+**Still unverified: neither generated `.vpk` has run on hardware.** `.text` is
+byte-identical to a binary that does run, which is good evidence and not proof.
+
+### What an app has to provide
+
+The archive carries `main()` inside the embedder, but leaves three undefined
+symbols:
+
+```
+U dev_server_run
+U dev_server_set_framebuffer_source
+U dev_server_set_tap_handler
+```
+
+The dev server lives in this repo rather than the engine tree, so it ships as
+source in the artifact and the template compiles it. That is the right shape
+rather than a workaround: a released app wants no listening socket on the
+device, and can link a stub with the same three entry points.
