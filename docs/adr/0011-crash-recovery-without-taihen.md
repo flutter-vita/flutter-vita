@@ -82,9 +82,41 @@ every place our own patches can fail fatally should call
 The crash diagnosed the same day is the case in point — the emulated-TLS table
 knew it was out of slots and returned NULL into
 `dart::OSThread::SetCurrentTLS`, which dereferenced it. It had every piece of
-information needed to bail out cleanly and instead produced a data abort. That
-conversion, applied across the patch set, is what turns this from a partial
-mitigation into the normal path.
+information needed to bail out cleanly and instead produced a data abort.
+
+### How much of the patch set needs that conversion: one file
+
+Audited 2026-08-15, and the answer was smaller and more interesting than
+expected. There are 38 silent-failure returns across the 13 Vita-specific
+files, and nearly all are correct, because their contracts are **nullable** and
+the caller is obliged to check:
+
+| Pattern | Sites | Why it is fine |
+|---|---|---|
+| `errno = ENOTSUP; return -1` — POSIX shims | 15 | Standard contract; becomes a Dart exception |
+| `return false` — `stdio_vita.cc` echo modes | 8 | Truthful; surfaces as `StdinException` |
+| `Process` refusing to fork | 5 | A documented implementation, not a placeholder |
+| `VirtualMemory::Allocate → nullptr` | 2 | Dart's own OOM path, plus the deliberate no-JIT refusal |
+
+The dangerous case is not "returns NULL", it is **"returns NULL where the
+caller structurally cannot check"** — functions the *compiler* emits calls to,
+whose call sites dereference unconditionally. Across the whole series there is
+exactly one:
+
+```
+$ grep -oE "__[a-z_]+" runtime/{bin,platform}/*vita*.cc | sort -u
+__emutls_get_address
+__emutls_register_common     # cannot fail; returns void
+```
+
+So `__emutls_get_address` was structurally unique rather than one instance of a
+widespread pattern, which is why it produced an anonymous data abort while
+every other failure in this port produces a readable Dart exception.
+
+**There is no sweep outstanding.** What replaces it is a rule, recorded in
+[the patch notes](../../patches/dart-sdk/README.md): a Vita implementation of a
+function the compiler emits calls to must exit, not return a failure value.
+That rule is for the next hand-rolled ABI function, not for the current ones.
 
 ## Consequences
 

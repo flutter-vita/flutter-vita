@@ -17,7 +17,7 @@ disposable; these patches are the real artifact.
 | 0006 | [newlib-portability-fixes](0006-newlib-portability-fixes.patch) | Shared Dart sources that assume glibc or "not POSIX means Windows" |
 | 0007 | [vmlibraryhooks-entry-point](0007-vmlibraryhooks-entry-point.patch) | Marks `VMLibraryHooks` and its fields `vm:entry-point` so an embedder can install the timer hooks. **Affects the platform dill, not the runtime** — rebuild `vm_platform_product.dill`, not just the runtime |
 | 0008 | [dart-vita-embedder-library](0008-dart-vita-embedder-library.patch) | Adds `dart:vita`, the Dart-side embedder shim. **Three files**: the library, `libraries.json`, and the VM target's `extraRequiredLibraries` — omitting the last produces a byte-identical dill with no error |
-| 0009 | [vita-emulated-tls](0009-vita-emulated-tls.patch) | Replaces libgcc's `__emutls_get_address`. **Without this every `thread_local` in the runtime is one shared global**, because `__gthread_active_p()` is a weak reference to `pthread_cancel` that never links — and forcing it in crashes instead, since emutls uses a statically initialised pthread mutex VitaSDK does not support |
+| 0009 | [vita-emulated-tls](0009-vita-emulated-tls.patch) | Replaces libgcc's `__emutls_get_address`. **Without this every `thread_local` in the runtime is one shared global**, because `__gthread_active_p()` is a weak reference to `pthread_cancel` that never links — and forcing it in crashes instead, since emutls uses a statically initialised pthread mutex VitaSDK does not support. **See the rule below** — this is the one file in the series implementing a non-nullable ABI contract, and getting that wrong cost two sessions |
 
 | 0010 | [runtime-bin-for-vita](0010-runtime-bin-for-vita.patch) | `dart:io`'s native layer, plus dropping `-latomic`. **New in Phase 2** — the engine's embedder depends on `runtime/bin` unconditionally, which Phase 1 excluded |
 
@@ -30,6 +30,54 @@ disposable; these patches are the real artifact.
 
 All three are verified to compile with
 [`spikes/p1-compile-check/check.sh`](../../spikes/p1-compile-check/check.sh).
+
+## The rule: never return a sentinel from a non-nullable contract
+
+**A Vita implementation of a function the compiler emits calls to must exit,
+not return a failure value.**
+
+Nearly every function in this series can report failure safely, because its
+contract is *nullable* and the caller is required to check. `errno = ENOTSUP;
+return -1` from a POSIX shim becomes a Dart exception. `VirtualMemory::Allocate`
+returning `nullptr` is Dart's own out-of-memory path. `Stdin::GetEchoMode`
+returning `false` is a truthful answer to a question this console cannot
+answer. All of those surface as something a developer can read.
+
+`__emutls_get_address` is different, and — audited 2026-08-15 — it is the
+**only** function in the series that is:
+
+```
+$ grep -oE "__[a-z_]+" runtime/{bin,platform}/*vita*.cc | sort -u
+__emutls_get_address
+__emutls_register_common     # cannot fail; returns void
+```
+
+The compiler emits its call sites, and they dereference the result
+unconditionally, because that is what the ABI guarantees. There is no caller to
+check anything. Returning NULL there does not produce an error — it produces a
+data abort somewhere else entirely, with the reason discarded. That is exactly
+what happened: a full thread table returned NULL into
+`dart::OSThread::SetCurrentTLS`, and the resulting crash was misdiagnosed four
+times across two sessions as TLS, frames, timers and text, because the
+information needed to identify it was thrown away at the point of failure.
+
+So when a contract cannot express failure, say so and stop:
+
+```c
+if (vita_bail_to_loader != NULL) {
+  vita_bail_to_loader("emutls: 128 live threads, out of TLS slots");
+}
+return NULL;  // unreachable in practice; the bail does not return
+```
+
+`vita_bail_to_loader` is declared weak — a shipping app links no
+`bailout.c` — so it must be null-checked. See
+[ADR-0011](../../docs/adr/0011-crash-recovery-without-taihen.md).
+
+The 38 other silent-failure returns in the Vita files were audited at the same
+time and are all nullable contracts whose callers check. **There is no sweep
+outstanding.** This rule exists for the next hand-rolled ABI function, not for
+the current ones.
 
 ## Applying
 
