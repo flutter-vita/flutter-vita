@@ -152,6 +152,17 @@ Deferred because touch already operates an app, and because layer 2 needs
 `StandardMethodCodec` hand-encoded in C, which is the single largest piece of
 embedder work outstanding.
 
+## Blocking everything: the non-deterministic crash
+
+Any app on this port dies after a while, at a position that correlates with
+nothing measurable. It is why Phase 7 looked like a TLS bug for two days, and it
+caps what any app can do.
+
+**Start here:** [HANDOFF-nondeterministic-crash.md](HANDOFF-nondeterministic-crash.md).
+It carries what is eliminated, the heap-corruption hypothesis and the one-run
+test for it, how to bisect by layer, and — read this part first — how to stop
+each crash costing a human walking to the console.
+
 ## Ongoing, not phases
 
 - **App corpus** — real apps from GitHub, checkouts gitignored, manifest
