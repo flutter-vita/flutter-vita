@@ -152,26 +152,27 @@ Deferred because touch already operates an app, and because layer 2 needs
 `StandardMethodCodec` hand-encoded in C, which is the single largest piece of
 embedder work outstanding.
 
-## Still unfixed: the non-deterministic crash
+## Fixed 2026-08-15: the non-deterministic crash
 
-Any app on this port dies after a while, at a position that correlates with
-nothing measurable. It is why Phase 7 looked like a TLS bug for two days.
+Every app on this port used to die after a while, at a position that correlated
+with nothing measurable. It is why Phase 7 looked like a TLS bug for two days.
 
-It no longer *blocks*, though, which is the change on 2026-08-15. The
-conformance app records the next step to run in
-`ux0:data/flutter-vita/resume.txt` and skips past it on the next launch, so a
-crash costs one relaunch rather than the whole run. Three launches produced the
-first complete pass over the probe list — **one failure in the lot**, `io/print`
-to stderr — and that is how TLS turned out to have been working all along.
+**It was the 33rd thread.** Our emulated-TLS replacement had a 32-entry table
+that never released a slot, so the limit was threads *ever created* rather than
+threads alive, and the 33rd got NULL handed to a caller that dereferences it.
+Slots are now reclaimed from exited threads, the table is 128, and every NULL
+path exits cleanly instead. The conformance app now runs the whole probe list in
+one go — **42 pass, 1 fail** (`io/print` to stderr) — and was still alive at
+260 s with a 250 MiB allocation storm behind it.
 
-**Start here:** [HANDOFF-nondeterministic-crash.md](HANDOFF-nondeterministic-crash.md).
-It carries what is eliminated, the heap-corruption hypothesis and the one-run
-test for it, and how to bisect by layer.
+The story is worth reading for the method, not the bug:
+[HANDOFF-nondeterministic-crash.md](HANDOFF-nondeterministic-crash.md).
 
-Each relaunch is still a person walking to the console. The fix for that is a
-background app (`eboot2.bin`) that outlives the crash and relaunches the loader;
-it is built and its API works, and what remains is getting its title registered
-without `ScePromoterUtil` — see the handoff.
+**The dev loop no longer needs a person for it either.** Failures the program
+can see coming exit cleanly into the loader — no error dialog, so nothing to
+dismiss and no bubble to find. See
+[ADR-0011](adr/0011-crash-recovery-without-taihen.md). A wild pointer still
+costs two taps; nothing user-mode can catch a data abort.
 
 ## Ongoing, not phases
 

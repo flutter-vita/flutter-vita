@@ -1,6 +1,39 @@
 # Handoff — the non-deterministic crash
 
-> ## FOUND, 2026-08-15. It is the 33rd thread.
+> ## FIXED, 2026-08-15. It was the 33rd thread.
+>
+> ```
+> before:  died at 80 MiB / 3.4 s, twice, 16 ms apart
+> after:   alive at 260 s and still running,  == run complete ==,  42 PASS 1 FAIL
+> ```
+>
+> The whole probe list in **one run**, from a fresh start, with a 250 MiB
+> allocation storm in front of it. `tls/handshake, no verify` — the probe the
+> crash always landed in and which had never once produced a result — passes.
+> The single remaining failure is `io/print` to stderr, which is unrelated and
+> was already known.
+>
+> The fix, in `runtime/platform/emutls_vita.cc`
+> ([patch 0009](../patches/dart-sdk/0009-vita-emulated-tls.patch)):
+>
+> - **Slots are reclaimed from threads that have exited.** `sceKernelGetThreadInfo`
+>   fails for a dead tid, so a full table reaps before giving up. This is the
+>   actual bug: the table counted threads *ever created*, not threads alive.
+> - **128 slots** instead of 32 — 33 KiB of BSS, headroom that costs a reap pass
+>   rather than a crash.
+> - **All three NULL returns now bail cleanly** via
+>   [ADR-0011](adr/0011-crash-recovery-without-taihen.md) instead of handing a
+>   null pointer to a caller that dereferences it. Every caller of
+>   `__emutls_get_address` dereferences the result — that is what the ABI means —
+>   so NULL was never a survivable answer from any of them.
+>
+> Known residual, recorded rather than fixed: the kernel recycles thread ids, so
+> a new thread could in principle match a stale slot and inherit a dead thread's
+> `thread_local` values. Reaping shrinks the window; closing it needs a
+> thread-exit hook, which means moving onto pthread keys. It predates this change
+> and observed ids climb rather than recycle quickly.
+
+> ## How it was found: it is the 33rd thread
 >
 > ```
 > _ZN4dart8OSThread13SetCurrentTLSEPNS_10BaseThreadE+0x10:

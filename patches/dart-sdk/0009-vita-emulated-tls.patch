@@ -1,9 +1,9 @@
 diff --git a/runtime/platform/emutls_vita.cc b/runtime/platform/emutls_vita.cc
 new file mode 100644
-index 00000000..1cc8eddd
+index 00000000..c73ea793
 --- /dev/null
 +++ b/runtime/platform/emutls_vita.cc
-@@ -0,0 +1,172 @@
+@@ -0,0 +1,262 @@
 +// A replacement for libgcc's emulated-TLS runtime.
 +//
 +// VitaSDK has no ELF TLS, so every `thread_local` compiles to a call to
@@ -69,9 +69,24 @@ index 00000000..1cc8eddd
 +  void* templ;
 +};
 +
-+// Dart uses a handful of threads (main, a worker or two, our timer and power
-+// threads). These are generous and cost 32 * 64 * 4 = 8 KiB of BSS.
-+#define EMUTLS_MAX_THREADS 32
++// This table killed every app on the port for six days, so the sizing deserves
++// more than a guess.
++//
++// It used to say "Dart uses a handful of threads (main, a worker or two, our
++// timer and power threads). These are generous" -- 32 slots. Nothing checked
++// the assumption, slots were never released, and running out returned NULL to
++// a caller that dereferences it. Since `tid` was written on allocation and
++// never cleared on thread exit, the real limit was 32 threads *ever created*,
++// not 32 live. Flutter and Dart churn threads, so the app died on whatever line
++// happened to be executing when the 33rd was born -- which is precisely the
++// "non-deterministic crash" that cost two sessions. See
++// docs/HANDOFF-nondeterministic-crash.md.
++//
++// Two changes. Slots are now reclaimed from threads that have exited, so the
++// table tracks live threads rather than accumulating forever; and 128 slots at
++// 128 * 65 * 4 = 33 KiB of BSS, which is nothing here and buys headroom that
++// costs a reap pass rather than a crash.
++#define EMUTLS_MAX_THREADS 128
 +#define EMUTLS_MAX_VARS 64
 +
 +typedef struct {
@@ -96,9 +111,57 @@ index 00000000..1cc8eddd
 +  __sync_lock_release(&g_lock);
 +}
 +
++// Clean exit to the dev loader, from the app's bailout.c.
++//
++// Weak, because a shipping app links no such file -- an app that relaunches a
++// development loader is obviously wrong -- so this must be null-checked.
++extern "C" __attribute__((weak)) void vita_bail_to_loader(const char* reason);
++
++// Release slots whose thread no longer exists.
++//
++// Called with the lock held and only when the table is full, so the cost is
++// one pass over 128 entries at the moment a thread would otherwise be turned
++// away -- never on the steady-state read path.
++//
++// Freeing the blocks is safe and deliberate: they are the thread_local storage
++// of a thread that has exited, which by C++ semantics is already dead, and
++// leaking them instead would trade a crash for an unbounded leak in a
++// long-running app.
++static int reap_dead_threads(void) {
++  int reaped = 0;
++  for (int i = 0; i < EMUTLS_MAX_THREADS; i++) {
++    const int tid = g_threads[i].tid;
++    if (tid == 0) continue;
++    SceKernelThreadInfo info;
++    memset(&info, 0, sizeof info);
++    info.size = sizeof info;
++    if (sceKernelGetThreadInfo(tid, &info) >= 0) continue;  // still alive
++
++    // Unpublish before touching the array, mirroring the publish-last rule on
++    // the allocation path: a lock-free reader must never see a live tid
++    // alongside pointers that are being freed.
++    g_threads[i].tid = 0;
++    __sync_synchronize();
++    for (int v = 0; v < EMUTLS_MAX_VARS; v++) {
++      free(g_threads[i].slots[v]);
++      g_threads[i].slots[v] = NULL;
++    }
++    reaped++;
++  }
++  return reaped;
++}
++
 +// Find this thread's slot array, creating it if needed. Reads scan without the
-+// lock, which is safe because entries are only ever added -- never moved or
-+// removed -- and `tid` is written last.
++// lock, which is safe because entries are only added or reclaimed under the
++// lock, `tid` is written last on the way in and cleared first on the way out,
++// and the only thread that can match a given tid is the one that owns it.
++//
++// Known residual: the kernel recycles thread ids, so a new thread could in
++// principle match a stale slot left by a dead thread with the same id and
++// inherit its thread_local values. Reaping shrinks that window but does not
++// close it; closing it needs a thread-exit hook, which means moving this onto
++// pthread keys. Observed thread ids on this console climb rather than recycle
++// quickly, and this predates the reaping.
 +static emutls_thread* thread_slots(void) {
 +  const int tid = sceKernelGetThreadId();
 +
@@ -114,17 +177,29 @@ index 00000000..1cc8eddd
 +      return &g_threads[i];
 +    }
 +  }
-+  for (int i = 0; i < EMUTLS_MAX_THREADS; i++) {
-+    if (g_threads[i].tid == 0) {
-+      memset(g_threads[i].slots, 0, sizeof g_threads[i].slots);
-+      g_threads[i].tid = tid;  // published last, so a lock-free reader that
-+                               // sees the tid also sees a cleared array
-+      unlock();
-+      return &g_threads[i];
++  for (int attempt = 0; attempt < 2; attempt++) {
++    for (int i = 0; i < EMUTLS_MAX_THREADS; i++) {
++      if (g_threads[i].tid == 0) {
++        memset(g_threads[i].slots, 0, sizeof g_threads[i].slots);
++        g_threads[i].tid = tid;  // published last, so a lock-free reader that
++                                 // sees the tid also sees a cleared array
++        unlock();
++        return &g_threads[i];
++      }
 +    }
++    // Full. Reclaim whatever the exited threads left behind and look again.
++    if (attempt == 0 && reap_dead_threads() == 0) break;
 +  }
 +  unlock();
-+  return NULL;  // out of thread slots
++
++  // Genuinely out of slots: 128 threads alive at once, which would be a real
++  // bug somewhere else. Returning NULL is what made this a data abort in
++  // dart::OSThread::SetCurrentTLS -- the caller cannot check it and there is
++  // no version of this that continues correctly. Exit cleanly and say why.
++  if (vita_bail_to_loader != NULL) {
++    vita_bail_to_loader("emutls: 128 live threads, out of TLS slots");
++  }
++  return NULL;
 +}
 +
 +extern "C" void* __emutls_get_address(struct __emutls_object* obj) {
@@ -141,7 +216,17 @@ index 00000000..1cc8eddd
 +    }
 +    unlock();
 +  }
-+  if (index > EMUTLS_MAX_VARS) return NULL;  // out of variable slots
++  // Two more of the same defect the thread table had. Every caller of
++  // __emutls_get_address dereferences the result -- that is what the ABI means
++  // -- so NULL here is a data abort with the cause thrown away. Neither is
++  // expected to happen; both now say so instead of crashing somewhere else.
++  if (index > EMUTLS_MAX_VARS) {  // out of variable slots
++    if (vita_bail_to_loader != NULL) {
++      vita_bail_to_loader("emutls: out of variable slots (raise "
++                          "EMUTLS_MAX_VARS)");
++    }
++    return NULL;
++  }
 +
 +  void* p = t->slots[index - 1];
 +  if (p == NULL) {
@@ -149,7 +234,12 @@ index 00000000..1cc8eddd
 +    // and it happens once per (thread, variable).
 +    const size_t align = obj->align < sizeof(void*) ? sizeof(void*) : obj->align;
 +    p = memalign(align, obj->size);
-+    if (p == NULL) return NULL;
++    if (p == NULL) {
++      if (vita_bail_to_loader != NULL) {
++        vita_bail_to_loader("emutls: memalign failed for thread_local storage");
++      }
++      return NULL;
++    }
 +    if (obj->templ != NULL) {
 +      memcpy(p, obj->templ, obj->size);
 +    } else {
