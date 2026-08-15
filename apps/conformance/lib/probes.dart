@@ -30,6 +30,22 @@ class ProbeResult {
 /// directory; anything the app writes has to live under `ux0:data/`.
 const _dataDir = 'ux0:data/flutter-vita';
 
+
+/// Append a progress line to the run journal from inside a probe.
+///
+/// The journal normally records one line per probe, which is too coarse for a
+/// probe whose whole purpose is to find out *how many* of something can exist
+/// before the process dies. Same file, same synchronous flush, for the same
+/// reason: it has to survive the crash it is measuring.
+void _mark(String s) {
+  try {
+    File('ux0:data/flutter-vita/conformance.txt')
+        .writeAsStringSync('     $s\n', mode: FileMode.append, flush: true);
+  } on Object {
+    // Best effort, exactly like the journal it writes to.
+  }
+}
+
 /// Ordered safest-first, deliberately.
 ///
 /// A native crash takes the whole app down and loses every result, since the
@@ -50,6 +66,37 @@ List<Probe> buildProbes() => [
     return 'ok';
   }),
   Probe('dart', 'DateTime.now', () async => DateTime.now().toIso8601String().substring(0, 19)),
+
+  // -- How many timers can exist before the process dies?
+  //
+  // Every run so far has died at probe 32 regardless of what probe 32 is, and
+  // the per-probe constant is two timers: a .timeout() around the probe and a
+  // Future.delayed() after it. That puts the wall near the 64th timer, which is
+  // round enough to be worth measuring rather than reasoning about.
+  //
+  // Two shapes, because they fail differently. Sequential answers "is anything
+  // leaked per timer created"; concurrent answers "is there a fixed-size table
+  // of live timers". A leak dies at a total count no matter the overlap; a
+  // table only dies when enough are alive at once.
+  Probe('limits', 'sequential timers', () async {
+    for (var i = 1; i <= 400; i++) {
+      final c = Completer<void>();
+      Timer(Duration.zero, c.complete);
+      await c.future;
+      if (i % 8 == 0) _mark('sequential timers: $i');
+    }
+    return '400 created one at a time';
+  }),
+  Probe('limits', 'concurrent timers', () async {
+    for (final n in [16, 32, 48, 64, 96, 128, 192]) {
+      _mark('concurrent timers: trying $n');
+      await Future.wait([
+        for (var i = 0; i < n; i++)
+          Future<void>.delayed(const Duration(milliseconds: 30)),
+      ]);
+    }
+    return '192 alive at once';
+  }),
 
   // -- Platform. Cheap, read-only, and it tells us what the runtime believes
   //    about itself. ADR-0008 says operatingSystem should read "linux".

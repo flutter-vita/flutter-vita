@@ -1,0 +1,189 @@
+flutter-vita conformance 2026-08-15 06:34:15.180221
+.... dart/async/Future
+PASS dart/async/Future  ok
+     paint>
+     <paint
+.... dart/Timer
+PASS dart/Timer  ok
+     paint>
+     <paint
+.... dart/DateTime.now
+PASS dart/DateTime.now  2026-08-15T06:34:16
+     paint>
+     <paint
+.... limits/sequential timers
+     sequential timers: 8
+     sequential timers: 16
+     sequential timers: 24
+     sequential timers: 32
+     sequential timers: 40
+     sequential timers: 48
+     sequential timers: 56
+     sequential timers: 64
+     sequential timers: 72
+     sequential timers: 80
+     sequential timers: 88
+     sequential timers: 96
+     sequential timers: 104
+     sequential timers: 112
+     sequential timers: 120
+     sequential timers: 128
+     sequential timers: 136
+     sequential timers: 144
+     sequential timers: 152
+     sequential timers: 160
+     sequential timers: 168
+     sequential timers: 176
+     sequential timers: 184
+     sequential timers: 192
+     sequential timers: 200
+     sequential timers: 208
+     sequential timers: 216
+     sequential timers: 224
+     sequential timers: 232
+     sequential timers: 240
+     sequential timers: 248
+     sequential timers: 256
+     sequential timers: 264
+     sequential timers: 272
+     sequential timers: 280
+     sequential timers: 288
+     sequential timers: 296
+     sequential timers: 304
+     sequential timers: 312
+     sequential timers: 320
+     sequential timers: 328
+     sequential timers: 336
+     sequential timers: 344
+     sequential timers: 352
+     sequential timers: 360
+     sequential timers: 368
+     sequential timers: 376
+     sequential timers: 384
+     sequential timers: 392
+     sequential timers: 400
+PASS limits/sequential timers  400 created one at a time
+     paint>
+     <paint
+.... limits/concurrent timers
+     concurrent timers: trying 16
+     concurrent timers: trying 32
+     concurrent timers: trying 48
+     concurrent timers: trying 64
+     concurrent timers: trying 96
+     concurrent timers: trying 128
+     concurrent timers: trying 192
+PASS limits/concurrent timers  192 alive at once
+     paint>
+     <paint
+.... platform/operatingSystem
+PASS platform/operatingSystem  linux
+     paint>
+     <paint
+.... platform/version
+PASS platform/version  3.12.2
+     paint>
+     <paint
+.... platform/numberOfProcessors
+PASS platform/numberOfProcessors  3
+     paint>
+     <paint
+.... platform/pathSeparator
+PASS platform/pathSeparator  "/"
+     paint>
+     <paint
+.... platform/localHostname
+PASS platform/localHostname  localhost
+     paint>
+     <paint
+.... platform/environment
+PASS platform/environment  0 vars
+     paint>
+     <paint
+.... platform/resolvedExecutable
+PASS platform/resolvedExecutable  Platform_ResolvedExecutableName
+     paint>
+     <paint
+.... platform/script
+PASS platform/script  app0%3A/main.dart
+     paint>
+     <paint
+.... fs/Directory.current
+PASS fs/Directory.current  app0:
+     paint>
+     <paint
+.... fs/app0 exists
+PASS fs/app0 exists  yes
+     paint>
+     <paint
+.... fs/app0 list
+PASS fs/app0 list  9 entries
+     paint>
+     <paint
+.... fs/read app0 file
+PASS fs/read app0 file  862304 B, starts 4B
+     paint>
+     <paint
+.... fs/stat app0 file
+PASS fs/stat app0 file  file, 862304 B
+     paint>
+     <paint
+.... fs/mkdir ux0:data
+PASS fs/mkdir ux0:data  exists
+     paint>
+     <paint
+.... fs/write file
+PASS fs/write file  37 B
+     paint>
+     <paint
+.... fs/read back
+PASS fs/read back  written at 2026-08-15 06…
+     paint>
+     <paint
+.... fs/append
+PASS fs/append  42 B
+     paint>
+     <paint
+.... fs/list ux0:data
+PASS fs/list ux0:data  14 entries
+     paint>
+     <paint
+.... fs/rename
+PASS fs/rename  ok
+     paint>
+     <paint
+.... fs/delete
+PASS fs/delete  ok
+     paint>
+     <paint
+.... fs/systemTemp
+PASS fs/systemTemp  ux0:data/FVTA00002/tmp
+     paint>
+     <paint
+.... fs/createTempSync
+PASS fs/createTempSync  ux0:data/FVTA00002/tmp/probeFPXIXN
+     paint>
+     <paint
+.... net/ServerSocket.bind
+PASS net/ServerSocket.bind  port 52093
+     paint>
+     <paint
+.... net/DNS lookup
+PASS net/DNS lookup  104.20.23.154
+     paint>
+     <paint
+.... net/TCP connect (no DNS)
+PASS net/TCP connect (no DNS)  1.1.1.1:80
+     paint>
+     <paint
+.... net/HTTP GET
+PASS net/HTTP GET  HTTP 200
+     paint>
+     <paint
+.... plugin/path_provider docs
+PASS plugin/path_provider docs  ux0:data/FVTA00002/documents
+     paint>
+     <paint
+.... plugin/path_provider temp
+PASS plugin/path_provider temp  ux0:data/FVTA00002/tmp
+     paint>
