@@ -928,7 +928,7 @@ index 84fe559d..61db137e 100644
  
  ssize_t FDUtils::ReadFromBlocking(int fd, void* buffer, size_t count) {
 diff --git a/runtime/bin/file_linux.cc b/runtime/bin/file_linux.cc
-index 9f7cbaf9..cd9e088c 100644
+index 9f7cbaf9..3f0ae8d6 100644
 --- a/runtime/bin/file_linux.cc
 +++ b/runtime/bin/file_linux.cc
 @@ -3,15 +3,21 @@
@@ -1070,6 +1070,32 @@ index 9f7cbaf9..cd9e088c 100644
    MillisecondsToTimespec(millis, &times[1]);
    return utimensat(ns.fd(), ns.path(), times, 0) == 0;
  }
+@@ -754,6 +831,25 @@ const char* File::StringEscapedPathSeparator() {
+ }
+ 
+ File::StdioHandleType File::GetStdioHandleType(int fd) {
++#if defined(DART_HOST_OS_VITA)
++  // There are no stdio descriptors here, so `fstat` on 0, 1 or 2 fails and the
++  // Linux path below turns that into kTypeError -- which `dart:io` raises as
++  //
++  //     Failed to get type of stdio handle (fd 2), path = ''
++  //     (OS Error: Bad file descriptor)
++  //
++  // the moment anything *touches* `stdout` or `stderr`. Not writes: merely
++  // constructing them. Any package that logs to stderr therefore throws on a
++  // platform where the sensible behaviour is for the write to go nowhere.
++  //
++  // kPipe is the honest answer of the available ones. It means "a sink with no
++  // terminal behind it", so `dart:io` builds a plain sink and never asks about
++  // echo modes or terminal size -- questions this console has no answer to,
++  // which is the same reasoning stdio_vita.cc records for refusing them.
++  if (fd == STDIN_FILENO || fd == STDOUT_FILENO || fd == STDERR_FILENO) {
++    return kPipe;
++  }
++#endif
+   struct stat64 buf;
+   int result = TEMP_FAILURE_RETRY(fstat64(fd, &buf));
+   if (result == -1) {
 diff --git a/runtime/bin/file_system_watcher_vita.cc b/runtime/bin/file_system_watcher_vita.cc
 new file mode 100644
 index 00000000..3320ab41

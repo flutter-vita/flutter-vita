@@ -258,10 +258,28 @@ List<Probe> buildProbes() => [
   // -- Does print() reach the log file? Cannot be answered from inside the
   //    app; it is checked afterwards by reading m3.log. Recorded here so the
   //    marker is in the log at a known point in the sequence.
+  // Three separate channels that all get called "printing", reported
+  // separately because they fail separately.
+  //
+  // The combined version threw on the first one that broke and said nothing
+  // about the rest, so "print is broken" was recorded for a run in which
+  // `print` itself was very likely fine -- it is `dart:io`'s stderr that
+  // raises, and merely *constructing* it is enough.
   Probe('io', 'print to log', () async {
-    print('flutter-vita conformance: print reached stdout');
-    stderr.writeln('flutter-vita conformance: write reached stderr');
-    return 'emitted, check m3.log';
+    final results = <String>[];
+    for (final (name, emit) in <(String, void Function())>[
+      ('print', () => print('flutter-vita: print')),
+      ('stdout', () => stdout.writeln('flutter-vita: stdout')),
+      ('stderr', () => stderr.writeln('flutter-vita: stderr')),
+    ]) {
+      try {
+        emit();
+        results.add('$name ok');
+      } on Object catch (e) {
+        results.add('$name ${e.runtimeType}');
+      }
+    }
+    return results.join(', ');
   }),
 
   // -- TLS last, because it is parked and it kills the process.

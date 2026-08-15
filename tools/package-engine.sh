@@ -69,6 +69,19 @@ mkdir -p "$STAGE/lib" "$STAGE/include" "$STAGE/data"
 #
 # `cleandead` reads the whole build graph rather than what was last built, so it
 # only removes genuinely orphaned outputs and is safe after a partial build.
+#
+# It does NOT protect against the opposite mistake: building *too much*. GN
+# emits the same source into several toolchain variants -- file_linux.cc has
+# six, one per target and host-targeting combination -- and only one belongs in
+# this archive. Asking ninja to build all six (easy to do by globbing `-t
+# targets`) produces five perfectly live objects that `cleandead` will never
+# touch, and `find obj -name '*.o'` then archives them all. With
+# --whole-archive the app fails to link on duplicate symbols, which at least is
+# loud. Build the specific object, and if in doubt count the variants: the live
+# family is the one with dozens of members, the orphans have exactly one each.
+#
+#   ar t libflutter_engine_vita.a | sed -n 's/^\(libdart_builtin[a-z_]*\)\..*/\1/p' \
+#     | sort | uniq -c | sort -rn
 if [ "${SKIP_CLEANDEAD:-0}" != "1" ]; then
   echo "==> pruning dead objects"
   ( cd "$ENGINE_SRC/.." && ninja -C "$(basename "$ENGINE_OUT" | sed 's|^|out/|')" -t cleandead 2>/dev/null ) \

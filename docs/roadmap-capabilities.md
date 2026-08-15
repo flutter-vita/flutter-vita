@@ -10,8 +10,10 @@ nothing else is waiting on it.
 
 ## The status table
 
-**Measured, not assumed** — everything marked *works*, *wrong* or *off* below
-was [run on hardware on 2026-08-14](phase-5-capability-audit.md).
+**Measured, not assumed** — every row below was run on hardware. The audit was
+[2026-08-14](phase-5-capability-audit.md); the current state is the conformance
+app's own verdict, **43 probes, 43 pass, 0 fail**, in a single run on
+2026-08-15.
 
 That was the point of doing the audit first. `runtime/bin` was ported in Phase 2
 to make the engine *link*, and the working assumption was that little of it
@@ -26,9 +28,9 @@ before the measurement.
 | `dart:io` File / Directory | **works** | [audited on hardware](phase-5-capability-audit.md) — read, stat, mkdir, write, append, list, rename, delete |
 | `dart:io` Socket / HttpClient | **works** | audited — DNS, TCP, and `HTTP 200` from the open internet |
 | TLS / HTTPS | **works** | [Phase 7](phase-7-tls.md) — real handshake, verified chain, `HTTPS 200` on hardware |
-| `Directory.systemTemp` | **wrong** | returns `/tmp`, which does not exist |
-| `Platform.numberOfProcessors` | **wrong** | returns −1; Dart sizes thread pools from it |
-| Dart `print` / stderr | **broken** | `Bad file descriptor` — never reaches the log |
+| `Directory.systemTemp` | **works** | Phase 6 — `ux0:data/<TITLEID>/tmp`, created on first use |
+| `Platform.numberOfProcessors` | **works** | Phase 6 — 3, from the thread affinity mask |
+| Dart `print` / stdout / stderr | **works** | all three, measured — `fstat` on fds 0/1/2 fails here, so Vita reports `kPipe` rather than an error |
 | `Process` | **refused, correctly** | `process_vita.cc` — no fork, no exec, documented as an implementation not a placeholder |
 | Text input / IME | **not started** | `sceIme` exists |
 | Audio | **not started** | `sceAudioOut` exists |
