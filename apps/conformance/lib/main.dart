@@ -83,8 +83,13 @@ class _ProbeRunnerState extends State<ProbeRunner> {
       }
       _journal('${result.outcome == Outcome.pass ? "PASS" : "FAIL"} '
           '${result.probe.group}/${result.probe.name}  ${result.detail}');
+      // Bracketing the repaint, because a run died between a PASS line and the
+      // next probe's own marker -- which is not inside any probe at all. These
+      // two lines say whether the frame or the gap after it is what dies.
+      _journal('     paint>');
       if (mounted) setState(() {});
       await Future<void>.delayed(const Duration(milliseconds: 16));
+      _journal('     <paint');
     }
     _journal('== run complete ==');
     if (mounted) setState(() => _done = true);

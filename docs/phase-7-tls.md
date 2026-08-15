@@ -1,5 +1,36 @@
 # Phase 7 — TLS, four causes deep and parked
 
+> ## The crash this document chases is not a TLS bug
+>
+> **Corrected 2026-08-15.** After the TLS probes were moved to the end of the
+> list and *different* probes took their place, the run died in the same
+> position anyway:
+>
+> ```
+> old order     32 probes started  ->  died at tls/handshake, no verify
+> new order     32 probes started  ->  died at plugin/path_provider support
+> m3.log        last frame rendered: present #31
+> ```
+>
+> **The app dies on the 32nd frame, whatever code is running.** The conformance
+> app repaints once per probe, so "probe 32" and "frame 32" are the same event,
+> and TLS merely happened to be sitting there.
+>
+> That explains why every hypothesis below came back negative — entropy,
+> certificate verification, stack, memory, assembly. They were all answering a
+> question about crypto when the fault was in the present path. It also explains
+> the first run, which completed 31 probes and then died "in teardown": that was
+> frame 32 as well.
+>
+> **The four causes fixed below were still real bugs** — secure sockets were
+> genuinely disabled, the root-certificate gate genuinely excluded Vita,
+> `security_context_linux.cc` genuinely was not routed. TLS could not have
+> worked without them. But none of them was the crash, and the crash is not
+> Phase 7's to fix.
+>
+> Next: find the frame-32 fault in the embedder's present path. Everything below
+> stays for the record.
+
 **Parked 2026-08-15**, after the assembly bisect came back negative. Four real
 causes were found and fixed; the handshake still crashes; everything cheap has
 been eliminated by measurement. Continuing costs more than the capability is
