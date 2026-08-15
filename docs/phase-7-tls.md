@@ -178,10 +178,26 @@ Vita was put on BoringSSL's `no_asm_config` — pure C, no hand-written assembly
 anywhere — as a bisect.
 
 **Result: no change.** Identical crash at `tls/handshake, no verify`, with all
-123 assembly objects removed from the build and `ChaCha20_ctr32_neon` verified
-absent from the linked binary. **Assembly is not the cause**, and the patch was
-reverted as promised rather than left in to quietly slow every handshake that
-does not yet happen.
+123 assembly objects gone and `ChaCha20_ctr32_neon` verified absent from the
+linked binary. **Assembly is not the cause**, and the patch was reverted.
+
+**And the test was not quite the test it looked like.** Reverting it changed
+nothing, which prompted a second look: `ninja -t targets all` shows the ARM
+assembly objects — `x25519-asm-arm.o`, `poly1305_arm_asm.o` — existing **only
+under the `clang_arm64/` host toolchain**. The Vita target has *zero* assembly
+targets, with or without `no_asm_config`.
+
+So the 123 objects were **orphans**, left over from an earlier build
+configuration that no longer exists in the graph — which is precisely what
+`cleandead` is for, and why it deleted exactly that many. They were being
+archived and force-linked into every app regardless, which is how
+`ChaCha20_ctr32_neon` came to be in a binary whose build never compiled it.
+
+The conclusion survives, and is stronger stated correctly: the Vita build has
+never used BoringSSL's ARM assembly, the stale objects that were being linked
+are gone, and the handshake crashes identically either way. What this run
+actually eliminated was *the stale objects*, not the assembly configuration —
+and it removed 123 orphans from every shipped binary as a side effect.
 
 Two process notes from that run, both of which nearly produced a wrong answer:
 
