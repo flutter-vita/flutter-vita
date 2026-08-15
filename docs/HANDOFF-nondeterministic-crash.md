@@ -155,8 +155,16 @@ installed-titles database.**
 
 | `TITLE_ID` | result |
 |---|---|
-| `FVSV00003` — distinct, never installed | call returns 0; shell puts "could not find app" on the panel; `eboot2.bin` never runs |
-| `FVTA00002` — the app's own | the app stops launching at all |
+| `FVSV00003` — registered to nothing | app runs; call returns 0; shell puts "could not find app" on the panel; `eboot2.bin` never runs |
+| `FVTA00002` — the app's own | **the app does not launch** |
+| `FVTA00003` — the loader's, registered to another app | **the app does not launch** |
+
+Three ids, and the pattern closes the door. The shell reads `param2.sfo`
+**at app launch, before any of our code runs** — so an id belonging to another
+installed app is a conflict that kills the launch outright, while an id
+belonging to nothing gets past launch and cannot be resolved afterwards. The
+only id that could work is the background app's *own registered* title, and
+registering a title is the one thing we cannot do.
 
 **It is switched off by default**, because a failed start is not quiet: the
 shell puts "could not find app" on the panel in front of the app at every
@@ -172,16 +180,16 @@ to load with `MODULEMGR_NO_LIB` (`0x8002D003`), the same refusal
 [the tooling notes](../spikes/vita-tooling/README.md) recorded — and *not*
 because of the safe-self mistake, since this was measured under UNSAFE.
 
-Two untried routes, in order of cost:
+**So the background app is not reachable from a side-loaded build**, and no
+further cleverness with title ids will change that. One route remains, and it
+is not clever: **install a properly built vpk once through VitaShell.** The
+promoter registers every title in a package, including the background one, so a
+`.vpk` carrying `eboot2.bin` and `param2.sfo` from the start would simply work.
+One manual install, permanently, instead of a tap per crash.
 
-1. **Name the loader.** `FVTA00003` is registered. Whether the shell then takes
-   `eboot2.bin` from the caller's directory or the named title's is unknown and
-   the experiment answers it. If it is the named title's, the app can write
-   `ux0:app/FVTA00003/eboot2.bin` from `dart:io` — only an app's *own*
-   directory is read-only to it (see below).
-2. **Install once through VitaShell.** A properly promoted vpk carrying
-   `eboot2.bin` and `param2.sfo` registers everything the shell needs. One
-   manual install instead of a tap per crash.
+Whether that is worth doing is a judgement, not a blocker. Resume already took
+the loop from "a crash loses the run" to "a crash costs one tap and continues",
+which is what let the probe list finish at all.
 
 ### c. Loader `rm` — **DONE**
 

@@ -83,16 +83,22 @@ class _ProbeRunnerState extends State<ProbeRunner>
   }
 
   Future<void> _runAll() async {
-    final resumeAt = _journalStart();
+    // Null means no resume file at all, which is what distinguishes a genuinely
+    // fresh run from one resuming at probe 0. The storm below must run on the
+    // first and not the second, or a crash inside it would repeat it forever
+    // and the probe list would never be reached again.
+    final resume = _journalStart();
 
-    // The rebuild storm is a completed experiment, and it costs 3.2 s before
-    // the first probe. A resumed run has crashes to get past, not frames to
-    // count, so it skips straight to where the last one died.
-    if (resumeAt == 0) await _rebuildStorm();
+    if (resume == null) {
+      // Claim the resume point *before* the storm, so a crash inside it sends
+      // the next launch to the probes rather than back into the storm.
+      _writeResume(0);
+      await _allocationStorm();
+    }
 
     for (var i = 0; i < _results.length; i++) {
       final result = _results[i];
-      if (i < resumeAt) {
+      if (i < (resume ?? 0)) {
         result.outcome = Outcome.skipped;
         result.detail = 'ran in an earlier attempt';
         continue;
@@ -133,25 +139,85 @@ class _ProbeRunnerState extends State<ProbeRunner>
     if (mounted) setState(() => _done = true);
   }
 
-  /// Rebuild the list repeatedly before any probe has produced a result.
+  /// Force many garbage collections in a few seconds.
   ///
-  /// Isolates the rebuild from what the rebuild renders. Runs die at about the
-  /// 33rd iteration of the probe loop, inside setState, and two things grow
-  /// together there: the number of setState calls, and the amount of result
-  /// text the list has to lay out. The animation already showed that repainting
-  /// a small subtree is fine for hundreds of frames, so the suspect is the
-  /// list.
+  /// The one hypothesis that *predicts* the non-determinism rather than
+  /// explaining it afterwards is heap corruption via the GC or the machinery it
+  /// depends on -- `virtual_memory_vita.cc`, the emutls replacement,
+  /// safepoints. A collector runs when allocation crosses a threshold, so a bug
+  /// there fires on **allocation history**, not on what the code happens to be
+  /// doing. That is exactly the observed pattern: five runs, five positions,
+  /// nothing else correlated.
   ///
-  /// Here every row is still pending, so the text never changes. Surviving 200
-  /// rebuilds means the rebuild is innocent and the growing text is the fault;
-  /// dying around 33 means it is the rebuild itself and text is a red herring.
-  Future<void> _rebuildStorm() async {
-    for (var i = 1; i <= 200; i++) {
-      if (mounted) setState(() {});
-      await Future<void>.delayed(const Duration(milliseconds: 16));
-      if (i % 8 == 0) _journal('     rebuild storm: $i');
+  /// So: allocate far more than the heap can hold, and see whether death
+  /// arrives in two seconds instead of twenty. **The shape matters** — this
+  /// makes the failure happen sooner rather than measuring where it happens,
+  /// which is the correction to a method that produced four wrong diagnoses by
+  /// comparing positions across runs that were not comparable.
+  ///
+  /// Both generations are exercised. The 64 KiB throwaway per iteration is pure
+  /// scavenger load; the rolling retained set survives long enough to be
+  /// promoted, which is what brings old-space marking and the write barrier
+  /// into it.
+  ///
+  /// Replaces the rebuild storm, which answered its question: 200 rebuilds with
+  /// no text change survived, so the rebuild was innocent.
+  /// Milliseconds to pause per MiB allocated, from
+  /// `ux0:data/flutter-vita/storm-delay.txt`. Zero, and the default, is flat
+  /// out.
+  ///
+  /// This is the whole experiment, not a convenience. At full speed the app
+  /// died at 152 MiB in 5.3 s against a 15-40 s baseline -- suggestive, but the
+  /// baseline is a different build doing different work, and comparing across
+  /// runs that differ in more than one way is what produced four wrong
+  /// diagnoses. Slowing only the *rate* leaves one variable:
+  ///
+  ///   dies at ~150 MiB and ~30 s  ->  it tracks allocation. GC implicated.
+  ///   dies at ~8 s and ~40 MiB    ->  it tracks wall time. GC exonerated.
+  ///
+  /// A file rather than a constant so the rate is a `put`, not a rebuild and a
+  /// 12 MB upload.
+  static int _stormDelayMs() {
+    try {
+      final f = File('ux0:data/flutter-vita/storm-delay.txt');
+      if (f.existsSync()) return int.tryParse(f.readAsStringSync().trim()) ?? 0;
+    } on Object {
+      // Absent or unreadable means flat out, which is the default anyway.
     }
-    _journal('     rebuild storm: survived 200');
+    return 0;
+  }
+
+  Future<void> _allocationStorm() async {
+    final sw = Stopwatch()..start();
+    final retained = <List<int>>[];
+    final delayMs = _stormDelayMs();
+    var kib = 0;
+    _journal('     alloc storm: ${delayMs} ms per MiB');
+
+    for (var i = 1; i <= 4000; i++) {
+      // Unreachable the moment the iteration ends. 4000 x 64 KiB is 250 MiB
+      // against roughly 90 MiB free, so the collector cannot avoid running.
+      final junk = List<int>.filled(16 * 1024, i);
+      if (junk[junk.length - 1] != i) throw StateError('unreachable');
+      kib += 64;
+
+      // ~1 MiB live and constantly churning, so objects are promoted and then
+      // become garbage in old space rather than dying young.
+      if (i % 16 == 0) {
+        retained.add(List<int>.filled(1024, i));
+        if (retained.length > 256) retained.removeAt(0);
+        // Yield once per MiB, or the whole storm is one synchronous block and
+        // the app looks hung rather than working. This is also where the rate
+        // is controlled, so the pause is per MiB and not per journal line.
+        await Future<void>.delayed(Duration(milliseconds: delayMs));
+      }
+
+      if (i % 64 == 0) {
+        _journal('     alloc storm: ${kib ~/ 1024} MiB in ${sw.elapsedMilliseconds} ms');
+      }
+    }
+    _journal('     alloc storm: survived ${kib ~/ 1024} MiB '
+        'in ${sw.elapsedMilliseconds} ms, ${retained.length} retained');
   }
 
   /// Append-only record that survives the process.
@@ -170,26 +236,34 @@ class _ProbeRunnerState extends State<ProbeRunner>
   ///
   /// Delete it to force a run from the top:
   ///     ./spikes/m1-vpk/dev.sh rm ux0:data/flutter-vita/resume.txt
+  ///
+  /// Or overwrite it with anything that is not a number, which works on a
+  /// device whose installed loader has no `rm`.
   static const _resumePath = 'ux0:data/flutter-vita/resume.txt';
 
-  /// Opens the journal and returns the probe index to start from.
+  /// Opens the journal and returns the probe index to start from, or null if
+  /// there is no resume file and this is therefore a fresh run.
   ///
   /// Appends rather than truncates, which the single-run version did. Across a
   /// resumed sequence the earlier attempts *are* the evidence -- throwing them
   /// away on each relaunch would leave only the last fragment, which is the
   /// position the crash investigation was already stuck in.
-  int _journalStart() {
-    var resumeAt = 0;
+  int? _journalStart() {
+    int? resumeAt;
     try {
       Directory('ux0:data/flutter-vita').createSync(recursive: true);
       final f = File(_resumePath);
       if (f.existsSync()) {
-        resumeAt = int.tryParse(f.readAsStringSync().trim()) ?? 0;
-        if (resumeAt < 0 || resumeAt > _results.length) resumeAt = 0;
+        // Anything that is not a probe index means "start over", including
+        // garbage. That is the right reading of a corrupt file, and it is also
+        // the only way to force a fresh run on a device whose loader predates
+        // `rm`: overwrite this with a byte that is not a number.
+        final n = int.tryParse(f.readAsStringSync().trim());
+        if (n != null && n >= 0 && n <= _results.length) resumeAt = n;
       }
       File(_journalPath).writeAsStringSync(
         '\n=== flutter-vita conformance ${DateTime.now()} '
-        '${resumeAt == 0 ? "(fresh run)" : "(resuming at probe $resumeAt)"} ===\n',
+        '${resumeAt == null ? "(fresh run)" : "(resuming at probe $resumeAt)"} ===\n',
         mode: FileMode.append,
         flush: true,
       );
