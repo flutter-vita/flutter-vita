@@ -1,0 +1,15 @@
+name: shared_preferences_vita
+description: PlayStation Vita implementation of shared_preferences. Non-endorsed.
+version: 0.1.0
+publish_to: none
+
+environment:
+  sdk: ^3.5.0
+  flutter: ">=3.44.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+  shared_preferences_platform_interface: ^2.4.0
+  path_provider_vita:
+    path: ../path_provider_vita

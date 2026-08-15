@@ -206,22 +206,26 @@ index 16a0c866..d6a469ea 100644
  }  // namespace dart
  
 diff --git a/runtime/bin/directory_linux.cc b/runtime/bin/directory_linux.cc
-index ddfed623..4d781621 100644
+index ddfed623..96025f9c 100644
 --- a/runtime/bin/directory_linux.cc
 +++ b/runtime/bin/directory_linux.cc
-@@ -3,8 +3,10 @@
+@@ -3,7 +3,14 @@
  // BSD-style license that can be found in the LICENSE file.
  
  #include "platform/globals.h"
 -#if defined(DART_HOST_OS_LINUX) || defined(DART_HOST_OS_ANDROID)
 +#if defined(DART_HOST_OS_LINUX) || defined(DART_HOST_OS_ANDROID) ||          \
 +    defined(DART_HOST_OS_VITA)
- 
++
 +#include "bin/vita_compat.h"
++#if defined(DART_HOST_OS_VITA)
++#include <psp2/appmgr.h>
++#include <psp2/io/stat.h>
++#endif
+ 
  #include "bin/directory.h"
  
- #include <dirent.h>     // NOLINT
-@@ -125,7 +127,7 @@ ListType DirectoryListingEntry::Next(DirectoryListing* listing) {
+@@ -125,7 +132,7 @@ ListType DirectoryListingEntry::Next(DirectoryListing* listing) {
        done_ = true;
        return kListError;
      }
@@ -230,7 +234,7 @@ index ddfed623..4d781621 100644
        case DT_DIR:
          if ((strcmp(entry->d_name, ".") == 0) ||
              (strcmp(entry->d_name, "..") == 0)) {
-@@ -208,7 +210,7 @@ ListType DirectoryListingEntry::Next(DirectoryListing* listing) {
+@@ -208,7 +215,7 @@ ListType DirectoryListingEntry::Next(DirectoryListing* listing) {
  
        default:
          // We should have covered all the bases. If not, let's get an error.
@@ -239,7 +243,7 @@ index ddfed623..4d781621 100644
          return kListError;
      }
    }
-@@ -312,7 +314,7 @@ static bool DeleteRecursively(int dirfd, PathBuffer* path) {
+@@ -312,7 +319,7 @@ static bool DeleteRecursively(int dirfd, PathBuffer* path) {
        return status == 0;
      }
      bool ok = false;
@@ -248,7 +252,7 @@ index ddfed623..4d781621 100644
        case DT_DIR:
          ok = DeleteDir(dirfd, entry->d_name, path);
          break;
-@@ -352,7 +354,7 @@ static bool DeleteRecursively(int dirfd, PathBuffer* path) {
+@@ -352,7 +359,7 @@ static bool DeleteRecursively(int dirfd, PathBuffer* path) {
        }
        default:
          // We should have covered all the bases. If not, let's get an error.
@@ -257,6 +261,42 @@ index ddfed623..4d781621 100644
          break;
      }
      if (!ok) {
+@@ -426,6 +433,35 @@ const char* Directory::SystemTemp(Namespace* namespc) {
+   if (temp_dir == nullptr) {
+ #if defined(DART_HOST_OS_ANDROID)
+     temp_dir = "/data/local/tmp";
++#elif defined(DART_HOST_OS_VITA)
++    // There is no /tmp, and returning one meant every caller downstream failed
++    // -- createTempSync with PathNotFoundException, and anything in an app that
++    // caches to a temporary directory.
++    //
++    // app0: is the read-only install directory, so scratch has to live under
++    // ux0:data. Keyed on the title id from the running app's own SFO so two
++    // flutter-vita apps do not share a scratch directory, which would be a
++    // quiet data-corruption bug rather than a loud one.
++    //
++    // Created here because Dart expects SystemTemp to name somewhere usable,
++    // and mkdtemp inside a parent that does not exist fails the same way /tmp
++    // did.
++    static char vita_temp[64];
++    if (vita_temp[0] == '\0') {
++      char title_id[16] = {0};
++      // Param 12 is the title id. A failure here is survivable -- the shared
++      // fallback is worse than per-app but better than no temp directory.
++      if (sceAppMgrAppParamGetString(0, 12, title_id, sizeof(title_id)) < 0 ||
++          title_id[0] == '\0') {
++        snprintf(title_id, sizeof(title_id), "%s", "FLUTTER");
++      }
++      snprintf(vita_temp, sizeof(vita_temp), "ux0:data/%s/tmp", title_id);
++      char parent[64];
++      snprintf(parent, sizeof(parent), "ux0:data/%s", title_id);
++      sceIoMkdir(parent, 0777);
++      sceIoMkdir(vita_temp, 0777);
++    }
++    temp_dir = vita_temp;
+ #else
+     temp_dir = "/tmp";
+ #endif
 diff --git a/runtime/bin/eventhandler.h b/runtime/bin/eventhandler.h
 index 7da269ca..21368db6 100644
 --- a/runtime/bin/eventhandler.h
@@ -1178,7 +1218,7 @@ index 7f5255dc..6fb6b014 100644
    return kWindowsDynamicLibraryProcessPtr;
  #endif
 diff --git a/runtime/bin/platform_linux.cc b/runtime/bin/platform_linux.cc
-index 86a6dc83..f1c15325 100644
+index 86a6dc83..b288bd50 100644
 --- a/runtime/bin/platform_linux.cc
 +++ b/runtime/bin/platform_linux.cc
 @@ -3,14 +3,18 @@
@@ -1201,11 +1241,13 @@ index 86a6dc83..f1c15325 100644
  #include <sys/resource.h>
  #if defined(DART_HOST_OS_ANDROID)
  #include <sys/system_properties.h>
-@@ -28,6 +32,31 @@ const char* Platform::executable_name_ = nullptr;
+@@ -28,6 +32,33 @@ const char* Platform::executable_name_ = nullptr;
  int Platform::script_index_ = 1;
  char** Platform::argv_ = nullptr;
  
 +#if defined(DART_HOST_OS_VITA)
++#include <psp2/kernel/cpu.h>
++#include <psp2/kernel/threadmgr.h>
 +
 +// The whole signal-handling block below is excluded rather than adapted. There
 +// are no POSIX signals on this platform: sigaction, sigprocmask, sigemptyset
@@ -1233,16 +1275,45 @@ index 86a6dc83..f1c15325 100644
  static const char* strcode(int si_signo, int si_code) {
  #define CASE(signo, code)                                                      \
    if (si_signo == signo && si_code == code) return #code;
-@@ -120,6 +149,8 @@ bool Platform::Initialize(bool install_crash_handler /* = true */) {
+@@ -120,8 +151,37 @@ bool Platform::Initialize(bool install_crash_handler /* = true */) {
    return true;
  }
  
 +#endif  // defined(DART_HOST_OS_VITA)
 +
  int Platform::NumberOfProcessors() {
++#if defined(DART_HOST_OS_VITA)
++  // sysconf(_SC_NPROCESSORS_ONLN) returns -1 here, and Dart sizes its thread
++  // pools from this, so -1 is not cosmetic.
++  //
++  // Asked rather than hardcoded: the affinity mask says which cores this
++  // thread may actually run on, which is the number that matters. The Vita has
++  // four Cortex-A9 cores and reserves the fourth -- psp2/kernel/cpu.h defines
++  // USER_0, USER_1, USER_2 and a separate SYSTEM -- so the expected answer is
++  // three, not the four a spec sheet gives.
++  const int mask = sceKernelGetThreadCpuAffinityMask(0);
++  if (mask > 0) {
++    int cores = 0;
++    for (int bit = 0; bit < 32; bit++) {
++      if ((mask & (1 << bit)) != 0) {
++        cores++;
++      }
++    }
++    if (cores > 0) {
++      return cores;
++    }
++  }
++  // A thread left on the default affinity reports the default mask rather than
++  // an expanded one, so fall back to the documented user-core count instead of
++  // to something that would look like a single-core machine.
++  return 3;
++#else
    return sysconf(_SC_NPROCESSORS_ONLN);
++#endif
  }
-@@ -195,7 +226,15 @@ intptr_t Platform::ResolveExecutablePathInto(char* result, size_t result_size) {
+ 
+ const char* Platform::OperatingSystemVersion() {
+@@ -195,7 +255,15 @@ intptr_t Platform::ResolveExecutablePathInto(char* result, size_t result_size) {
  }
  
  void Platform::SetProcessName(const char* name) {
@@ -1258,7 +1329,7 @@ index 86a6dc83..f1c15325 100644
  }
  
  void Platform::Exit(int exit_code) {
-@@ -211,8 +250,21 @@ void Platform::_Exit(int exit_code) {
+@@ -211,8 +279,21 @@ void Platform::_Exit(int exit_code) {
  }
  
  void Platform::SetCoreDumpResourceLimit(int value) {

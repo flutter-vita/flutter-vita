@@ -1,6 +1,9 @@
 import 'dart:async';
 import 'dart:io';
 
+import 'package:path_provider/path_provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+
 /// One thing we want to know about this port, and what happened when we asked.
 class Probe {
   Probe(this.group, this.name, this.run);
@@ -153,6 +156,71 @@ List<Probe> buildProbes() => [
     c.close();
     return 'HTTP ${res.statusCode}';
   }),
+  // -- The two blessed plugins. Not a test of the packages so much as of the
+  //    claim in ADR-0009 that they are shallow: if the filesystem works, these
+  //    should be constants and a mkdir, and anything else here is a surprise.
+  Probe('plugin', 'path_provider docs', () async {
+    final d = await getApplicationDocumentsDirectory();
+    return d.path;
+  }),
+  Probe('plugin', 'path_provider temp', () async {
+    final d = await getTemporaryDirectory();
+    return d.path;
+  }),
+  Probe('plugin', 'path_provider support', () async {
+    final d = await getApplicationSupportDirectory();
+    return d.path;
+  }),
+  Probe('plugin', 'prefs write+read', () async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('probe', 'hello');
+    await prefs.setInt('count', 42);
+    await prefs.setStringList('list', ['a', 'b']);
+    final s = prefs.getString('probe');
+    final n = prefs.getInt('count');
+    final l = prefs.getStringList('list');
+    if (s != 'hello' || n != 42 || l?.length != 2) {
+      throw 'round trip mismatch: $s $n $l';
+    }
+    return 'string+int+list ok';
+  }),
+  // Proves the JSON file is real rather than an in-memory map that would
+  // evaporate on restart -- the failure mode a naive implementation has.
+  Probe('plugin', 'prefs persisted', () async {
+    final support = await getApplicationSupportDirectory();
+    final f = File('${support.path}/shared_preferences.json');
+    if (!f.existsSync()) throw 'no store file at ${f.path}';
+    return '${await f.length()} B on disk';
+  }),
+
+  // -- Deliberately unsupported. A clean throw is the pass condition; a crash
+  //    or a hang is the failure. process_vita.cc says it refuses on purpose.
+  Probe('process', 'Process.run refuses', () async {
+    try {
+      await Process.run('ls', const []);
+      return throw 'unexpectedly succeeded';
+    } on ProcessException catch (e) {
+      return 'ProcessException: ${e.message}';
+    } on UnsupportedError {
+      return 'UnsupportedError';
+    }
+  }),
+
+  // -- Does print() reach the log file? Cannot be answered from inside the
+  //    app; it is checked afterwards by reading m3.log. Recorded here so the
+  //    marker is in the log at a known point in the sequence.
+  Probe('io', 'print to log', () async {
+    print('flutter-vita conformance: print reached stdout');
+    stderr.writeln('flutter-vita conformance: write reached stderr');
+    return 'emitted, check m3.log';
+  }),
+
+  // -- TLS last, because it is parked and it kills the process.
+  //
+  // Phase 7 eliminated entropy, certificate verification, stack, memory and
+  // assembly by measurement and still crashes here. Until that is understood,
+  // anything ordered after these probes simply never runs -- which is exactly
+  // what happened to the two plugin probes above on their first outing.
   // TLS is split into four, smallest first, because the single combined probe
   // took the whole process down and a hard fault names nothing. Each of these
   // is a different suspect, and the journal records which one was running:
@@ -212,27 +280,5 @@ List<Probe> buildProbes() => [
     await res.drain<void>();
     c.close();
     return 'HTTPS ${res.statusCode}';
-  }),
-
-  // -- Deliberately unsupported. A clean throw is the pass condition; a crash
-  //    or a hang is the failure. process_vita.cc says it refuses on purpose.
-  Probe('process', 'Process.run refuses', () async {
-    try {
-      await Process.run('ls', const []);
-      return throw 'unexpectedly succeeded';
-    } on ProcessException catch (e) {
-      return 'ProcessException: ${e.message}';
-    } on UnsupportedError {
-      return 'UnsupportedError';
-    }
-  }),
-
-  // -- Does print() reach the log file? Cannot be answered from inside the
-  //    app; it is checked afterwards by reading m3.log. Recorded here so the
-  //    marker is in the log at a known point in the sequence.
-  Probe('io', 'print to log', () async {
-    print('flutter-vita conformance: print reached stdout');
-    stderr.writeln('flutter-vita conformance: write reached stderr');
-    return 'emitted, check m3.log';
   }),
 ];

@@ -3,6 +3,9 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 
+import 'package:path_provider_vita/path_provider_vita.dart';
+import 'package:shared_preferences_vita/shared_preferences_vita.dart';
+
 import 'probes.dart';
 
 /// The conformance app: what this port can actually do, shown on the panel.
@@ -19,7 +22,14 @@ import 'probes.dart';
 /// So results are also appended to a file as they complete. That is circular
 /// for the filesystem probes and honest about it: if the file exists at all,
 /// the filesystem works, and the rows inside it speak for everything after.
-void main() => runApp(const ConformanceApp());
+void main() {
+  // The second half of the opt-in. A non-endorsed implementation is not found
+  // automatically -- that is what non-endorsed means -- so the app registers
+  // it. Two lines, and the same two `camera_tizen` asks Tizen apps for.
+  PathProviderVita.registerWith();
+  SharedPreferencesVita.registerWith();
+  runApp(const ConformanceApp());
+}
 
 class ConformanceApp extends StatelessWidget {
   const ConformanceApp({super.key});
