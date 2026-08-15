@@ -70,10 +70,10 @@ index 61abe64a..b92ae80c 100644
  
 diff --git a/engine/src/flutter/shell/platform/embedder/vita_embedder.cc b/engine/src/flutter/shell/platform/embedder/vita_embedder.cc
 new file mode 100644
-index 00000000..e34a1381
+index 00000000..7bad8400
 --- /dev/null
 +++ b/engine/src/flutter/shell/platform/embedder/vita_embedder.cc
-@@ -0,0 +1,560 @@
+@@ -0,0 +1,716 @@
 +// Copyright (c) 2026, the Flutter Authors. All rights reserved.
 +// Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
@@ -120,6 +120,7 @@ index 00000000..e34a1381
 +#include <cstdarg>
 +#include <cstdio>
 +#include <cstring>
++#include <mutex>
 +
 +#include "flutter/shell/platform/embedder/embedder.h"
 +
@@ -577,6 +578,136 @@ index 00000000..e34a1381
 +  std::setvbuf(stdout, nullptr, _IONBF, 0);
 +}
 +
++// The platform task runner, without which no platform channel works at all.
++//
++// This was on the file's own deferred list -- "Custom task runners. The engine
++// will spin up its own threads for now" -- filed as a performance and
++// architecture concern for ADR-0004. It is not. `platform_message_callback`'s
++// contract is that it "will be invoked on the thread on which the
++// `FlutterEngineRun` call is made", and the mechanism for that is the platform
++// task runner: the engine *queues* the dispatch and waits for the embedder to
++// hand it back via FlutterEngineRunTask.
++//
++// With no runner and a main loop that only polls touch, the queue was never
++// drained. Measured before this existed: an `invokeMethod` on
++// `flutter/textinput` timed out after 25 s, and the message callback was never
++// once invoked. Nothing was broken about the channel; the message was simply
++// sitting in a queue nobody serviced.
++//
++// So this is a prerequisite for every channel -- text input, lifecycle,
++// settings, and the `psvita` package in ADR-0010 -- not an optimisation.
++//
++// Deliberately a fixed array rather than a heap queue. This is drained on the
++// main loop sixty times a second and posted to from engine threads; a
++// std::vector here would allocate on a path that runs during frame production.
++// 256 is far more than the observed depth, and overflowing it drops a task,
++// which is why it says so loudly rather than silently wrapping.
++struct PendingTask {
++  FlutterTask task;
++  uint64_t target_time;  // nanos, same clock as FlutterEngineGetCurrentTime
++};
++
++constexpr size_t kMaxPendingTasks = 256;
++PendingTask g_tasks[kMaxPendingTasks];
++size_t g_task_count = 0;
++std::mutex g_task_lock;
++SceUID g_platform_thread = 0;
++
++// May be called from any engine thread.
++void PostPlatformTask(FlutterTask task,
++                      uint64_t target_time,
++                      void* /* user_data */) {
++  std::lock_guard<std::mutex> guard(g_task_lock);
++  if (g_task_count >= kMaxPendingTasks) {
++    VLog("flutter-vita: platform task queue full, DROPPING a task\n");
++    return;
++  }
++  g_tasks[g_task_count].task = task;
++  g_tasks[g_task_count].target_time = target_time;
++  g_task_count++;
++}
++
++bool RunsTasksOnCurrentThread(void* /* user_data */) {
++  return sceKernelGetThreadId() == g_platform_thread;
++}
++
++// Run whatever is due, from the main loop.
++//
++// Tasks are copied out under the lock and run outside it, because a task may
++// post another one -- re-entering the lock from inside it would deadlock on a
++// non-recursive mutex, and the first symptom would be a frozen app with no
++// error anywhere.
++void DrainPlatformTasks(FlutterEngine engine) {
++  const uint64_t now = FlutterEngineGetCurrentTime();
++  FlutterTask due[kMaxPendingTasks];
++  size_t due_count = 0;
++  {
++    std::lock_guard<std::mutex> guard(g_task_lock);
++    size_t kept = 0;
++    for (size_t i = 0; i < g_task_count; i++) {
++      if (g_tasks[i].target_time <= now) {
++        due[due_count++] = g_tasks[i].task;
++      } else {
++        g_tasks[kept++] = g_tasks[i];
++      }
++    }
++    g_task_count = kept;
++  }
++  for (size_t i = 0; i < due_count; i++) {
++    FlutterEngineRunTask(engine, &due[i]);
++  }
++}
++
++// Platform channels arrive here. Phase 8, first step: see them.
++//
++// Nothing was listening before this, so every channel the framework opens --
++// `flutter/textinput`, `flutter/platform`, `flutter/lifecycle`,
++// `flutter/settings` -- was silently dropped by the engine with no record that
++// it had been attempted. The first thing worth knowing is which ones a real app
++// actually uses, and that is a question the log can answer before a single line
++// of IME code exists.
++//
++// **Every message must be answered.** The engine allocates a response handle
++// per message and leaks it otherwise; worse, an `invokeMethod` awaiting a reply
++// never completes, so a missing response is an app that quietly hangs rather
++// than one that visibly fails. A null response of length zero is the encoding
++// for "not implemented", which is exactly true right now and is what
++// `OptionalMethodChannel` -- the one `flutter/textinput` uses -- is built to
++// tolerate.
++//
++// The payload is logged as text and truncated. `flutter/textinput` uses
++// JSONMethodCodec, so its messages are readable ASCII; a channel using the
++// binary standard codec will look like noise here, which is itself the
++// distinction worth seeing.
++FlutterEngine g_engine = nullptr;
++
++void OnPlatformMessage(const FlutterPlatformMessage* message,
++                       void* /* user_data */) {
++  if (message == nullptr) return;
++
++  char preview[161];
++  size_t n = message->message_size;
++  if (n > sizeof preview - 1) n = sizeof preview - 1;
++  for (size_t i = 0; i < n; i++) {
++    const char c = static_cast<const char*>(
++        static_cast<const void*>(message->message))[i];
++    // Control bytes would break the log into unreadable pieces, and the binary
++    // codec is full of them.
++    preview[i] = (c >= 0x20 && c < 0x7F) ? c : '.';
++  }
++  preview[n] = '\0';
++  VLog("flutter-vita: channel %s [%u] %s%s\n",
++       message->channel != nullptr ? message->channel : "(null)",
++       static_cast<unsigned>(message->message_size), preview,
++       message->message_size > n ? "..." : "");
++
++  if (message->response_handle != nullptr && g_engine != nullptr) {
++    FlutterEngineSendPlatformMessageResponse(g_engine,
++                                             message->response_handle,
++                                             nullptr, 0);
++  }
++}
++
 +int main(int argc, char** argv) {
 +  OpenLog();
 +  VLog("flutter-vita: starting\n");
@@ -595,8 +726,25 @@ index 00000000..e34a1381
 +  config.software.struct_size = sizeof(FlutterSoftwareRendererConfig);
 +  config.software.surface_present_callback = PresentSurface;
 +
++  // Captured before FlutterEngineRun, because the engine may post a task
++  // during startup and RunsTasksOnCurrentThread must already be truthful.
++  g_platform_thread = sceKernelGetThreadId();
++
++  FlutterTaskRunnerDescription platform_runner = {};
++  platform_runner.struct_size = sizeof(FlutterTaskRunnerDescription);
++  platform_runner.identifier = 1;
++  platform_runner.runs_task_on_current_thread_callback =
++      RunsTasksOnCurrentThread;
++  platform_runner.post_task_callback = PostPlatformTask;
++
++  FlutterCustomTaskRunners task_runners = {};
++  task_runners.struct_size = sizeof(FlutterCustomTaskRunners);
++  task_runners.platform_task_runner = &platform_runner;
++
 +  FlutterProjectArgs args = {};
 +  args.struct_size = sizeof(FlutterProjectArgs);
++  args.custom_task_runners = &task_runners;
++  args.platform_message_callback = OnPlatformMessage;
 +  // app0: is the read-only mount of the installed .vpk.
 +  args.assets_path = "app0:/flutter_assets";
 +  args.icu_data_path = "app0:/icudtl.dat";
@@ -612,6 +760,11 @@ index 00000000..e34a1381
 +    VLog("flutter-vita: FlutterEngineRun failed: %d\n", result);
 +    return 1;
 +  }
++  // The platform message callback needs the engine handle to reply, and it can
++  // fire before FlutterEngineRun returns -- the framework opens channels during
++  // startup. Messages arriving in that window are logged and go unanswered,
++  // which is survivable only because nothing awaits a reply that early.
++  g_engine = engine;
 +  VLog("flutter-vita: engine running\n");
 +
 +  FlutterWindowMetricsEvent metrics = {};
@@ -627,6 +780,9 @@ index 00000000..e34a1381
 +  // produces them rather than paced against sceDisplayWaitVblankStart, so this
 +  // loop's period is an input sampling rate and not a frame budget.
 +  for (;;) {
++    // First, because a platform message that arrived while we were asleep
++    // should be answered before another frame's worth of input is sampled.
++    DrainPlatformTasks(engine);
 +    PumpTouch(engine);
 +    DrainInjectedTaps(engine);
 +    sceKernelDelayThread(16 * 1000);

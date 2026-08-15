@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:io';
 
+import 'package:flutter/services.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -280,6 +281,24 @@ List<Probe> buildProbes() => [
       }
     }
     return results.join(', ');
+  }),
+
+  // Phase 8, step one: does a platform channel reach the embedder at all?
+  //
+  // Deliberately not a TextField. A widget would drag in focus, layout and the
+  // IME all at once, and a failure anywhere in that chain would look the same.
+  // This sends a real message on the real channel with the real codec --
+  // `flutter/textinput` is a JSONMethodCodec channel, so what lands in the
+  // embedder is readable JSON -- and asks only whether the plumbing exists.
+  //
+  // Passing means the message left Dart and the engine accepted a reply. It
+  // does **not** mean the embedder understood it: `flutter/textinput` is an
+  // OptionalMethodChannel, so "not implemented" comes back as null rather than
+  // as an error, which is what makes a partial implementation viable at all.
+  // The evidence of what actually arrived is in m3.log.
+  Probe('channel', 'textinput reaches embedder', () async {
+    await SystemChannels.textInput.invokeMethod<void>('TextInput.hide');
+    return 'sent, see m3.log';
   }),
 
   // -- TLS last, because it is parked and it kills the process.
