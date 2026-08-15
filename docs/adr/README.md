@@ -20,6 +20,7 @@ ADR-0001 through ADR-0004 are back-filled from §1 of `Flutter Vita Plan.md`
 | [0008](0008-app-visible-platform-identity.md) | How an app learns it is running on a Vita | **Option A** — keep the linux identity; B is one line if ever needed |
 | [0009](0009-plugins-via-non-endorsed-vita-implementations.md) | `pubspec.yaml` as opt-in surface: build config + three non-endorsed plugins | Accepted — 19% → 50% of surveyed apps |
 | [0010](0010-input-layering-and-psvita-api.md) | Input in two layers; only the second is a package | Accepted — D-pad navigation needs no dependency |
+| [0011](0011-crash-recovery-without-taihen.md) | A crash returns to the loader by exiting cleanly | Accepted — no taiHEN, and a clean exit shows no dialog |
 
 ## Open questions not yet decided
 

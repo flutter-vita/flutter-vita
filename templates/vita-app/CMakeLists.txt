@@ -54,9 +54,14 @@ set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=gnu++20 -Wall -O2 -g")
 # server it calls into — three undefined symbols the app has to satisfy. It
 # ships as source in the artifact so it can be replaced: a shipping app wants
 # no listening socket, and can link a stub with the same three entry points.
+# bailout.c is the other half of the dev loop and is dropped for shipping
+# alongside devserver.c. It overrides abort() and __assert_func(), which works
+# only because both are *undefined* in the engine archive -- the engine calls
+# them and libc supplies them, so a definition linked ahead of libc wins.
 add_executable(${PROJECT_NAME}
   ${SNAPSHOT_S}
   ${ENGINE_DIR}/src/devserver.c
+  ${CMAKE_CURRENT_SOURCE_DIR}/bailout.c
 )
 target_include_directories(${PROJECT_NAME} PRIVATE ${ENGINE_DIR}/src)
 

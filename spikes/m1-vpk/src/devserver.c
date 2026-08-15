@@ -16,6 +16,11 @@
 #include <stdlib.h>
 #include <string.h>
 
+// Defined by the app, not here. Weak, because this file also builds into the
+// m1 spike, which has no bailout.c -- a hard reference would break that link
+// for a command the spike does not need. Callers must check it.
+__attribute__((weak)) void vita_bail_to_loader(const char* reason);
+
 // sceNetInit wants a pool it owns for the lifetime of the stack. Static rather
 // than malloc'd so a fragmented heap late in a run cannot fail the one thing
 // that lets us recover remotely.
@@ -248,6 +253,31 @@ static int serve(int sock, const char* log_path, const char* eboot_path) {
       if (rr < 0) snprintf(m, sizeof m, "ERR rename 0x%08X\n", (unsigned)rr);
       else snprintf(m, sizeof m, "OK %d -> %s\n", size, path);
       send_str(sock, m);
+    } else if (strcmp(line, "bail") == 0 || strcmp(line, "abort") == 0) {
+      // Exercise the crash-recovery path on demand.
+      //
+      // `bail` takes the clean route deliberately; `abort` goes through libc's
+      // abort(), which is the symbol the app overrides, so it also proves the
+      // override is actually linked rather than merely compiled. Both should
+      // look identical from here: the socket closes, no dialog appears on the
+      // panel, and the loader answers within a few seconds.
+      //
+      // A recovery mechanism nobody can trigger is a recovery mechanism nobody
+      // knows is broken. This one is checkable in ten seconds from the host.
+      send_str(sock, "OK bailing to the loader\n");
+      sceNetSocketClose(sock);
+      logf_("  [dev] bail requested\n");
+      sceKernelDelayThread(200 * 1000);
+      if (line[0] == 'a') {
+        abort();
+      }
+      if (vita_bail_to_loader != NULL) {
+        vita_bail_to_loader("requested over the dev server");
+      }
+      sceKernelExitProcess(1);
+      for (;;) {
+        sceKernelDelayThread(1000 * 1000);
+      }
     } else if (strcmp(line, "handoff") == 0) {
       // The other half of the loop. We cannot replace our own eboot.bin, and
       // while we run nobody else can either -- so hand control to the loader,
