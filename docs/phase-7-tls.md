@@ -1,4 +1,9 @@
-# Phase 7 — TLS, four causes deep and not finished
+# Phase 7 — TLS, four causes deep and parked
+
+**Parked 2026-08-15**, after the assembly bisect came back negative. Four real
+causes were found and fixed; the handshake still crashes; everything cheap has
+been eliminated by measurement. Continuing costs more than the capability is
+worth right now, and plain HTTP works. See *Where to resume* at the end.
 
 **Status: HTTPS does not work.** Plain HTTP does, and has since before this
 phase started. What follows is what was fixed, what was measured, and what is
@@ -169,11 +174,25 @@ still holds: those resolve through `OPENSSL_get_armcap()` to zero. It said
 nothing about the ARM assembly in general, which is selected separately and is
 very much in the path.
 
-[`patches/flutter-engine/0007`](../patches/flutter-engine/0007-boringssl-no-asm-for-vita.patch)
-puts Vita on BoringSSL's `no_asm_config` — pure C, no hand-written assembly
-anywhere. **It is a diagnostic, not a decision.** If it fixes the handshake the
-real change is narrower, because pure-C bignum and curve25519 on a 444 MHz A9 is
-a real per-handshake cost. If it does not, the patch comes back out.
+Vita was put on BoringSSL's `no_asm_config` — pure C, no hand-written assembly
+anywhere — as a bisect.
+
+**Result: no change.** Identical crash at `tls/handshake, no verify`, with all
+123 assembly objects removed from the build and `ChaCha20_ctr32_neon` verified
+absent from the linked binary. **Assembly is not the cause**, and the patch was
+reverted as promised rather than left in to quietly slow every handshake that
+does not yet happen.
+
+Two process notes from that run, both of which nearly produced a wrong answer:
+
+- The archive shipped 123 stale assembly objects from the previous
+  configuration, so the first attempt at this test would have measured nothing
+  while appearing to measure something. `package-engine.sh` now runs
+  `ninja -t cleandead` before archiving.
+- **The Vita's clock runs about two hours behind the build machine's.** A
+  journal stamped `06:07` was read as belonging to the previous evening, and
+  the run was briefly reported as never having happened. Compare journal
+  timestamps against *each other*, never against the host clock.
 
 ## Superseded hypothesis, kept for the record
 
@@ -212,3 +231,25 @@ month-old crash before the real one was found. Fixed.
 
 - [Phase 5 audit](phase-5-capability-audit.md) — where the failure was first measured
 - [patches/boringssl](../patches/boringssl/README.md) — the entropy backend and why it lives where it does
+
+
+## Where to resume
+
+Nothing cheap is left, which is exactly why this is parked rather than pushed
+on. The remaining candidates all cost more than the last four did:
+
+1. **Dart's secure-socket integration**, not BoringSSL. `secure_socket_filter.cc`
+   bridges BoringSSL's BIOs to Dart's sockets and calls back into Dart from the
+   handshake. That plumbing has never run on this platform and is the largest
+   untested surface left.
+2. **A TLS server on the LAN**, self-signed, no verification. Separates *TLS at
+   all* from *real-world chains, TLS 1.3, and large cipher negotiations*. The
+   Vita dials out, so the macOS Local Network restriction does not interfere.
+   This is the cheapest of the three and should be first.
+3. **A readable crash dump.** Every handshake crash truncates its core file
+   while ordinary faults in the same binary do not. Understanding *that* would
+   probably explain the crash itself, and would pay for every future
+   investigation rather than just this one.
+
+What works without any of it: plain HTTP, sockets, DNS, and the whole
+filesystem. Most of an app's network needs that are not public HTTPS APIs.
