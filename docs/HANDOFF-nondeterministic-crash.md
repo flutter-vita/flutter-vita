@@ -1,5 +1,63 @@
 # Handoff — the non-deterministic crash
 
+> ## FOUND, 2026-08-15. It is the 33rd thread.
+>
+> ```
+> _ZN4dart8OSThread13SetCurrentTLSEPNS_10BaseThreadE+0x10:
+>   bl   __emutls_get_address
+>   ldrb r3, [r5, #0]        <- Data abort.  R5 = 0x0,  R0 = 0x0
+> ```
+>
+> `__emutls_get_address` returned NULL and the caller dereferenced it. From
+> [patch 0009](../patches/dart-sdk/0009-vita-emulated-tls.patch):
+>
+> ```c
+> #define EMUTLS_MAX_THREADS 32
+> ...
+>   for (int i = 0; i < EMUTLS_MAX_THREADS; i++) {
+>     if (g_threads[i].tid == 0) { ...; return &g_threads[i]; }
+>   }
+>   return NULL;  // out of thread slots
+> ```
+>
+> **Thirty-two.** The number was in the data from the first day — "died at the
+> 32nd probe", "probe 33", "rebuild 32", "rebuild 33" — and was read as probes,
+> then as frames, then as rebuilds. It was threads.
+>
+> And slots are never released: `tid` is written on allocation and never cleared
+> when a thread exits, so the limit is not 32 *live* threads but 32 threads
+> **ever created**. Flutter and Dart churn threads constantly, so the app dies
+> on whatever line happens to be executing when the 33rd is born. That is the
+> whole non-determinism, and it is why memory was always flat, why frames,
+> timers, text, TLS, descriptors and entropy all failed to correlate, and why
+> the position moved every run.
+>
+> The patch's own comment is where the assumption sits: *"Dart uses a handful of
+> threads (main, a worker or two, our timer and power threads). These are
+> generous."* Nothing checks it, and running out returns NULL to a caller that
+> cannot handle NULL.
+>
+> ### How it was found, since the method is the transferable part
+>
+> Not by inspection — the file had been suspect #2 in this document for a day
+> and reading it had not produced this. It came from **making the failure
+> happen sooner and then making it repeatable**:
+>
+> | run | rate | MiB at death | ms |
+> |---|---|---|---|
+> | 1 | flat out | 80 | 3419 |
+> | 2 | flat out | 80 | 3435 |
+> | 3 | 150 ms/MiB | 40 | 8668 |
+>
+> Two runs at the same setting died at the *same megabyte, 16 ms apart*. **The
+> crash is deterministic under a fixed workload** — "non-deterministic" was an
+> artefact of comparing runs with different workloads. A reproducible crash
+> produced a complete, non-truncated core dump for the first time, and the dump
+> named the function.
+>
+> Everything below predates the answer. The eliminations are all still valid and
+> the hypothesis in §2 was pointed at the right file for the wrong reason.
+
 **Written 2026-08-15.** Read this before touching the crash. It is one page of
 what is known, one of what to do next, and one of how to stop the dev loop
 costing a human interaction per attempt.
