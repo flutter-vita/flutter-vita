@@ -47,7 +47,16 @@ if [ -n "$SFO_ID" ] && [ "$SFO_ID" != "$TITLE_ID" ]; then
   exit 1
 fi
 
-[ -n "$(say $LOADER_PORT ping 5 || true)" ] || {
+# Retried, because one connect is not evidence. The loader's listener is
+# non-blocking and a single ping races with its accept loop: it reported "no
+# loader" three times in a row on 2026-08-15 against a loader that answered
+# `ls` on the same port a second later.
+alive=0
+for _ in 1 2 3; do
+  if say $LOADER_PORT ping 8 2>/dev/null | grep -q loader; then alive=1; break; fi
+  sleep 2
+done
+[ "$alive" -eq 1 ] || {
   echo "!! no loader on $HOST:$LOADER_PORT — open Flutter Vita Loader" >&2; exit 1; }
 
 WORK="$(mktemp -d)"
@@ -70,7 +79,8 @@ say $LOADER_PORT install 60 | grep -q OK || { echo "!! install failed" >&2; exit
 # last install left behind -- which is how an engine with no icudtl.dat and an
 # unreachable flutter_assets got debugged for an hour.
 echo "==> data files"
-( cd "$WORK" && find . -type f ! -name eboot.bin -not -path "./sce_sys/*" | sed 's|^\./||' ) \
+( cd "$WORK" && find . -type f ! -name eboot.bin \
+    \( -not -path "./sce_sys/*" -o -path "./sce_sys/param2.sfo" \) | sed 's|^\./||' ) \
 | while read -r rel; do
     fsize="$(wc -c < "$WORK/$rel" | tr -d ' ')"
     printf '  %s (%s B)\n' "$rel" "$fsize"

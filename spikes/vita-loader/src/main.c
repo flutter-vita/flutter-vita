@@ -411,6 +411,20 @@ static int serve(int sock) {
         snprintf(m, sizeof m, "no (0x%08X) %s\n", (unsigned)fd, line + 6);
       }
       send_str(sock, m);
+    } else if (strncmp(line, "rm ", 3) == 0) {
+      // Crash dumps accumulate and nothing removed them. ux0:data held 52
+      // psp2core files from every homebrew title this console has ever run,
+      // and on 2026-08-14 one of them -- a month old, from an unrelated app --
+      // was pulled as "the newest dump" and cost half an hour.
+      //
+      // Deliberately no glob and no recursion. This deletes on a device with
+      // one homebrew slot and a lifeline app living in it; a pattern expander
+      // here is a way to lose the loader.
+      const int r = sceIoRemove(line + 3);
+      char m[192];
+      snprintf(m, sizeof m, "%s (0x%08X) %s\n", r >= 0 ? "OK removed" : "ERR",
+               (unsigned)r, line + 3);
+      send_str(sock, m);
     } else if (strncmp(line, "mkdir ", 6) == 0) {
       const int r = sceIoMkdir(line + 6, 0777);
       char m[160];
@@ -451,7 +465,13 @@ static int serve(int sock) {
       *sp = '\0';
       const int size = atoi(line + 4);
       const char* path = sp + 1;
-      if (size < 0 || size > 64 * 1024 * 1024) { send_str(sock, "ERR size\n"); return 0; }
+      // Zero is rejected, not accepted as "an empty file". `put` truncates
+      // before it writes, so a caller whose size expression came out blank --
+      // `wc -c` on a path that does not exist, say -- would otherwise delete
+      // the file it meant to replace and report OK. That is how eboot2.bin
+      // became 0 bytes on 2026-08-15. Nothing here has ever wanted to write an
+      // empty file; `touch` exists for that.
+      if (size <= 0 || size > 64 * 1024 * 1024) { send_str(sock, "ERR size\n"); return 0; }
       mkdirs(path);
       sceIoRemove(path);
       SceUID fd = sceIoOpen(path, SCE_O_WRONLY | SCE_O_CREAT | SCE_O_TRUNC, 0777);
@@ -537,7 +557,9 @@ static int serve(int sock) {
       send_str(sock, "OK\n");
       return 1;
     } else {
-      send_str(sock, "ERR (ping|probe|stage <n>|install|launch|deploy|exit)\n");
+      send_str(sock,
+               "ERR (ping|probe|ls|get|put|rm|mkdir|cp|touch|promote|"
+               "stage <n>|install|launch|deploy|exit)\n");
     }
   }
 }
@@ -592,9 +614,16 @@ int main(void) {
   // crash recoverable without a tap: it is a separate process, so it outlives
   // the foreground app dying. Failure here is not fatal -- the loop still works,
   // it just needs a tap after each crash, as before.
+  //
+  // The mode argument is 0, and VitaSDK's header is wrong about it. That header
+  // says "must be 1" and defines SCE_BGAPP_UTIL_ERROR_INVALID_ARG as 0x80106502;
+  // Sony's own header says mode 0 and INVALID_ARG 0x80106501. Both constants are
+  // off by one, and 0x80106501 is exactly what this call returned on every boot
+  // between 2026-08-10 and 2026-08-15 -- an invalid argument, not a permission
+  // problem, which is what the undocumented code was read as at the time.
   {
     const int bg = sceSysmoduleLoadModule(SCE_SYSMODULE_BG_APP_UTIL);
-    const int st = (bg >= 0) ? sceBgAppUtilStartBgApp(1) : bg;
+    const int st = (bg >= 0) ? sceBgAppUtilStartBgApp(0) : bg;
     lg("supervisor start: sysmodule=0x%08X start=0x%08X\n", (unsigned)bg,
        (unsigned)st);
   }

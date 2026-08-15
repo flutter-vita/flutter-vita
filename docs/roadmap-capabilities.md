@@ -25,7 +25,7 @@ before the measurement.
 | Rendering, text, assets | **works** | M3 |
 | `dart:io` File / Directory | **works** | [audited on hardware](phase-5-capability-audit.md) — read, stat, mkdir, write, append, list, rename, delete |
 | `dart:io` Socket / HttpClient | **works** | audited — DNS, TCP, and `HTTP 200` from the open internet |
-| TLS / HTTPS | **on, still crashing** | [four causes fixed](phase-7-tls.md); handshake itself still dies, verification exonerated |
+| TLS / HTTPS | **works** | [Phase 7](phase-7-tls.md) — real handshake, verified chain, `HTTPS 200` on hardware |
 | `Directory.systemTemp` | **wrong** | returns `/tmp`, which does not exist |
 | `Platform.numberOfProcessors` | **wrong** | returns −1; Dart sizes thread pools from it |
 | Dart `print` / stderr | **broken** | `Bad file descriptor` — never reaches the log |
@@ -152,16 +152,26 @@ Deferred because touch already operates an app, and because layer 2 needs
 `StandardMethodCodec` hand-encoded in C, which is the single largest piece of
 embedder work outstanding.
 
-## Blocking everything: the non-deterministic crash
+## Still unfixed: the non-deterministic crash
 
 Any app on this port dies after a while, at a position that correlates with
-nothing measurable. It is why Phase 7 looked like a TLS bug for two days, and it
-caps what any app can do.
+nothing measurable. It is why Phase 7 looked like a TLS bug for two days.
+
+It no longer *blocks*, though, which is the change on 2026-08-15. The
+conformance app records the next step to run in
+`ux0:data/flutter-vita/resume.txt` and skips past it on the next launch, so a
+crash costs one relaunch rather than the whole run. Three launches produced the
+first complete pass over the probe list — **one failure in the lot**, `io/print`
+to stderr — and that is how TLS turned out to have been working all along.
 
 **Start here:** [HANDOFF-nondeterministic-crash.md](HANDOFF-nondeterministic-crash.md).
 It carries what is eliminated, the heap-corruption hypothesis and the one-run
-test for it, how to bisect by layer, and — read this part first — how to stop
-each crash costing a human walking to the console.
+test for it, and how to bisect by layer.
+
+Each relaunch is still a person walking to the console. The fix for that is a
+background app (`eboot2.bin`) that outlives the crash and relaunches the loader;
+it is built and its API works, and what remains is getting its title registered
+without `ScePromoterUtil` — see the handoff.
 
 ## Ongoing, not phases
 

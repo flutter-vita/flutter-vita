@@ -8,6 +8,7 @@
 # Required:
 #   APP_NAME        display name on the LiveArea
 #   TITLE_ID        nine characters, e.g. FVTA00002
+#   SUPERVISOR_TITLE_ID  nine characters, distinct from TITLE_ID, for eboot2.bin
 #   SNAPSHOT_S      gen_snapshot output for the app's kernel
 #   FLUTTER_ASSETS  the app's `flutter build bundle` output
 #   ENGINE_DIR      unpacked flutter-engine-vita-<version>/
@@ -24,7 +25,8 @@ endif()
 project(flutter_vita_app C CXX ASM)
 include("${VITASDK}/share/vita.cmake" REQUIRED)
 
-foreach(required APP_NAME TITLE_ID SNAPSHOT_S FLUTTER_ASSETS ENGINE_DIR)
+foreach(required APP_NAME TITLE_ID SUPERVISOR_TITLE_ID SNAPSHOT_S FLUTTER_ASSETS
+                 ENGINE_DIR)
   if(NOT ${required})
     message(FATAL_ERROR "${required} is required. Use tools/build-vita-app.sh.")
   endif()
@@ -91,13 +93,60 @@ target_link_libraries(${PROJECT_NAME}
   -Wl,--whole-archive "${ENGINE_LIB}" -Wl,--no-whole-archive
 
   SceDisplay_stub SceCtrl_stub SceTouch_stub SceIofilemgr_stub
-  SceNet_stub SceNetCtl_stub SceSysmodule_stub SceAppMgr_stub
+  SceNet_stub SceNetCtl_stub SceSysmodule_stub SceAppMgr_stub SceBgAppUtil_stub
   SceSysmem_stub SceLibKernel_stub SceKernelThreadMgr_stub
   ScePower_stub SceGxm_stub SceCommonDialog_stub
   pthread m
 )
 
 vita_create_self(${PROJECT_NAME}.self ${PROJECT_NAME} UNSAFE)
+
+# The crash supervisor, as eboot2.bin.
+#
+# A background application: a separate process, started by this app at startup
+# and outliving it, so that when the app dies the console still has something
+# listening that can bring the loader back. Without it every crash costs a
+# human walking to the Vita and tapping a bubble, which is the real limit on
+# how fast this port can be debugged -- not build time.
+#
+# ATTRIBUTE and MEMSIZE come from Sony's own background-app sample
+# (Vita-Development-Suite/samples, notification-util/bootparam-bg.yml). The
+# memory budget is not cosmetic: a background process cannot be handed the
+# whole foreground app budget, and 2 MiB is far more than a socket and a 16 KiB
+# net pool need.
+add_executable(fvita_supervisor ${CMAKE_CURRENT_SOURCE_DIR}/supervisor.c)
+target_link_libraries(fvita_supervisor
+  SceIofilemgr_stub SceSysmem_stub SceLibKernel_stub SceKernelThreadMgr_stub
+  SceNet_stub SceNetCtl_stub SceSysmodule_stub SceAppMgr_stub
+)
+vita_create_self(fvita_supervisor.self fvita_supervisor UNSAFE
+  ATTRIBUTE 3
+  MEMSIZE 0x800
+)
+
+# param2.sfo -- the manifest for eboot2.bin.
+#
+# sceBgAppUtilStartBgApp does not merely run eboot2.bin; the shell looks up a
+# second SFO beside the first to learn what it is being asked to start, and
+# without it the call cannot succeed whatever else is right. Same shape as
+# Sony's sample: its own title id, CATEGORY gdd, and ATTRIBUTE 0x1000, the bit
+# that means "background application".
+#
+# Only keys already in vita-mksfoex's template are set. Keys it does not know
+# get appended after the sorted ones, and an SFO index table that is not sorted
+# by key is not something any Sony parser is documented to accept.
+add_custom_command(OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/param2.sfo
+  COMMAND ${VITA_MKSFOEX}
+    -s TITLE_ID=${SUPERVISOR_TITLE_ID}
+    -s CATEGORY=gdd
+    -s APP_VER=${VITA_VERSION}
+    -d ATTRIBUTE=4096
+    -d ATTRIBUTE_MINOR=0
+    "${APP_NAME} Supervisor"
+    ${CMAKE_CURRENT_BINARY_DIR}/param2.sfo
+  COMMENT "Generating param2.sfo for the supervisor"
+  VERBATIM
+)
 
 # Everything the engine reads at runtime from app0:.
 #
@@ -114,6 +163,8 @@ file(GLOB_RECURSE APP_ASSETS RELATIVE "${FLUTTER_ASSETS}" "${FLUTTER_ASSETS}/*")
 list(FILTER APP_ASSETS EXCLUDE REGEX "kernel_blob.bin|\\.last_build_id")
 
 set(VPK_FILES
+  FILE "${CMAKE_CURRENT_BINARY_DIR}/fvita_supervisor.self" eboot2.bin
+  FILE "${CMAKE_CURRENT_BINARY_DIR}/param2.sfo" sce_sys/param2.sfo
   FILE "${ENGINE_DIR}/data/icudtl.dat" icudtl.dat
   # The system font, scanned from app0:/fonts. Deliberately not inside
   # flutter_assets: that directory holds icon fonts meant to be looked up by

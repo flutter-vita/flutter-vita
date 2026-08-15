@@ -1,20 +1,27 @@
 // Flutter Vita Supervisor — packaged as eboot2.bin, run as a background app.
 //
-// The problem it exists to solve: when M1 crashes, both it and the loader are
-// gone, and nothing left on the device can start anything. Recovery needs a
-// physical tap. That is tolerable once; it is not tolerable as the routine
-// outcome of every crash, and Phase 2 will produce many.
+// The problem it exists to solve: when the app under test crashes, both it and
+// the loader are gone, and nothing left on the device can start anything.
+// Recovery needs a physical tap. That is tolerable once; it is not tolerable as
+// the routine outcome of every crash, and the crash under investigation
+// produces one every twenty seconds.
 //
-// sceBgAppUtilStartBgApp(1) starts eboot2.bin from the same app directory as a
+// sceBgAppUtilStartBgApp(0) starts eboot2.bin from the same app directory as a
 // *background* application. A background process is not the foreground app, so
 // it survives the foreground app crashing. This binary therefore stays alive
-// across M1 dying and can launch it again on request.
+// across the app dying and can launch the loader again on request.
 //
-// NOTE: unverified when written. BGFTP was cited as precedent for this pattern
-// and that was wrong -- it is a Lua app with no eboot2.bin. The API is real and
-// documented; whether an ordinary homebrew vpk may use it, and whether a
-// background app is permitted to launch a foreground one, are exactly what the
-// first run answers.
+// It ships with the *app*, not with the loader, and that is forced rather than
+// chosen. Only one directory on this device is writable by anything we control
+// -- ux0:app/FVTA00002, which the loader installs into. An app cannot write its
+// own directory (`touch ux0:app/FVTA00003/x` is 0x8001000D, EACCES, even for an
+// UNSAFE self), and ScePromoterUtil, which could, refuses to load for us with
+// MODULEMGR_NO_LIB. So the loader cannot update itself and cannot gain an
+// eboot2.bin; the app slot is redeployed every cycle and can.
+//
+// Started from dev_server_run, which makes it dev-loop infrastructure that
+// leaves with the dev server: an app that links a devserver stub for shipping
+// gets no supervisor, which is right.
 //
 // Deliberately trivial: sockets and one launch call. No Dart, no filesystem
 // writes beyond a log, nothing that can fault. The whole value is that it does

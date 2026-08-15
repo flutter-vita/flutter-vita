@@ -1,6 +1,7 @@
 #include "devserver.h"
 
 #include <psp2/appmgr.h>
+#include <psp2/bgapputil.h>
 #include <psp2/kernel/processmgr.h>
 #include <psp2/ctrl.h>
 #include <psp2/io/fcntl.h>
@@ -341,10 +342,40 @@ static int serve(int sock, const char* log_path, const char* eboot_path) {
   }
 }
 
+// Start the crash supervisor: eboot2.bin, as a background application.
+//
+// A background process is not the foreground app, so it outlives this one
+// dying. That is what lets a crash be recovered without someone walking to the
+// console and tapping the loader -- which is the actual limit on how fast this
+// port can be debugged, since builds take twenty seconds and a human does not.
+//
+// Two things about the argument, both of which cost days. The mode is 0:
+// VitaSDK's header says "must be 1" and defines INVALID_ARG as 0x80106502,
+// while Sony's own header says 0 and 0x80106501, and 0x80106501 is exactly what
+// mode 1 returned on every boot. And the app directory must contain
+// sce_sys/param2.sfo, a second manifest describing eboot2.bin, or the call
+// cannot succeed whatever mode is passed.
+//
+// Failure is logged and ignored. Losing the supervisor costs a tap per crash,
+// which is where this started; it is not a reason to take the app down.
+static void start_supervisor(void) {
+  const int mod = sceSysmoduleLoadModule(SCE_SYSMODULE_BG_APP_UTIL);
+  if (mod < 0) {
+    logf_("  [dev] bgapputil module 0x%08X\n", (unsigned)mod);
+    return;
+  }
+  const int r = sceBgAppUtilStartBgApp(0);
+  // Already running is the normal case after the first launch: the supervisor
+  // survives the app, so every launch after the first finds it there.
+  logf_("  [dev] supervisor start 0x%08X\n", (unsigned)r);
+}
+
 int dev_server_run(void (*log_line)(const char* msg),
                    const char* log_path,
                    const char* eboot_path) {
   g_log = log_line;
+
+  start_supervisor();
 
   if (sceSysmoduleLoadModule(SCE_SYSMODULE_NET) < 0) {
     logf_("  [dev] SCE_SYSMODULE_NET failed to load\n");

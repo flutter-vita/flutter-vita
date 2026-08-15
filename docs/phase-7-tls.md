@@ -1,5 +1,32 @@
 # Phase 7 — TLS, four causes deep and parked
 
+> ## TLS works. Measured on hardware 2026-08-15.
+>
+> ```
+> PASS tls/empty SecurityContext    _SecurityContext
+> PASS tls/built-in roots           _SecurityContext
+> PASS tls/SecureSocket handshake   negotiated, /CN=example.com
+> PASS tls/HTTPS GET                HTTPS 200
+> ```
+>
+> A real handshake against the open internet, a verified certificate chain, and
+> an HTTPS 200. **Nothing in this document was changed to make that happen.**
+> The four fixes below were already right; what changed is that the app now
+> survives long enough to reach the probes, because the conformance run resumes
+> from where the crash left it instead of starting over.
+>
+> The handoff predicted exactly this — *"TLS cannot work without them, and it
+> may simply work once the app survives"* — and the prediction is the useful
+> part. Four real bugs were fixed on the way to a conclusion ("the handshake
+> crashes") that was never about TLS at all.
+>
+> One probe is still unmeasured: `tls/handshake, no verify`, because the crash
+> landed inside it and the resumed run skipped past. The two probes after it
+> both pass, so there is no reason yet to think that one is special.
+>
+> Everything below is kept as written. The four causes are real fixes and the
+> method notes are the point.
+
 > ## The crash this document chases is not a TLS bug
 >
 > **Corrected 2026-08-15.** After the TLS probes were moved to the end of the

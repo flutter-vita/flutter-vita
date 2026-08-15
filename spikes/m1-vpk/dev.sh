@@ -16,6 +16,7 @@
 #   ./dev.sh log       pull m1.log
 #   ./dev.sh crash     pull and symbolicate the newest crash dump
 #   ./dev.sh get P F   copy a file off the device
+#   ./dev.sh rm P      delete a file on the device (dumps, the resume point)
 #   ./dev.sh sup       is the background supervisor alive
 #   ./dev.sh watch     wait until either app appears, then say which
 #
@@ -148,7 +149,12 @@ push_data() {
 
   # Whatever the .vpk carries besides eboot.bin and the Sony metadata, so
   # adding an asset to CMakeLists is enough -- this does not need editing too.
-  local files; files=$(unzip -Z1 "$vpk" | grep -v '^eboot.bin$' | grep -v '^sce_sys/')
+  # sce_sys/ is install metadata the promoter owns and `install` never touches
+  # -- except param2.sfo, which sceBgAppUtilStartBgApp reads out of the app
+  # directory at call time to find out what eboot2.bin is. Without it here, the
+  # supervisor silently never starts on any build deployed through this loop.
+  local files; files=$(unzip -Z1 "$vpk" | grep -v '^eboot.bin$' \
+    | grep -v '^sce_sys/' ; unzip -Z1 "$vpk" | grep '^sce_sys/param2\.sfo$')
   [ -n "$files" ] || return 0
   ( cd "$stage" && unzip -o -q "$vpk" $(echo "$files") ) || return 1
 
@@ -277,6 +283,7 @@ case "${1:-}" in
   launch)  say "$LDR" launch ;;
   crash)   cmd_crash ;;
   get)     cmd_get "${2:?device path}" "${3:?local path}" ;;
+  rm)      p="$(live)"; [ -n "$p" ] && say "$p" "rm ${2:?device path}" || echo "nothing running" ;;
   shot)    cmd_shot "${2:-$APPDIR/out/screen.png}" ;;
   watch)   wait_for_tap && { p="$(live)"; echo "up on port $p"; } ;;
   cycle)   cycle ;;

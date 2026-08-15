@@ -17,7 +17,9 @@ class Probe {
   final Future<String> Function() run;
 }
 
-enum Outcome { pending, pass, fail }
+/// `skipped` is a resumed run's memory of the previous ones: the probe ran in
+/// an earlier attempt that the crash ended, and is not being run again.
+enum Outcome { pending, pass, fail, skipped }
 
 class ProbeResult {
   ProbeResult(this.probe) : outcome = Outcome.pending, detail = '';

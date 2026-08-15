@@ -98,33 +98,101 @@ loader.** That is the constraint on iteration speed, not build time (builds are
 
 Two fixes, both worth doing, neither attempted yet:
 
-### a. Resume from where it died
+### a. Resume from where it died — **DONE 2026-08-15**
 
-The app reads a "last completed step" file at startup and continues past it,
-rather than starting over. **Each manual relaunch then advances the
-investigation instead of repeating it.** Cheap, needs no Vita API, and works
-even if crash handling proves impossible. The journal already writes every step
-before running it, so the resume point is already on disk — it needs reading,
-not adding.
+`ux0:data/flutter-vita/resume.txt` holds one integer, written before each probe
+runs. On startup the app skips past it. The journal appends per run instead of
+truncating, so earlier attempts survive as evidence rather than being erased by
+the relaunch that follows them.
 
-### b. Return to the loader without a human
+It works, and it immediately paid for itself:
 
-Investigate a user-mode fault handler that relaunches the loader before the
-process dies, so the console comes back to a usable state on its own.
-`sceAppMgrLaunchAppByUri` is how the loader launches apps and terminates
-itself; the question is whether a handler can run late enough to call it.
-Vita homebrew commonly installs handlers to write crash logs, so the mechanism
-exists — the specific API has not been researched.
+```
+=== 11:35:56 (fresh run) ===          probes  0–16
+=== 11:52:15 (resuming at probe 17) === probes 17–40
+=== 11:53:28 (resuming at probe 41) === probes 41–43   == run complete ==
+```
 
-If (b) works the loop becomes fully autonomous. If it does not, (a) still turns
-N crashes into N steps of progress instead of N restarts.
+**Three launches, the whole probe list, one failure.** No run had ever passed
+about 33 before. It is also what showed that [TLS works](phase-7-tls.md) —
+those probes sit at the end of the list and nothing had ever reached them.
 
-### c. Loader `rm`
+Note the resume point is deliberately the index *after* the probe that died, so
+a crashing probe is stepped over rather than re-entered. The cost is that it
+goes unmeasured: `tls/handshake, no verify` has no result for that reason.
 
-Unrelated to crashes but requested and still missing: the loader has `ls`, `get`
-and `put` but no delete, so crash dumps accumulate. `ux0:data` currently holds
-52 `psp2core` files from every homebrew title on the console, and one of them
-misdirected an investigation in this session for half an hour.
+To force a run from the top: `./spikes/m1-vpk/dev.sh rm ux0:data/flutter-vita/resume.txt`.
+
+### b. Return to the loader without a human — API fixed, shell blocks it
+
+There was already a supervisor for this — `templates/vita-app/supervisor.c`,
+built as `eboot2.bin` and started as a background application, a separate
+process that outlives the foreground app dying. It had never run, and
+`loader.log` had been saying so on every boot since 2026-08-10:
+
+```
+supervisor start: sysmodule=0x00000000 start=0x80106501
+```
+
+Two real bugs, both now fixed:
+
+- **VitaSDK's `psp2/bgapputil.h` is wrong on both counts.** It says the mode
+  argument "must be 1" and defines `SCE_BGAPP_UTIL_ERROR_INVALID_ARG` as
+  `0x80106502`. Sony's own header says **mode 0** and `0x80106501` — which is
+  precisely the code we were getting. The undocumented value was read as a
+  permission problem when it was an invalid argument. Confirmed against Sony's
+  `notification-util` sample and GrapheneCt's BGFTP, which both pass 0.
+  (`supervisor.c` used to claim BGFTP was not a precedent because it had no
+  `eboot2.bin`. It has one. That note was wrong.)
+- **`sce_sys/param2.sfo` was missing** — a second manifest describing
+  `eboot2.bin`, `CATEGORY=gdd`, `ATTRIBUTE=0x1000`. Without it the call cannot
+  succeed at any mode.
+
+With both, `sceBgAppUtilStartBgApp(0)` returns `0x00000000`. The supervisor
+still does not run, and the remaining obstacle is specific: **the shell resolves
+the background app through `param2.sfo`'s `TITLE_ID`, against its
+installed-titles database.**
+
+| `TITLE_ID` | result |
+|---|---|
+| `FVSV00003` — distinct, never installed | call returns 0; shell puts "could not find app" on the panel; `eboot2.bin` never runs |
+| `FVTA00002` — the app's own | the app stops launching at all |
+
+Nothing we control can add a title to that database: `ScePromoterUtil` refuses
+to load with `MODULEMGR_NO_LIB` (`0x8002D003`), the same refusal
+[the tooling notes](../spikes/vita-tooling/README.md) recorded — and *not*
+because of the safe-self mistake, since this was measured under UNSAFE.
+
+Two untried routes, in order of cost:
+
+1. **Name the loader.** `FVTA00003` is registered. Whether the shell then takes
+   `eboot2.bin` from the caller's directory or the named title's is unknown and
+   the experiment answers it. If it is the named title's, the app can write
+   `ux0:app/FVTA00003/eboot2.bin` from `dart:io` — only an app's *own*
+   directory is read-only to it (see below).
+2. **Install once through VitaShell.** A properly promoted vpk carrying
+   `eboot2.bin` and `param2.sfo` registers everything the shell needs. One
+   manual install instead of a tap per crash.
+
+### c. Loader `rm` — **DONE**
+
+`rm <path>`, plus `./spikes/m1-vpk/dev.sh rm <path>`. No glob and no recursion:
+this deletes on a device with one homebrew slot and a lifeline app living in it.
+
+The same round also hardened `put`, which accepted a size of zero and so
+truncated its target and answered `OK` — a shell expansion that came out blank
+destroyed `eboot2.bin` that way. And the liveness checks now retry: the loader's
+listener is non-blocking, and a single `ping` reported "no loader" three times
+against a loader that answered `ls` a second later.
+
+### An app cannot write its own directory
+
+`touch ux0:app/FVTA00003/x` returns `0x8001000D`, EACCES, from the loader
+itself, while `ux0:app/FVTA00002` is freely writable by it. That settles a
+question `spikes/vita-tooling/README.md` left open as *"untested under UNSAFE;
+possibly also false."* It is true, and it is why the supervisor ships with the
+app rather than the loader: the app slot is the only directory anything we
+control can write, and the loader cannot update itself.
 
 ## 5. What is done and not at risk
 
@@ -133,8 +201,12 @@ misdirected an investigation in this session for half an hour.
 - **Phase 6** — `numberOfProcessors` (−1 → 3), `Directory.systemTemp`
   (`/tmp` → `ux0:data/<TITLEID>/tmp`), `createTempSync`, plus
   `path_provider_vita` and `shared_preferences_vita`. 30 probes pass, 0 fail.
-- **Phase 7's four fixes** are real bugs fixed, even though none was the crash.
-  TLS cannot work without them, and it may simply work once the app survives.
+- **Phase 7** — TLS works. Verified handshake, `/CN=example.com`, `HTTPS 200`,
+  measured once the resume file let the run reach those probes. The four fixes
+  were right; the conclusion drawn around them was not.
+- **The whole probe list passes** except `io/print` to stderr. 
+  `tls/handshake, no verify` is the one probe with no result, skipped by the
+  resume after the crash landed in it.
 - **Tooling** — `tools/check-dart-trees.sh`, `cleandead` before archiving, the
   `.psp2dmp.tmp` fix in `dev.sh`, engine/SDK version refusal.
 

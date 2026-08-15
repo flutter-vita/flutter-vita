@@ -125,6 +125,21 @@ fi
 # rather than complaining, so check here where the message can be useful.
 [ "${#TITLE_ID}" -eq 9 ] || { echo "TITLE_ID must be 9 characters, got '$TITLE_ID'" >&2; exit 1; }
 
+# The title id that goes into sce_sys/param2.sfo, for eboot2.bin.
+#
+# The app's own, and that is deliberate even though Sony's sample and BGFTP both
+# give their background app a *distinct* id. Both of those are installed by the
+# promoter, which registers every title in the package; ours is side-loaded into
+# an app directory the loader can write, so the only id the shell has a record
+# of is the app's.
+#
+# Measured, not assumed. With a distinct id (FVSV00003) the call succeeded --
+# sceBgAppUtilStartBgApp returned 0 -- and the shell then put "could not find
+# app" on the panel and never ran eboot2.bin: it resolves the background app
+# through its installed-titles database, and an id nothing installed is not in
+# it.
+SUPERVISOR_TITLE_ID="$TITLE_ID"
+
 [ -d "$ENGINE_DIR" ] || {
   echo "No engine at $ENGINE_DIR" >&2
   echo "  Unpack flutter-engine-vita-$FLUTTER_PIN.tar.gz, or run tools/package-engine.sh" >&2
@@ -231,6 +246,7 @@ cmake -S "$ROOT/templates/vita-app" -B "$OUT_DIR/cmake" \
   -DCMAKE_BUILD_TYPE=Release \
   -DAPP_NAME="$APP_NAME" \
   -DTITLE_ID="$TITLE_ID" \
+  -DSUPERVISOR_TITLE_ID="$SUPERVISOR_TITLE_ID" \
   -DSNAPSHOT_S="$OUT_DIR/snapshot.S" \
   -DFLUTTER_ASSETS="$ASSETS" \
   -DENGINE_DIR="$ENGINE_DIR" >/dev/null

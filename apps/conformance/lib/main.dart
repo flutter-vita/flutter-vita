@@ -83,9 +83,23 @@ class _ProbeRunnerState extends State<ProbeRunner>
   }
 
   Future<void> _runAll() async {
-    _journalStart();
-    await _rebuildStorm();
-    for (final result in _results) {
+    final resumeAt = _journalStart();
+
+    // The rebuild storm is a completed experiment, and it costs 3.2 s before
+    // the first probe. A resumed run has crashes to get past, not frames to
+    // count, so it skips straight to where the last one died.
+    if (resumeAt == 0) await _rebuildStorm();
+
+    for (var i = 0; i < _results.length; i++) {
+      final result = _results[i];
+      if (i < resumeAt) {
+        result.outcome = Outcome.skipped;
+        result.detail = 'ran in an earlier attempt';
+        continue;
+      }
+      // Written *before* the probe runs, and it is the index after this one:
+      // a crash inside this probe must not send the next attempt back into it.
+      _writeResume(i + 1);
       // Written *before* the probe runs, so the crashing probe names itself.
       // The first run left no evidence of which one killed it, and the whole
       // point of a journal is to still be there when the app is not.
@@ -113,6 +127,9 @@ class _ProbeRunnerState extends State<ProbeRunner>
       _journal('     <paint');
     }
     _journal('== run complete ==');
+    // The list is finished, so the next launch is a fresh run rather than a
+    // resume of a completed one.
+    _clearResume();
     if (mounted) setState(() => _done = true);
   }
 
@@ -144,13 +161,59 @@ class _ProbeRunnerState extends State<ProbeRunner>
   /// means the filesystem is broken, which the absent file already says.
   static const _journalPath = 'ux0:data/flutter-vita/conformance.txt';
 
-  void _journalStart() {
+  /// Where the next attempt should pick up.
+  ///
+  /// Separate from the journal on purpose. The journal is a narrative and this
+  /// is one integer, and conflating them would mean parsing prose to recover a
+  /// number -- which is what "the resume point is already on disk" glossed
+  /// over. It is also the file that must survive when the journal does not.
+  ///
+  /// Delete it to force a run from the top:
+  ///     ./spikes/m1-vpk/dev.sh rm ux0:data/flutter-vita/resume.txt
+  static const _resumePath = 'ux0:data/flutter-vita/resume.txt';
+
+  /// Opens the journal and returns the probe index to start from.
+  ///
+  /// Appends rather than truncates, which the single-run version did. Across a
+  /// resumed sequence the earlier attempts *are* the evidence -- throwing them
+  /// away on each relaunch would leave only the last fragment, which is the
+  /// position the crash investigation was already stuck in.
+  int _journalStart() {
+    var resumeAt = 0;
     try {
       Directory('ux0:data/flutter-vita').createSync(recursive: true);
+      final f = File(_resumePath);
+      if (f.existsSync()) {
+        resumeAt = int.tryParse(f.readAsStringSync().trim()) ?? 0;
+        if (resumeAt < 0 || resumeAt > _results.length) resumeAt = 0;
+      }
       File(_journalPath).writeAsStringSync(
-          'flutter-vita conformance ${DateTime.now()}\n');
+        '\n=== flutter-vita conformance ${DateTime.now()} '
+        '${resumeAt == 0 ? "(fresh run)" : "(resuming at probe $resumeAt)"} ===\n',
+        mode: FileMode.append,
+        flush: true,
+      );
     } on Object {
       // Nothing to do. The screen is still a channel while the app lives.
+    }
+    return resumeAt;
+  }
+
+  void _writeResume(int next) {
+    try {
+      File(_resumePath).writeAsStringSync('$next\n', flush: true);
+    } on Object {
+      // Best-effort, like the journal: losing the resume point costs a repeat,
+      // not a result.
+    }
+  }
+
+  void _clearResume() {
+    try {
+      final f = File(_resumePath);
+      if (f.existsSync()) f.deleteSync();
+    } on Object {
+      // See above.
     }
   }
 
@@ -177,6 +240,7 @@ class _ProbeRunnerState extends State<ProbeRunner>
   Widget build(BuildContext context) {
     final passed = _results.where((r) => r.outcome == Outcome.pass).length;
     final failed = _results.where((r) => r.outcome == Outcome.fail).length;
+    final skipped = _results.where((r) => r.outcome == Outcome.skipped).length;
 
     return Scaffold(
       body: SafeArea(
@@ -223,7 +287,9 @@ class _ProbeRunnerState extends State<ProbeRunner>
                   Text(
                     _done
                         ? '$passed pass  ·  $failed fail'
-                        : 'running ${passed + failed}/${_results.length}…',
+                          '${skipped > 0 ? "  ·  $skipped skip" : ""}'
+                        : 'running ${passed + failed + skipped}'
+                            '/${_results.length}…',
                     style: TextStyle(
                       fontSize: 13,
                       color: _done && failed > 0
@@ -294,6 +360,7 @@ class _Row extends StatelessWidget {
     final (label, colour) = switch (result.outcome) {
       Outcome.pass => ('PASS', const Color(0xFF7BD88F)),
       Outcome.fail => ('FAIL', const Color(0xFFFF8A80)),
+      Outcome.skipped => ('skip', const Color(0xFF5A6478)),
       Outcome.pending => ('  · ', const Color(0xFF5A6478)),
     };
 

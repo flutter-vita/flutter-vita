@@ -87,9 +87,17 @@ assumption:
   selfs, which is what we were building without ever choosing to.
 - *"BGFTP cannot be dropped; the boundary is app vs SceShell plugin."* No — the
   boundary was safe vs unsafe self. BGFTP was never special.
-- *"An app cannot write its own `ux0:app` directory."* Untested under UNSAFE;
-  possibly also false. It no longer matters, since the two-app design is needed
-  for the launch anyway.
+- *"An app cannot write its own `ux0:app` directory."* **Tested under UNSAFE on
+  2026-08-15: it is true.** `touch ux0:app/FVTA00003/x` returns `0x8001000D`,
+  EACCES, from the loader itself, while `ux0:app/FVTA00002` is freely writable
+  by it. An app's own install directory is the read-only `app0:` mount and no
+  amount of unsafe-ness changes that. So the loader cannot update itself, and
+  the crash supervisor has to ship with the app instead.
+- *`ScePromoterUtil` is refused with `MODULEMGR_NO_LIB`.* Still true under
+  UNSAFE — `sceSysmoduleLoadModuleInternal` returns `0x8002D003`. This one was
+  worth re-measuring, because it was originally concluded under the safe-self
+  mistake and everything else in that paragraph turned out to be an artefact of
+  it. Not this.
 
 Routes explored and abandoned before finding it: `ux0:patch` (invisible to a
 safe self, same as `ux0:app`), and `ScePromoterUtil` (its library is refused

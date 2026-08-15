@@ -74,6 +74,7 @@ target_link_libraries(${PROJECT_NAME}
   SceNetCtl_stub
   SceSysmodule_stub
   SceAppMgr_stub
+  SceBgAppUtil_stub
   SceSysmem_stub
   SceLibKernel_stub
   SceKernelThreadMgr_stub
