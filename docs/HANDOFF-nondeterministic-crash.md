@@ -158,6 +158,15 @@ installed-titles database.**
 | `FVSV00003` — distinct, never installed | call returns 0; shell puts "could not find app" on the panel; `eboot2.bin` never runs |
 | `FVTA00002` — the app's own | the app stops launching at all |
 
+**It is switched off by default**, because a failed start is not quiet: the
+shell puts "could not find app" on the panel in front of the app at every
+launch. `dev_server_run` reads
+`ux0:data/flutter-vita/supervisor.on` and starts the supervisor only if the
+first byte is `1`. A file rather than a build flag, so flipping it costs one
+`put` instead of a rebuild and a 12 MB upload — and its *contents* rather than
+its existence, because turning it back off would otherwise need a delete, and
+the loader installed on the device predates `rm`.
+
 Nothing we control can add a title to that database: `ScePromoterUtil` refuses
 to load with `MODULEMGR_NO_LIB` (`0x8002D003`), the same refusal
 [the tooling notes](../spikes/vita-tooling/README.md) recorded — and *not*

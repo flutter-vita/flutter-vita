@@ -358,7 +358,27 @@ static int serve(int sock, const char* log_path, const char* eboot_path) {
 //
 // Failure is logged and ignored. Losing the supervisor costs a tap per crash,
 // which is where this started; it is not a reason to take the app down.
+//
+// Off unless switched on, because a failed start is not silent: the shell puts
+// "could not find app" on the panel at every launch, in front of the app. The
+// switch is a file rather than a build flag so that flipping it costs one
+// `put` instead of a rebuild and a 12 MB upload -- and it reads the file's
+// *contents*, not its existence, because turning it back off would otherwise
+// need a delete, which the loader currently installed on the device cannot do.
+//
+//   echo -n 1 > on  &&  dev.sh put on ux0:data/flutter-vita/supervisor.on
+static int supervisor_enabled(void) {
+  const SceUID fd =
+      sceIoOpen("ux0:data/flutter-vita/supervisor.on", SCE_O_RDONLY, 0777);
+  if (fd < 0) return 0;
+  char c = '0';
+  const int n = sceIoRead(fd, &c, 1);
+  sceIoClose(fd);
+  return n == 1 && c == '1';
+}
+
 static void start_supervisor(void) {
+  if (!supervisor_enabled()) return;
   const int mod = sceSysmoduleLoadModule(SCE_SYSMODULE_BG_APP_UTIL);
   if (mod < 0) {
     logf_("  [dev] bgapputil module 0x%08X\n", (unsigned)mod);
