@@ -84,6 +84,7 @@ class _ProbeRunnerState extends State<ProbeRunner>
 
   Future<void> _runAll() async {
     _journalStart();
+    await _rebuildStorm();
     for (final result in _results) {
       // Written *before* the probe runs, so the crashing probe names itself.
       // The first run left no evidence of which one killed it, and the whole
@@ -113,6 +114,27 @@ class _ProbeRunnerState extends State<ProbeRunner>
     }
     _journal('== run complete ==');
     if (mounted) setState(() => _done = true);
+  }
+
+  /// Rebuild the list repeatedly before any probe has produced a result.
+  ///
+  /// Isolates the rebuild from what the rebuild renders. Runs die at about the
+  /// 33rd iteration of the probe loop, inside setState, and two things grow
+  /// together there: the number of setState calls, and the amount of result
+  /// text the list has to lay out. The animation already showed that repainting
+  /// a small subtree is fine for hundreds of frames, so the suspect is the
+  /// list.
+  ///
+  /// Here every row is still pending, so the text never changes. Surviving 200
+  /// rebuilds means the rebuild is innocent and the growing text is the fault;
+  /// dying around 33 means it is the rebuild itself and text is a red herring.
+  Future<void> _rebuildStorm() async {
+    for (var i = 1; i <= 200; i++) {
+      if (mounted) setState(() {});
+      await Future<void>.delayed(const Duration(milliseconds: 16));
+      if (i % 8 == 0) _journal('     rebuild storm: $i');
+    }
+    _journal('     rebuild storm: survived 200');
   }
 
   /// Append-only record that survives the process.
