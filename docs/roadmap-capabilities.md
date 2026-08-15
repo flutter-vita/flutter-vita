@@ -30,7 +30,8 @@ before the measurement.
 | TLS / HTTPS | **works** | [Phase 7](phase-7-tls.md) — real handshake, verified chain, `HTTPS 200` on hardware |
 | `Directory.systemTemp` | **works** | Phase 6 — `ux0:data/<TITLEID>/tmp`, created on first use |
 | `Platform.numberOfProcessors` | **works** | Phase 6 — 3, from the thread affinity mask |
-| Dart `print` / stdout / stderr | **works** | all three, measured — `fstat` on fds 0/1/2 fails here, so Vita reports `kPipe` rather than an error |
+| Dart `print` | **works** | goes through the engine log, not `dart:io` |
+| Dart stdout / stderr | **partly** | construction works — Vita reports `kPipe`, since `fstat` on fds 0/1/2 fails — but the write itself still fails: `writeFrom failed (OS Error: Bad file number, errno = 9)`, surfacing asynchronously as an unhandled exception rather than at the call. Needs fd 1/2 routed to the log |
 | `Process` | **refused, correctly** | `process_vita.cc` — no fork, no exec, documented as an implementation not a placeholder |
 | Text input / IME | **not started** | `sceIme` exists |
 | Audio | **not started** | `sceAudioOut` exists |

@@ -101,6 +101,7 @@ target_link_libraries(${PROJECT_NAME}
   SceNet_stub SceNetCtl_stub SceSysmodule_stub SceAppMgr_stub SceBgAppUtil_stub
   SceSysmem_stub SceLibKernel_stub SceKernelThreadMgr_stub
   ScePower_stub SceGxm_stub SceCommonDialog_stub
+  SceIme_stub SceAppUtil_stub
   pthread m
 )
 

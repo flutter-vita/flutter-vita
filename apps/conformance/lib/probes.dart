@@ -275,7 +275,13 @@ List<Probe> buildProbes() => [
     ]) {
       try {
         emit();
-        results.add('$name ok');
+        // "accepted", not "ok". IOSink.writeln is buffered and asynchronous:
+        // the call returning proves only that the sink was constructed and the
+        // bytes queued. On 2026-08-15 all three reported ok here while the
+        // engine log carried `writeFrom failed ... Bad file number` twice, as
+        // an unhandled async exception nobody was watching. A synchronous probe
+        // cannot see that, so it must not claim to.
+        results.add('$name accepted');
       } on Object catch (e) {
         results.add('$name ${e.runtimeType}');
       }
@@ -366,5 +372,39 @@ List<Probe> buildProbes() => [
     await res.drain<void>();
     c.close();
     return 'HTTPS ${res.statusCode}';
+  }),
+
+  // Last on purpose: it puts a modal dialog over the app for six seconds, and
+  // anything after it would run behind a keyboard.
+  //
+  // What this can prove without a person: the IME initialises, the shell
+  // composites it over a software-rendered framebuffer, and it tears down
+  // cleanly. That middle one is the whole risk of Phase 8 --
+  // sceCommonDialogUpdate wants a GXM colour surface and ADR-0003 says we do
+  // not have one, only CDRAM we wrote pixels into. The evidence is a
+  // screenshot taken from the host while this probe holds the dialog open, so
+  // the six-second wait is the test window and not a delay.
+  //
+  // What it cannot prove is typing. That needs thumbs.
+  Probe('ime', 'dialog opens', () async {
+    const ch = SystemChannels.textInput;
+    await ch.invokeMethod<void>('TextInput.setClient', <Object>[
+      1,
+      <String, Object?>{
+        'inputType': <String, Object?>{'name': 'TextInputType.text'},
+        'obscureText': false,
+        'inputAction': 'TextInputAction.done',
+      },
+    ]);
+    await ch.invokeMethod<void>('TextInput.setEditingState', <String, Object?>{
+      'text': 'flutter-vita',
+      'selectionBase': 12,
+      'selectionExtent': 12,
+    });
+    await ch.invokeMethod<void>('TextInput.show');
+    await Future<void>.delayed(const Duration(seconds: 6));
+    await ch.invokeMethod<void>('TextInput.hide');
+    await ch.invokeMethod<void>('TextInput.clearClient');
+    return 'opened, held 6s, closed';
   }),
 ];
