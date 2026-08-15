@@ -1,0 +1,130 @@
+flutter-vita conformance 2026-08-15 06:29:48.490845
+.... dart/async/Future
+PASS dart/async/Future  ok
+     paint>
+     <paint
+.... dart/Timer
+PASS dart/Timer  ok
+     paint>
+     <paint
+.... dart/DateTime.now
+PASS dart/DateTime.now  2026-08-15T06:29:49
+     paint>
+     <paint
+.... platform/operatingSystem
+PASS platform/operatingSystem  linux
+     paint>
+     <paint
+.... platform/version
+PASS platform/version  3.12.2
+     paint>
+     <paint
+.... platform/numberOfProcessors
+PASS platform/numberOfProcessors  3
+     paint>
+     <paint
+.... platform/pathSeparator
+PASS platform/pathSeparator  "/"
+     paint>
+     <paint
+.... platform/localHostname
+PASS platform/localHostname  localhost
+     paint>
+     <paint
+.... platform/environment
+PASS platform/environment  0 vars
+     paint>
+     <paint
+.... platform/resolvedExecutable
+PASS platform/resolvedExecutable  Platform_ResolvedExecutableName
+     paint>
+     <paint
+.... platform/script
+PASS platform/script  app0%3A/main.dart
+     paint>
+     <paint
+.... fs/Directory.current
+PASS fs/Directory.current  app0:
+     paint>
+     <paint
+.... fs/app0 exists
+PASS fs/app0 exists  yes
+     paint>
+     <paint
+.... fs/app0 list
+PASS fs/app0 list  9 entries
+     paint>
+     <paint
+.... fs/read app0 file
+PASS fs/read app0 file  862304 B, starts 4B
+     paint>
+     <paint
+.... fs/stat app0 file
+PASS fs/stat app0 file  file, 862304 B
+     paint>
+     <paint
+.... fs/mkdir ux0:data
+PASS fs/mkdir ux0:data  exists
+     paint>
+     <paint
+.... fs/write file
+PASS fs/write file  37 B
+     paint>
+     <paint
+.... fs/read back
+PASS fs/read back  written at 2026-08-15 06…
+     paint>
+     <paint
+.... fs/append
+PASS fs/append  42 B
+     paint>
+     <paint
+.... fs/list ux0:data
+PASS fs/list ux0:data  14 entries
+     paint>
+     <paint
+.... fs/rename
+PASS fs/rename  ok
+     paint>
+     <paint
+.... fs/delete
+PASS fs/delete  ok
+     paint>
+     <paint
+.... fs/systemTemp
+PASS fs/systemTemp  ux0:data/FVTA00002/tmp
+     paint>
+     <paint
+.... fs/createTempSync
+PASS fs/createTempSync  ux0:data/FVTA00002/tmp/probeCGRPOS
+     paint>
+     <paint
+.... net/ServerSocket.bind
+PASS net/ServerSocket.bind  port 52098
+     paint>
+     <paint
+.... net/DNS lookup
+PASS net/DNS lookup  172.66.147.243
+     paint>
+     <paint
+.... net/TCP connect (no DNS)
+PASS net/TCP connect (no DNS)  1.1.1.1:80
+     paint>
+     <paint
+.... net/HTTP GET
+PASS net/HTTP GET  HTTP 200
+     paint>
+     <paint
+.... plugin/path_provider docs
+PASS plugin/path_provider docs  ux0:data/FVTA00002/documents
+     paint>
+     <paint
+.... plugin/path_provider temp
+PASS plugin/path_provider temp  ux0:data/FVTA00002/tmp
+     paint>
+     <paint
+.... plugin/path_provider support
+PASS plugin/path_provider support  ux0:data/FVTA00002/support
+     paint>
+     <paint
+.... plugin/prefs write+read

@@ -12,9 +12,21 @@
 > m3.log        last frame rendered: present #31
 > ```
 >
-> **The app dies on the 32nd frame, whatever code is running.** The conformance
-> app repaints once per probe, so "probe 32" and "frame 32" are the same event,
-> and TLS merely happened to be sitting there.
+> **The app dies at the 32nd *probe*, whatever code is running.** TLS merely
+> happened to be sitting there.
+>
+> It was first written up as "the 32nd frame", because the app repainted once
+> per probe and the two were indistinguishable. Adding a continuous animation
+> separated them and corrected it:
+>
+> ```
+> frames rendered   83      (was 32 when frames and probes were 1:1)
+> probes started    33      died at plugin/prefs write+read
+> free memory       91 MB
+> ```
+>
+> 83 frames and still dead at probe 33. The present path is innocent; something
+> accumulates **per probe**.
 >
 > That explains why every hypothesis below came back negative — entropy,
 > certificate verification, stack, memory, assembly. They were all answering a
@@ -28,8 +40,17 @@
 > worked without them. But none of them was the crash, and the crash is not
 > Phase 7's to fix.
 >
-> Next: find the frame-32 fault in the embedder's present path. Everything below
-> stays for the record.
+> **What accumulates per probe**, and is the next thing to check: each iteration
+> creates two timers — a `.timeout(25s)` around the probe and a
+> `Future.delayed(16ms)` after it — so probe 32 is roughly the 64th timer. That
+> is a suspiciously round number and the best remaining lead. It is not
+> descriptors: `kMaxPollDescriptors` is 255, and the journal write count per
+> probe changed between runs without moving the death position.
+>
+> Ruled out for this crash: frames and the present path (83 frames survived),
+> memory (91 MB free), and everything Phase 7 eliminated below.
+>
+> Everything below stays for the record.
 
 **Parked 2026-08-15**, after the assembly bisect came back negative. Four real
 causes were found and fixed; the handshake still crashes; everything cheap has

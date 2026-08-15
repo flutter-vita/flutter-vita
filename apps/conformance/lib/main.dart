@@ -51,7 +51,21 @@ class ProbeRunner extends StatefulWidget {
   State<ProbeRunner> createState() => _ProbeRunnerState();
 }
 
-class _ProbeRunnerState extends State<ProbeRunner> {
+class _ProbeRunnerState extends State<ProbeRunner>
+    with SingleTickerProviderStateMixin {
+  // Breaks the 1:1 between frames and probes, which is the whole experiment.
+  //
+  // Every run so far has died at the 32nd probe, and because this app repaints
+  // once per probe that is also the 32nd frame -- the two cannot be told apart.
+  // A continuous animation makes frames run far ahead of probes: if the app
+  // dies about a second in, having painted ~32 times while barely starting the
+  // probe list, the limit is frames. If it reaches probe 32 as usual after
+  // hundreds of frames, the limit is probes and the present path is innocent.
+  late final AnimationController _spin = AnimationController(
+    vsync: this,
+    duration: const Duration(seconds: 2),
+  )..repeat();
+
   late final List<ProbeResult> _results =
       buildProbes().map(ProbeResult.new).toList();
   var _done = false;
@@ -60,6 +74,12 @@ class _ProbeRunnerState extends State<ProbeRunner> {
   void initState() {
     super.initState();
     unawaited(_runAll());
+  }
+
+  @override
+  void dispose() {
+    _spin.dispose();
+    super.dispose();
   }
 
   Future<void> _runAll() async {
@@ -151,6 +171,17 @@ class _ProbeRunnerState extends State<ProbeRunner> {
                           fontWeight: FontWeight.bold,
                           color: Color(0xFFE6EAF2))),
                   const SizedBox(width: 10),
+                  // Rebuilt every tick, so the frame counter in m3.log runs
+                  // independently of probe progress.
+                  AnimatedBuilder(
+                    animation: _spin,
+                    builder: (_, __) => Transform.rotate(
+                      angle: _spin.value * 6.283,
+                      child: const Icon(Icons.sync,
+                          size: 12, color: Color(0xFF6B7488)),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
                   // The logical size and device pixel ratio, because the first
                   // run overflowed the panel and nothing recorded whether the
                   // surface was 960x544 or 480x272 at DPR 2.
