@@ -70,10 +70,10 @@ index 61abe64a..b92ae80c 100644
  
 diff --git a/engine/src/flutter/shell/platform/embedder/vita_embedder.cc b/engine/src/flutter/shell/platform/embedder/vita_embedder.cc
 new file mode 100644
-index 00000000..03dc14c4
+index 00000000..50dab527
 --- /dev/null
 +++ b/engine/src/flutter/shell/platform/embedder/vita_embedder.cc
-@@ -0,0 +1,1199 @@
+@@ -0,0 +1,1334 @@
 +// Copyright (c) 2026, the Flutter Authors. All rights reserved.
 +// Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
@@ -259,6 +259,17 @@ index 00000000..03dc14c4
 +
 +TouchState g_touch;
 +
++// Touch-to-present, measured rather than reasoned about.
++//
++// "Input lag" has at least four contributors here and they are not the same
++// size: touch is polled every 16 ms on the main thread, there is no vsync
++// callback so the engine paces on a timer of its own, the present is a
++// measured 8.06 ms memcpy, and the buffer is single. Guessing which dominates
++// is how the last several hours went wrong; this records the one number that
++// matters end to end, plus the frame interval underneath it.
++uint64_t g_touch_down_us = 0;
++uint64_t g_last_present_us = 0;
++
 +void InitTouch() {
 +  sceTouchSetSamplingState(SCE_TOUCH_PORT_FRONT,
 +                           SCE_TOUCH_SAMPLING_STATE_START);
@@ -303,6 +314,11 @@ index 00000000..03dc14c4
 +  // A touch screen has no buttons, and reporting one makes Flutter treat the
 +  // gesture as a mouse drag with a held button.
 +  event.buttons = 0;
++  // Stamped on the way in, read at the next present. Only for a down, because
++  // that is the edge a person perceives as "did it respond".
++  if (event.phase == kDown) {
++    g_touch_down_us = sceKernelGetSystemTimeWide();
++  }
 +  FlutterEngineSendPointerEvent(engine, &event, 1);
 +}
 +
@@ -475,8 +491,76 @@ index 00000000..03dc14c4
 +  SceWChar16 input[SCE_IME_DIALOG_MAX_TEXT_LENGTH + 1] = {0};
 +  SceWChar16 initial[SCE_IME_DIALOG_MAX_TEXT_LENGTH + 1] = {0};
 +  SceWChar16* title = nullptr;
++  bool gxm_ready = false;   // surfaces mapped; without them the driver kills us
 +};
 +ImeState g_ime;
++
++// The GXM side of showing a common dialog, and nothing more.
++//
++// The shell draws the keyboard into the *application's* frame, and it will
++// only do that into a surface GXM manages. Filling
++// SceCommonDialogRenderTargetInfo with the right width, height, stride and
++// format over a raw CDRAM pointer is not enough: with GXM merely initialised
++// and the depth surface and sync object left null, sceImeDialogInit succeeds
++// and the driver then kills the process out of band -- a GPUCRASH dump in
++// which no thread has a crash stop reason.
++//
++// So three things are created here, and still nothing is rendered with the
++// GPU. Skia keeps drawing every pixel on the CPU exactly as before; this is
++// about who *owns* the surface, not who draws into it.
++//
++//   * the framebuffer, mapped so the GPU can see memory we already allocated
++//   * a depth/stencil surface, which the render-target descriptor requires
++//     even though nothing tests depth
++//   * a sync object, which is how the driver knows a frame is safe to touch
++//
++// No context and no render target: this process submits no draw calls, and
++// sceCommonDialogUpdate takes surfaces and a sync object rather than a
++// context. If the driver still objects, a context is the next thing to add.
++SceGxmSyncObject* g_gxm_sync = nullptr;
++SceUID g_depth_uid = -1;
++void* g_depth_base = nullptr;
++
++constexpr unsigned AlignUp(unsigned v, unsigned a) {
++  return (v + a - 1) & ~(a - 1);
++}
++
++bool InitGxmSurfaces() {
++  // The framebuffer is already allocated -- CDRAM, 256 KiB aligned, the block
++  // sceDisplaySetFrameBuf scans out of. It just has to be visible to the GPU.
++  const unsigned fb_size = AlignUp(kPitch * kHeight * 4, 0x40000);
++  int r = sceGxmMapMemory(g_display.base, fb_size, SCE_GXM_MEMORY_ATTRIB_RW);
++  if (r < 0) {
++    VLog("flutter-vita: sceGxmMapMemory(fb) 0x%08X\n", (unsigned)r);
++    return false;
++  }
++
++  // Depth, sized in whole tiles because that is how the hardware addresses it.
++  const unsigned dw = AlignUp(kWidth, SCE_GXM_TILE_SIZEX);
++  const unsigned dh = AlignUp(kHeight, SCE_GXM_TILE_SIZEY);
++  const unsigned depth_size = AlignUp(dw * dh * 4, 0x1000);
++  g_depth_uid = sceKernelAllocMemBlock(
++      "fvita_depth", SCE_KERNEL_MEMBLOCK_TYPE_USER_RW_UNCACHE, depth_size,
++      nullptr);
++  if (g_depth_uid < 0) {
++    VLog("flutter-vita: depth alloc 0x%08X\n", (unsigned)g_depth_uid);
++    return false;
++  }
++  if (sceKernelGetMemBlockBase(g_depth_uid, &g_depth_base) < 0) return false;
++  r = sceGxmMapMemory(g_depth_base, depth_size, SCE_GXM_MEMORY_ATTRIB_RW);
++  if (r < 0) {
++    VLog("flutter-vita: sceGxmMapMemory(depth) 0x%08X\n", (unsigned)r);
++    return false;
++  }
++
++  r = sceGxmSyncObjectCreate(&g_gxm_sync);
++  if (r < 0) {
++    VLog("flutter-vita: sceGxmSyncObjectCreate 0x%08X\n", (unsigned)r);
++    return false;
++  }
++  VLog("flutter-vita: GXM surfaces ready (depth %u KiB)\n", depth_size / 1024);
++  return true;
++}
 +
 +// Hand the shell our framebuffer so it can draw a common dialog into it.
 +//
@@ -495,7 +579,8 @@ index 00000000..03dc14c4
 +  update.renderTarget.width = kWidth;
 +  update.renderTarget.height = kHeight;
 +  update.renderTarget.strideInPixels = kPitch;
-+  update.displaySyncObject = nullptr;
++  update.renderTarget.depthSurfaceData = g_depth_base;
++  update.displaySyncObject = g_gxm_sync;
 +  sceCommonDialogUpdate(&update);
 +}
 +
@@ -542,6 +627,20 @@ index 00000000..03dc14c4
 +    }
 +  }
 +  frames++;
++
++  {
++    const uint64_t now = sceKernelGetSystemTimeWide();
++    if (g_touch_down_us != 0) {
++      VLog("flutter-vita: LATENCY touch->present %u us\n",
++           static_cast<unsigned>(now - g_touch_down_us));
++      g_touch_down_us = 0;
++    }
++    if (g_last_present_us != 0 && frames % 60 == 0) {
++      VLog("flutter-vita: frame interval %u us\n",
++           static_cast<unsigned>(now - g_last_present_us));
++    }
++    g_last_present_us = now;
++  }
 +
 +  if (g_display.base == nullptr) {
 +    return false;
@@ -951,7 +1050,13 @@ index 00000000..03dc14c4
 +  const int gr = sceGxmInitialize(&gxm);
 +  if (gr < 0) {
 +    VLog("flutter-vita: sceGxmInitialize 0x%08X\n", (unsigned)gr);
++    return;
 +  }
++  if (!InitGxmSurfaces()) {
++    VLog("flutter-vita: GXM surfaces unavailable, IME stays off\n");
++    return;
++  }
++  g_ime.gxm_ready = true;
 +  SceAppUtilInitParam init = {};
 +  SceAppUtilBootParam boot = {};
 +  sceAppUtilInit(&init, &boot);
@@ -1009,9 +1114,13 @@ index 00000000..03dc14c4
 +      sceIoClose(fd);
 +    }
 +    if (c != '1') {
-+      VLog("flutter-vita: IME disabled (needs a GXM render target)\n");
++      VLog("flutter-vita: IME disabled (set ux0:data/flutter-vita/ime.on)\n");
 +      return;
 +    }
++  }
++  if (!g_ime.gxm_ready) {
++    VLog("flutter-vita: IME unavailable, GXM surfaces were not created\n");
++    return;
 +  }
 +
 +  Utf8ToUtf16(g_ime.pending, g_ime.initial, SCE_IME_DIALOG_MAX_TEXT_LENGTH);
@@ -1034,8 +1143,13 @@ index 00000000..03dc14c4
 +  param.type = SCE_IME_TYPE_BASIC_LATIN;
 +  param.option = g_ime.multiline ? SCE_IME_OPTION_MULTILINE : 0;
 +  param.dialogMode = SCE_IME_DIALOG_DIALOG_MODE_DEFAULT;
-+  param.textBoxMode = g_ime.obscured ? SCE_IME_DIALOG_TEXTBOX_MODE_PASSWORD
-+                                     : SCE_IME_DIALOG_TEXTBOX_MODE_WITH_CLEAR;
++  // WITH_CLEAR is not valid on a multiline box -- sceImeDialogInit answers
++  // 0x80102004, SCE_IME_DIALOG_ERROR_INVALID_TEXT_BOX_MODE -- which is
++  // reasonable, since a clear button belongs to a one-line field. Multiline
++  // gets the plain box.
++  param.textBoxMode = g_ime.obscured  ? SCE_IME_DIALOG_TEXTBOX_MODE_PASSWORD
++                      : g_ime.multiline ? SCE_IME_DIALOG_TEXTBOX_MODE_DEFAULT
++                                        : SCE_IME_DIALOG_TEXTBOX_MODE_WITH_CLEAR;
 +  param.title = g_ime.title;
 +  param.maxTextLength = SCE_IME_DIALOG_MAX_TEXT_LENGTH;
 +  param.initialText = g_ime.initial;
@@ -1178,13 +1292,18 @@ index 00000000..03dc14c4
 +                g_ime.client_id, escaped, caret, caret);
 +  SendTextInputMethod(json);
 +
-+  // The action the field was configured for is not read back here -- `done` is
-+  // what a modal dialog means, and a multiline field gets `newline` because
-+  // that is what its Enter key does.
++  // `done` for every field, including multiline.
++  //
++  // The tempting alternative is `newline` for a multiline field, mirroring what
++  // its Enter key does on a soft keyboard. It is wrong here: `newline` does not
++  // unfocus, and with a modal editor an unfocused-less field means the next
++  // frame asks for the keyboard again and the dialog reopens the instant it
++  // closes. A dialog that has been dismissed means editing finished, whatever
++  // shape the field is.
 +  std::snprintf(json, sizeof json,
 +                "{\"method\":\"TextInputClient.performAction\",\"args\":"
-+                "[%d,\"TextInputAction.%s\"]}",
-+                g_ime.client_id, g_ime.multiline ? "newline" : "done");
++                "[%d,\"TextInputAction.done\"]}",
++                g_ime.client_id);
 +  SendTextInputMethod(json);
 +  (void)engine;
 +}
@@ -1262,13 +1381,29 @@ index 00000000..03dc14c4
 +  // produces them rather than paced against sceDisplayWaitVblankStart, so this
 +  // loop's period is an input sampling rate and not a frame budget.
 +  for (;;) {
-+    // First, because a platform message that arrived while we were asleep
-+    // should be answered before another frame's worth of input is sampled.
-+    DrainPlatformTasks(engine);
++    // Paced on the panel, not on a timer.
++    //
++    // This used to be sceKernelDelayThread(16 * 1000), which free-runs at
++    // 16.000 ms against a display refreshing every 16.667 ms. The two drift
++    // through each other about forty times a second, and with a single buffer
++    // -- we write into the memory the controller is scanning out of -- that
++    // beat is visible as the IME dialog flickering.
++    //
++    // Waiting for vblank also puts the dialog composite in the right place:
++    // this returns at the *start* of the blanking interval, so the write below
++    // lands before the next scanout begins rather than partway through one.
++    //
++    // It does not make the port double-buffered, which is the real fix for
++    // tearing and is parked with the vsync work in ADR-0006.
++    sceDisplayWaitVblankStart();
++
++    // First after vblank, because it is the one thing here that writes pixels.
 +    PumpIme(engine);
++    // A platform message that arrived while we were blocked should be answered
++    // before another frame's worth of input is sampled.
++    DrainPlatformTasks(engine);
 +    PumpTouch(engine);
 +    DrainInjectedTaps(engine);
-+    sceKernelDelayThread(16 * 1000);
 +  }
 +
 +  return 0;
