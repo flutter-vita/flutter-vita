@@ -33,7 +33,7 @@ before the measurement.
 | Dart `print` | **works** | goes through the engine log, not `dart:io` |
 | Dart stdout / stderr | **partly** | construction works — Vita reports `kPipe`, since `fstat` on fds 0/1/2 fails — but the write itself still fails: `writeFrom failed (OS Error: Bad file number, errno = 9)`, surfacing asynchronously as an unhandled exception rather than at the call. Needs fd 1/2 routed to the log |
 | `Process` | **refused, correctly** | `process_vita.cc` — no fork, no exec, documented as an implementation not a placeholder |
-| Text input / IME | **channel works, dialog blocked** | `flutter/textinput` measured end to end from a real `TextField`; `sceImeDialogInit` succeeds and the GPU driver then kills the process. Needs a minimal GXM pipeline — see Phase 8 |
+| Text input / IME | **works** | Phase 8 — system keyboard over `flutter/textinput`, typed text arriving back in the framework. Single line, multiline and obscured, on hardware |
 | Audio | **not started** | `sceAudioOut` exists |
 | Gamepad, sticks, rear touch | **designed, not built** | [ADR-0010](adr/0010-input-layering-and-psvita-api.md) |
 | **Bluetooth** | **blocked** | see below |
@@ -127,43 +127,64 @@ given `sceIoDopen` semantics, and case sensitivity. The engine needed
   them get away with.
 - `connectivity_plus_vita`, if the survey still justifies it afterwards.
 
-## Phase 8 — Text input — **channel done, dialog blocked on GXM**
+## Phase 8 — Text input — **DONE 2026-08-16**
 
-Any app with a `TextField` is unusable without it, which is why it sits above
-controls.
+The system keyboard opens on a `TextField`, seeded with the field's current
+value, and what you type arrives back in the framework. Single line, multiline
+and obscured, measured on hardware in [apps/gallery](../apps/gallery).
 
-**Done and measured on hardware.** A platform task runner, which nothing had
-identified as necessary and which blocks *every* channel: `platform_message_callback`
-is dispatched through it, so with no runner the engine queued messages nobody
-drained and an `invokeMethod` simply timed out. Then `flutter/textinput` itself
-— five inbound methods, two outbound, JSON both ways, UTF-16 conversion. A real
-`TextField` in [apps/gallery](../apps/gallery), tapped with an injected touch,
-drives the whole protocol and `sceImeDialogInit` returns success.
+Two things had to exist first, and neither was on the plan.
 
-**Blocked.** The dialog never appears, and forcing it crashes the GPU driver:
-`psp2core-*-GPUCRASH.psp2dmp`, in which **no thread has a crash stop reason** —
-the driver rejected the work out of band rather than the CPU faulting.
+**A platform task runner.** `platform_message_callback` is dispatched through
+it, so with no runner the engine queues messages nobody drains and an
+`invokeMethod` simply times out. This blocks *every* channel, not just text
+input, and the embedder had it filed as an ADR-0004 performance concern.
 
-Three attempts, three distinct failures, and the third is the real one:
+**Three pieces of GXM setup, and no GXM rendering.** A common dialog is drawn by
+the shell into the application's own frame, and it will only do that into a
+surface GXM manages: the framebuffer mapped with `sceGxmMapMemory`, a
+depth/stencil surface the descriptor requires even though nothing tests depth,
+and a sync object. Skia still draws every pixel on the CPU — ADR-0003 is
+unchanged. This is about who *owns* the surface, not who draws into it.
+
+Six deploys, six specific error codes, each naming its own cause:
 
 | | |
 |---|---|
-| composite from the main loop | Flutter's next frame memcpy's over the keyboard — that copy covers the whole framebuffer |
-| composite from `PresentSurface` | runs on the **raster thread**; GXM was initialised on the main thread |
-| composite from the main loop, Flutter frame held | driver kills the process |
+| *(silence)* | no platform task runner |
+| `0x80102005` | `INVALID_TITLE` — required, and reads as optional |
+| `0x80020436` | `GXM_IS_UNINITIALIZED` |
+| `SCE_GXM_ERROR_DRIVER` | 256 KiB parameter buffer refused; the stock 16 MiB works |
+| `GPUCRASH`, no faulting thread | no depth surface, no sync object |
+| `0x80102004` | `INVALID_TEXT_BOX_MODE` — `WITH_CLEAR` is invalid on multiline |
 
-`sceGxmInitialize` is not the setup a common dialog needs. Every project that
-composites one — SDL's `vitagxm` backend, vita2d, vitaGL — is a full GXM
-renderer with a context, a colour surface mapped as GXM memory, a depth surface
-and a sync object. We hand it a CDRAM block we `memcpy` into and a struct with
-the right fields filled in, and the fields are not the requirement.
+### The interaction model, and why
 
-**Next:** a minimal GXM pipeline whose only job is to own the framebuffer, so
-the shell has something it will composite into. ADR-0003's software raster stays
-— this is about who owns the surface, not who draws the pixels.
+Modal, and that is the platform rather than a shortcut: `sceIme`'s inline mode
+wants a GXM render loop, and there is no keyboard a Flutter app could draw for
+itself. So every tap opens a full-screen editor pre-filled with the field's
+current value — which is how the PS5 and the Switch do text entry too.
 
-The dialog is off unless `ux0:data/flutter-vita/ime.on` holds `1`, so a
-`TextField` takes no input rather than taking the console down.
+Consequences worth knowing before they are reported as bugs:
+
+- **The caret position is lost.** `sceImeDialog` takes an initial string, not a
+  selection, so tapping mid-text still opens with the caret at the end.
+- **Confirmation depends on the shape of the field.** A single-line dialog has
+  two exits, enter confirms and close cancels. A multiline dialog has one: its
+  enter key inserts a line break, so **close is the confirm**. Treating close as
+  cancel there leaves no way to commit what was typed, and the failure is
+  silent — the dialog closes and the text does not apply.
+- **Every field reports `TextInputAction.done`**, including multiline.
+  `newline` does not unfocus, so the field would re-request the keyboard and the
+  dialog would reopen the instant it closed.
+- **A cancelled dialog restores the previous text** rather than emptying the
+  field.
+
+### Still open
+
+`flutter/keyboard` arrives in the **binary standard codec**, not JSON, so
+ADR-0010's warning about hand-encoding `StandardMethodCodec` in C is deferred
+rather than cancelled — the gamepad work will need it.
 
 ## Phase 9 — Audio
 

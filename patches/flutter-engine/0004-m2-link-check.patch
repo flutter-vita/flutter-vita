@@ -70,10 +70,10 @@ index 61abe64a..b92ae80c 100644
  
 diff --git a/engine/src/flutter/shell/platform/embedder/vita_embedder.cc b/engine/src/flutter/shell/platform/embedder/vita_embedder.cc
 new file mode 100644
-index 00000000..50dab527
+index 00000000..4e334bce
 --- /dev/null
 +++ b/engine/src/flutter/shell/platform/embedder/vita_embedder.cc
-@@ -0,0 +1,1334 @@
+@@ -0,0 +1,1353 @@
 +// Copyright (c) 2026, the Flutter Authors. All rights reserved.
 +// Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
@@ -1259,7 +1259,25 @@ index 00000000..50dab527
 +
 +  SceImeDialogResult result = {};
 +  sceImeDialogGetResult(&result);
-+  const bool confirmed = result.button == SCE_IME_DIALOG_BUTTON_ENTER;
++  // What counts as "the user finished" depends on the shape of the field, and
++  // getting this wrong is invisible: the dialog closes and the text silently
++  // does not apply.
++  //
++  // A single-line dialog has two exits -- the enter key confirms, the close
++  // button cancels -- so ENTER is the only confirmation.
++  //
++  // A multiline dialog has one. Its enter key inserts a line break, which is
++  // the whole point of multiline and not something to work around, so **close
++  // is the confirm**. Treating CLOSE as cancel there means there is no way at
++  // all to commit what was typed.
++  //
++  // ABORTED is ours: it is what sceImeDialogAbort produces when the framework
++  // sends TextInput.hide, and it must never apply anything.
++  const bool aborted = result.result == SCE_COMMON_DIALOG_RESULT_ABORTED;
++  const bool confirmed =
++      !aborted && (result.button == SCE_IME_DIALOG_BUTTON_ENTER ||
++                   (g_ime.multiline &&
++                    result.button == SCE_IME_DIALOG_BUTTON_CLOSE));
 +
 +  char text[1024] = {0};
 +  if (confirmed) {
@@ -1273,8 +1291,9 @@ index 00000000..50dab527
 +
 +  sceImeDialogTerm();
 +  g_ime.open = false;
-+  VLog("flutter-vita: IME %s, %u chars\n", confirmed ? "confirmed" : "cancelled",
-+       (unsigned)std::strlen(text));
++  VLog("flutter-vita: IME %s (button %d result %d), %u chars\n",
++       confirmed ? "confirmed" : "cancelled", (int)result.button,
++       (int)result.result, (unsigned)std::strlen(text));
 +
 +  if (g_ime.client_id < 0) return;
 +

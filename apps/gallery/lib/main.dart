@@ -43,6 +43,20 @@ class _GalleryState extends State<Gallery> {
   var _taps = 0;
 
   @override
+  void initState() {
+    super.initState();
+    // The readback line below is the point of this column -- it shows what the
+    // *controllers* hold, which is what proves the IME result reached the
+    // framework rather than being painted into the field by the dialog. A
+    // TextField repaints itself when its controller changes; the summary is a
+    // sibling and does not, so without these it reported the value from before
+    // the edit and looked like the round trip had failed.
+    for (final c in [_single, _multi, _obscured]) {
+      c.addListener(() => setState(() {}));
+    }
+  }
+
+  @override
   void dispose() {
     _single.dispose();
     _multi.dispose();
