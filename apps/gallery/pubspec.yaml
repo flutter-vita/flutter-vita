@@ -1,0 +1,22 @@
+name: gallery
+description: What this port looks like. Widgets on a panel, judged by eye.
+publish_to: none
+version: 0.1.0
+
+environment:
+  sdk: ^3.5.0
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+# Its own slot, so both apps can sit on the LiveArea at once. The loader takes
+# a title id on install and launch now; a new slot still needs one VitaShell
+# install of the .vpk to register the title with the shell, because
+# ScePromoterUtil will not load for us.
+vita:
+  title_id: FVTA00005
+  name: Vita Gallery
+
+flutter:
+  uses-material-design: true

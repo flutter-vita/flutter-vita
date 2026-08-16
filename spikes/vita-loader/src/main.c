@@ -202,6 +202,28 @@ static int cmd_stage(int sock, int size) {
   return 0;
 }
 
+// Which slot install/launch act on.
+//
+// One title id was hard-coded here because there was one app. There are now
+// several -- a conformance suite that self-reports pass/fail and a gallery
+// judged by eye answer different questions and want different bubbles -- and
+// each needs its own slot. The bare `install` and `launch` still mean
+// FVTA00002, so every existing script and habit keeps working.
+//
+// A slot must already be **registered** with the shell before either command
+// can reach it: ScePromoterUtil will not load for us (MODULEMGR_NO_LIB), so a
+// new title id needs one VitaShell install of its .vpk. After that this loop
+// owns it.
+static char g_target[16] = TARGET_TITLEID;
+
+static void set_target(const char* arg) {
+  if (arg == NULL || arg[0] == '\0') {
+    snprintf(g_target, sizeof g_target, "%s", TARGET_TITLEID);
+    return;
+  }
+  snprintf(g_target, sizeof g_target, "%s", arg);
+}
+
 // Copy staged -> target. Via a .tmp beside the target so a failure part-way
 // leaves the installed eboot.bin intact; the only alternative is reinstalling
 // the vpk by hand.
@@ -211,7 +233,10 @@ static int cmd_install(int sock) {
     send_str(sock, "ERR nothing staged\n");
     return -1;
   }
-  const char* tmp = TARGET_EBOOT ".tmp";
+  char target[64], tmpbuf[72];
+  snprintf(target, sizeof target, "ux0:app/%s/eboot.bin", g_target);
+  snprintf(tmpbuf, sizeof tmpbuf, "%s.tmp", target);
+  const char* tmp = tmpbuf;
   sceIoRemove(tmp);
   SceUID out = sceIoOpen(tmp, SCE_O_WRONLY | SCE_O_CREAT | SCE_O_TRUNC, 0777);
   if (out < 0) {
@@ -235,26 +260,32 @@ static int cmd_install(int sock) {
   sceIoClose(in);
   sceIoClose(out);
 
-  sceIoRemove(TARGET_EBOOT);  // sceIoRename will not overwrite
-  const int rr = sceIoRename(tmp, TARGET_EBOOT);
+  sceIoRemove(target);  // sceIoRename will not overwrite
+  const int rr = sceIoRename(tmp, target);
   if (rr < 0) {
     lg("  install: rename failed 0x%08X\n", (unsigned)rr);
     send_str(sock, "ERR rename\n");
     return -1;
   }
-  lg("  installed %d bytes into %s\n", total, TARGET_EBOOT);
+  lg("  installed %d bytes into %s\n", total, target);
   send_str(sock, "OK\n");
   return 0;
 }
 
 static void cmd_launch(int sock) {
-  send_str(sock, "OK launching " TARGET_TITLEID "\n");
+  char msg[64];
+  snprintf(msg, sizeof msg, "OK launching %s\n", g_target);
+  send_str(sock, msg);
   sceNetSocketClose(sock);
-  lg("  launching %s\n", TARGET_TITLEID);
+  lg("  launching %s\n", g_target);
   sceKernelDelayThread(200 * 1000);  // let the reply drain
   // Launching another title replaces us, which is exactly what we want: the
   // target's directory must be unlocked, and it cannot be while we hold it.
-  sceAppMgrLaunchAppByUri(0xFFFFF, "psgm:play?titleid=" TARGET_TITLEID);
+  {
+    char uri[64];
+    snprintf(uri, sizeof uri, "psgm:play?titleid=%s", g_target);
+    sceAppMgrLaunchAppByUri(0xFFFFF, uri);
+  }
   // Exit at once rather than lingering. The "close the current application?"
   // prompt appears only because the outgoing app is still alive; launchers that
   // switch silently exit straight after issuing the launch.
@@ -543,12 +574,15 @@ static int serve(int sock) {
         return 0;
       }
       if (cmd_stage(sock, size) < 0) return 0;  // payload still in flight
-    } else if (strcmp(line, "install") == 0) {
+    } else if (strncmp(line, "install", 7) == 0) {
+      set_target(line[7] == ' ' ? line + 8 : NULL);
       cmd_install(sock);
-    } else if (strcmp(line, "launch") == 0) {
+    } else if (strncmp(line, "launch", 6) == 0) {
+      set_target(line[6] == ' ' ? line + 7 : NULL);
       cmd_launch(sock);
       return 1;
-    } else if (strcmp(line, "deploy") == 0) {
+    } else if (strncmp(line, "deploy", 6) == 0) {
+      set_target(line[6] == ' ' ? line + 7 : NULL);
       if (cmd_install(sock) == 0) {
         cmd_launch(sock);
         return 1;
