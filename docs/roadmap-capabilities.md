@@ -12,7 +12,7 @@ nothing else is waiting on it.
 
 **Measured, not assumed** — every row below was run on hardware. The audit was
 [2026-08-14](phase-5-capability-audit.md); the current state is the conformance
-app's own verdict, **43 probes, 43 pass, 0 fail**, in a single run on
+app's own verdict, **45 probes, 45 pass, 0 fail**, in a single run on
 2026-08-15.
 
 That was the point of doing the audit first. `runtime/bin` was ported in Phase 2
@@ -33,7 +33,7 @@ before the measurement.
 | Dart `print` | **works** | goes through the engine log, not `dart:io` |
 | Dart stdout / stderr | **partly** | construction works — Vita reports `kPipe`, since `fstat` on fds 0/1/2 fails — but the write itself still fails: `writeFrom failed (OS Error: Bad file number, errno = 9)`, surfacing asynchronously as an unhandled exception rather than at the call. Needs fd 1/2 routed to the log |
 | `Process` | **refused, correctly** | `process_vita.cc` — no fork, no exec, documented as an implementation not a placeholder |
-| Text input / IME | **not started** | `sceIme` exists |
+| Text input / IME | **channel works, dialog blocked** | `flutter/textinput` measured end to end from a real `TextField`; `sceImeDialogInit` succeeds and the GPU driver then kills the process. Needs a minimal GXM pipeline — see Phase 8 |
 | Audio | **not started** | `sceAudioOut` exists |
 | Gamepad, sticks, rear touch | **designed, not built** | [ADR-0010](adr/0010-input-layering-and-psvita-api.md) |
 | **Bluetooth** | **blocked** | see below |
@@ -127,15 +127,43 @@ given `sceIoDopen` semantics, and case sensitivity. The engine needed
   them get away with.
 - `connectivity_plus_vita`, if the survey still justifies it afterwards.
 
-## Phase 8 — Text input
+## Phase 8 — Text input — **channel done, dialog blocked on GXM**
 
-Not on the original list, and it belongs above controls: **any app with a
-`TextField` is unusable without it**, and that is most apps that do anything.
+Any app with a `TextField` is unusable without it, which is why it sits above
+controls.
 
-`sceIme` provides the system IME dialog. The embedder implements
-`flutter/textinput`, shows the dialog when a field gains focus, and feeds the
-result back. The Vita has no on-screen keyboard of its own that a Flutter app
-could use instead.
+**Done and measured on hardware.** A platform task runner, which nothing had
+identified as necessary and which blocks *every* channel: `platform_message_callback`
+is dispatched through it, so with no runner the engine queued messages nobody
+drained and an `invokeMethod` simply timed out. Then `flutter/textinput` itself
+— five inbound methods, two outbound, JSON both ways, UTF-16 conversion. A real
+`TextField` in [apps/gallery](../apps/gallery), tapped with an injected touch,
+drives the whole protocol and `sceImeDialogInit` returns success.
+
+**Blocked.** The dialog never appears, and forcing it crashes the GPU driver:
+`psp2core-*-GPUCRASH.psp2dmp`, in which **no thread has a crash stop reason** —
+the driver rejected the work out of band rather than the CPU faulting.
+
+Three attempts, three distinct failures, and the third is the real one:
+
+| | |
+|---|---|
+| composite from the main loop | Flutter's next frame memcpy's over the keyboard — that copy covers the whole framebuffer |
+| composite from `PresentSurface` | runs on the **raster thread**; GXM was initialised on the main thread |
+| composite from the main loop, Flutter frame held | driver kills the process |
+
+`sceGxmInitialize` is not the setup a common dialog needs. Every project that
+composites one — SDL's `vitagxm` backend, vita2d, vitaGL — is a full GXM
+renderer with a context, a colour surface mapped as GXM memory, a depth surface
+and a sync object. We hand it a CDRAM block we `memcpy` into and a struct with
+the right fields filled in, and the fields are not the requirement.
+
+**Next:** a minimal GXM pipeline whose only job is to own the framebuffer, so
+the shell has something it will composite into. ADR-0003's software raster stays
+— this is about who owns the surface, not who draws the pixels.
+
+The dialog is off unless `ux0:data/flutter-vita/ime.on` holds `1`, so a
+`TextField` takes no input rather than taking the console down.
 
 ## Phase 9 — Audio
 

@@ -70,10 +70,10 @@ index 61abe64a..b92ae80c 100644
  
 diff --git a/engine/src/flutter/shell/platform/embedder/vita_embedder.cc b/engine/src/flutter/shell/platform/embedder/vita_embedder.cc
 new file mode 100644
-index 00000000..817de7b0
+index 00000000..03dc14c4
 --- /dev/null
 +++ b/engine/src/flutter/shell/platform/embedder/vita_embedder.cc
-@@ -0,0 +1,1125 @@
+@@ -0,0 +1,1199 @@
 +// Copyright (c) 2026, the Flutter Authors. All rights reserved.
 +// Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
@@ -466,6 +466,39 @@ index 00000000..817de7b0
 +  return sceDisplaySetFrameBuf(&fb, SCE_DISPLAY_SETBUF_NEXTFRAME) >= 0;
 +}
 +
++struct ImeState {
++  bool open = false;         // the dialog is up and must be pumped
++  int client_id = -1;        // from TextInput.setClient
++  bool multiline = false;    // inputType TextInputType.multiline
++  bool obscured = false;     // obscureText -- a password field
++  char pending[1024] = {0};  // editing state seeded before show
++  SceWChar16 input[SCE_IME_DIALOG_MAX_TEXT_LENGTH + 1] = {0};
++  SceWChar16 initial[SCE_IME_DIALOG_MAX_TEXT_LENGTH + 1] = {0};
++  SceWChar16* title = nullptr;
++};
++ImeState g_ime;
++
++// Hand the shell our framebuffer so it can draw a common dialog into it.
++//
++// This is where software rendering (ADR-0003) meets an API written for GXM.
++// The struct wants a colour surface, but its fields are only a pointer, a
++// format and a stride, and the CDRAM block behind sceDisplaySetFrameBuf is
++// exactly describable that way -- no GXM rendering happens here. GXM does have
++// to be *initialised* though, which is a separate discovery recorded in
++// InitIme.
++void UpdateCommonDialog() {
++  if (!g_ime.open) return;
++  SceCommonDialogUpdateParam update = {};
++  update.renderTarget.colorSurfaceData = g_display.base;
++  update.renderTarget.surfaceType = SCE_GXM_COLOR_SURFACE_LINEAR;
++  update.renderTarget.colorFormat = SCE_GXM_COLOR_FORMAT_A8B8G8R8;
++  update.renderTarget.width = kWidth;
++  update.renderTarget.height = kHeight;
++  update.renderTarget.strideInPixels = kPitch;
++  update.displaySyncObject = nullptr;
++  sceCommonDialogUpdate(&update);
++}
++
 +// |SoftwareSurfacePresentCallback|
 +bool PresentSurface(void* /* user_data */,
 +                    const void* allocation,
@@ -514,6 +547,23 @@ index 00000000..817de7b0
 +    return false;
 +  }
 +
++  // Hold the frame while a common dialog is up, and do not copy it.
++  //
++  // This copy covers the whole framebuffer, so a Flutter frame lands straight
++  // on top of the keyboard the shell drew there -- which is why the IME opened
++  // successfully and the panel showed nothing. Compositing after the copy was
++  // the obvious fix and it crashed the GPU driver: PresentSurface runs on the
++  // engine's **raster thread**, sceGxmInitialize ran on the main thread, and
++  // sceCommonDialogUpdate has to be called from the thread that owns the GXM
++  // context.
++  //
++  // So the main loop owns the framebuffer while a dialog is open, compositing
++  // over whatever frame was last copied. The app content freezes underneath,
++  // which is what a modal keyboard means anyway.
++  if (g_ime.open) {
++    return true;
++  }
++
 +  // Single-buffered on purpose, for now. Double buffering is the right answer
 +  // and it costs another 2 MiB of CDRAM; that trade belongs with the vsync work
 +  // rather than here, because without pacing a second buffer buys nothing but
@@ -526,6 +576,7 @@ index 00000000..817de7b0
 +  for (size_t y = 0; y < height && y < static_cast<size_t>(kHeight); y++) {
 +    std::memcpy(dst + y * kPitch * 4, src + y * row_bytes, copy_bytes);
 +  }
++
 +  return true;
 +}
 +
@@ -824,17 +875,6 @@ index 00000000..817de7b0
 +  out[n] = '\0';
 +}
 +
-+struct ImeState {
-+  bool open = false;         // the dialog is up and must be pumped
-+  int client_id = -1;        // from TextInput.setClient
-+  bool multiline = false;    // inputType TextInputType.multiline
-+  bool obscured = false;     // obscureText -- a password field
-+  char pending[1024] = {0};  // editing state seeded before show
-+  SceWChar16 input[SCE_IME_DIALOG_MAX_TEXT_LENGTH + 1] = {0};
-+  SceWChar16 initial[SCE_IME_DIALOG_MAX_TEXT_LENGTH + 1] = {0};
-+  SceWChar16* title = nullptr;
-+};
-+ImeState g_ime;
 +
 +// Platform channels arrive here. Phase 8, first step: see them.
 +//
@@ -893,18 +933,21 @@ index 00000000..817de7b0
 +  // process that has no graphics context -- ADR-0003's software raster is fine
 +  // as the *source* of pixels, but the compositor still wants GXM up.
 +  //
-+  // The parameter buffer is the documented minimum, 256 KiB, not the usual
-+  // 16 MiB default. That buffer holds queued vertex and fragment job data and
-+  // this process submits no draw calls at all; paying 16 MiB out of roughly
-+  // 85 MiB free for a buffer nothing writes to would be the expensive kind of
-+  // cargo cult. If the compositor ever needs more it will say so, loudly, in
-+  // the same place this error appeared.
++  // The parameter buffer is the stock 16 MiB.
++  //
++  // The header says "must be 0x40000 or higher", and the reasoning that this
++  // process submits no draw calls so the minimum must do was wrong: 0x40000
++  // returns 0x805B0017, SCE_GXM_ERROR_DRIVER. The driver has its own opinion
++  // and does not explain it. SCE_GXM_DEFAULT_PARAMETER_BUFFER_SIZE is what
++  // every other application on this console passes, and 16 MiB out of roughly
++  // 87 MiB free is affordable; guessing again would cost another deploy to
++  // learn the same thing.
 +  SceGxmInitializeParams gxm = {};
 +  gxm.flags = 0;
 +  gxm.displayQueueMaxPendingCount = 2;
 +  gxm.displayQueueCallback = nullptr;
 +  gxm.displayQueueCallbackDataSize = 0;
-+  gxm.parameterBufferSize = 0x40000;
++  gxm.parameterBufferSize = SCE_GXM_DEFAULT_PARAMETER_BUFFER_SIZE;
 +  const int gr = sceGxmInitialize(&gxm);
 +  if (gr < 0) {
 +    VLog("flutter-vita: sceGxmInitialize 0x%08X\n", (unsigned)gr);
@@ -934,6 +977,42 @@ index 00000000..817de7b0
 +// nothing here can overrun regardless of what the framework sends.
 +void OpenImeDialog() {
 +  if (g_ime.open) return;
++
++  // Off by default, because it takes the whole console down.
++  //
++  // sceImeDialogInit succeeds and then the GPU driver kills the process --
++  // psp2core-*-GPUCRASH.psp2dmp, in which **no thread has a crash stop
++  // reason**, so there is no faulting instruction and nothing to symbolicate.
++  // The driver rejected the work out of band rather than the CPU faulting.
++  //
++  // The cause is that sceGxmInitialize is not the setup a common dialog needs.
++  // Every project that composites one -- SDL's vitagxm backend, vita2d,
++  // vitaGL -- is a full GXM renderer with a context, a colour surface mapped
++  // as GXM memory, a depth surface and a sync object. We hand it a CDRAM block
++  // we memcpy into and a struct with the right fields filled in, and the
++  // fields are not the requirement.
++  //
++  // So text input needs a minimal GXM pipeline whose only job is to own the
++  // framebuffer. That is the real remaining work in Phase 8; everything above
++  // this line -- the channel, the JSON, the five methods, the two replies -- is
++  // measured and works.
++  //
++  // Flip it on for that work with a `1` in the file below; anything else, or
++  // its absence, leaves TextInput.show as a no-op and a TextField simply takes
++  // no input.
++  {
++    const SceUID fd =
++        sceIoOpen("ux0:data/flutter-vita/ime.on", SCE_O_RDONLY, 0777);
++    char c = '0';
++    if (fd >= 0) {
++      sceIoRead(fd, &c, 1);
++      sceIoClose(fd);
++    }
++    if (c != '1') {
++      VLog("flutter-vita: IME disabled (needs a GXM render target)\n");
++      return;
++    }
++  }
 +
 +  Utf8ToUtf16(g_ime.pending, g_ime.initial, SCE_IME_DIALOG_MAX_TEXT_LENGTH);
 +  g_ime.input[0] = 0;
@@ -1057,15 +1136,10 @@ index 00000000..817de7b0
 +void PumpIme(FlutterEngine engine) {
 +  if (!g_ime.open) return;
 +
-+  SceCommonDialogUpdateParam update = {};
-+  update.renderTarget.colorSurfaceData = g_display.base;
-+  update.renderTarget.surfaceType = SCE_GXM_COLOR_SURFACE_LINEAR;
-+  update.renderTarget.colorFormat = SCE_GXM_COLOR_FORMAT_A8B8G8R8;
-+  update.renderTarget.width = kWidth;
-+  update.renderTarget.height = kHeight;
-+  update.renderTarget.strideInPixels = kPitch;
-+  update.displaySyncObject = nullptr;
-+  sceCommonDialogUpdate(&update);
++  // Composited here, on the main thread, which is the thread that initialised
++  // GXM. See the note in PresentSurface for what doing this on the raster
++  // thread costs.
++  UpdateCommonDialog();
 +
 +  if (sceImeDialogGetStatus() != SCE_COMMON_DIALOG_STATUS_FINISHED) return;
 +
