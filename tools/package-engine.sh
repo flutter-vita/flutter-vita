@@ -45,13 +45,22 @@ export PATH="$VITASDK/bin:$PATH"
 # `ninja -n` answers "is there work left" for the whole graph in about a second,
 # which is the cheapest possible insurance against both.
 if [ "${SKIP_FRESHNESS:-0}" != "1" ]; then
-  PENDING="$( (cd "$ENGINE_SRC" && ninja -C out/vita_release -n 2>/dev/null | grep -c '^\[') || echo 0)"
+  # The *shipped* target, not `all`. GN's default target includes the JIT core
+  # snapshots (vm_isolate_snapshot.bin and friends), which this port does not
+  # build and cannot -- ADR-0001 puts JIT permanently out of scope, and that
+  # step fails with exitCode 254. Checking `all` would therefore report work
+  # pending forever and make this guard useless noise.
+  #
+  # This phony target is the embedder plus everything it links, which is
+  # precisely the set of objects the archive below scrapes up.
+  SHIP_TARGET="phony/flutter/shell/platform/embedder/vita_embedder"
+  PENDING="$( (cd "$ENGINE_SRC" && ninja -C out/vita_release -n "$SHIP_TARGET" 2>/dev/null | grep -c '^\[') || echo 0)"
   if [ "${PENDING:-0}" -gt 0 ]; then
     echo "!! $PENDING build steps are still pending in $ENGINE_OUT" >&2
     echo "   Packaging now would archive stale objects, and stale objects link" >&2
     echo "   and run -- you would be measuring the previous build." >&2
     echo >&2
-    echo "   Run:  PATH=\"\$HOME/depot_tools:\$PATH\" ninja -C $ENGINE_OUT" >&2
+    echo "   Run:  PATH=\"\$HOME/depot_tools:\$PATH\" ninja -C $ENGINE_OUT $SHIP_TARGET" >&2
     echo "   (depot_tools is needed: the build shells out to vpython3.)" >&2
     echo >&2
     echo "   SKIP_FRESHNESS=1 to package anyway." >&2

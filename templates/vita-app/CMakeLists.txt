@@ -62,6 +62,7 @@ add_executable(${PROJECT_NAME}
   ${SNAPSHOT_S}
   ${ENGINE_DIR}/src/devserver.c
   ${CMAKE_CURRENT_SOURCE_DIR}/bailout.c
+  ${CMAKE_CURRENT_SOURCE_DIR}/heap.c
 )
 target_include_directories(${PROJECT_NAME} PRIVATE ${ENGINE_DIR}/src)
 
