@@ -70,10 +70,10 @@ index 61abe64a..b92ae80c 100644
  
 diff --git a/engine/src/flutter/shell/platform/embedder/vita_embedder.cc b/engine/src/flutter/shell/platform/embedder/vita_embedder.cc
 new file mode 100644
-index 00000000..bcc27296
+index 00000000..91def392
 --- /dev/null
 +++ b/engine/src/flutter/shell/platform/embedder/vita_embedder.cc
-@@ -0,0 +1,1386 @@
+@@ -0,0 +1,1441 @@
 +// Copyright (c) 2026, the Flutter Authors. All rights reserved.
 +// Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
@@ -1198,6 +1198,61 @@ index 00000000..bcc27296
 +       message->channel != nullptr ? message->channel : "(null)",
 +       static_cast<unsigned>(message->message_size), preview,
 +       message->message_size > n ? "..." : "");
++
++  if (message->channel != nullptr &&
++      std::strcmp(message->channel, "vita/browser") == 0) {
++    // Opening a link means leaving.
++    //
++    // There is no in-app browser to be had: a webview needs a browser engine
++    // rendering into our frame, and this port has neither one nor room for
++    // one. What the console does have is its own browser, and
++    // sceAppUtilLaunchWebBrowser hands it a URL and switches to it -- the app
++    // stays resident and is returned to when the browser closes.
++    //
++    // So a tapped link behaves the way it does on a console rather than the
++    // way it does on a phone, and that is the platform being honest rather
++    // than a shortfall. url_launcher_vita is the Dart half; anything wanting
++    // an *embedded* browser is out of reach and should be told so plainly.
++    const char* body = reinterpret_cast<const char*>(message->message);
++    const size_t len = message->message_size;
++    const char* m = JsonFindValue(body, len, "method");
++    char method[32] = {0};
++    if (m != nullptr) JsonUnescape(m, body + len, method, sizeof method);
++
++    bool ok = false;
++    if (std::strcmp(method, "launch") == 0) {
++      const char* u = JsonFindValue(body, len, "url");
++      char url[1024] = {0};
++      if (u != nullptr) JsonUnescape(u, body + len, url, sizeof url);
++      if (url[0] != '\0') {
++        SceAppUtilWebBrowserParam param;
++        std::memset(&param, 0, sizeof param);
++        param.str = url;
++        param.strlen = static_cast<SceSize>(std::strlen(url));
++        // 0 is "open this URL". The header names no constants for the field,
++        // and the other modes are for local content we have no use for.
++        param.launchMode = 0;
++        const int r = sceAppUtilLaunchWebBrowser(&param);
++        ok = r >= 0;
++        std::printf("flutter-vita: browser launch %s -> 0x%08X\n", url,
++                    static_cast<unsigned>(r));
++      }
++    } else if (std::strcmp(method, "canLaunch") == 0) {
++      // The browser is part of the system software, so it is always there.
++      // Answering honestly here matters: url_launcher's own API asks first and
++      // apps hide UI on a false.
++      ok = true;
++    }
++
++    if (message->response_handle != nullptr && g_engine != nullptr) {
++      // JSONMethodCodec: a success envelope is a one-element list.
++      const char* reply = ok ? "[true]" : "[false]";
++      FlutterEngineSendPlatformMessageResponse(
++          g_engine, message->response_handle,
++          reinterpret_cast<const uint8_t*>(reply), std::strlen(reply));
++    }
++    return;
++  }
 +
 +  if (message->channel != nullptr &&
 +      std::strcmp(message->channel, "flutter/textinput") == 0) {

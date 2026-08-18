@@ -22,6 +22,27 @@ export PATH="$VITASDK/bin:$PATH"
 
 Add the two `export` lines to your shell profile.
 
+**And a third, if you rebuild the engine:**
+
+```bash
+export PATH="$HOME/depot_tools:$PATH"
+```
+
+The engine's GN build shells out to `vpython3` for several generated headers —
+the Impeller flatbuffers and Dart's `version.cc`. Without it on `PATH` those
+actions fail with `code=127`, ninja stops, and **any object downstream of them
+is silently left at its previous contents**. That includes `vita_embedder.o`.
+
+This is nastier than a normal build failure, because the stale object still
+links, still packages, and still deploys — so you get a working app that does
+not contain your change, and the next thing you measure is the old code. It has
+cost this project twice. If a change to the embedder appears to have no effect,
+check the object's timestamp before you doubt the change:
+
+```bash
+stat -f%Sm out/vita_release/obj/flutter/shell/platform/embedder/vita_embedder.vita_embedder.o
+```
+
 Three things worth knowing, learned the hard way:
 
 - **Install to `$HOME/vitasdk`, not the default `/usr/local/vitasdk`.**
