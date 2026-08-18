@@ -6,5 +6,46 @@
 #
 # Format: owner/repo <commit-sha> [# note]
 #
-# Empty until the capability audit says which apps can get far enough to fail
-# interestingly. tools/plugin-survey/apps.txt is the candidate pool.
+# Selected 2026-08-18. Every app is public, so anyone can reproduce a result
+# here from this file alone. See ADR-0012 for how the corpus is run and what it
+# is allowed to conclude; ADR-0013 for why FFI decides admission.
+#
+# Each app is here for a different axis. Overlap is waste: two apps that fail
+# the same way cost two deploys and teach one lesson.
+
+# --- The control. Plugin-free, one line of main(), pure framework. It is the
+# --- app that MUST work; if it does not, the harness is broken and no other
+# --- result in this file means anything.
+flutter/samples                     0c5ca75d2985ddeca92417bb1235f361d8643e7b  # material_3_demo
+    entry lib/main.dart  subdir material_3_demo
+
+# --- Animation and assets. A finished showcase app, deliberately heavy on
+# --- imagery -- the axis is whether the bundle even fits, before anything runs.
+gskinnerTeam/flutter-wonderous-app  123f4749f95d89ad6bcc8f11f0cd475032185632
+    entry lib/main.dart
+
+# --- Local storage, long lists, and dependency breadth: ~60 packages, of which
+# --- roughly twenty are native. Storage is hive_ce, which is pure Dart, so the
+# --- breadth is channel-shaped rather than FFI-shaped.
+resashkin/keklist_flutter           72a5c91115245394cdfb528ca8dcd196190130a4
+    entry lib/main.dart
+
+# --- Networking. The one app with an await before runApp -- but it is wrapped
+# --- in a try/catch that renders an error screen, so a failure is visible
+# --- rather than black.
+localsend/localsend                 c53923df0190600d39c0cf0563abf00c4e8d67f8
+    entry app/lib/main.dart
+
+# --- Remote content, code generation, and deferred FFI. Chosen over spotube
+# --- (see ADR-0013): its sqlite3 is opened lazily, so FFI fails *after* first
+# --- frame instead of preventing one, and both of its pre-frame blockers are
+# --- plugins we already implement.
+TesteurManiak/flutter_manga_reader  ee55f6dbb5db5e8468ddd5845a75dd2d5cfb2e28
+    entry lib/main_prod.dart
+
+# --- Considered and rejected -----------------------------------------------
+#
+# KRTirtho/spotube -- twelve awaits before runApp, several of them dart:ffi
+# (media_kit/libmpv, metadata_god, drift). Rejected under ADR-0013: libmpv is a
+# complete media player with ffmpeg inside it, so the work is a cross-compile
+# project rather than a port finding. Nothing about it is a Flutter problem.

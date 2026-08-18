@@ -228,9 +228,15 @@ costs two taps; nothing user-mode can catch a data abort.
 
 ## Ongoing, not phases
 
-- **App corpus** — real apps from GitHub, checkouts gitignored, manifest
-  committed. Becomes useful the moment Phase 6 lands, because that is when apps
-  start getting far enough to fail interestingly.
+- **App corpus** — **active as of 2026-08-18.** Five real apps, one per axis,
+  pinned in [apps/corpus/manifest.txt](../apps/corpus/manifest.txt). Phase 6 and
+  Phase 8 both landing is what made it worth doing: apps now get far enough to
+  fail interestingly. Run as boot-and-observe against one shared title id, with
+  a plugin-free control that must pass; the output is a patch series and a
+  ranked list of engine work items annotated with how many apps each unblocks.
+  That ranking is what should reorder the phases below.
+  [ADR-0012](adr/0012-app-corpus-as-measurement-instrument.md),
+  [ADR-0013](adr/0013-ffi-needs-static-linking.md).
 - **Open-sourcing** — deferred, with
   [a cost recorded in the ADR index](adr/README.md).
 - **Hardware-free verification** — still nothing. Every gate is "deploy and

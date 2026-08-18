@@ -42,10 +42,11 @@ X-Wei/flutter_catalog
 gskinnerTeam/flutter-wonderous-app
 KRTirtho/spotube
 localsend/localsend#app
-JideGuru/FlutterEbookApp#mobile
+JideGuru/FlutterEbookApp        # no mobile/ subdir; the app is at the repo root
 deckerst/aves
 openfoodfacts/smooth-app#packages/smooth_app
 AppFlowy-IO/AppFlowy#frontend/appflowy_flutter
 immich-app/immich#mobile
 ente-io/ente#mobile/apps/photos
 brianegan/flutter_architecture_samples#example/vanilla
+TesteurManiak/flutter_manga_reader

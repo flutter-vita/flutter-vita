@@ -21,6 +21,8 @@ ADR-0001 through ADR-0004 are back-filled from §1 of `Flutter Vita Plan.md`
 | [0009](0009-plugins-via-non-endorsed-vita-implementations.md) | `pubspec.yaml` as opt-in surface: build config + three non-endorsed plugins | Accepted — 19% → 50% of surveyed apps |
 | [0010](0010-input-layering-and-psvita-api.md) | Input in two layers; only the second is a package | Accepted — D-pad navigation needs no dependency |
 | [0011](0011-crash-recovery-without-taihen.md) | A crash returns to the loader by exiting cleanly | Accepted — no taiHEN, and a clean exit shows no dialog |
+| [0012](0012-app-corpus-as-measurement-instrument.md) | The app corpus is an instrument, and its output is a diff | Accepted — five axes, one control, patch size is the score |
+| [0013](0013-ffi-needs-static-linking.md) | `dart:ffi` needs static linking, and that is the admission test | Accepted — decided one app in and one app out |
 
 ## Open questions not yet decided
 

@@ -8,6 +8,7 @@
 #   --engine DIR      unpacked flutter-engine-vita-<version>/
 #   --flutter DIR     Flutter SDK, default $HOME/fvm/versions/<pinned>
 #   --out DIR         default <app-dir>/build/vita
+#   --entry-point F   default lib/main.dart; real apps use flavors
 #
 # The app configures itself in pubspec.yaml, which is the opt-in surface:
 #
@@ -36,6 +37,10 @@ APP_NAME=""
 ENGINE_DIR="$ROOT/out/artifacts/flutter-engine-vita-$FLUTTER_PIN"
 FLUTTER_DIR="$HOME/fvm/versions/$FLUTTER_PIN"
 OUT_DIR=""
+# Flavors are the norm outside sample apps: the entry point is lib/main_prod.dart
+# or lib/main_dev.dart and lib/main.dart does not exist. Hard-coding it made the
+# corpus unbuildable for an app whose only sin was shipping three build flavors.
+ENTRY_POINT="lib/main.dart"
 
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -44,15 +49,17 @@ while [ $# -gt 0 ]; do
     --engine)   ENGINE_DIR="$2"; shift 2 ;;
     --flutter)  FLUTTER_DIR="$2"; shift 2 ;;
     --out)      OUT_DIR="$2"; shift 2 ;;
-    -h|--help)  sed -n '2,16p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    --entry-point) ENTRY_POINT="$2"; shift 2 ;;
+    -h|--help)  sed -n '2,17p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
     -*)         echo "unknown option: $1" >&2; exit 2 ;;
     *)          APP_DIR="$1"; shift ;;
   esac
 done
 
-[ -n "$APP_DIR" ] || { sed -n '2,16p' "$0" | sed 's/^# \{0,1\}//'; exit 2; }
+[ -n "$APP_DIR" ] || { sed -n '2,17p' "$0" | sed 's/^# \{0,1\}//'; exit 2; }
 APP_DIR="$(cd "$APP_DIR" && pwd)"
 [ -f "$APP_DIR/pubspec.yaml" ] || { echo "No pubspec.yaml in $APP_DIR" >&2; exit 1; }
+[ -f "$APP_DIR/$ENTRY_POINT" ] || { echo "No $ENTRY_POINT in $APP_DIR" >&2; exit 1; }
 
 : "${VITASDK:?Define VITASDK. See docs/dev-environment.md}"
 export PATH="$VITASDK/bin:$PATH"
@@ -203,7 +210,7 @@ echo "==> $APP_NAME [$TITLE_ID]"
 
 echo "==> flutter build bundle"
 ( cd "$APP_DIR" && "$FLUTTER_DIR/bin/flutter" pub get >/dev/null &&
-  "$FLUTTER_DIR/bin/flutter" build bundle --release >/dev/null )
+  "$FLUTTER_DIR/bin/flutter" build bundle --release -t "$ENTRY_POINT" >/dev/null )
 ASSETS="$APP_DIR/build/flutter_assets"
 [ -d "$ASSETS" ] || { echo "No bundle at $ASSETS" >&2; exit 1; }
 
@@ -219,7 +226,7 @@ echo "==> kernel"
   -Ddart.vm.product=true \
   --packages "$APP_DIR/.dart_tool/package_config.json" \
   --output-dill "$OUT_DIR/app.dill" \
-  "$APP_DIR/lib/main.dart" >/dev/null
+  "$APP_DIR/$ENTRY_POINT" >/dev/null
 echo "    app.dill $(stat -f%z "$OUT_DIR/app.dill" 2>/dev/null || stat -c%s "$OUT_DIR/app.dill") B"
 
 # Skipped when the kernel has not moved: this emits tens of megabytes of
