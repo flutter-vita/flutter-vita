@@ -928,7 +928,7 @@ index 84fe559d..61db137e 100644
  
  ssize_t FDUtils::ReadFromBlocking(int fd, void* buffer, size_t count) {
 diff --git a/runtime/bin/file_linux.cc b/runtime/bin/file_linux.cc
-index 9f7cbaf9..3f0ae8d6 100644
+index 9f7cbaf9..ac5eaf7c 100644
 --- a/runtime/bin/file_linux.cc
 +++ b/runtime/bin/file_linux.cc
 @@ -3,15 +3,21 @@
@@ -1039,7 +1039,47 @@ index 9f7cbaf9..3f0ae8d6 100644
  int64_t File::Read(void* buffer, int64_t num_bytes) {
    ASSERT(handle_->fd() >= 0);
    return TEMP_FAILURE_RETRY(read(handle_->fd(), buffer, num_bytes));
-@@ -573,9 +650,9 @@ void File::Stat(Namespace* namespc, const char* name, int64_t* data) {
+@@ -182,6 +259,31 @@ bool File::Flush() {
+ bool File::Lock(File::LockType lock, int64_t start, int64_t end) {
+   ASSERT(handle_->fd() >= 0);
+   ASSERT((end == -1) || (end > start));
++#if defined(DART_HOST_OS_VITA)
++  // Advisory locks coordinate between *processes*, and there is only ever one.
++  //
++  // The Linux path below is fcntl(F_SETLK), which newlib does not implement
++  // here: it returns -1/EBADF, dart:io reports
++  //
++  //     FileSystemException: lock failed, path = '...' (OS Error: Bad file
++  //     number, errno = 9)
++  //
++  // and every package that locks a file before opening it stops there. Hive
++  // does exactly that for each box, so this one call was the whole of what
++  // stood between a real app and its own data.
++  //
++  // Succeeding is not a lie. A POSIX advisory lock never prevents access; it
++  // only tells other *cooperating* processes that a region is claimed. This
++  // console runs one homebrew process at a time (ADR-0004 is a single static
++  // ELF), so the lock is vacuously held the moment it is asked for, and
++  // reporting that is the accurate answer rather than a convenient one. The
++  // same reasoning that lets process_vita.cc refuse fork cleanly applies here
++  // in the opposite direction.
++  //
++  // Note the ASSERTs above still run: a caller passing a malformed range is a
++  // bug on any platform and is not something to paper over.
++  return true;
++#else
+   struct flock fl;
+   switch (lock) {
+     case File::kLockUnlock:
+@@ -207,6 +309,7 @@ bool File::Lock(File::LockType lock, int64_t start, int64_t end) {
+     cmd = F_SETLKW;
+   }
+   return TEMP_FAILURE_RETRY(fcntl(handle_->fd(), cmd, &fl)) != -1;
++#endif  // defined(DART_HOST_OS_VITA)
+ }
+ 
+ int64_t File::Length() {
+@@ -573,9 +676,9 @@ void File::Stat(Namespace* namespc, const char* name, int64_t* data) {
      } else {
        data[kType] = kDoesNotExist;
      }
@@ -1052,7 +1092,7 @@ index 9f7cbaf9..3f0ae8d6 100644
      data[kMode] = st.st_mode;
      data[kSize] = st.st_size;
    } else {
-@@ -612,7 +689,7 @@ bool File::SetLastAccessed(Namespace* namespc,
+@@ -612,7 +715,7 @@ bool File::SetLastAccessed(Namespace* namespc,
    NamespaceScope ns(namespc, name);
    struct timespec times[2];
    MillisecondsToTimespec(millis, &times[0]);
@@ -1061,7 +1101,7 @@ index 9f7cbaf9..3f0ae8d6 100644
    return utimensat(ns.fd(), ns.path(), times, 0) == 0;
  }
  
-@@ -628,7 +705,7 @@ bool File::SetLastModified(Namespace* namespc,
+@@ -628,7 +731,7 @@ bool File::SetLastModified(Namespace* namespc,
    // Set the new time:
    NamespaceScope ns(namespc, name);
    struct timespec times[2];
@@ -1070,7 +1110,7 @@ index 9f7cbaf9..3f0ae8d6 100644
    MillisecondsToTimespec(millis, &times[1]);
    return utimensat(ns.fd(), ns.path(), times, 0) == 0;
  }
-@@ -754,6 +831,25 @@ const char* File::StringEscapedPathSeparator() {
+@@ -754,6 +857,25 @@ const char* File::StringEscapedPathSeparator() {
  }
  
  File::StdioHandleType File::GetStdioHandleType(int fd) {

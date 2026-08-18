@@ -1,0 +1,19 @@
+diff --git a/dotenv b/dotenv
+new file mode 100644
+index 0000000..55230a0
+--- /dev/null
++++ b/dotenv
+@@ -0,0 +1,13 @@
++# Placeholders. The real file is gitignored because it holds live keys; this one
++# exists so the app boots. Every value here is a dummy.
++#
++# Non-empty matters: main.dart:118 does dotenv.env['REVENUE_CAT_TEST_API_KEY']!
++# and a null-assert on a missing key kills initialization after the database has
++# already opened -- which reads like a port bug and is not one.
++REVENUE_CAT_TEST_API_KEY=vita_placeholder
++REVENUE_CAT_PROD_API_IOS_KEY=vita_placeholder
++REVENUE_CAT_PROD_API_ANDROID_KEY=vita_placeholder
++HIVE_ENCRYPTION_KEY=0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
++DEVELOPER_PRO_PASSWORD=vita_placeholder
++TELEGRAM_BOT_TOKEN=vita_placeholder
++TELEGRAM_CHAT_ID=0
