@@ -70,10 +70,10 @@ index 61abe64a..b92ae80c 100644
  
 diff --git a/engine/src/flutter/shell/platform/embedder/vita_embedder.cc b/engine/src/flutter/shell/platform/embedder/vita_embedder.cc
 new file mode 100644
-index 00000000..91def392
+index 00000000..816ec37f
 --- /dev/null
 +++ b/engine/src/flutter/shell/platform/embedder/vita_embedder.cc
-@@ -0,0 +1,1441 @@
+@@ -0,0 +1,1523 @@
 +// Copyright (c) 2026, the Flutter Authors. All rights reserved.
 +// Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
@@ -269,6 +269,43 @@ index 00000000..91def392
 +// matters end to end, plus the frame interval underneath it.
 +uint64_t g_touch_down_us = 0;
 +uint64_t g_last_present_us = 0;
++
++// A 60-frame window, because a single sample answered the wrong question.
++//
++// The first version of this printed `now - g_last_present_us` every sixtieth
++// frame while updating g_last_present_us on *every* frame -- so it reported the
++// duration of one arbitrary frame and read like a frame rate. On a screen with
++// occasional stalls it printed 797 ms and looked like 1.25 fps sustained, which
++// it was not. One slow frame in sixty and sixty slow frames are the same number
++// to that instrument, and they are opposite problems.
++//
++// This accumulates instead: total time and total blit time over a window, plus
++// the worst single frame. Mean answers "how fast is it", max answers "does it
++// hitch", and the blit share answers the only question that matters before
++// choosing an optimisation -- whether the 8 ms memcpy is the problem or 1% of
++// it. Without that split, picking between partial repaint and a GPU backend is
++// guessing.
++uint64_t g_win_first_us = 0;   // start of the current window
++uint64_t g_win_blit_us = 0;    // summed memcpy time inside it
++uint64_t g_win_max_gap_us = 0; // worst present-to-present gap in it
++unsigned g_win_frames = 0;
++
++// Idle is not slow, and averaging the two together hides both.
++//
++// Flutter produces a frame only when something needs repainting, so a static
++// screen presents nothing at all. The first version of this window reported
++// "1.50 fps" for a screen sitting still -- one 35-second gap inside a
++// 40-second window, with the other 59 frames running at 12 fps. Averaged
++// together that reads as a port too slow to use, and the truth was a port
++// waiting for the user.
++//
++// So gaps above a threshold are counted separately rather than averaged in.
++// The active mean is the number that describes rendering; the idle count is
++// the number that explains the wall-clock.
++constexpr uint64_t kIdleGapUs = 250000;  // 250 ms: ~3x the measured frame time
++uint64_t g_win_active_us = 0;
++unsigned g_win_active = 0;
++unsigned g_win_idle = 0;
 +
 +// When a finger last went down, and never cleared.
 +//
@@ -643,10 +680,18 @@ index 00000000..91def392
 +           static_cast<unsigned>(now - g_touch_down_us));
 +      g_touch_down_us = 0;
 +    }
-+    if (g_last_present_us != 0 && frames % 60 == 0) {
-+      VLog("flutter-vita: frame interval %u us\n",
-+           static_cast<unsigned>(now - g_last_present_us));
++    if (g_last_present_us != 0) {
++      const uint64_t gap = now - g_last_present_us;
++      if (gap > g_win_max_gap_us) g_win_max_gap_us = gap;
++      if (gap > kIdleGapUs) {
++        g_win_idle++;
++      } else {
++        g_win_active_us += gap;
++        g_win_active++;
++      }
++      g_win_frames++;
 +    }
++    if (g_win_first_us == 0) g_win_first_us = now;
 +    g_last_present_us = now;
 +  }
 +
@@ -680,8 +725,45 @@ index 00000000..91def392
 +                                : static_cast<size_t>(kPitch * 4);
 +  const uint8_t* src = static_cast<const uint8_t*>(allocation);
 +  uint8_t* dst = static_cast<uint8_t*>(g_display.base);
++  const uint64_t blit_start = sceKernelGetSystemTimeWide();
 +  for (size_t y = 0; y < height && y < static_cast<size_t>(kHeight); y++) {
 +    std::memcpy(dst + y * kPitch * 4, src + y * row_bytes, copy_bytes);
++  }
++  g_win_blit_us += sceKernelGetSystemTimeWide() - blit_start;
++
++  if (g_win_frames >= 60) {
++    // Two numbers, because they answer different questions.
++    //
++    // `active` is the rendering rate: mean gap over frames that followed
++    // another frame promptly. That is the figure to optimise and the figure to
++    // quote.
++    //
++    // `blit%` is the share of an active frame spent in the present memcpy, and
++    // it is the whole reason this instrument exists. Phase 0.5 measured that
++    // memcpy at 8.06 ms and ADR-0007 built its case on it. If the share is
++    // small, a GPU backend removes a small thing and the remaining time is
++    // Dart, layout and Skia; if it is large, ADR-0007's damage tracking is the
++    // answer. Guessing between those without this number is how optimisation
++    // budgets get spent on the wrong half.
++    const unsigned active_us =
++        g_win_active != 0 ? static_cast<unsigned>(g_win_active_us / g_win_active)
++                          : 0;
++    const unsigned blit_us =
++        static_cast<unsigned>(g_win_blit_us / g_win_frames);
++    VLog("flutter-vita: FRAMES active %u @ %u us = %u.%02u fps "
++         "(blit %u us = %u%%) | idle gaps %u | max %u ms\n",
++         g_win_active, active_us,
++         active_us != 0 ? 1000000u / active_us : 0,
++         active_us != 0 ? (100000000u / active_us) % 100 : 0, blit_us,
++         active_us != 0 ? blit_us * 100 / active_us : 0, g_win_idle,
++         static_cast<unsigned>(g_win_max_gap_us / 1000));
++    g_win_frames = 0;
++    g_win_blit_us = 0;
++    g_win_max_gap_us = 0;
++    g_win_active_us = 0;
++    g_win_active = 0;
++    g_win_idle = 0;
++    g_win_first_us = 0;
 +  }
 +
 +  return true;
