@@ -20,6 +20,45 @@ export PATH="$VITASDK/bin:$PATH"
 
 [ -d "$ENGINE_OUT/obj" ] || { echo "No engine build at $ENGINE_OUT" >&2; exit 1; }
 
+# Refuse to package a build that is not finished.
+#
+# This exists because the archive is a directory scrape -- `find obj -name
+# '*.o'` -- which cannot tell a current object from a stale one, and every
+# stale object still links, still packages, and still deploys. You get a
+# working app that does not contain your change, and the next thing you measure
+# is the old code.
+#
+# It has happened twice, both times expensively:
+#
+#   1. `vpython3` missing from PATH. The engine's GN build shells out to it for
+#      the Impeller flatbuffers and Dart's version.cc; those actions failed with
+#      code=127, ninja stopped before reaching vita_embedder.o, and the previous
+#      object shipped. An embedder change appeared to have no effect at all.
+#
+#   2. Editing embedder.h and rebuilding only the objects that obviously use it.
+#      A header change there invalidates **1950 objects**. Four were rebuilt.
+#      FlutterSoftwareRendererConfig had grown a field, so 1946 translation
+#      units disagreed about its size, and the engine died with `terminate
+#      called recursively` before the first frame -- a symptom pointing nowhere
+#      near the cause.
+#
+# `ninja -n` answers "is there work left" for the whole graph in about a second,
+# which is the cheapest possible insurance against both.
+if [ "${SKIP_FRESHNESS:-0}" != "1" ]; then
+  PENDING="$( (cd "$ENGINE_SRC" && ninja -C out/vita_release -n 2>/dev/null | grep -c '^\[') || echo 0)"
+  if [ "${PENDING:-0}" -gt 0 ]; then
+    echo "!! $PENDING build steps are still pending in $ENGINE_OUT" >&2
+    echo "   Packaging now would archive stale objects, and stale objects link" >&2
+    echo "   and run -- you would be measuring the previous build." >&2
+    echo >&2
+    echo "   Run:  PATH=\"\$HOME/depot_tools:\$PATH\" ninja -C $ENGINE_OUT" >&2
+    echo "   (depot_tools is needed: the build shells out to vpython3.)" >&2
+    echo >&2
+    echo "   SKIP_FRESHNESS=1 to package anyway." >&2
+    exit 1
+  fi
+fi
+
 # Pins come from the build that produced these objects, not from VERSIONS.md.
 # If the two ever disagree, the artifact is what actually shipped and the doc is
 # what someone meant to ship -- so read the args.

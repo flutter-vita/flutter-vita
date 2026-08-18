@@ -135,3 +135,24 @@ forwarding a full-screen rect. Reverting the plumbing fixed it.
 That narrows the next attempt considerably: rebuild the six changes one at a
 time against a running app rather than all at once, and suspect the dispatch
 table and the `std::function` captured in `embedder.cc` before suspecting Skia.
+
+## Postscript: the crash was a build error, not a design error
+
+`terminate called recursively` was an ODR mismatch, and the evidence is one
+number: **changing `embedder.h` invalidates 1950 objects.** Four were rebuilt.
+
+`FlutterSoftwareRendererConfig` had grown a field, so 1946 translation units
+disagreed with the other four about its size. That is a textbook way to end up
+calling through a garbage function pointer during startup, and it explains the
+one result that made no sense — that turning `supports_partial_repaint` off
+while leaving the plumbing in place *still* crashed. The plumbing was not at
+fault either. The build was.
+
+So partial repaint is un-disproven rather than disproven, and the next attempt
+is the same six changes followed by a **full** `ninja`, not a list of named
+targets.
+
+`tools/package-engine.sh` now refuses to package when `ninja -n` reports
+pending work. That one check would have caught this and the earlier `vpython3`
+failure, both of which shipped stale objects that linked, ran, and were
+measured as if they were the new code.
