@@ -70,10 +70,10 @@ index 61abe64a..b92ae80c 100644
  
 diff --git a/engine/src/flutter/shell/platform/embedder/vita_embedder.cc b/engine/src/flutter/shell/platform/embedder/vita_embedder.cc
 new file mode 100644
-index 00000000..4e334bce
+index 00000000..bcc27296
 --- /dev/null
 +++ b/engine/src/flutter/shell/platform/embedder/vita_embedder.cc
-@@ -0,0 +1,1353 @@
+@@ -0,0 +1,1386 @@
 +// Copyright (c) 2026, the Flutter Authors. All rights reserved.
 +// Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
@@ -270,6 +270,13 @@ index 00000000..4e334bce
 +uint64_t g_touch_down_us = 0;
 +uint64_t g_last_present_us = 0;
 +
++// When a finger last went down, and never cleared.
++//
++// Distinct from g_touch_down_us above, which the present path zeroes once it
++// has logged a latency. This one is the record of *whether a person asked for
++// anything recently*, and OpenImeDialog is gated on it -- see there.
++uint64_t g_last_touch_us = 0;
++
 +void InitTouch() {
 +  sceTouchSetSamplingState(SCE_TOUCH_PORT_FRONT,
 +                           SCE_TOUCH_SAMPLING_STATE_START);
@@ -318,6 +325,7 @@ index 00000000..4e334bce
 +  // that is the edge a person perceives as "did it respond".
 +  if (event.phase == kDown) {
 +    g_touch_down_us = sceKernelGetSystemTimeWide();
++    g_last_touch_us = g_touch_down_us;
 +  }
 +  FlutterEngineSendPointerEvent(engine, &event, 1);
 +}
@@ -1221,7 +1229,32 @@ index 00000000..4e334bce
 +        JsonUnescape(t, body + len, g_ime.pending, sizeof g_ime.pending);
 +      }
 +    } else if (std::strcmp(method, "TextInput.show") == 0) {
-+      OpenImeDialog();
++      // Only if a person asked for it.
++      //
++      // The IME here is a full-screen modal the shell draws over the app, so
++      // "focus a field" and "cover the entire display" are the same action --
++      // which they are on no other platform. An autofocused field therefore
++      // takes the whole screen before the app has drawn a frame the user could
++      // understand, and there is nothing on that screen explaining why.
++      //
++      // Flutter cannot help us tell the two apart: TextInput.show is identical
++      // whether the focus came from a tap or from autofocus: true. What does
++      // differ is that a tap leaves a fingerprint, so require one within the
++      // last second. Startup autofocus has no touch behind it at all and is
++      // rejected; a button that programmatically focuses a field still works,
++      // because the person did tap something.
++      //
++      // A second is deliberately generous. The path from finger to this line
++      // runs through a hit test, a focus change and a frame, and this port
++      // renders at about twelve of those a second.
++      const uint64_t now = sceKernelGetSystemTimeWide();
++      if (g_last_touch_us != 0 && now - g_last_touch_us < 1000000) {
++        OpenImeDialog();
++      } else {
++        // Not silent: this is the single most confusing thing the rule can do
++        // to someone whose field did not open, and it costs one line.
++        std::printf("flutter-vita: TextInput.show ignored, no recent touch\n");
++      }
 +    } else if (std::strcmp(method, "TextInput.hide") == 0 ||
 +               std::strcmp(method, "TextInput.clearClient") == 0) {
 +      CloseImeDialog();
