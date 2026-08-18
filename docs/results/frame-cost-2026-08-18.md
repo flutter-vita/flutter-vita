@@ -84,3 +84,54 @@ it is not the instrumentation. The log ends mid-render with no exception. No
 core dump reached `ux0:data`. That is its own investigation and it is why the
 improved instrument has not yet produced a reading of its own: the app does not
 survive 60 frames reliably.
+
+---
+
+## Baseline, confirmed on a second app
+
+With the corrected instrument, three consecutive windows from the gallery app:
+
+```
+FRAMES active 60 @ 84724 us = 11.80 fps (blit 10451 us = 12%) | idle gaps 0 | max 105 ms
+FRAMES active 60 @ 86047 us = 11.62 fps (blit 10520 us = 12%) | idle gaps 0 | max  89 ms
+FRAMES active 60 @ 87108 us = 11.48 fps (blit 10506 us = 12%) | idle gaps 0 | max 116 ms
+```
+
+Stable to within 0.3 fps, no idle gaps — gallery animates continuously, so every
+frame is real work — and no hitching. **11.6 fps, blit 12%**, agreeing with the
+12.1 fps / 13% measured from keklist. Two apps, two runs, one number.
+
+## Partial repaint: attempted, reverted, and what was learned
+
+ADR-0007 was implemented end to end and **backed out**. The tree is at the
+pre-attempt state and the gallery app is verified running on it.
+
+What was built, across six files: a defaulted `PresentBackingStore(backing_store,
+damage)` overload on `GPUSurfaceSoftwareDelegate` so the three existing
+implementations kept compiling; `supports_partial_repaint = true` with an empty
+`existing_damage` in `GPUSurfaceSoftware::AcquireFrame`; damage forwarded from
+`SurfaceFrame::submit_info().frame_damage` through `EmbedderSurfaceSoftware` and
+the `SoftwareDispatchTable`; a new additive
+`SoftwareSurfacePresentCallbackWithDamage` in `embedder.h`; and a Vita present
+that clamps damage to the display and copies only the affected rows.
+
+Two failures, in order:
+
+**`FlutterEngineInitialize` returned `kInvalidArguments`.** The engine validates
+that a software config's `surface_present_callback` is non-null, so setting only
+the damage-aware variant is rejected before the engine starts. Both must be set;
+the plain one is never called, because `EmbedderSurfaceSoftware` prefers the
+damage-aware entry whenever present.
+
+**`terminate called recursively`** — an exception thrown while another was
+unwinding, before the first frame. This is the one that is not understood.
+
+The isolation result matters and is counter-intuitive: setting
+`supports_partial_repaint = false` while leaving all the plumbing in place
+**still crashed**. So the fault is not the rasteriser's damage path — it is
+somewhere in the callback wiring, which on that build was doing nothing but
+forwarding a full-screen rect. Reverting the plumbing fixed it.
+
+That narrows the next attempt considerably: rebuild the six changes one at a
+time against a running app rather than all at once, and suspect the dispatch
+table and the `std::function` captured in `embedder.cc` before suspecting Skia.
