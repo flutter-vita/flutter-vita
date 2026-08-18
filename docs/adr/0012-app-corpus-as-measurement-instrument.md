@@ -60,9 +60,13 @@ whole exercise reports a number it has not earned.
 first thing that breaks in the running app. Depth on a single app is a separate
 decision to be taken *after* the breadth pass says which app deserves it.
 
-**One title id, `FVTA00006`**, shared by all five and swapped in place by the
+**One title id, `FVTA00002`**, shared by all five and swapped in place by the
 existing loader path. A title id buys a separate LiveArea bubble and nothing
-else, and the corpus does not need five bubbles.
+else, and the corpus does not need five bubbles. `FVTA00002` specifically
+because it is **already registered** with the shell, so the corpus needs no new
+title and never has to touch the installed-titles database
+([the registration investigation](../results/title-registration-2026-08-18.md)
+found that door open, and deliberately left it shut).
 
 **The deliverable is a patch series** under `patches/corpus/`, and
 **lines-changed-to-first-frame is the score.** No third-party source enters this

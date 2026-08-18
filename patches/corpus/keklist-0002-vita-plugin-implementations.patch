@@ -1,0 +1,39 @@
+diff --git a/lib/main.dart b/lib/main.dart
+index af2757f..f27ec72 100644
+--- a/lib/main.dart
++++ b/lib/main.dart
+@@ -41,6 +41,8 @@ import 'package:keklist/presentation/screens/preparation/preparation_screen.dart
+ import 'package:provider/provider.dart';
+ import 'package:purchases_flutter/purchases_flutter.dart';
+ import 'package:shared_preferences/shared_preferences.dart';
++import 'package:path_provider_vita/path_provider_vita.dart';
++import 'package:shared_preferences_vita/shared_preferences_vita.dart';
+ import 'package:streaming_shared_preferences/streaming_shared_preferences.dart';
+ import 'package:flutter/foundation.dart';
+ import 'package:flutter/material.dart';
+@@ -62,6 +64,8 @@ import 'presentation/native/ios/watch/watch_communication_manager.dart';
+ 
+ Future<void> main() async {
+   WidgetsFlutterBinding.ensureInitialized();
++  PathProviderVita.registerWith();
++  SharedPreferencesVita.registerWith();
+   _initNativeWidgets();
+   _setupBlockingLoadingWidget();
+   runApp(const _AppRoot());
+diff --git a/pubspec.yaml b/pubspec.yaml
+index b444137..7e054ce 100644
+--- a/pubspec.yaml
++++ b/pubspec.yaml
+@@ -76,6 +76,12 @@ dependencies:
+   file_selector: ^1.1.0
+   crypto: ^3.0.7
+   shared_preferences: ^2.5.5
++  # ADR-0009: non-endorsed vita implementations, listed beside the plugins they
++  # implement. This is the whole edit an app author makes.
++  path_provider_vita:
++    path: ../../../packages/path_provider_vita
++  shared_preferences_vita:
++    path: ../../../packages/shared_preferences_vita
+   native_liquid_glass: ^0.2.10
+ dev_dependencies:
+   flutter_lints: ^6.0.0

@@ -30,7 +30,8 @@ found in an app you cannot name again is a bug you cannot regression-test.
 
 Five apps, one per axis, and one of them is a plugin-free **control** that must
 pass. Without it, five failures cannot tell a broken port from a broken
-harness. All five share one title id, and the deliverable is a patch series
+harness. All five share one title id -- `FVTA00002`, because it is already registered --
+and the deliverable is a patch series
 under `patches/corpus/` — no third-party source enters this repository, and
 lines-changed-to-first-frame is the score rather than pass/fail.
 
