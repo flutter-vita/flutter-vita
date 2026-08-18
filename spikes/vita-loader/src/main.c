@@ -587,13 +587,59 @@ static int serve(int sock) {
         cmd_launch(sock);
         return 1;
       }
+    } else if (strncmp(line, "exec ", 5) == 0) {
+      // Does sceAppMgrLoadExec take a path outside our own app0:?
+      //
+      // Every launch we do today goes through sceAppMgrLaunchAppByUri, which
+      // asks the *shell* to resolve a title id -- and the shell only knows
+      // title ids in its installed-titles database, which is the thing we
+      // cannot write. LoadExec takes a path instead, so if it accepts one in
+      // another title's directory then a slot never needs registering at all
+      // and ScePromoterUtil stops mattering.
+      //
+      // The expected answer is no: LoadExec is documented for chain-loading
+      // within a title's own directory. Worth one round trip to know rather
+      // than assume, because the whole install story turns on it.
+      const char* path = line + 5;
+      char m[256];
+      snprintf(m, sizeof m, "OK exec %s\n", path);
+      send_str(sock, m);
+      sceNetSocketClose(sock);
+      lg("  exec %s\n", path);
+      sceKernelDelayThread(200 * 1000);
+      const int r = sceAppMgrLoadExec(path, NULL, NULL);
+      // Reached only on failure -- success replaces this process. The log is
+      // the reporting channel here for exactly that reason: on success there
+      // is no socket left to answer on.
+      lg("  exec failed 0x%08X\n", (unsigned)r);
+      return 1;
+    } else if (strncmp(line, "canwrite ", 9) == 0) {
+      // Can we write where the shell keeps its installed-titles database?
+      //
+      // If ur0:shell/db is writable, registering a title id becomes a matter
+      // of editing app.db directly, which is the other way past the promoter.
+      // `touch` already answers this shape of question for ux0:, but it makes
+      // the file in the caller's own tree; this names the directory to probe.
+      const char* dir = line + 9;
+      char probe[256], m[256];
+      snprintf(probe, sizeof probe, "%s/.fvita-probe", dir);
+      const SceUID fd = sceIoOpen(probe, SCE_O_WRONLY | SCE_O_CREAT | SCE_O_TRUNC, 0777);
+      if (fd < 0) {
+        snprintf(m, sizeof m, "ERR %s open=0x%08X\n", dir, (unsigned)fd);
+      } else {
+        sceIoClose(fd);
+        sceIoRemove(probe);
+        snprintf(m, sizeof m, "OK %s writable\n", dir);
+      }
+      lg("  %s", m);
+      send_str(sock, m);
     } else if (strcmp(line, "exit") == 0) {
       send_str(sock, "OK\n");
       return 1;
     } else {
       send_str(sock,
-               "ERR (ping|probe|ls|get|put|rm|mkdir|cp|touch|promote|"
-               "stage <n>|install|launch|deploy|exit)\n");
+               "ERR (ping|probe|ls|get|put|rm|mkdir|cp|touch|promote|exec|"
+               "canwrite|stage <n>|install|launch|deploy|exit)\n");
     }
   }
 }

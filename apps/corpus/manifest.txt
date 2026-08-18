@@ -26,8 +26,10 @@ gskinnerTeam/flutter-wonderous-app  123f4749f95d89ad6bcc8f11f0cd475032185632
 
 # --- Local storage, long lists, and dependency breadth: ~60 packages, of which
 # --- roughly twenty are native. Storage is hive_ce, which is pure Dart, so the
-# --- breadth is channel-shaped rather than FFI-shaped.
-resashkin/keklist_flutter           72a5c91115245394cdfb528ca8dcd196190130a4
+# --- breadth is channel-shaped rather than FFI-shaped. Pinned to origin/master:
+# --- the working copy on this machine is one unpushed commit ahead, and a pin
+# --- nobody else can fetch is not a pin.
+resashkin/keklist_flutter           d3e02ac9357e31188e7028b022c2ddd182132874
     entry lib/main.dart
 
 # --- Networking. The one app with an await before runApp -- but it is wrapped

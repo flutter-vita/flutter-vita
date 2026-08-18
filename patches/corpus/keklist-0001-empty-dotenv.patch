@@ -1,0 +1,7 @@
+diff --git a/dotenv b/dotenv
+new file mode 100644
+index 0000000..796cbf1
+--- /dev/null
++++ b/dotenv
+@@ -0,0 +1 @@
++# Empty. The real one is gitignored; nothing in the boot path reads a key.
