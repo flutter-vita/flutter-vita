@@ -70,10 +70,10 @@ index 61abe64a..b92ae80c 100644
  
 diff --git a/engine/src/flutter/shell/platform/embedder/vita_embedder.cc b/engine/src/flutter/shell/platform/embedder/vita_embedder.cc
 new file mode 100644
-index 00000000..de25f6e6
+index 00000000..d361a04d
 --- /dev/null
 +++ b/engine/src/flutter/shell/platform/embedder/vita_embedder.cc
-@@ -0,0 +1,1919 @@
+@@ -0,0 +1,1959 @@
 +// Copyright (c) 2026, the Flutter Authors. All rights reserved.
 +// Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
@@ -820,7 +820,12 @@ index 00000000..de25f6e6
 +
 +
 +
-+char g_hud_text[kHudLines][kHudCols + 1];
++// Pre-filled, so the very first paint is legible. Without this the box appears
++// before HudUpdate has ever run -- twenty frames in -- and an app that dies
++// during startup leaves an empty black rectangle in the corner that reads as a
++// rendering bug.
++char g_hud_text[kHudLines][kHudCols + 1] = {
++    "-- FPS", "DMG --", "HEAP --"};
 +
 +// A solid backing box. Write-only, and both halves of that matter.
 +//
@@ -1952,11 +1957,46 @@ index 00000000..de25f6e6
 +  g_engine = engine;
 +  VLog("flutter-vita: engine running\n");
 +
++  // Tell the framework a display exists.
++  //
++  // Window metrics below say how big the window is; this says what it is
++  // attached to, and they are separate APIs answering separate questions.
++  // Without this `PlatformDispatcher.instance.displays` is an empty list, and
++  // an app that reads `displays.first` -- to find the refresh rate, or the
++  // physical size, both perfectly ordinary things to want -- gets
++  // `Bad state: No element` out of dart:ui during its first build.
++  //
++  // Found by wonderous, which calls it from the widget that wraps the whole
++  // app: the exception came out of MediaQuery's own callback, so nothing
++  // rendered at all and the log blamed `Iterable.first`.
++  //
++  // refresh_rate is 60 because the panel is 60 Hz. It is a hint the framework
++  // uses for scheduling, and is deliberately the panel's rate rather than the
++  // rate this port currently achieves -- an app asking what the display does
++  // should not be told what the software is managing.
++  FlutterEngineDisplay display = {};
++  display.struct_size = sizeof(FlutterEngineDisplay);
++  display.display_id = 0;
++  display.single_display = true;
++  display.refresh_rate = 60.0;
++  display.width = kWidth;
++  display.height = kHeight;
++  display.device_pixel_ratio = 1.0;
++  const FlutterEngineResult display_result = FlutterEngineNotifyDisplayUpdate(
++      engine, kFlutterEngineDisplaysUpdateTypeStartup, &display, 1);
++  if (display_result != kSuccess) {
++    VLog("flutter-vita: FlutterEngineNotifyDisplayUpdate failed: %d\n",
++         display_result);
++  }
++
 +  FlutterWindowMetricsEvent metrics = {};
 +  metrics.struct_size = sizeof(FlutterWindowMetricsEvent);
 +  metrics.width = kWidth;
 +  metrics.height = kHeight;
 +  metrics.pixel_ratio = 1.0;
++  // Same display the notify above described, so the framework can associate the
++  // window with it rather than guessing.
++  metrics.display_id = 0;
 +  FlutterEngineSendWindowMetricsEvent(engine, &metrics);
 +
 +  InitTouch();

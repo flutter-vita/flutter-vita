@@ -21,7 +21,14 @@ flutter/samples                     0c5ca75d2985ddeca92417bb1235f361d8643e7b  # 
 
 # --- Animation and assets. A finished showcase app, deliberately heavy on
 # --- imagery -- the axis is whether the bundle even fits, before anything runs.
-gskinnerTeam/flutter-wonderous-app  123f4749f95d89ad6bcc8f11f0cd475032185632
+# --- Answer: 58 MB of .vpk, and it fits.
+# --- Repinned 2026-08-19 from 123f4749, which cannot be built with the pinned
+# --- Flutter at all: it wants intl ^0.17 against flutter_localizations' 0.20.2,
+# --- and past that uses DecoderCallback and UnmodifiableUint8ListView, both
+# --- removed, plus a go_router that predates mixin classes. Modernising it is
+# --- app work with nothing to say about this port; 747b945 is upstream's own
+# --- Flutter 3.41.9 update and builds unchanged.
+gskinnerTeam/flutter-wonderous-app  747b945a7e5239356bf2664261aa2f3b020b8898
     entry lib/main.dart
 
 # --- Local storage, long lists, and dependency breadth: ~60 packages, of which
