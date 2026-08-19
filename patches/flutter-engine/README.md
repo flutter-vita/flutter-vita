@@ -17,6 +17,8 @@ disposable; these patches are the artifact.
 | 0004 | [m2-link-check](0004-m2-link-check.patch) | An executable that makes the linker answer the M2 question |
 | 0005 | [skia-target-for-vita](0005-skia-target-for-vita.patch) | `flutter/skia/BUILD.gn` — the log backend, and where `-ldl` was hiding |
 | 0006 | [vita-fonts](0006-vita-fonts.patch) | `txt` gets a real font manager, plus two probes promoted out of `FML_DLOG` |
+| 0007 | [boringssl-no-asm-for-vita](0007-boringssl-no-asm-for-vita.patch) | BoringSSL's armv7 assembly does not assemble here; take the C |
+| 0008 | [partial-repaint-in-the-software-path](0008-partial-repaint-in-the-software-path.patch) | The software surface claims `supports_partial_repaint`, and reports the damage rect to the embedder |
 
 ## Applying
 
@@ -294,5 +296,5 @@ own patch series — so some divergence here is expected rather than a defect.
 They are left alone until someone establishes which, because syncing them
 blindly is how a working build gets broken to satisfy a checker.
 
-Running this on the fresh engine checkout is what caught that patch 0008 had
+Running this on the fresh engine checkout is what caught that a Dart patch had
 gone stale. It is worth running after every change to either tree.

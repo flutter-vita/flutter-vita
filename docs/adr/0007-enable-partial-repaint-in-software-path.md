@@ -1,7 +1,25 @@
 # ADR-0007: Patch the engine to enable partial repaint in the software path
 
-**Status:** **Accepted** — hardware measurement taken 2026-08-07; the payoff is decisive
-**Date:** 2026-08-06, promoted 2026-08-07
+**Status:** **Implemented** — shipped 2026-08-19 as engine patch 0008; measured 13.6 to 60 fps on the gallery
+**Date:** 2026-08-06, promoted 2026-08-07, implemented 2026-08-19
+
+## Update: it shipped, and the prediction held
+
+Both halves the ADR demanded are in: the rasteriser clips to the damage
+rect, *and* the rect reaches the embedder so the present blit copies only
+that. On the gallery's idle-with-a-spinner screen the blit went from
+10.6 ms to 0.08 ms and the frame rate from 13.6 fps to the engine's 60 Hz
+cap. See [the measurement](../results/partial-repaint-2026-08-19.md).
+
+Two things the ADR did not anticipate:
+
+- **No embedder.h change was needed.** The plumbing the ADR called for
+  turned out to cost one new field in a struct that ~2000 objects include
+  and must agree on the size of. It was routed instead through a hook the
+  embedder installs at startup, which touches two objects.
+- **The win is bounded by how much of the screen changes, not by the app.**
+  A scrolling list damages everything and still costs ~13.6 fps. The frame
+  log now prints `dmg%` so nobody has to guess which case they are in.
 
 ## Update: the measurement arrived
 

@@ -70,10 +70,10 @@ index 61abe64a..b92ae80c 100644
  
 diff --git a/engine/src/flutter/shell/platform/embedder/vita_embedder.cc b/engine/src/flutter/shell/platform/embedder/vita_embedder.cc
 new file mode 100644
-index 00000000..816ec37f
+index 00000000..9ecaf7f0
 --- /dev/null
 +++ b/engine/src/flutter/shell/platform/embedder/vita_embedder.cc
-@@ -0,0 +1,1523 @@
+@@ -0,0 +1,1616 @@
 +// Copyright (c) 2026, the Flutter Authors. All rights reserved.
 +// Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
@@ -130,6 +130,7 @@ index 00000000..816ec37f
 +#include <mutex>
 +
 +#include "flutter/shell/platform/embedder/embedder.h"
++#include "flutter/shell/platform/embedder/embedder_software_frame_damage.h"
 +
 +// M1's on-device dev server, at spikes/m1-vpk/src/devserver.{c,h}, compiled
 +// into this binary by the m3 spike's CMakeLists.
@@ -287,6 +288,7 @@ index 00000000..816ec37f
 +// guessing.
 +uint64_t g_win_first_us = 0;   // start of the current window
 +uint64_t g_win_blit_us = 0;    // summed memcpy time inside it
++uint64_t g_win_damage_px = 0;  // summed damaged pixels inside it
 +uint64_t g_win_max_gap_us = 0; // worst present-to-present gap in it
 +unsigned g_win_frames = 0;
 +
@@ -629,6 +631,46 @@ index 00000000..816ec37f
 +  sceCommonDialogUpdate(&update);
 +}
 +
++// The region of the next frame that differs from the one on screen.
++//
++// Set by the rasterizer through SetSoftwareFrameDamageObserver, on the same
++// raster thread that then calls PresentSurface, so no lock is needed and none
++// would help: the two calls are consecutive statements in one submit.
++//
++// Defaults to the whole screen, which is both the correct answer before any
++// frame has been diffed and the safe answer if the observer is ever not
++// installed -- a blit that copies too much is slow, one that copies too little
++// leaves the previous frame's pixels on screen.
++struct Damage {
++  int left = 0;
++  int top = 0;
++  int right = kWidth;
++  int bottom = kHeight;
++};
++Damage g_damage;
++
++// Set whenever a frame does not reach the blit, or something else writes over
++// the display buffer. The next blit then copies everything.
++//
++// A flag rather than widening g_damage, because the observer overwrites
++// g_damage at the start of every frame -- anything recorded there by a skipped
++// frame is gone before the next blit reads it.
++bool g_display_stale = true;
++
++void OnFrameDamage(int32_t left, int32_t top, int32_t right, int32_t bottom,
++                   bool full) {
++  if (full) {
++    g_damage = Damage{};
++    return;
++  }
++  // Clamped, because the damage rect is in layer-tree coordinates and nothing
++  // upstream promises it lies inside the framebuffer.
++  g_damage.left = left < 0 ? 0 : (left > kWidth ? kWidth : left);
++  g_damage.top = top < 0 ? 0 : (top > kHeight ? kHeight : top);
++  g_damage.right = right < 0 ? 0 : (right > kWidth ? kWidth : right);
++  g_damage.bottom = bottom < 0 ? 0 : (bottom > kHeight ? kHeight : bottom);
++}
++
 +// |SoftwareSurfacePresentCallback|
 +bool PresentSurface(void* /* user_data */,
 +                    const void* allocation,
@@ -696,6 +738,7 @@ index 00000000..816ec37f
 +  }
 +
 +  if (g_display.base == nullptr) {
++    g_display_stale = true;
 +    return false;
 +  }
 +
@@ -713,6 +756,11 @@ index 00000000..816ec37f
 +  // over whatever frame was last copied. The app content freezes underneath,
 +  // which is what a modal keyboard means anyway.
 +  if (g_ime.open) {
++    // The dialog is drawing into the display buffer, so whatever partial
++    // rectangle this frame changed is about to be painted over. The next frame
++    // that does reach the blit has to copy the whole surface, and can: the
++    // surface is retained and still holds a complete frame.
++    g_display_stale = true;
 +    return true;
 +  }
 +
@@ -720,16 +768,46 @@ index 00000000..816ec37f
 +  // and it costs another 2 MiB of CDRAM; that trade belongs with the vsync work
 +  // rather than here, because without pacing a second buffer buys nothing but
 +  // tearing in a different place.
-+  const size_t copy_bytes = row_bytes < static_cast<size_t>(kPitch * 4)
-+                                ? row_bytes
-+                                : static_cast<size_t>(kPitch * 4);
++  //
++  // Only the damaged rectangle is copied. The display buffer already holds the
++  // previous frame -- that is what makes this legal, and it is the same
++  // property that lets Skia clip its painting to the same rectangle.
++  // Widest row and lowest line either buffer can support, so a mismatch
++  // between the engine's surface and the display truncates rather than runs
++  // off the end.
++  const int max_x = static_cast<int>(
++      (row_bytes < static_cast<size_t>(kPitch * 4) ? row_bytes : kPitch * 4) /
++      4);
++  const int max_y =
++      height < static_cast<size_t>(kHeight) ? static_cast<int>(height) : kHeight;
++
++  const Damage d = g_display_stale ? Damage{} : g_damage;
++  g_display_stale = false;
++
++  const int x0 = d.left;
++  const int x1 = d.right < max_x ? d.right : max_x;
++  const int y0 = d.top;
++  const int y1 = d.bottom < max_y ? d.bottom : max_y;
++  const size_t x_off = static_cast<size_t>(x0) * 4;
++  const size_t copy_bytes =
++      x1 > x0 ? static_cast<size_t>(x1 - x0) * 4 : 0;
++
 +  const uint8_t* src = static_cast<const uint8_t*>(allocation);
 +  uint8_t* dst = static_cast<uint8_t*>(g_display.base);
 +  const uint64_t blit_start = sceKernelGetSystemTimeWide();
-+  for (size_t y = 0; y < height && y < static_cast<size_t>(kHeight); y++) {
-+    std::memcpy(dst + y * kPitch * 4, src + y * row_bytes, copy_bytes);
++  for (int y = y0; y < y1 && copy_bytes != 0; y++) {
++    std::memcpy(dst + static_cast<size_t>(y) * kPitch * 4 + x_off,
++                src + static_cast<size_t>(y) * row_bytes + x_off, copy_bytes);
 +  }
 +  g_win_blit_us += sceKernelGetSystemTimeWide() - blit_start;
++  if (y1 > y0) {
++    g_win_damage_px +=
++        static_cast<uint64_t>(y1 - y0) * static_cast<uint64_t>(copy_bytes / 4);
++  }
++
++  // The next frame is whole until the rasterizer says otherwise. Without this
++  // a frame the observer never reported would silently reuse the last rect.
++  g_damage = Damage{};
 +
 +  if (g_win_frames >= 60) {
 +    // Two numbers, because they answer different questions.
@@ -750,15 +828,24 @@ index 00000000..816ec37f
 +                          : 0;
 +    const unsigned blit_us =
 +        static_cast<unsigned>(g_win_blit_us / g_win_frames);
++    //
++    // `dmg` is the share of the screen the rasterizer said actually changed,
++    // averaged over the window. It is what decides whether partial repaint is
++    // doing anything: at 100% the app repaints everything every frame and the
++    // clip is pure overhead, and any fps that a GPU backend would buy has to
++    // come from somewhere other than painting less.
++    const unsigned dmg_pct = static_cast<unsigned>(
++        g_win_damage_px / g_win_frames * 100 / (kWidth * kHeight));
 +    VLog("flutter-vita: FRAMES active %u @ %u us = %u.%02u fps "
-+         "(blit %u us = %u%%) | idle gaps %u | max %u ms\n",
++         "(blit %u us = %u%%, dmg %u%%) | idle gaps %u | max %u ms\n",
 +         g_win_active, active_us,
 +         active_us != 0 ? 1000000u / active_us : 0,
 +         active_us != 0 ? (100000000u / active_us) % 100 : 0, blit_us,
-+         active_us != 0 ? blit_us * 100 / active_us : 0, g_win_idle,
++         active_us != 0 ? blit_us * 100 / active_us : 0, dmg_pct, g_win_idle,
 +         static_cast<unsigned>(g_win_max_gap_us / 1000));
 +    g_win_frames = 0;
 +    g_win_blit_us = 0;
++    g_win_damage_px = 0;
 +    g_win_max_gap_us = 0;
 +    g_win_active_us = 0;
 +    g_win_active = 0;
@@ -1514,6 +1601,12 @@ index 00000000..816ec37f
 +  config.type = kSoftware;
 +  config.software.struct_size = sizeof(FlutterSoftwareRendererConfig);
 +  config.software.surface_present_callback = PresentSurface;
++
++  // Partial repaint (ADR-0007). The rasterizer reports what changed; the blit
++  // above copies only that. Installed before FlutterEngineInitialize so no
++  // frame can be presented without it -- a present with no observer would use
++  // the default whole-screen rect, which is correct but measures nothing.
++  flutter::SetSoftwareFrameDamageObserver(OnFrameDamage);
 +
 +  // Captured before FlutterEngineRun, because the engine may post a task
 +  // during startup and RunsTasksOnCurrentThread must already be truthful.
