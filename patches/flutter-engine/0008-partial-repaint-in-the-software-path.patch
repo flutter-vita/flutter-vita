@@ -1,5 +1,5 @@
 diff --git a/engine/src/flutter/shell/gpu/gpu_surface_software.cc b/engine/src/flutter/shell/gpu/gpu_surface_software.cc
-index 2b54d93c..8e624b45 100644
+index 2b54d93c..bae0a0e2 100644
 --- a/engine/src/flutter/shell/gpu/gpu_surface_software.cc
 +++ b/engine/src/flutter/shell/gpu/gpu_surface_software.cc
 @@ -8,6 +8,7 @@
@@ -10,7 +10,7 @@ index 2b54d93c..8e624b45 100644
  
  #include "third_party/skia/include/core/SkCanvas.h"
  #include "third_party/skia/include/core/SkSurface.h"
-@@ -48,6 +49,26 @@ std::unique_ptr<SurfaceFrame> GPUSurfaceSoftware::AcquireFrame(
+@@ -48,6 +49,32 @@ std::unique_ptr<SurfaceFrame> GPUSurfaceSoftware::AcquireFrame(
      return nullptr;
    }
  
@@ -27,17 +27,33 @@ index 2b54d93c..8e624b45 100644
 +    framebuffer_info.existing_damage = DlIRect();
 +  }
 +
-+  // The raster pass starts here. A file static rather than a member, because
-+  // the encode callback below captures only a weak pointer to `this` and the
-+  // header is shared with every other embedder; the raster thread runs one
-+  // frame at a time, so there is nothing to race with.
-+  static fml::TimePoint g_raster_start;
-+  g_raster_start = fml::TimePoint::Now();
++  // The raster pass starts here, and the timestamp is captured *into the encode
++  // callback below* rather than parked in a static.
++  //
++  // The first version used a file static, on the reasoning that the raster
++  // thread runs one frame at a time so nothing could race. That is true and
++  // still wrong: AcquireFrame is not guaranteed to be followed by an encode.
++  // When a frame is acquired and then dropped, the next frame's encode reads
++  // the *previous* frame's start time, and the pass appears to have taken as
++  // long as the gap between them. It showed up immediately -- a raster max of
++  // 3,023,406 us on a 55 fps window, alongside the two idle gaps that produced
++  // it, and a mean of 442% of a frame.
++  const fml::TimePoint raster_start = fml::TimePoint::Now();
 +
    const auto size = DlISize(logical_size.width, logical_size.height);
  
    sk_sp<SkSurface> backing_store = delegate_->AcquireBackingStore(size);
-@@ -76,6 +97,12 @@ std::unique_ptr<SurfaceFrame> GPUSurfaceSoftware::AcquireFrame(
+@@ -68,14 +95,20 @@ std::unique_ptr<SurfaceFrame> GPUSurfaceSoftware::AcquireFrame(
+   canvas->resetMatrix();
+ 
+   SurfaceFrame::EncodeCallback encode_callback =
+-      [self = weak_factory_.GetWeakPtr()](const SurfaceFrame& surface_frame,
+-                                          DlCanvas* canvas) -> bool {
++      [self = weak_factory_.GetWeakPtr(), raster_start](
++          const SurfaceFrame& surface_frame, DlCanvas* canvas) -> bool {
+     // If the surface itself went away, there is nothing more to do.
+     if (!self || !self->IsValid() || canvas == nullptr) {
+       return false;
      }
  
      canvas->Flush();
@@ -46,11 +62,11 @@ index 2b54d93c..8e624b45 100644
 +    // actually executed, so timing that returns before it measures the
 +    // bookkeeping and not the painting.
 +    self->delegate_->OnRasterTiming(static_cast<uint64_t>(
-+        (fml::TimePoint::Now() - g_raster_start).ToMicroseconds()));
++        (fml::TimePoint::Now() - raster_start).ToMicroseconds()));
      return true;
    };
    SurfaceFrame::SubmitCallback submit_callback =
-@@ -84,6 +111,9 @@ std::unique_ptr<SurfaceFrame> GPUSurfaceSoftware::AcquireFrame(
+@@ -84,6 +117,9 @@ std::unique_ptr<SurfaceFrame> GPUSurfaceSoftware::AcquireFrame(
          if (!self || !self->IsValid()) {
            return false;
          }
