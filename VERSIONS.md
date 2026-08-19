@@ -88,8 +88,8 @@ the one above. See
 [docs/flutter-upgrade-cost.md](docs/flutter-upgrade-cost.md) for the full
 measurement and the procedure to redo it. In short: 3.47.0 is a release
 candidate (`[user-branch]`, no changelog); the engine patch series survives it
-almost untouched (6 of 44 files, all GN); the Dart series does not (25 of 68
-files, nine of ten patches, plus one guaranteed compile break in
+almost untouched (6 of 44 files, all GN); the Dart series does not (24 of 67
+files, eight of ten patches, plus one guaranteed compile break in
 `InterfaceSocketAddress`); and **nothing in the 1,358-commit range addresses
 the measured bottleneck.** Upstream's engine work in that window went to
 Impeller — 336 files, +13,110 lines — while the Skia software path this port

@@ -112,16 +112,21 @@ hits**, so patch 0008 slots in where it always did.
 
 ### The Dart half is where the money is
 
-Of the **68 files the Dart patch series owns, 25 changed**, +1,081 / −1,025.
-**Nine of the ten patches** have churn in files they own:
+Of the **67 files the Dart patch series owns in the Dart tree, 24 changed**,
++855 / −812. **Eight of the ten patches** have churn in files they own.
+
+(67, not 68: patch 0005 owns a `BUILD.gn` belonging to the nested **zlib**
+repo, not Dart's root one. Intersecting owned paths against a Dart-tree diff
+matches those two by name — a trap worth knowing, since several patches in
+this series apply to nested DEPS repos rather than the tree they sit beside.)
 
 | Patch | Files owned | Churned | The expensive ones |
 |---|---|---|---|
 | 0001-add-vita-host-and-target-os | 3 | 1 | |
 | 0002-route-vita-through-platform-dispatch | 8 | 1 | |
-| 0003-vita-platform-implementations | 8 | **0** | the only clean patch |
+| 0003-vita-platform-implementations | 8 | **0** | clean |
 | 0004-gn-vita-toolchain | 7 | 3 | `build/config/compiler/BUILD.gn` (69 lines) |
-| 0005-zlib-no-armv8-on-vita | 1 | 1 | top-level `BUILD.gn` (**439 lines**) |
+| 0005-zlib-no-armv8-on-vita | 1 | **0** | nested zlib repo, whose pin does not move |
 | 0006-newlib-portability-fixes | 6 | 5 | `dart.cc` (353), `ffi_dynamic_library.cc` (344), `image_snapshot.cc` (192) |
 | 0007-vmlibraryhooks-entry-point | 1 | 1 | |
 | 0008-dart-vita-embedder-library | 3 | 2 | `sdk/lib/libraries.json` (299 lines) |
@@ -166,8 +171,9 @@ Two smaller notes from the same area, both benign:
 
 Only **Skia moves** (`e9ed4fc9` → `8df24be6`), so
 `patches/skia/0001-vita-platform-detection-and-no-mmap.patch` needs
-re-validating against a tree we have not diffed. **BoringSSL and abseil do not
-move at all** in this window, so those two patches are free.
+re-validating against a tree we have not diffed. **BoringSSL, abseil and zlib
+do not move at all** in this window, so those three patches are free —
+including Dart patch 0005, which despite its number applies to zlib.
 
 ---
 
@@ -196,9 +202,9 @@ in 3.47.0.
 |---|---|
 | **It is a release candidate** | `[user-branch]` / `flutter-3.47-candidate.0`, no changelog entries. Pinning it trades a stable base for an unproven one |
 | **It discards the ardera reference point** | The 3.44.8 pin exists because [ardera](https://github.com/ardera/flutter-engine-binaries-for-arm) ships prebuilt arm32 binaries at that exact commit — third-party proof the engine cross-compiles to armv7. Past it, "Vita bug" and "arm32 bug" become indistinguishable |
-| **Nine of ten Dart patches need rework** | Including the three largest rewrites, and `ffi_dynamic_library.cc` which ADR-0013 depends on |
+| **Eight of ten Dart patches need rework** | Including the three largest rewrites, and `ffi_dynamic_library.cc` which ADR-0013 depends on |
 | **One guaranteed compile break** | `InterfaceSocketAddress`'s new 4th parameter, in the code that makes localsend work |
-| **Skia patch needs re-validation** | Skia's pin moves; the other two vendored pins do not |
+| **Skia patch needs re-validation** | Skia's pin moves; BoringSSL, abseil and zlib do not |
 | **The SDK-hash trap fires again** | Re-pinning makes `gen_snapshot` bake a mismatched verification hash. Known and fixable, but it [already cost a day once](results/corpus-build-failures-2026-08-19.md) |
 | **A full revalidation cycle** | Engine build, both Dart trees, 21 patches across six repos, conformance baseline, five corpus apps |
 
