@@ -32,9 +32,14 @@ static const void* (*g_read_framebuffer)(unsigned int*, char*, unsigned int) =
     NULL;
 
 static void (*g_tap)(int, int) = NULL;
+static void (*g_overlay)(int) = NULL;
 
 void dev_server_set_tap_handler(void (*tap)(int x, int y)) {
   g_tap = tap;
+}
+
+void dev_server_set_overlay_handler(void (*overlay)(int on)) {
+  g_overlay = overlay;
 }
 
 void dev_server_set_framebuffer_source(
@@ -351,6 +356,24 @@ static int serve(int sock, const char* log_path, const char* eboot_path) {
         snprintf(m, sizeof m, "OK tap %d %d\n", x, y);
         send_str(sock, m);
       }
+    } else if (strncmp(line, "overlay ", 8) == 0) {
+      // Turn the debug HUD off for a screenshot, and back on afterwards.
+      //
+      // Worth a command rather than a rebuild: the HUD sits on top of the app,
+      // so every capture taken for documentation has it in the corner, and the
+      // only alternatives are relinking with the overlay compiled out or
+      // cropping the picture afterwards.
+      if (g_overlay == NULL) {
+        send_str(sock, "ERR no overlay handler\n");
+      } else if (strcmp(line + 8, "on") == 0) {
+        g_overlay(1);
+        send_str(sock, "OK overlay on\n");
+      } else if (strcmp(line + 8, "off") == 0) {
+        g_overlay(0);
+        send_str(sock, "OK overlay off\n");
+      } else {
+        send_str(sock, "ERR overlay on|off\n");
+      }
     } else if (strcmp(line, "crash") == 0) {
       // Deliberately fault, to get a crash dump out of a process that is not
       // crashing.
@@ -367,7 +390,7 @@ static int serve(int sock, const char* log_path, const char* eboot_path) {
       *(volatile unsigned int*)0 = 0xDEAD;
       return 1;  // not reached
     } else if (n > 0) {
-      send_str(sock, "ERR unknown (ping|probe|log|get|put|shot|shotinfo|tap <x> <y>|handoff|relaunch|crash|exit)\n");
+      send_str(sock, "ERR unknown (ping|probe|log|get|put|shot|shotinfo|tap <x> <y>|overlay on|off|handoff|relaunch|crash|exit)\n");
     }
   }
 }

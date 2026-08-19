@@ -70,10 +70,10 @@ index 61abe64a..b92ae80c 100644
  
 diff --git a/engine/src/flutter/shell/platform/embedder/vita_embedder.cc b/engine/src/flutter/shell/platform/embedder/vita_embedder.cc
 new file mode 100644
-index 00000000..9ecaf7f0
+index 00000000..f757ebf3
 --- /dev/null
 +++ b/engine/src/flutter/shell/platform/embedder/vita_embedder.cc
-@@ -0,0 +1,1616 @@
+@@ -0,0 +1,1893 @@
 +// Copyright (c) 2026, the Flutter Authors. All rights reserved.
 +// Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
@@ -148,6 +148,16 @@ index 00000000..9ecaf7f0
 +                                    char* describe,
 +                                    unsigned int describe_size));
 +extern "C" void dev_server_set_tap_handler(void (*tap)(int x, int y));
++extern "C" void dev_server_set_overlay_handler(void (*overlay)(int on));
++
++// Whether a build wants the debug HUD.
++//
++// Weak, so an app that ships can define its own strong `flutter_vita_debug_overlay = 0`
++// in the same file where it stubs out the dev server, and the two dev-only
++// pieces get dropped together without touching the engine archive. Not `const`:
++// a const at namespace scope has internal linkage in C++, which is the one
++// thing a symbol meant to be overridden must not have.
++extern "C" __attribute__((weak)) int flutter_vita_debug_overlay = 1;
 +
 +namespace {
 +
@@ -289,6 +299,28 @@ index 00000000..9ecaf7f0
 +uint64_t g_win_first_us = 0;   // start of the current window
 +uint64_t g_win_blit_us = 0;    // summed memcpy time inside it
 +uint64_t g_win_damage_px = 0;  // summed damaged pixels inside it
++uint64_t g_win_hud_us = 0;     // summed time spent drawing the HUD
++
++// Runtime switch for the debug HUD, on top of the build-time
++// flutter_vita_debug_overlay above. `overlay off` on the dev server; see
++// SetOverlay below for why it is worth a command.
++bool g_hud_on = true;
++
++// Set when the HUD on screen is out of date: the text changed, or the blit
++// copied app pixels over the top of it. Cleared by painting.
++//
++// Without this the HUD repaints on every present whether or not anything
++// disturbed it, which on an idle screen is the entire per-frame cost of the
++// port for no information at all.
++bool g_hud_dirty = true;
++
++// Set whenever a frame does not reach the blit, or something else writes over
++// the display buffer. The next blit then copies everything.
++//
++// A flag rather than a whole-screen g_damage, because the damage observer
++// overwrites g_damage at the start of every frame -- anything recorded there by
++// a skipped frame is gone before the next blit reads it.
++bool g_display_stale = true;
 +uint64_t g_win_max_gap_us = 0; // worst present-to-present gap in it
 +unsigned g_win_frames = 0;
 +
@@ -488,9 +520,25 @@ index 00000000..9ecaf7f0
 +  return fb.base;
 +}
 +
++// |dev_server_set_overlay_handler|
++//
++// Called from the server's thread while the raster thread may be mid-present.
++// A plain bool is enough: the worst a torn read can do is draw or skip the HUD
++// for one frame, and the next present settles it.
++void SetOverlay(int on) {
++  g_hud_on = on != 0;
++  // Turning it off leaves the HUD's own pixels on screen with nothing to
++  // restore them, since partial repaint only copies what Flutter changed. Ask
++  // for one whole frame; turning it back on needs a repaint for the same
++  // reason.
++  g_display_stale = true;
++  g_hud_dirty = true;
++}
++
 +void StartDevServer() {
 +  dev_server_set_framebuffer_source(ReadFramebuffer);
 +  dev_server_set_tap_handler(InjectTap);
++  dev_server_set_overlay_handler(SetOverlay);
 +  // 64 KiB of stack because the server's `put` path holds a 32 KiB buffer.
 +  const SceUID thread = sceKernelCreateThread(
 +      "m3_devserver", DevServerThread, 0x10000100, 64 * 1024, 0, 0, nullptr);
@@ -649,13 +697,6 @@ index 00000000..9ecaf7f0
 +};
 +Damage g_damage;
 +
-+// Set whenever a frame does not reach the blit, or something else writes over
-+// the display buffer. The next blit then copies everything.
-+//
-+// A flag rather than widening g_damage, because the observer overwrites
-+// g_damage at the start of every frame -- anything recorded there by a skipped
-+// frame is gone before the next blit reads it.
-+bool g_display_stale = true;
 +
 +void OnFrameDamage(int32_t left, int32_t top, int32_t right, int32_t bottom,
 +                   bool full) {
@@ -669,6 +710,211 @@ index 00000000..9ecaf7f0
 +  g_damage.top = top < 0 ? 0 : (top > kHeight ? kHeight : top);
 +  g_damage.right = right < 0 ? 0 : (right > kWidth ? kWidth : right);
 +  g_damage.bottom = bottom < 0 ? 0 : (bottom > kHeight ? kHeight : bottom);
++}
++
++
++// ---------------------------------------------------------------------------
++// The debug HUD.
++//
++// Every number this port has been tuned by so far -- frame rate, damaged area,
++// blit cost, free memory -- has been read out of a log file pulled over the
++// network after the fact. That is fine for a measurement and useless while
++// somebody is holding the console: the moment you want to know *which* screen
++// is slow, or whether a scroll is the expensive thing, the answer has to be on
++// the panel next to the thing you are touching.
++//
++// So this draws the same window the FRAMES line reports into the corner of the
++// framebuffer, after the blit and directly into the display buffer. Flutter
++// knows nothing about it, which is deliberate: it costs the app nothing, needs
++// no widget, and works identically in every app in the corpus without a line of
++// Dart. It also means partial repaint cannot erase it -- the blit restores app
++// pixels underneath and the HUD is redrawn on top in the same call.
++//
++// It is drawn on the raster thread, in the present callback, and its own cost
++// is measured and reported separately so it can never be mistaken for the
++// blit's.
++
++// 5x7, one byte per column, bit 0 is the top row. The classic ASCII cell: it
++// is legible at 2x on a 960x544 panel held at arm's length, and small enough
++// that the whole table is smaller than one line of Skia.
++//
++// Digits first, then A-Z, then the handful of symbols the HUD actually prints.
++// Lowercase is missing on purpose -- the HUD upper-cases everything rather than
++// carry a second alphabet for six words.
++constexpr unsigned char kFont[][5] = {
++    {0x3E, 0x51, 0x49, 0x45, 0x3E},  // 0
++    {0x00, 0x42, 0x7F, 0x40, 0x00},  // 1
++    {0x42, 0x61, 0x51, 0x49, 0x46},  // 2
++    {0x21, 0x41, 0x45, 0x4B, 0x31},  // 3
++    {0x18, 0x14, 0x12, 0x7F, 0x10},  // 4
++    {0x27, 0x45, 0x45, 0x45, 0x39},  // 5
++    {0x3C, 0x4A, 0x49, 0x49, 0x30},  // 6
++    {0x01, 0x71, 0x09, 0x05, 0x03},  // 7
++    {0x36, 0x49, 0x49, 0x49, 0x36},  // 8
++    {0x06, 0x49, 0x49, 0x29, 0x1E},  // 9
++    {0x7E, 0x11, 0x11, 0x11, 0x7E},  // A
++    {0x7F, 0x49, 0x49, 0x49, 0x36},  // B
++    {0x3E, 0x41, 0x41, 0x41, 0x22},  // C
++    {0x7F, 0x41, 0x41, 0x22, 0x1C},  // D
++    {0x7F, 0x49, 0x49, 0x49, 0x41},  // E
++    {0x7F, 0x09, 0x09, 0x09, 0x01},  // F
++    {0x3E, 0x41, 0x49, 0x49, 0x7A},  // G
++    {0x7F, 0x08, 0x08, 0x08, 0x7F},  // H
++    {0x00, 0x41, 0x7F, 0x41, 0x00},  // I
++    {0x20, 0x40, 0x41, 0x3F, 0x01},  // J
++    {0x7F, 0x08, 0x14, 0x22, 0x41},  // K
++    {0x7F, 0x40, 0x40, 0x40, 0x40},  // L
++    {0x7F, 0x02, 0x0C, 0x02, 0x7F},  // M
++    {0x7F, 0x04, 0x08, 0x10, 0x7F},  // N
++    {0x3E, 0x41, 0x41, 0x41, 0x3E},  // O
++    {0x7F, 0x09, 0x09, 0x09, 0x06},  // P
++    {0x3E, 0x41, 0x51, 0x21, 0x5E},  // Q
++    {0x7F, 0x09, 0x19, 0x29, 0x46},  // R
++    {0x46, 0x49, 0x49, 0x49, 0x31},  // S
++    {0x01, 0x01, 0x7F, 0x01, 0x01},  // T
++    {0x3F, 0x40, 0x40, 0x40, 0x3F},  // U
++    {0x1F, 0x20, 0x40, 0x20, 0x1F},  // V
++    {0x3F, 0x40, 0x38, 0x40, 0x3F},  // W
++    {0x63, 0x14, 0x08, 0x14, 0x63},  // X
++    {0x07, 0x08, 0x70, 0x08, 0x07},  // Y
++    {0x61, 0x51, 0x49, 0x45, 0x43},  // Z
++    {0x00, 0x60, 0x60, 0x00, 0x00},  // .
++    {0x23, 0x13, 0x08, 0x64, 0x62},  // %
++    {0x00, 0x36, 0x36, 0x00, 0x00},  // :
++    {0x08, 0x08, 0x08, 0x08, 0x08},  // -
++    {0x20, 0x10, 0x08, 0x04, 0x02},  // /
++};
++
++// -1 for anything with no glyph, including space, which draws as nothing.
++int GlyphIndex(char c) {
++  if (c >= '0' && c <= '9') return c - '0';
++  if (c >= 'A' && c <= 'Z') return 10 + (c - 'A');
++  if (c >= 'a' && c <= 'z') return 10 + (c - 'a');
++  switch (c) {
++    case '.': return 36;
++    case '%': return 37;
++    case ':': return 38;
++    case '-': return 39;
++    case '/': return 40;
++    default:  return -1;
++  }
++}
++
++constexpr int kHudScale = 2;              // 5x7 becomes 10x14
++constexpr int kHudAdvance = 6 * kHudScale;  // one blank column between glyphs
++constexpr int kHudLineH = 8 * kHudScale;
++constexpr int kHudPad = 4;
++constexpr int kHudLines = 3;
++constexpr int kHudCols = 21;
++constexpr uint32_t kHudInk = 0xFF00FF00u;   // A8B8G8R8: opaque green
++constexpr uint32_t kHudBack = 0xFF000000u;  // opaque black
++
++// The box, in display pixels. Fixed rather than computed at each call so the
++// blit can ask whether it just overwrote the HUD.
++constexpr int kHudW = kHudCols * kHudAdvance + kHudPad * 2;
++constexpr int kHudH = kHudLines * kHudLineH + kHudPad * 2;
++constexpr int kHudX = kWidth - kHudW - kHudPad;
++constexpr int kHudY = kHudPad;
++
++
++
++char g_hud_text[kHudLines][kHudCols + 1];
++
++// A solid backing box. Write-only, and both halves of that matter.
++//
++// The first version halved each channel instead, to let the app show through.
++// It was wrong twice over. It read the framebuffer, and this framebuffer is in
++// CDRAM, where reads are far slower than writes -- 16,000 of them cost 2.4 ms
++// a frame, which is more than the blit and a seventh of a 60 fps budget, for an
++// instrument. And because partial repaint means nothing restores these pixels
++// on a frame that damages elsewhere, it darkened *its own previous output*
++// sixty times a second, so the box faded to black within a second anyway.
++void HudFill(uint32_t* fb, int x, int y, int w, int h) {
++  for (int row = y; row < y + h; row++) {
++    uint32_t* p = fb + static_cast<size_t>(row) * kPitch + x;
++    for (int col = 0; col < w; col++) p[col] = kHudBack;
++  }
++}
++
++void HudDrawText(uint32_t* fb, int x, int y, const char* text) {
++  for (int i = 0; text[i] != '\0'; i++) {
++    const int glyph = GlyphIndex(text[i]);
++    if (glyph < 0) continue;
++    const unsigned char* cols = kFont[glyph];
++    for (int gx = 0; gx < 5; gx++) {
++      for (int gy = 0; gy < 7; gy++) {
++        if ((cols[gx] & (1u << gy)) == 0) continue;
++        const int px = x + (i * kHudAdvance) + gx * kHudScale;
++        const int py = y + gy * kHudScale;
++        for (int sy = 0; sy < kHudScale; sy++) {
++          uint32_t* p = fb + static_cast<size_t>(py + sy) * kPitch + px;
++          for (int sx = 0; sx < kHudScale; sx++) p[sx] = kHudInk;
++        }
++      }
++    }
++  }
++}
++
++// A second, shorter accumulation window, for the HUD only.
++//
++// Deliberately not the same window as the FRAMES line. Sixty frames is the
++// right size for a number somebody is going to quote in a commit message and
++// far too slow for one somebody is watching while they scroll -- at 13 fps it
++// updates once every four and a half seconds. Twenty frames updates three times
++// a second at 60 fps and still often enough to follow at 13. The log stays
++// authoritative; the HUD is for steering.
++constexpr unsigned kHudWindow = 20;
++unsigned g_hud_frames = 0;
++unsigned g_hud_active = 0;
++uint64_t g_hud_active_us = 0;
++uint64_t g_hud_blit_us = 0;
++uint64_t g_hud_damage_px = 0;
++uint64_t g_hud_max_gap_us = 0;
++
++void HudUpdate() {
++  const unsigned active_us =
++      g_hud_active != 0 ? static_cast<unsigned>(g_hud_active_us / g_hud_active)
++                        : 0;
++  const unsigned fps = active_us != 0 ? 1000000u / active_us : 0;
++  const unsigned fps_frac = active_us != 0 ? (10000000u / active_us) % 10 : 0;
++  const unsigned blit_us = static_cast<unsigned>(g_hud_blit_us / g_hud_frames);
++  const unsigned dmg_pct = static_cast<unsigned>(
++      g_hud_damage_px / g_hud_frames * 100 / (kWidth * kHeight));
++
++  SceKernelFreeMemorySizeInfo mem;
++  mem.size = sizeof(mem);
++  const unsigned free_mb =
++      sceKernelGetFreeMemorySize(&mem) >= 0
++          ? static_cast<unsigned>(mem.size_user / (1024 * 1024))
++          : 0;
++
++  std::snprintf(g_hud_text[0], sizeof g_hud_text[0], "%u.%u FPS  %u MS", fps,
++                fps_frac, active_us / 1000);
++  std::snprintf(g_hud_text[1], sizeof g_hud_text[1], "DMG %u%%  BLIT %u.%u MS",
++                dmg_pct, blit_us / 1000, (blit_us / 100) % 10);
++  std::snprintf(g_hud_text[2], sizeof g_hud_text[2], "MEM %uM  MAX %u MS",
++                free_mb, static_cast<unsigned>(g_hud_max_gap_us / 1000));
++
++  g_hud_dirty = true;
++
++  g_hud_frames = 0;
++  g_hud_active = 0;
++  g_hud_active_us = 0;
++  g_hud_blit_us = 0;
++  g_hud_damage_px = 0;
++  g_hud_max_gap_us = 0;
++}
++
++void HudPaint(void* base) {
++  if (kHudX < 0 || kHudY + kHudH > kHeight) return;
++
++  uint32_t* fb = static_cast<uint32_t*>(base);
++  HudFill(fb, kHudX, kHudY, kHudW, kHudH);
++  for (int line = 0; line < kHudLines; line++) {
++    HudDrawText(fb, kHudX + kHudPad, kHudY + kHudPad + line * kHudLineH,
++                g_hud_text[line]);
++  }
++  g_hud_dirty = false;
 +}
 +
 +// |SoftwareSurfacePresentCallback|
@@ -725,13 +971,17 @@ index 00000000..9ecaf7f0
 +    if (g_last_present_us != 0) {
 +      const uint64_t gap = now - g_last_present_us;
 +      if (gap > g_win_max_gap_us) g_win_max_gap_us = gap;
++      if (gap > g_hud_max_gap_us) g_hud_max_gap_us = gap;
 +      if (gap > kIdleGapUs) {
 +        g_win_idle++;
 +      } else {
 +        g_win_active_us += gap;
 +        g_win_active++;
++        g_hud_active_us += gap;
++        g_hud_active++;
 +      }
 +      g_win_frames++;
++      g_hud_frames++;
 +    }
 +    if (g_win_first_us == 0) g_win_first_us = now;
 +    g_last_present_us = now;
@@ -799,10 +1049,35 @@ index 00000000..9ecaf7f0
 +    std::memcpy(dst + static_cast<size_t>(y) * kPitch * 4 + x_off,
 +                src + static_cast<size_t>(y) * row_bytes + x_off, copy_bytes);
 +  }
-+  g_win_blit_us += sceKernelGetSystemTimeWide() - blit_start;
++  const uint64_t blit_elapsed_us = sceKernelGetSystemTimeWide() - blit_start;
++  g_win_blit_us += blit_elapsed_us;
++  g_hud_blit_us += blit_elapsed_us;
 +  if (y1 > y0) {
-+    g_win_damage_px +=
++    const uint64_t damaged =
 +        static_cast<uint64_t>(y1 - y0) * static_cast<uint64_t>(copy_bytes / 4);
++    g_win_damage_px += damaged;
++    g_hud_damage_px += damaged;
++  }
++
++  // The HUD, over the top of the frame just copied.
++  //
++  // After the blit rather than before it, because the blit would otherwise
++  // overwrite it wherever damage overlaps the corner -- and it must be redrawn
++  // every present for the same reason. Its cost is timed into its own counter,
++  // never into the blit's, so an instrument can never flatter or slander the
++  // thing it measures.
++  if (x1 > kHudX && x0 < kHudX + kHudW && y1 > kHudY && y0 < kHudY + kHudH) {
++    g_hud_dirty = true;  // the blit just painted app pixels over it
++  }
++  if (flutter_vita_debug_overlay != 0 && g_hud_on) {
++    const uint64_t hud_start = sceKernelGetSystemTimeWide();
++    if (g_hud_frames >= kHudWindow) {
++      HudUpdate();
++    }
++    if (g_hud_dirty) {
++      HudPaint(g_display.base);
++    }
++    g_win_hud_us += sceKernelGetSystemTimeWide() - hud_start;
 +  }
 +
 +  // The next frame is whole until the rasterizer says otherwise. Without this
@@ -837,15 +1112,17 @@ index 00000000..9ecaf7f0
 +    const unsigned dmg_pct = static_cast<unsigned>(
 +        g_win_damage_px / g_win_frames * 100 / (kWidth * kHeight));
 +    VLog("flutter-vita: FRAMES active %u @ %u us = %u.%02u fps "
-+         "(blit %u us = %u%%, dmg %u%%) | idle gaps %u | max %u ms\n",
++         "(blit %u us = %u%%, dmg %u%%, hud %u us) | idle gaps %u | max %u ms\n",
 +         g_win_active, active_us,
 +         active_us != 0 ? 1000000u / active_us : 0,
 +         active_us != 0 ? (100000000u / active_us) % 100 : 0, blit_us,
-+         active_us != 0 ? blit_us * 100 / active_us : 0, dmg_pct, g_win_idle,
++         active_us != 0 ? blit_us * 100 / active_us : 0, dmg_pct,
++         static_cast<unsigned>(g_win_hud_us / g_win_frames), g_win_idle,
 +         static_cast<unsigned>(g_win_max_gap_us / 1000));
 +    g_win_frames = 0;
 +    g_win_blit_us = 0;
 +    g_win_damage_px = 0;
++    g_win_hud_us = 0;
 +    g_win_max_gap_us = 0;
 +    g_win_active_us = 0;
 +    g_win_active = 0;

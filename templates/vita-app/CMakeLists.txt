@@ -58,6 +58,17 @@ set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=gnu++20 -Wall -O2 -g")
 # alongside devserver.c. It overrides abort() and __assert_func(), which works
 # only because both are *undefined* in the engine archive -- the engine calls
 # them and libc supplies them, so a definition linked ahead of libc wins.
+#
+# The third dev-only piece is the debug HUD -- frame rate, damaged area, blit
+# cost and free memory, drawn in the top-right corner of every frame. It cannot
+# be dropped by leaving a file out, because it lives inside the engine archive,
+# so it is switched off by *adding* one:
+#
+#   echo 'int flutter_vita_debug_overlay = 0;' > shipping.c
+#
+# and listing that beside the devserver stub. The symbol in the archive is weak;
+# a strong definition linked alongside wins. It can also be toggled at runtime
+# with `overlay off` on the dev server, which is what to use for a screenshot.
 add_executable(${PROJECT_NAME}
   ${SNAPSHOT_S}
   ${ENGINE_DIR}/src/devserver.c

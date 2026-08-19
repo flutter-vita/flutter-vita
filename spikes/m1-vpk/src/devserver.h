@@ -49,4 +49,10 @@ void dev_server_set_framebuffer_source(
 // whichever thread owns the engine rather than dispatching it directly.
 void dev_server_set_tap_handler(void (*tap)(int x, int y));
 
+// Register a handler for `overlay on|off`.
+//
+// The debug HUD is drawn over the app, so a screenshot taken for anything but
+// debugging has it in the corner. This turns it off without a rebuild.
+void dev_server_set_overlay_handler(void (*overlay)(int on));
+
 #endif  // DEVSERVER_H

@@ -95,3 +95,41 @@ the blit was never the interesting half.
 window. It is the number that says whether an app is in the first case or the
 second, and it is the number to quote before anyone spends a week on a GPU
 backend.
+
+## The HUD
+
+Every number above was read out of a log pulled over the network after the
+fact. That is fine for a measurement and useless while somebody is holding the
+console — the moment you want to know *which* screen is slow, the answer has to
+be on the panel next to the thing you are touching. So the same window is now
+drawn in the top-right corner of every frame:
+
+```
+36.2 FPS  27 MS
+DMG 11%  BLIT 1.1 MS
+MEM 53M  MAX 51 MS
+```
+
+It lives in the embedder, not in Dart: it costs the app nothing, needs no
+widget, and works identically in every app in the corpus without a line of
+source. It is drawn after the blit and straight into the display buffer, which
+is also what makes it survive partial repaint — the blit restores app pixels
+underneath and the HUD goes back on top in the same call.
+
+**Its first version cost 2.4 ms a frame, which is more than the blit it was
+there to measure.** Two mistakes, both from reading the framebuffer instead of
+only writing it:
+
+- The backing box halved each channel so the app showed through. Those 16,000
+  reads land in CDRAM, where reads are far slower than writes.
+- Nothing restores those pixels on a frame that damages elsewhere, so it
+  darkened *its own previous output* sixty times a second and faded to black
+  within a second regardless.
+
+A solid box, plus repainting only when the text changes or the blit overwrote
+it, takes it to **19 µs** — 127x cheaper, and now reported as its own `hud`
+field in the FRAMES line so it can never be confused with the blit.
+
+`overlay off` on the dev server hides it for a clean screenshot; a shipping
+build drops it by defining `int flutter_vita_debug_overlay = 0;` beside the dev
+server stub, the same way `devserver.c` and `bailout.c` are dropped.
