@@ -928,7 +928,7 @@ index 84fe559d..61db137e 100644
  
  ssize_t FDUtils::ReadFromBlocking(int fd, void* buffer, size_t count) {
 diff --git a/runtime/bin/file_linux.cc b/runtime/bin/file_linux.cc
-index 9f7cbaf9..ac5eaf7c 100644
+index 9f7cbaf9..64015af4 100644
 --- a/runtime/bin/file_linux.cc
 +++ b/runtime/bin/file_linux.cc
 @@ -3,15 +3,21 @@
@@ -1110,7 +1110,24 @@ index 9f7cbaf9..ac5eaf7c 100644
    MillisecondsToTimespec(millis, &times[1]);
    return utimensat(ns.fd(), ns.path(), times, 0) == 0;
  }
-@@ -754,6 +857,25 @@ const char* File::StringEscapedPathSeparator() {
+@@ -707,7 +810,15 @@ const char* File::ReadLink(const char* pathname) {
+   // 0. Also the link might have changed before the readlink call.
+   const int kBufferSize = PATH_MAX + 1;
+   char target[kBufferSize];
+-  size_t target_size = ReadLinkInto(pathname, target, kBufferSize);
++  // intptr_t, not size_t. ReadLinkInto returns -1 on failure, and stored in an
++  // unsigned that becomes SIZE_MAX, which sails past `<= 0` and is then handed
++  // to ScopedCString and memmove -- a wild copy of the whole address space.
++  //
++  // Upstream never sees it because the only caller passes /proc/self/exe, which
++  // on Linux always exists. There is no /proc here, so it fails every time, and
++  // the result was a hard fault with no message the moment any Dart code
++  // touched Platform.resolvedExecutable.
++  intptr_t target_size = ReadLinkInto(pathname, target, kBufferSize);
+   if (target_size <= 0) {
+     return nullptr;
+   }
+@@ -754,6 +865,25 @@ const char* File::StringEscapedPathSeparator() {
  }
  
  File::StdioHandleType File::GetStdioHandleType(int fd) {
@@ -1284,7 +1301,7 @@ index 7f5255dc..6fb6b014 100644
    return kWindowsDynamicLibraryProcessPtr;
  #endif
 diff --git a/runtime/bin/platform_linux.cc b/runtime/bin/platform_linux.cc
-index 86a6dc83..b288bd50 100644
+index 86a6dc83..9258ea11 100644
 --- a/runtime/bin/platform_linux.cc
 +++ b/runtime/bin/platform_linux.cc
 @@ -3,14 +3,18 @@
@@ -1307,7 +1324,15 @@ index 86a6dc83..b288bd50 100644
  #include <sys/resource.h>
  #if defined(DART_HOST_OS_ANDROID)
  #include <sys/system_properties.h>
-@@ -28,6 +32,33 @@ const char* Platform::executable_name_ = nullptr;
+@@ -19,6 +23,7 @@
+ #include <unistd.h>
+ 
+ #include "bin/console.h"
++#include "bin/dartutils.h"
+ #include "bin/file.h"
+ 
+ namespace dart {
+@@ -28,6 +33,33 @@ const char* Platform::executable_name_ = nullptr;
  int Platform::script_index_ = 1;
  char** Platform::argv_ = nullptr;
  
@@ -1341,7 +1366,7 @@ index 86a6dc83..b288bd50 100644
  static const char* strcode(int si_signo, int si_code) {
  #define CASE(signo, code)                                                      \
    if (si_signo == signo && si_code == code) return #code;
-@@ -120,8 +151,37 @@ bool Platform::Initialize(bool install_crash_handler /* = true */) {
+@@ -120,8 +152,37 @@ bool Platform::Initialize(bool install_crash_handler /* = true */) {
    return true;
  }
  
@@ -1379,7 +1404,46 @@ index 86a6dc83..b288bd50 100644
  }
  
  const char* Platform::OperatingSystemVersion() {
-@@ -195,7 +255,15 @@ intptr_t Platform::ResolveExecutablePathInto(char* result, size_t result_size) {
+@@ -186,16 +247,54 @@ const char* Platform::GetExecutableName() {
+   return executable_name_;
+ }
+ 
++#if defined(DART_HOST_OS_VITA)
++// The running title's own eboot.bin, which is what app0: is mounted from.
++//
++// There is no /proc, so the Linux answer -- readlink("/proc/self/exe") -- fails
++// on every call. Returning null would be survivable; what actually happened is
++// that File::ReadLink turned the failure into a wild memmove (see the note
++// there), so any app touching Platform.resolvedExecutable died with no message.
++// localsend is one: it looks for a settings.json beside the executable to
++// decide whether it is running in portable mode.
++//
++// This path is also the honest answer rather than a placeholder. app0: is the
++// read-only mount of the installed .vpk and eboot.bin is the ELF inside it, so
++// a caller asking "where am I installed" gets somewhere real, and a caller
++// looking for a sibling file gets a directory that exists and is empty of one.
++static const char* kVitaExecutablePath = "app0:/eboot.bin";
++#endif  // defined(DART_HOST_OS_VITA)
++
+ const char* Platform::ResolveExecutablePath() {
++#if defined(DART_HOST_OS_VITA)
++  return DartUtils::ScopedCopyCString(kVitaExecutablePath);
++#else
+   return File::ReadLink("/proc/self/exe");
++#endif  // defined(DART_HOST_OS_VITA)
+ }
+ 
+ intptr_t Platform::ResolveExecutablePathInto(char* result, size_t result_size) {
++#if defined(DART_HOST_OS_VITA)
++  const size_t length = strlen(kVitaExecutablePath);
++  if (length + 1 > result_size) {
++    return -1;
++  }
++  memmove(result, kVitaExecutablePath, length + 1);
++  return length;
++#else
+   return File::ReadLinkInto("/proc/self/exe", result, result_size);
++#endif  // defined(DART_HOST_OS_VITA)
  }
  
  void Platform::SetProcessName(const char* name) {
@@ -1395,7 +1459,7 @@ index 86a6dc83..b288bd50 100644
  }
  
  void Platform::Exit(int exit_code) {
-@@ -211,8 +279,21 @@ void Platform::_Exit(int exit_code) {
+@@ -211,8 +310,21 @@ void Platform::_Exit(int exit_code) {
  }
  
  void Platform::SetCoreDumpResourceLimit(int value) {
@@ -1625,7 +1689,7 @@ index 904b73ac..08bd63c0 100644
    static_assert(kMaxAddressStringLength >= INET_ADDRSTRLEN);
  
 diff --git a/runtime/bin/socket_base_linux.cc b/runtime/bin/socket_base_linux.cc
-index 24f8e067..06b30afe 100644
+index 24f8e067..ded4e258 100644
 --- a/runtime/bin/socket_base_linux.cc
 +++ b/runtime/bin/socket_base_linux.cc
 @@ -3,13 +3,22 @@
@@ -1664,7 +1728,7 @@ index 24f8e067..06b30afe 100644
  #include "bin/thread.h"
  #include "platform/signal_blocker.h"
  
-@@ -118,6 +131,36 @@ bool SocketBase::GetOption(intptr_t fd,
+@@ -118,6 +131,58 @@ bool SocketBase::GetOption(intptr_t fd,
    return result == 0;
  }
  
@@ -1673,27 +1737,49 @@ index 24f8e067..06b30afe 100644
 +// MCAST_JOIN_GROUP and struct group_req are the protocol-independent multicast
 +// API from RFC 3678, and VitaSDK has neither.
 +//
-+// This is *not* the platform saying no. sceNet does implement IPv4 multicast --
-+// IP_ADD_MEMBERSHIP, IP_DROP_MEMBERSHIP and struct ip_mreq are all defined in
-+// its <netinet/in.h> -- so a real implementation is available for IPv4 by
-+// dropping to the older API and reporting failure for IPv6. That is a feature,
-+// not a link requirement, and it wants a device to test against; until then
-+// this reports failure honestly rather than pretending to have joined.
++// That absence is not the platform saying no, though: sceNet implements IPv4
++// multicast under the older BSD names -- IP_ADD_MEMBERSHIP, IP_DROP_MEMBERSHIP
++// and struct ip_mreq are all in its <netinet/in.h> -- so the join below uses
++// those and reports EAFNOSUPPORT for IPv6, which this device genuinely lacks.
++//
++// This used to return ENOSYS unconditionally, waiting for a device to test
++// against. What that cost is worth recording: localsend's discovery calls
++// joinMulticast on every interface, so the app started with its whole
++// peer-discovery path dead while its HTTPS server ran perfectly -- reachable
++// only if you already knew the address to type.
++
++// The interface index is discarded on purpose. ip_mreq names the interface by
++// address, not index, and this device has exactly one -- so INADDR_ANY selects
++// the only interface there is rather than guessing at one.
++static bool VitaMulticastMembership(intptr_t fd,
++                                    const RawAddr& addr,
++                                    int option) {
++  if (addr.addr.sa_family != AF_INET) {
++    // sceNet has no IPv6 at all, so this is the platform saying no, not a
++    // missing implementation.
++    errno = EAFNOSUPPORT;
++    return false;
++  }
++  struct ip_mreq mreq;
++  memset(&mreq, 0, sizeof(mreq));
++  mreq.imr_multiaddr = addr.in.sin_addr;
++  mreq.imr_interface.s_addr = htonl(INADDR_ANY);
++  return NO_RETRY_EXPECTED(
++             setsockopt(fd, IPPROTO_IP, option, &mreq, sizeof(mreq))) == 0;
++}
 +
 +bool SocketBase::JoinMulticast(intptr_t fd,
 +                               const RawAddr& addr,
 +                               const RawAddr&,
 +                               int interfaceIndex) {
-+  errno = ENOSYS;
-+  return false;
++  return VitaMulticastMembership(fd, addr, IP_ADD_MEMBERSHIP);
 +}
 +
 +bool SocketBase::LeaveMulticast(intptr_t fd,
 +                                const RawAddr& addr,
 +                                const RawAddr&,
 +                                int interfaceIndex) {
-+  errno = ENOSYS;
-+  return false;
++  return VitaMulticastMembership(fd, addr, IP_DROP_MEMBERSHIP);
 +}
 +
 +#else
@@ -1701,7 +1787,7 @@ index 24f8e067..06b30afe 100644
  bool SocketBase::JoinMulticast(intptr_t fd,
                                 const RawAddr& addr,
                                 const RawAddr&,
-@@ -142,6 +185,9 @@ bool SocketBase::LeaveMulticast(intptr_t fd,
+@@ -142,6 +207,9 @@ bool SocketBase::LeaveMulticast(intptr_t fd,
                                        sizeof(mreq))) == 0;
  }
  
@@ -1712,7 +1798,7 @@ index 24f8e067..06b30afe 100644
  }  // namespace dart
  
 diff --git a/runtime/bin/socket_base_posix.cc b/runtime/bin/socket_base_posix.cc
-index 629c307d..d0f506f1 100644
+index 629c307d..0e860a9b 100644
 --- a/runtime/bin/socket_base_posix.cc
 +++ b/runtime/bin/socket_base_posix.cc
 @@ -4,11 +4,14 @@
@@ -1731,8 +1817,11 @@ index 629c307d..d0f506f1 100644
  #include <netinet/tcp.h>  // NOLINT
  #include <stdio.h>        // NOLINT
  #include <stdlib.h>       // NOLINT
-@@ -18,9 +21,17 @@
+@@ -16,11 +19,21 @@
+ #include <sys/stat.h>     // NOLINT
+ #include <unistd.h>       // NOLINT
  
++#include "bin/dartutils.h"
  #include "bin/fdutils.h"
  #include "bin/file.h"
 +#if !defined(DART_HOST_OS_VITA)
@@ -1742,6 +1831,7 @@ index 629c307d..d0f506f1 100644
 +// socket_base.h has already included socket_base_vita.h, and
 +// platform/signal_blocker.h will not build here -- vita_compat.h supplies the
 +// retry macros instead. See its comment.
++#include <psp2/net/netctl.h>  // NOLINT
 +#else
  #include "bin/socket_base_macos.h"
  #include "platform/signal_blocker.h"
@@ -1749,7 +1839,7 @@ index 629c307d..d0f506f1 100644
  
  namespace dart {
  namespace bin {
-@@ -91,16 +102,46 @@ intptr_t SocketBase::RecvFrom(intptr_t fd,
+@@ -91,16 +104,46 @@ intptr_t SocketBase::RecvFrom(intptr_t fd,
    return read_bytes;
  }
  
@@ -1796,7 +1886,7 @@ index 629c307d..d0f506f1 100644
  intptr_t SocketBase::ReceiveMessage(intptr_t fd,
                                      void* buffer,
                                      int64_t* p_buffer_num_bytes,
-@@ -177,6 +218,8 @@ intptr_t SocketBase::ReceiveMessage(intptr_t fd,
+@@ -177,6 +220,8 @@ intptr_t SocketBase::ReceiveMessage(intptr_t fd,
    return num_messages;
  }
  
@@ -1805,7 +1895,7 @@ index 629c307d..d0f506f1 100644
  bool SocketBase::AvailableDatagram(intptr_t fd,
                                     void* buffer,
                                     intptr_t num_bytes) {
-@@ -210,6 +253,21 @@ intptr_t SocketBase::SendTo(intptr_t fd,
+@@ -210,6 +255,21 @@ intptr_t SocketBase::SendTo(intptr_t fd,
    return written_bytes;
  }
  
@@ -1827,7 +1917,7 @@ index 629c307d..d0f506f1 100644
  intptr_t SocketBase::SendMessage(intptr_t fd,
                                   void* buffer,
                                   size_t num_bytes,
-@@ -271,6 +329,8 @@ intptr_t SocketBase::SendMessage(intptr_t fd,
+@@ -271,6 +331,8 @@ intptr_t SocketBase::SendMessage(intptr_t fd,
    return written_bytes;
  }
  
@@ -1836,29 +1926,83 @@ index 629c307d..d0f506f1 100644
  bool SocketBase::GetSocketName(intptr_t fd, RawAddr* raw) {
    ASSERT(fd >= 0);
    ASSERT(raw != nullptr);
-@@ -328,6 +388,29 @@ bool SocketBase::ParseAddress(int type, const char* address, RawAddr* addr) {
+@@ -328,6 +390,83 @@ bool SocketBase::ParseAddress(int type, const char* address, RawAddr* addr) {
    return (result == 1);
  }
  
 +#if defined(DART_HOST_OS_VITA)
 +
++// The one interface this device has.
++//
++// There is no <ifaddrs.h> and no getifaddrs, so this cannot enumerate. It does
++// not need to: a Vita has exactly one network connection, and sceNetCtl reports
++// its address. Returning that single interface is the accurate answer, not an
++// approximation of one.
++//
++// This used to throw ENOSYS, on the reasoning that an empty list would be a lie
++// -- which was right about the empty list and wrong about the alternative.
++// Throwing is what an app sees when it asks a perfectly answerable question:
++// localsend's multicast discovery calls NetworkInterface.list() to pick a
++// socket to bind, the throw escaped into an isolate with no handler, and the
++// app came up with its whole transfer stack dead while the UI looked fine.
++//
++// IPv4 only, because the console's stack has no IPv6. A caller asking
++// specifically for IPv6 gets an empty list, which here is the truth.
 +AddressList<InterfaceSocketAddress>* SocketBase::ListInterfaces(
 +    int type,
 +    OSError** os_error) {
-+  // No <ifaddrs.h>, no getifaddrs, and no if_nametoindex either: sceNetCtl
-+  // reports the state of the one connection the system owns and does not
-+  // enumerate interfaces.
++  const int lookup_family = SocketAddress::FromType(type);
++  if ((lookup_family != AF_INET) && (lookup_family != AF_UNSPEC)) {
++    return new AddressList<InterfaceSocketAddress>(0);
++  }
++
++  SceNetCtlInfo info;
++  memset(&info, 0, sizeof(info));
++  const int rc =
++      sceNetCtlInetGetInfo(SCE_NETCTL_INFO_GET_IP_ADDRESS, &info);
++  if (rc < 0) {
++    // Not connected is not an error worth throwing over -- it is the honest
++    // "no interfaces" that the old comment was worried about faking, and here
++    // it is true.
++    return new AddressList<InterfaceSocketAddress>(0);
++  }
++
++  RawAddr addr;
++  // Clear the union, not the struct. RawAddr::size is a member with a default
++  // initializer, and it sits outside the union -- `memset(&addr, 0,
++  // sizeof(addr))` silently zeroes it. Every SocketAddress built from this
++  // struct then calls getnameinfo with salen = 0, which fails, and the
++  // constructor turns that failure into an empty string rather than an error.
 +  //
-+  // NetworkInterface.list therefore throws rather than returning an empty list.
-+  // An empty list would be a lie of a particularly unhelpful kind -- the device
-+  // plainly does have an address, and code that checks "are there any
-+  // interfaces" before doing something would take the wrong branch silently.
-+  ASSERT(*os_error == nullptr);
-+  *os_error = new OSError(ENOSYS,
-+                          "Listing network interfaces is not supported on "
-+                          "this platform",
-+                          OSError::kGetAddressInfo);
-+  return nullptr;
++  // The symptom is invisible in the obvious place: localsend logged
++  // `ip: []` for an interface that plainly had an address, because a list
++  // holding one empty string prints exactly like an empty list. It cost a
++  // wrong hypothesis about sin_len before the conformance probe -- which
++  // prints the address count separately -- showed the entry was there.
++  memset(&addr.ss, 0, sizeof(addr.ss));
++  addr.size = sizeof(struct sockaddr_in);
++  // sin_len as well as sin_family: this platform's sockaddr is BSD-shaped and
++  // carries its own length in the first byte. Not the cause of the above, but
++  // it is what the network stack's own calls expect to find here.
++  addr.in.sin_len = sizeof(struct sockaddr_in);
++  addr.in.sin_family = AF_INET;
++  if (NO_RETRY_EXPECTED(inet_pton(AF_INET, info.ip_address,
++                                  &addr.in.sin_addr)) != 1) {
++    ASSERT(*os_error == nullptr);
++    *os_error = new OSError(EINVAL,
++                            "sceNetCtl returned an address that is not IPv4",
++                            OSError::kGetAddressInfo);
++    return nullptr;
++  }
++
++  AddressList<InterfaceSocketAddress>* addresses =
++      new AddressList<InterfaceSocketAddress>(1);
++  // "wlan0" and index 1: the console has no interface names of its own, and
++  // these are what every other handheld Linux presents for its only radio.
++  addresses->SetAt(
++      0, new InterfaceSocketAddress(addr, DartUtils::ScopedCopyCString("wlan0"),
++                                    1));
++  return addresses;
 +}
 +
 +#else
@@ -1866,7 +2010,7 @@ index 629c307d..d0f506f1 100644
  static bool ShouldIncludeIfaAddrs(struct ifaddrs* ifa, int lookup_family) {
    if (ifa->ifa_addr == nullptr) {
      // OpenVPN's virtual device tun0.
-@@ -377,6 +460,8 @@ AddressList<InterfaceSocketAddress>* SocketBase::ListInterfaces(
+@@ -377,6 +516,8 @@ AddressList<InterfaceSocketAddress>* SocketBase::ListInterfaces(
    return addresses;
  }
  

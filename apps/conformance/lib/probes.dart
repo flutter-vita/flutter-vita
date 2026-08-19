@@ -184,6 +184,31 @@ List<Probe> buildProbes() => [
     await s.close();
     return 'port $port';
   }),
+  Probe('net', 'NetworkInterface.list', () async {
+    // Prints the address *count* next to the addresses themselves, which is
+    // not redundant: a list holding one empty string renders identically to an
+    // empty list, and that is exactly how this bug hid. localsend logged
+    // `ip: []` for an interface whose single address had been stringified by a
+    // getnameinfo call that failed, and the report read as "no addresses" for
+    // long enough to send me after the wrong cause.
+    final ifs = await NetworkInterface.list();
+    if (ifs.isEmpty) return throw 'no interfaces';
+    return ifs
+        .map((i) =>
+            '${i.name}#${i.index} ${i.addresses.length} addr [${i.addresses.map((a) => a.address).join(',')}]')
+        .join(' ');
+  }),
+  Probe('net', 'NetworkInterface.list (loopback+linklocal)', () async {
+    // The same call with both filters off. If this one has addresses and the
+    // plain one does not, the address is being filtered rather than missing.
+    final ifs = await NetworkInterface.list(
+        includeLoopback: true, includeLinkLocal: true);
+    if (ifs.isEmpty) return throw 'no interfaces';
+    return ifs
+        .map((i) =>
+            '${i.name} ${i.addresses.length} addr [${i.addresses.map((a) => a.address).join(',')}]')
+        .join(' ');
+  }),
   Probe('net', 'DNS lookup', () async {
     final r = await InternetAddress.lookup('example.com')
         .timeout(const Duration(seconds: 10));

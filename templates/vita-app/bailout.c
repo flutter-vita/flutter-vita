@@ -32,8 +32,10 @@
 #include <psp2/io/fcntl.h>
 #include <psp2/io/stat.h>
 #include <psp2/kernel/processmgr.h>
+#include <psp2/kernel/sysmem.h>
 #include <psp2/kernel/threadmgr.h>
 
+#include <malloc.h>
 #include <stdarg.h>
 #include <stdio.h>
 #include <string.h>
@@ -61,6 +63,36 @@ static void record(const char* reason) {
   sceIoClose(fd);
 }
 
+// What memory looked like at the moment of the bail.
+//
+// Added after a localsend launch aborted with `abort()` and nothing else, which
+// is a note saying "something went wrong" and no more. Two numbers separate the
+// two failures this port actually has:
+//
+//   heap  -- the newlib arena, sized by _newlib_heap_size_user. Fills silently
+//            while the budget still looks healthy; this is what ended runs
+//            before the arena was raised to 160 MB.
+//   user  -- the process budget from sceKernelGetFreeMemorySize. A large ELF
+//            eats this before main() and no Dart-level number reflects it.
+//
+// mallinfo and sceKernelGetFreeMemorySize both walk kernel or allocator state
+// that the abort may have corrupted, so this runs *after* the reason is already
+// on disk. A truncated bailout.txt still names the failure.
+static void record_memory(void) {
+  struct mallinfo mi = mallinfo();
+  SceKernelFreeMemorySizeInfo mem;
+  mem.size = sizeof(mem);
+  const int ok = sceKernelGetFreeMemorySize(&mem) >= 0;
+
+  char msg[192];
+  snprintf(msg, sizeof msg,
+           "  heap %uK used of %uK arena, free user %dK cdram %dK phycont %dK",
+           (unsigned)(mi.uordblks / 1024), (unsigned)(mi.arena / 1024),
+           ok ? mem.size_user / 1024 : -1, ok ? mem.size_cdram / 1024 : -1,
+           ok ? mem.size_phycont / 1024 : -1);
+  record(msg);
+}
+
 void vita_bail_to_loader(const char* reason) {
   // Re-entry is a real possibility: the launch below can fail, and anything it
   // touches could abort again. A second pass would recurse until the stack ran
@@ -71,6 +103,7 @@ void vita_bail_to_loader(const char* reason) {
   }
 
   record(reason != NULL ? reason : "(no reason given)");
+  record_memory();
 
   // 0xFFFFF rather than the documented 0x20000, matching what the loader
   // itself uses to launch the app; it is the value known to work on this
