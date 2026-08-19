@@ -5,10 +5,21 @@ an explicit project, never routine maintenance ([ADR-0002](docs/adr/0002-skia-no
 
 | Component | Version | Commit |
 |---|---|---|
-| Flutter | **3.44.8** | `0cd610717bde95fd88343c64f81c11ba4e5c0010` |
-| Flutter engine | matching 3.44.8 | `82bd5b7209295a5b7ff8cae0df96e7870171e3a5` |
-| Dart SDK | matching 3.44.8 | `d684a576a6aa954ae107a03b2b4e1d61c3bebe93` |
+| Flutter (framework) | **3.44.8** | `058e0af2c2b57e369d905a03ac9748b0ebf543c6` |
+| Flutter engine | matching 3.44.8 | `0cd610717bde95fd88343c64f81c11ba4e5c0010` |
+| Dart SDK | matching 3.44.8 (3.12.2) | `d684a576a6aa954ae107a03b2b4e1d61c3bebe93` |
 | VitaSDK | *TBD — pin at Phase 0* | |
+
+> **Corrected 2026-08-19.** The first two rows were both wrong. The framework
+> row carried the *engine* revision, and the engine row carried
+> `82bd5b7209…`, which matches nothing in any tree here. Ground truth is
+> `bin/cache/flutter.version.json` in the FVM checkout, which is also what
+> `tools/build-vita-app.sh`'s lockstep check reads — so the check was right
+> and the table it was supposed to agree with was not.
+
+```bash
+cat ~/fvm/versions/3.44.8/bin/cache/flutter.version.json
+```
 
 ## Why 3.44.8 specifically
 
@@ -71,6 +82,18 @@ Flutter 3.47 targets August 2026 (branch cutoff 2026-07-07). ardera has not
 shipped arm32 binaries for it. The value of this pin is the prebuilt arm32
 reference; moving ahead of it discards the main reason to be here.
 **Revisit when ardera's `arm/` directory moves, not when Flutter stable moves.**
+
+**Priced, 2026-08-19, and the answer is still no** — for a better reason than
+the one above. See
+[docs/flutter-upgrade-cost.md](docs/flutter-upgrade-cost.md) for the full
+measurement and the procedure to redo it. In short: 3.47.0 is a release
+candidate (`[user-branch]`, no changelog); the engine patch series survives it
+almost untouched (6 of 44 files, all GN); the Dart series does not (25 of 68
+files, nine of ten patches, plus one guaranteed compile break in
+`InterfaceSocketAddress`); and **nothing in the 1,358-commit range addresses
+the measured bottleneck.** Upstream's engine work in that window went to
+Impeller — 336 files, +13,110 lines — while the Skia software path this port
+executes got 5 insertions across 2 files.
 
 ## Incidental finding: the blit may be free
 

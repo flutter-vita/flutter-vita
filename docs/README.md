@@ -15,6 +15,7 @@
 | [dev-environment.md](dev-environment.md) | Toolchain and IDE setup, including the three-index clangd arrangement |
 | [vita3k-as-a-target.md](vita3k-as-a-target.md) | What the emulator can and cannot be trusted for |
 | [../VERSIONS.md](../VERSIONS.md) | Pinned commits and why 3.44.8 |
+| [flutter-upgrade-cost.md](flutter-upgrade-cost.md) | How to price a Flutter/Dart upgrade before committing to it, and the priced answer for 3.47.0 |
 
 ## Where the project stands
 
