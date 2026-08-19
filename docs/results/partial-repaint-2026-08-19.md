@@ -43,13 +43,40 @@ everywhere else. Upstream never enabled partial repaint here — the GL and Meta
 embedders cannot make that promise, since they present by swapping buffers, and
 the software path was simply never revisited.
 
+## keklist, which is the app that actually matters
+
+The gallery is a control. keklist is a real app with a scrolling list, and it is
+the one that was described as "everything is lagging". Before this change it sat
+at about 12 fps whatever it was doing.
+
+```
+FRAMES active 58 @ 18053 us = 55.39 fps (blit  236 us = 1%, dmg  2%)
+FRAMES active 52 @ 23542 us = 42.47 fps (blit 1094 us = 4%, dmg 13%)
+FRAMES active 44 @ 28221 us = 35.43 fps (blit 3163 us = 11%, dmg 31%)
+FRAMES active 60 @ 37524 us = 26.64 fps (blit 6048 us = 16%, dmg 64%)
+```
+
+**Frame rate now tracks damage, which is the whole point.** Read down the
+column: 2% damage buys 55 fps, 64% damage buys 27. Even the worst window in the
+run is more than twice the old flat 12 fps, because even a scrolling list rarely
+changes every pixel — the app bar, the bottom navigation and the page margins
+stay put.
+
+Correctness was checked the same way as on the gallery, across a relaunch and
+four tabs. The analytics screen -- bar chart, filter chips, two panels -- comes
+out complete and unblemished. Screenshots taken *during* a scroll do show rows
+from two different scroll offsets, but that is the capture racing the blit on a
+single-buffered display, not stale pixels: it predates this change, and the same
+screen is clean the moment scrolling stops.
+
 ## What it does not fix
 
-**A screen where everything changes still costs what it always did.** Scrolling
-a list, a page transition, a full-screen animation — the damage rect is the
-whole screen, Skia paints all of it, the blit copies all of it, and the frame
-rate returns to about 13.6 fps. Partial repaint did not make painting faster; it
-made *not painting* possible.
+**A screen where everything changes still costs what it always did.** A page
+transition or a full-screen animation damages every pixel, Skia paints all of
+them, the blit copies all of them, and the frame rate returns to about 13.6 fps.
+Partial repaint did not make painting faster; it made *not painting* possible.
+keklist's 26.6 fps at 64% damage is the shape of that curve, and extrapolating
+it to 100% lands back where this started.
 
 So the fps question splits in two, and the new `dmg%` field in the frame log is
 what separates them:
