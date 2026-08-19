@@ -40,6 +40,13 @@ rate steady at 24–27 fps throughout with no degradation.
 ^0.20.3. It reaches its Library screen with a working bottom navigation and no
 unhandled exceptions. **Cheapest real app in the corpus.**
 
+> **Superseded the same day.** localsend was repinned to v1.15.4, the last
+> release with no Rust in it, and now runs: it serves HTTPS, announces itself
+> and answers peers. See
+> [corpus-localsend-2026-08-19.md](corpus-localsend-2026-08-19.md). What
+> follows describes the old pin and is kept because the ADR-0013 prediction it
+> tested is the reason the repin was possible.
+
 **localsend — does not reach first frame.** Its transfer core *and its crypto*
 are Rust, loaded through `flutter_rust_bridge` with `DynamicLibrary.open`:
 
