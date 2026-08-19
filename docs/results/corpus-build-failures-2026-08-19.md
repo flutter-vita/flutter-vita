@@ -74,7 +74,8 @@ Two fixes, and they are independent:
 - **`git reset --mixed d684a576` in the engine's Dart tree.** The local commit
   should not have existed. Every file it contained is already in
   `patches/dart-sdk/` — verified file by file — so nothing is lost, and
-  `tools/check-dart-trees.sh` documents the commit as a blind spot for patch
+  `tools/apply-patches.sh --verify` (then `check-dart-trees.sh`) documents
+  the commit as a blind spot for patch
   regeneration: `git diff` from HEAD reports nothing for a file changed *inside*
   it, which is how `virtual_memory_vita.cc` once went missing from a patch. The
   tree now matches `third_party/sdk`, which was always at the clean pin.

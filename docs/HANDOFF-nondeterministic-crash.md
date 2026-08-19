@@ -315,7 +315,8 @@ control can write, and the loader cannot update itself.
 - **The whole probe list passes** except `io/print` to stderr. 
   `tls/handshake, no verify` is the one probe with no result, skipped by the
   resume after the crash landed in it.
-- **Tooling** — `tools/check-dart-trees.sh`, `cleandead` before archiving, the
+- **Tooling** — `tools/apply-patches.sh --verify` (which replaced
+  `tools/check-dart-trees.sh`), `cleandead` before archiving, the
   `.psp2dmp.tmp` fix in `dev.sh`, engine/SDK version refusal.
 
 ## 6. Method notes, because they cost most of two sessions

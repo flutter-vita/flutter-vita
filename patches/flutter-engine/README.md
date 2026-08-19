@@ -17,58 +17,62 @@ disposable; these patches are the artifact.
 | 0004 | [m2-link-check](0004-m2-link-check.patch) | An executable that makes the linker answer the M2 question |
 | 0005 | [skia-target-for-vita](0005-skia-target-for-vita.patch) | `flutter/skia/BUILD.gn` — the log backend, and where `-ldl` was hiding |
 | 0006 | [vita-fonts](0006-vita-fonts.patch) | `txt` gets a real font manager, plus two probes promoted out of `FML_DLOG` |
-| 0007 | [boringssl-no-asm-for-vita](0007-boringssl-no-asm-for-vita.patch) | BoringSSL's armv7 assembly does not assemble here; take the C |
 | 0008 | [partial-repaint-in-the-software-path](0008-partial-repaint-in-the-software-path.patch) | The software surface claims `supports_partial_repaint`, and reports the damage rect to the embedder |
+
+**There is no 0007.** It was `boringssl-no-asm-for-vita`, a bisect that put the
+Vita on BoringSSL's `no_asm_config` to test whether ARM assembly was crashing
+the TLS handshake. It was not — and the run that proved it also showed the
+Vita target has **zero** assembly objects in the build graph either way, so the
+patch was a no-op that read like a decision. It was reverted from the tree at
+the time but left in the series, where a clean checkout would have re-applied
+it. `tools/apply-patches.sh --verify` found the discrepancy on 2026-08-19 and
+the patch was deleted. The story is in
+[docs/phase-7-tls.md](../../docs/phase-7-tls.md).
 
 ## Applying
 
 ```bash
-cd third_party/flutter
-git apply ../../patches/flutter-engine/000*.patch
+./tools/apply-patches.sh --apply
 ```
 
-**Then apply the Dart series inside the engine's Dart tree**, which is a
-separate DEPS-managed repo:
+One command for all six repos. Everything below is what it is doing and why —
+worth reading once, because the layout is not guessable, but do not hand-run it.
+The prose version of this procedure was wrong in three places until 2026-08-19.
 
 ```bash
-cd third_party/flutter/engine/src/flutter/third_party/dart
-git apply ../../../../../../../patches/dart-sdk/000[1-3]*.patch
-git apply ../../../../../../../patches/dart-sdk/000[6-9]*.patch
+./tools/apply-patches.sh --list      # which patch goes into which repo
+./tools/apply-patches.sh --dry-run   # say what would happen, write nothing
+./tools/apply-patches.sh --verify    # do the patches and the trees still agree?
 ```
 
-Patch **0004** is the odd one: its `runtime/` half belongs in the Dart tree, but
-its `build/` half does not. The engine build resolves `//build/...` to
-`engine/src/build`, not to the Dart SDK's own copy, so the Dart SDK's
-`build/toolchain/vita` is dead weight here and the engine needs its own —
-which is what 0001 above adds. Apply only the `runtime/` hunks:
+**Six repos, not one.** `third_party/flutter` is the monorepo; Dart, Skia,
+zlib, abseil and BoringSSL are DEPS-managed checkouts nested inside it, each
+with its own `.git`. A patch is filed under the name of the *component* it
+fixes, which is not always the repo it applies to — `patches/dart-sdk/0005`
+applies to **zlib**. `--list` is the authority on this.
 
-```bash
-awk '/^diff --git a\/runtime\//{p=1} /^diff --git a\/build\//{p=0} p' \
-  patches/dart-sdk/0004-gn-vita-toolchain.patch
-```
+**`git apply patches/dart-sdk/000*.patch` is wrong**, and was in this file and
+in [the Dart README](../dart-sdk/README.md) three times. `000*` does not match
+`0010`, so it silently skips a 29-file patch containing every socket
+implementation. `--verify` now fails on any glob in the docs that misses part
+of its series.
 
-...and drop `runtime/platform/platform_sources.gni` from that extract, because
-**0009 already contains it**. The Dart patches were each regenerated with
-`git diff` against the pristine tree, so where two of them touch the same file
-the later one is a superset of the earlier. That is fine when applying the whole
-series in order, and a trap when applying a subset.
+**Patch 0004 goes in half-way.** Its `runtime/` hunks belong in the engine's
+Dart tree; its `build/` half does not, because the engine resolves
+`//build/...` to `engine/src/build` rather than to the Dart SDK's own copy, and
+gets its vita toolchain from engine patch 0001 instead. The script filters it;
+`--verify` checks only the `runtime/` half against that tree, so the deliberate
+absence does not read as drift.
 
-Finally the three other DEPS-managed repos inside the checkout, each with its
-own series:
+**Order matters, and applying twice does not fail.** Each patch is a `git diff`
+against the *pristine* tree, so two patches touching one file overlap — the
+later contains the earlier's hunks. Applying 0010 onto a tree that already had
+0004 once inserted a **second copy** of the vita `gen_snapshot` targets:
+twenty `vita_arm` references where there should be ten, and no error. `--apply`
+refuses to start on a tree that is not pristine, for exactly this reason.
 
-```bash
-cd engine/src/flutter/third_party/zlib
-git apply .../patches/dart-sdk/0005-zlib-no-armv8-on-vita.patch
-
-cd engine/src/flutter/third_party/skia
-git apply .../patches/skia/0001-vita-platform-detection-and-no-mmap.patch
-
-cd engine/src/third_party/abseil-cpp
-git apply .../patches/abseil/0001-vita-has-no-elf-introspection-or-tm-gmtoff.patch
-```
-
-`flutter/third_party/tonic` is **not** one of these — it lives in the monorepo,
-so its changes are in 0003 above.
+`flutter/third_party/tonic` is **not** a separate repo — it lives in the
+monorepo, so its changes are in 0003 above.
 
 ---
 
@@ -262,7 +266,7 @@ always null here — the GL, Vulkan and Metal surfaces that override
 are the same pinned commit and must carry the same changes.
 
 ```bash
-./tools/check-dart-trees.sh
+./tools/apply-patches.sh --verify
 ```
 
 **The check that used to live here was wrong**, and on 2026-08-14 it let real
@@ -273,28 +277,41 @@ but the engine's tree carries a local commit above the pin, so anything changed
 engine tree, absent from `third_party/sdk`. Regenerating patch 0010 from `sdk`
 would have dropped the file from the patch with no error at all.
 
-The script diffs against the pin instead, compares the union of both trees'
-changed files, and fails only on files the patch series owns — those being the
-ones a bad regeneration can destroy.
+`--verify` diffs against the pin, and asks the question from both directions:
+every patch must reverse out of its tree, and every changed file in a tree must
+be owned by some patch. It also knows which differences are **deliberate**,
+which its predecessor did not.
 
-### Known drift, not yet triaged
+### The five known differences, triaged 2026-08-19
 
-The first run of the fixed check reports five differences beyond the one it was
-written for, all in the GN and toolchain patches:
+`tools/check-dart-trees.sh` reported five and called them all dangerous. Four
+of them were never drift:
 
 ```
 differs         build/config/BUILDCONFIG.gn
 differs         build/config/arm.gni
 differs         build/config/compiler/BUILD.gn
 only in sdk     build/toolchain/vita/BUILD.gn
+```
+
+These are the **`build/` half of patch 0004, which is deliberately not applied
+to the engine tree** — the engine resolves `//build/...` to `engine/src/build`
+and gets its vita toolchain from engine patch 0001 instead. The two trees are
+*supposed* to differ here. A checker that cannot say so cries wolf four times
+out of five, which is exactly why its output was being skimmed past.
+
+The fifth was real:
+
+```
 differs         runtime/platform/globals.h
 ```
 
-**These may be correct.** The two trees build different things — `sdk` builds
-Dart standalone and needs a toolchain definition the engine supplies from its
-own patch series — so some divergence here is expected rather than a defect.
-They are left alone until someone establishes which, because syncing them
-blindly is how a working build gets broken to satisfy a checker.
+`third_party/sdk` still said `kHostOperatingSystemName "vita"` while the patch
+and the engine tree said `"linux"` — the
+[ADR-0008](../../docs/adr/0008-app-visible-platform-identity.md) change had
+never reached the standalone tree. Fixed by syncing it to the patch.
+`check-dart-trees.sh` has been deleted; `--verify` covers everything it did and
+excludes the 0004 exception by construction.
 
 Running this on the fresh engine checkout is what caught that a Dart patch had
 gone stale. It is worth running after every change to either tree.

@@ -82,9 +82,21 @@ the current ones.
 ## Applying
 
 ```bash
-cd third_party/sdk
-git apply ../../patches/dart-sdk/000*.patch
+./tools/apply-patches.sh --apply
 ```
+
+That covers **both** Dart checkouts and every nested repo. Do not hand-run the
+`git apply` it replaces: `000*.patch` does not match `0010`, so the documented
+command here silently skipped 29 files including every socket implementation
+until 2026-08-19. See
+[patches/flutter-engine/README.md](../flutter-engine/README.md#applying) for
+what the script does and why the layout needs one.
+
+Two things about this series that the filenames do not say, and `--list` does:
+
+- **0005 applies to zlib**, a nested DEPS repo, not to the Dart tree. `BUILD.gn`
+  exists in both, which is a good way to measure the wrong file.
+- **0004 goes into the engine's Dart tree half-way** — `runtime/` hunks only.
 
 ## Regenerating after edits
 
@@ -102,13 +114,13 @@ revision and `managed: True`, so one command does everything:
 ```bash
 cd third_party
 PATH="$HOME/depot_tools:$PATH" gclient sync --nohooks --no-history --shallow
-cd sdk
-git apply ../../patches/dart-sdk/000[1-46]*.patch
-git -C third_party/zlib apply ../../../../patches/dart-sdk/0005-zlib-no-armv8-on-vita.patch
+cd ../..
+./tools/apply-patches.sh --apply
 ```
 
-**0005 applies to a different repo.** `third_party/zlib` is its own DEPS-managed
-git checkout, so it is not covered by a diff taken at the sdk root.
+The script knows that **0005 applies to a different repo**: `third_party/zlib`
+is its own DEPS-managed git checkout, so it is not covered by a diff taken at
+the sdk root.
 
 ~7.8 GB and slow, but deterministic. It brings `buildtools/gn`, `buildtools/ninja`
 and clang, which a plain `git clone` does not — those come from DEPS.
@@ -420,14 +432,13 @@ Every file now belongs to exactly one patch in the series, which is what makes
 the whole thing replayable:
 
 ```bash
-cd third_party/sdk
-git reset && git checkout -- . && git clean -fd
-for n in 0001 0002 0003 0004 0006 0007 0008 0009 0010; do
-  git apply ../../patches/dart-sdk/$n-*.patch || echo "FAIL $n"
-done
+git -C third_party/sdk reset && git -C third_party/sdk checkout -- . \
+  && git -C third_party/sdk clean -fd
+./tools/apply-patches.sh --apply
 ```
 
-That now runs clean from pristine. Getting there needed two files reassigned:
+That runs clean from pristine, and `./tools/apply-patches.sh --verify` checks
+the invariant continuously without needing a pristine tree at all. Getting there needed two files reassigned:
 `runtime/bin/BUILD.gn` moved from 0004 to 0010, and
 `runtime/platform/platform_sources.gni` from 0004 to 0009. Both had been in two
 patches at once, and because each patch is a `git diff` against the **pristine**
