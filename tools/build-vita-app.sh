@@ -214,6 +214,39 @@ echo "==> flutter build bundle"
 ASSETS="$APP_DIR/build/flutter_assets"
 [ -d "$ASSETS" ] || { echo "No bundle at $ASSETS" >&2; exit 1; }
 
+# Where pub actually put the package config.
+#
+# Not always $APP_DIR/.dart_tool. A pub *workspace* -- one pubspec at the root
+# with `workspace:` listing its members -- resolves once for the whole tree and
+# writes a single package_config.json at the root, leaving each member's own
+# .dart_tool without one. flutter/samples is laid out that way, so the control
+# app of the corpus was the app that found this.
+#
+# The failure it produced is worth recording, because it looks like anything but
+# a missing file: frontend_server falls back to a *relative* .dart_tool, finds
+# nothing, and reports `Not found: package:flutter/material.dart` on every
+# import in the program -- 1,900 errors that read as a broken SDK. It then exits
+# 254 having printed all of that to stdout, which this script sends to
+# /dev/null, so the visible result was an empty failure.
+#
+# So: walk up, the way Dart itself does, and say which one was used.
+PACKAGES=""
+probe="$APP_DIR"
+while [ "$probe" != "/" ]; do
+  if [ -f "$probe/.dart_tool/package_config.json" ]; then
+    PACKAGES="$probe/.dart_tool/package_config.json"
+    break
+  fi
+  probe="$(dirname "$probe")"
+done
+[ -n "$PACKAGES" ] || {
+  echo "No .dart_tool/package_config.json at or above $APP_DIR." >&2
+  echo "Run 'flutter pub get' there first." >&2
+  exit 1
+}
+[ "$PACKAGES" = "$APP_DIR/.dart_tool/package_config.json" ] ||
+  echo "    packages from $(dirname "$(dirname "$PACKAGES")")  (pub workspace)"
+
 # The kernel and the bundle must come from the same source tree. The asset
 # manifest is looked up by keys the compiled code asks for, so a mismatched
 # pair fails at runtime looking like an asset bug rather than a stale build.
@@ -224,9 +257,14 @@ echo "==> kernel"
   --target=flutter \
   --aot --tfa \
   -Ddart.vm.product=true \
-  --packages "$APP_DIR/.dart_tool/package_config.json" \
+  --packages "$PACKAGES" \
   --output-dill "$OUT_DIR/app.dill" \
-  "$APP_DIR/$ENTRY_POINT" >/dev/null
+  "$APP_DIR/$ENTRY_POINT" >"$OUT_DIR/frontend_server.log" 2>&1 || {
+    echo "Kernel compilation failed. Last errors:" >&2
+    grep -v '^+file:' "$OUT_DIR/frontend_server.log" | head -30 >&2
+    echo "    full output: $OUT_DIR/frontend_server.log" >&2
+    exit 1
+  }
 echo "    app.dill $(stat -f%z "$OUT_DIR/app.dill" 2>/dev/null || stat -c%s "$OUT_DIR/app.dill") B"
 
 # Skipped when the kernel has not moved: this emits tens of megabytes of

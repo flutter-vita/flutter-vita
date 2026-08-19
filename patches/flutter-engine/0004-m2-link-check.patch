@@ -70,10 +70,10 @@ index 61abe64a..b92ae80c 100644
  
 diff --git a/engine/src/flutter/shell/platform/embedder/vita_embedder.cc b/engine/src/flutter/shell/platform/embedder/vita_embedder.cc
 new file mode 100644
-index 00000000..f757ebf3
+index 00000000..de25f6e6
 --- /dev/null
 +++ b/engine/src/flutter/shell/platform/embedder/vita_embedder.cc
-@@ -0,0 +1,1893 @@
+@@ -0,0 +1,1919 @@
 +// Copyright (c) 2026, the Flutter Authors. All rights reserved.
 +// Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
@@ -122,6 +122,8 @@ index 00000000..f757ebf3
 +#include <psp2/touch.h>
 +
 +#include <unistd.h>
++
++#include <malloc.h>
 +
 +#include <cstdarg>
 +#include <cstdio>
@@ -871,6 +873,27 @@ index 00000000..f757ebf3
 +uint64_t g_hud_damage_px = 0;
 +uint64_t g_hud_max_gap_us = 0;
 +
++// How much of the C heap is in use, in MiB.
++//
++// This is the number the free-memory line above cannot see and the one that has
++// actually been killing long runs. `_newlib_heap_size_user` carves a fixed
++// arena out of the process budget at startup, so `sceKernelGetFreeMemorySize`
++// can report tens of megabytes free while the arena is completely full -- which
++// is exactly what happened before the arena was raised to 160 MB, and is the
++// first thing to check when a run dies with the budget looking healthy.
++//
++// mallinfo walks the free list, so this is not free. Called once per HUD window
++// and once per logged frame, never per frame.
++unsigned HeapUsedMb() {
++  const struct mallinfo mi = mallinfo();
++  return static_cast<unsigned>(mi.uordblks / (1024 * 1024));
++}
++
++unsigned HeapArenaMb() {
++  const struct mallinfo mi = mallinfo();
++  return static_cast<unsigned>(mi.arena / (1024 * 1024));
++}
++
 +void HudUpdate() {
 +  const unsigned active_us =
 +      g_hud_active != 0 ? static_cast<unsigned>(g_hud_active_us / g_hud_active)
@@ -892,8 +915,10 @@ index 00000000..f757ebf3
 +                fps_frac, active_us / 1000);
 +  std::snprintf(g_hud_text[1], sizeof g_hud_text[1], "DMG %u%%  BLIT %u.%u MS",
 +                dmg_pct, blit_us / 1000, (blit_us / 100) % 10);
-+  std::snprintf(g_hud_text[2], sizeof g_hud_text[2], "MEM %uM  MAX %u MS",
-+                free_mb, static_cast<unsigned>(g_hud_max_gap_us / 1000));
++  // Heap before the budget, because the budget has never yet been the thing
++  // that ran out and the heap has.
++  std::snprintf(g_hud_text[2], sizeof g_hud_text[2], "HEAP %uM  MEM %uM",
++                HeapUsedMb(), free_mb);
 +
 +  g_hud_dirty = true;
 +
@@ -949,10 +974,11 @@ index 00000000..f757ebf3
 +    mem.size = sizeof(mem);
 +    if (sceKernelGetFreeMemorySize(&mem) >= 0) {
 +      VLog("flutter-vita: present #%u row_bytes=%u height=%u "
-+           "free user=%dK cdram=%dK phycont=%dK\n",
++           "heap=%uM/%uM free user=%dK cdram=%dK phycont=%dK\n",
 +           frames, static_cast<unsigned>(row_bytes),
-+           static_cast<unsigned>(height), mem.size_user / 1024,
-+           mem.size_cdram / 1024, mem.size_phycont / 1024);
++           static_cast<unsigned>(height), HeapUsedMb(), HeapArenaMb(),
++           mem.size_user / 1024, mem.size_cdram / 1024,
++           mem.size_phycont / 1024);
 +    } else {
 +      VLog("flutter-vita: present #%u row_bytes=%u height=%u\n", frames,
 +           static_cast<unsigned>(row_bytes),
