@@ -70,10 +70,10 @@ index 61abe64a..b92ae80c 100644
  
 diff --git a/engine/src/flutter/shell/platform/embedder/vita_embedder.cc b/engine/src/flutter/shell/platform/embedder/vita_embedder.cc
 new file mode 100644
-index 00000000..fbeb9398
+index 00000000..4b621a25
 --- /dev/null
 +++ b/engine/src/flutter/shell/platform/embedder/vita_embedder.cc
-@@ -0,0 +1,1977 @@
+@@ -0,0 +1,2034 @@
 +// Copyright (c) 2026, the Flutter Authors. All rights reserved.
 +// Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
@@ -302,6 +302,13 @@ index 00000000..fbeb9398
 +uint64_t g_win_blit_us = 0;    // summed memcpy time inside it
 +uint64_t g_win_damage_px = 0;  // summed damaged pixels inside it
 +uint64_t g_win_hud_us = 0;     // summed time spent drawing the HUD
++uint64_t g_win_raster_us = 0;  // summed Skia raster time inside it
++uint64_t g_win_raster_max_us = 0;  // the worst single raster pass
++
++// The HUD's own copy of the raster total, declared here rather than with the
++// other g_hud_* counters below because OnRasterTiming feeds both and sits
++// above that block.
++uint64_t g_hud_raster_us = 0;
 +
 +// Runtime switch for the debug HUD, on top of the build-time
 +// flutter_vita_debug_overlay above. `overlay off` on the dev server; see
@@ -700,6 +707,27 @@ index 00000000..fbeb9398
 +Damage g_damage;
 +
 +
++// How long Skia spent painting, as opposed to how long the frame took.
++//
++// The two are not the same and the gap between them is the whole question. A
++// frame that is slow because Skia is slow argues for a GPU backend; a frame
++// that is slow with a fast raster pass is waiting on the UI thread -- Dart
++// building and laying out -- which a GPU backend does not touch at all.
++//
++// `dmg%` was the closest thing to this number and it turned out not to predict
++// cost: localsend's Receive screen runs 4.7 fps having damaged 13% of the
++// screen while flutter_manga_reader holds 48 fps at 89%. Seven times the area,
++// ten times the frame rate. Area is not work.
++//
++// Same raster thread as OnFrameDamage and the present, one frame at a time.
++void OnRasterTiming(uint64_t raster_us) {
++  g_win_raster_us += raster_us;
++  if (raster_us > g_win_raster_max_us) {
++    g_win_raster_max_us = raster_us;
++  }
++  g_hud_raster_us += raster_us;
++}
++
 +void OnFrameDamage(int32_t left, int32_t top, int32_t right, int32_t bottom,
 +                   bool full) {
 +  if (full) {
@@ -806,7 +834,10 @@ index 00000000..fbeb9398
 +constexpr int kHudAdvance = 6 * kHudScale;  // one blank column between glyphs
 +constexpr int kHudLineH = 8 * kHudScale;
 +constexpr int kHudPad = 4;
-+constexpr int kHudLines = 3;
++// Four, since raster time was added: it is the number the GPU decision turns
++// on, and reading it off the panel next to the screen that is slow is worth
++// more than the 28 extra pixels of height the box costs.
++constexpr int kHudLines = 4;
 +constexpr int kHudCols = 21;
 +constexpr uint32_t kHudInk = 0xFF00FF00u;   // A8B8G8R8: opaque green
 +constexpr uint32_t kHudBack = 0xFF000000u;  // opaque black
@@ -825,7 +856,7 @@ index 00000000..fbeb9398
 +// during startup leaves an empty black rectangle in the corner that reads as a
 +// rendering bug.
 +char g_hud_text[kHudLines][kHudCols + 1] = {
-+    "-- FPS", "DMG --", "HEAP --"};
++    "-- FPS", "RAS --", "DMG --", "HEAP --"};
 +
 +// A solid backing box. Write-only, and both halves of that matter.
 +//
@@ -906,6 +937,8 @@ index 00000000..fbeb9398
 +  const unsigned fps = active_us != 0 ? 1000000u / active_us : 0;
 +  const unsigned fps_frac = active_us != 0 ? (10000000u / active_us) % 10 : 0;
 +  const unsigned blit_us = static_cast<unsigned>(g_hud_blit_us / g_hud_frames);
++  const unsigned raster_us =
++      static_cast<unsigned>(g_hud_raster_us / g_hud_frames);
 +  const unsigned dmg_pct = static_cast<unsigned>(
 +      g_hud_damage_px / g_hud_frames * 100 / (kWidth * kHeight));
 +
@@ -918,11 +951,20 @@ index 00000000..fbeb9398
 +
 +  std::snprintf(g_hud_text[0], sizeof g_hud_text[0], "%u.%u FPS  %u MS", fps,
 +                fps_frac, active_us / 1000);
-+  std::snprintf(g_hud_text[1], sizeof g_hud_text[1], "DMG %u%%  BLIT %u.%u MS",
-+                dmg_pct, blit_us / 1000, (blit_us / 100) % 10);
++  // Raster and blit on one line and their share of the frame beside them,
++  // because the useful reading is not either number but what is left over --
++  // frame time minus these two is the UI thread, and a GPU backend does
++  // nothing for it.
++  // No " MS" suffix: kHudCols is 21, and a three-digit raster figure with it
++  // would truncate exactly when the number is most interesting.
++  std::snprintf(g_hud_text[1], sizeof g_hud_text[1], "RAS %u.%u BLT %u.%u",
++                raster_us / 1000, (raster_us / 100) % 10, blit_us / 1000,
++                (blit_us / 100) % 10);
++  std::snprintf(g_hud_text[2], sizeof g_hud_text[2], "DMG %u%%  RAS %u%%",
++                dmg_pct, active_us != 0 ? raster_us * 100 / active_us : 0);
 +  // Heap before the budget, because the budget has never yet been the thing
 +  // that ran out and the heap has.
-+  std::snprintf(g_hud_text[2], sizeof g_hud_text[2], "HEAP %uM  MEM %uM",
++  std::snprintf(g_hud_text[3], sizeof g_hud_text[3], "HEAP %uM  MEM %uM",
 +                HeapUsedMb(), free_mb);
 +
 +  g_hud_dirty = true;
@@ -931,6 +973,7 @@ index 00000000..fbeb9398
 +  g_hud_active = 0;
 +  g_hud_active_us = 0;
 +  g_hud_blit_us = 0;
++  g_hud_raster_us = 0;
 +  g_hud_damage_px = 0;
 +  g_hud_max_gap_us = 0;
 +}
@@ -1142,16 +1185,29 @@ index 00000000..fbeb9398
 +    // come from somewhere other than painting less.
 +    const unsigned dmg_pct = static_cast<unsigned>(
 +        g_win_damage_px / g_win_frames * 100 / (kWidth * kHeight));
++    //
++    // `raster` is the third share, and the one that decides the GPU question.
++    // An active frame is raster + blit + everything else, where everything
++    // else is the UI thread and any wait. Reporting all three means the answer
++    // never has to be inferred from the damage rectangle again -- which was
++    // tried, and does not work, because area is not work.
++    const unsigned raster_us =
++        static_cast<unsigned>(g_win_raster_us / g_win_frames);
 +    VLog("flutter-vita: FRAMES active %u @ %u us = %u.%02u fps "
-+         "(blit %u us = %u%%, dmg %u%%, hud %u us) | idle gaps %u | max %u ms\n",
++         "(raster %u us = %u%%, blit %u us = %u%%, dmg %u%%, hud %u us) "
++         "| raster max %u us | idle gaps %u | max %u ms\n",
 +         g_win_active, active_us,
 +         active_us != 0 ? 1000000u / active_us : 0,
-+         active_us != 0 ? (100000000u / active_us) % 100 : 0, blit_us,
++         active_us != 0 ? (100000000u / active_us) % 100 : 0, raster_us,
++         active_us != 0 ? raster_us * 100 / active_us : 0, blit_us,
 +         active_us != 0 ? blit_us * 100 / active_us : 0, dmg_pct,
-+         static_cast<unsigned>(g_win_hud_us / g_win_frames), g_win_idle,
++         static_cast<unsigned>(g_win_hud_us / g_win_frames),
++         static_cast<unsigned>(g_win_raster_max_us), g_win_idle,
 +         static_cast<unsigned>(g_win_max_gap_us / 1000));
 +    g_win_frames = 0;
 +    g_win_blit_us = 0;
++    g_win_raster_us = 0;
++    g_win_raster_max_us = 0;
 +    g_win_damage_px = 0;
 +    g_win_hud_us = 0;
 +    g_win_max_gap_us = 0;
@@ -1915,6 +1971,7 @@ index 00000000..fbeb9398
 +  // frame can be presented without it -- a present with no observer would use
 +  // the default whole-screen rect, which is correct but measures nothing.
 +  flutter::SetSoftwareFrameDamageObserver(OnFrameDamage);
++  flutter::SetSoftwareRasterTimingObserver(OnRasterTiming);
 +
 +  // Captured before FlutterEngineRun, because the engine may post a task
 +  // during startup and RunsTasksOnCurrentThread must already be truthful.

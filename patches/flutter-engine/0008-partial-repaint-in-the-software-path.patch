@@ -1,8 +1,16 @@
 diff --git a/engine/src/flutter/shell/gpu/gpu_surface_software.cc b/engine/src/flutter/shell/gpu/gpu_surface_software.cc
-index 2b54d93c..ea00ddc0 100644
+index 2b54d93c..8e624b45 100644
 --- a/engine/src/flutter/shell/gpu/gpu_surface_software.cc
 +++ b/engine/src/flutter/shell/gpu/gpu_surface_software.cc
-@@ -48,6 +48,19 @@ std::unique_ptr<SurfaceFrame> GPUSurfaceSoftware::AcquireFrame(
+@@ -8,6 +8,7 @@
+ 
+ #include "flow/surface_frame.h"
+ #include "flutter/fml/logging.h"
++#include "flutter/fml/time/time_point.h"
+ 
+ #include "third_party/skia/include/core/SkCanvas.h"
+ #include "third_party/skia/include/core/SkSurface.h"
+@@ -48,6 +49,26 @@ std::unique_ptr<SurfaceFrame> GPUSurfaceSoftware::AcquireFrame(
      return nullptr;
    }
  
@@ -19,10 +27,30 @@ index 2b54d93c..ea00ddc0 100644
 +    framebuffer_info.existing_damage = DlIRect();
 +  }
 +
++  // The raster pass starts here. A file static rather than a member, because
++  // the encode callback below captures only a weak pointer to `this` and the
++  // header is shared with every other embedder; the raster thread runs one
++  // frame at a time, so there is nothing to race with.
++  static fml::TimePoint g_raster_start;
++  g_raster_start = fml::TimePoint::Now();
++
    const auto size = DlISize(logical_size.width, logical_size.height);
  
    sk_sp<SkSurface> backing_store = delegate_->AcquireBackingStore(size);
-@@ -84,6 +97,9 @@ std::unique_ptr<SurfaceFrame> GPUSurfaceSoftware::AcquireFrame(
+@@ -76,6 +97,12 @@ std::unique_ptr<SurfaceFrame> GPUSurfaceSoftware::AcquireFrame(
+     }
+ 
+     canvas->Flush();
++
++    // After Flush, not before: Flush is where a deferred display list is
++    // actually executed, so timing that returns before it measures the
++    // bookkeeping and not the painting.
++    self->delegate_->OnRasterTiming(static_cast<uint64_t>(
++        (fml::TimePoint::Now() - g_raster_start).ToMicroseconds()));
+     return true;
+   };
+   SurfaceFrame::SubmitCallback submit_callback =
+@@ -84,6 +111,9 @@ std::unique_ptr<SurfaceFrame> GPUSurfaceSoftware::AcquireFrame(
          if (!self || !self->IsValid()) {
            return false;
          }
@@ -33,7 +61,7 @@ index 2b54d93c..ea00ddc0 100644
              surface_frame.SkiaSurface());
        };
 diff --git a/engine/src/flutter/shell/gpu/gpu_surface_software_delegate.h b/engine/src/flutter/shell/gpu/gpu_surface_software_delegate.h
-index 3162dbc5..f70d100b 100644
+index 3162dbc5..8c79bf45 100644
 --- a/engine/src/flutter/shell/gpu/gpu_surface_software_delegate.h
 +++ b/engine/src/flutter/shell/gpu/gpu_surface_software_delegate.h
 @@ -5,6 +5,9 @@
@@ -46,7 +74,7 @@ index 3162dbc5..f70d100b 100644
  #include "flutter/flow/embedded_views.h"
  #include "flutter/fml/macros.h"
  #include "third_party/skia/include/core/SkSurface.h"
-@@ -48,6 +51,37 @@ class GPUSurfaceSoftwareDelegate {
+@@ -48,6 +51,52 @@ class GPUSurfaceSoftwareDelegate {
    ///             the screen.
    ///
    virtual bool PresentBackingStore(sk_sp<SkSurface> backing_store) = 0;
@@ -81,15 +109,30 @@ index 3162dbc5..f70d100b 100644
 +  /// @param[in]  damage  The changed region, or nullopt for "all of it".
 +  ///
 +  virtual void OnFrameDamage(const std::optional<DlIRect>& damage) {}
++
++  //----------------------------------------------------------------------------
++  /// @brief      How long the raster pass took, in microseconds: AcquireFrame
++  ///             to the end of the encode callback, which is every pixel this
++  ///             frame will contain.
++  ///
++  ///             Separate from the frame's total, and from the present. Those
++  ///             three add up to something an embedder can act on -- a slow
++  ///             raster pass argues for a GPU backend, a slow remainder argues
++  ///             for the UI thread, and the damage rectangle alone
++  ///             distinguishes neither.
++  ///
++  ///             Called on the raster thread, immediately before OnFrameDamage.
++  ///
++  virtual void OnRasterTiming(uint64_t raster_us) {}
  };
  
  }  // namespace flutter
 diff --git a/engine/src/flutter/shell/platform/embedder/embedder_software_frame_damage.h b/engine/src/flutter/shell/platform/embedder/embedder_software_frame_damage.h
 new file mode 100644
-index 00000000..53f9b72f
+index 00000000..fa78c526
 --- /dev/null
 +++ b/engine/src/flutter/shell/platform/embedder/embedder_software_frame_damage.h
-@@ -0,0 +1,42 @@
+@@ -0,0 +1,71 @@
 +// Copyright 2013 The Flutter Authors. All rights reserved.
 +// Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
@@ -129,29 +172,64 @@ index 00000000..53f9b72f
 +
 +void SetSoftwareFrameDamageObserver(SoftwareFrameDamageObserver observer);
 +
++//------------------------------------------------------------------------------
++/// @brief      How long Skia spent turning the layer tree into pixels, as
++///             distinct from how long the frame took.
++///
++///             The frame-to-frame gap already measured in the embedder answers
++///             "how fast is this app", and the blit timer answers "how much of
++///             that is the present memcpy". Neither separates the two things
++///             that make up the rest: the UI thread building and laying out,
++///             and the raster thread painting. Those want opposite fixes -- a
++///             GPU backend does nothing for the first and everything for the
++///             second -- so the number that decides between them has to be
++///             measured, not inferred from the damage rectangle.
++///
++///             Inferring it from damage is exactly what failed. localsend's
++///             Receive screen runs at 4.7 fps having damaged 13% of the
++///             screen, while flutter_manga_reader holds 48 fps at 89%: seven
++///             times the area for ten times the frame rate. `dmg%` does not
++///             predict cost, because it says how much area changed and nothing
++///             about what is inside it.
++///
++///             Timed from `AcquireFrame` to the end of the encode callback,
++///             which is where `DlCanvas::Flush` returns and every pixel the
++///             frame will contain has been written. Called on the raster
++///             thread, immediately before the damage observer above.
++///
++using SoftwareRasterTimingObserver = std::function<void(uint64_t raster_us)>;
++
++void SetSoftwareRasterTimingObserver(SoftwareRasterTimingObserver observer);
++
 +}  // namespace flutter
 +
 +#endif  // FLUTTER_SHELL_PLATFORM_EMBEDDER_EMBEDDER_SOFTWARE_FRAME_DAMAGE_H_
 diff --git a/engine/src/flutter/shell/platform/embedder/embedder_surface_software.cc b/engine/src/flutter/shell/platform/embedder/embedder_surface_software.cc
-index caf97dd5..064eeaf0 100644
+index caf97dd5..61f3a3b2 100644
 --- a/engine/src/flutter/shell/platform/embedder/embedder_surface_software.cc
 +++ b/engine/src/flutter/shell/platform/embedder/embedder_surface_software.cc
-@@ -15,6 +15,14 @@
+@@ -15,6 +15,20 @@
  
  namespace flutter {
  
 +namespace {
 +SoftwareFrameDamageObserver g_frame_damage_observer;
++SoftwareRasterTimingObserver g_raster_timing_observer;
 +}  // namespace
 +
 +void SetSoftwareFrameDamageObserver(SoftwareFrameDamageObserver observer) {
 +  g_frame_damage_observer = std::move(observer);
 +}
 +
++void SetSoftwareRasterTimingObserver(SoftwareRasterTimingObserver observer) {
++  g_raster_timing_observer = std::move(observer);
++}
++
++
  EmbedderSurfaceSoftware::EmbedderSurfaceSoftware(
      SoftwareDispatchTable software_dispatch_table,
      std::shared_ptr<EmbedderExternalViewEmbedder> external_view_embedder)
-@@ -82,6 +90,35 @@ sk_sp<SkSurface> EmbedderSurfaceSoftware::AcquireBackingStore(
+@@ -82,6 +96,42 @@ sk_sp<SkSurface> EmbedderSurfaceSoftware::AcquireBackingStore(
    return sk_surface_;
  }
  
@@ -184,11 +262,18 @@ index caf97dd5..064eeaf0 100644
 +                          damage->GetRight(), damage->GetBottom(), false);
 +}
 +
++// |GPUSurfaceSoftwareDelegate|
++void EmbedderSurfaceSoftware::OnRasterTiming(uint64_t raster_us) {
++  if (g_raster_timing_observer) {
++    g_raster_timing_observer(raster_us);
++  }
++}
++
  // |GPUSurfaceSoftwareDelegate|
  bool EmbedderSurfaceSoftware::PresentBackingStore(
      sk_sp<SkSurface> backing_store) {
 diff --git a/engine/src/flutter/shell/platform/embedder/embedder_surface_software.h b/engine/src/flutter/shell/platform/embedder/embedder_surface_software.h
-index 21b0c8bb..5a0c9d35 100644
+index 21b0c8bb..0805bfb4 100644
 --- a/engine/src/flutter/shell/platform/embedder/embedder_surface_software.h
 +++ b/engine/src/flutter/shell/platform/embedder/embedder_surface_software.h
 @@ -8,6 +8,7 @@
@@ -199,7 +284,7 @@ index 21b0c8bb..5a0c9d35 100644
  #include "flutter/shell/platform/embedder/embedder_surface.h"
  
  #include "third_party/skia/include/core/SkSurface.h"
-@@ -49,6 +50,12 @@ class EmbedderSurfaceSoftware final : public EmbedderSurface,
+@@ -49,6 +50,15 @@ class EmbedderSurfaceSoftware final : public EmbedderSurface,
    // |GPUSurfaceSoftwareDelegate|
    bool PresentBackingStore(sk_sp<SkSurface> backing_store) override;
  
@@ -208,6 +293,9 @@ index 21b0c8bb..5a0c9d35 100644
 +
 +  // |GPUSurfaceSoftwareDelegate|
 +  void OnFrameDamage(const std::optional<DlIRect>& damage) override;
++
++  // |GPUSurfaceSoftwareDelegate|
++  void OnRasterTiming(uint64_t raster_us) override;
 +
    FML_DISALLOW_COPY_AND_ASSIGN(EmbedderSurfaceSoftware);
  };
