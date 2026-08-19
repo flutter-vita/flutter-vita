@@ -41,8 +41,18 @@ resashkin/keklist_flutter           d3e02ac9357e31188e7028b022c2ddd182132874
 
 # --- Networking. The one app with an await before runApp -- but it is wrapped
 # --- in a try/catch that renders an error screen, so a failure is visible
-# --- rather than black.
-localsend/localsend                 c53923df0190600d39c0cf0563abf00c4e8d67f8
+# --- rather than black. That prediction held exactly: the first thing the
+# --- console showed was localsend's own stack trace, legibly.
+# ---
+# --- Repinned 2026-08-19 from c53923df to v1.15.4, the last release with no
+# --- Rust in it. Every version from v1.16.0 onward loads a Rust cdylib through
+# --- flutter_rust_bridge and DynamicLibrary.open before runApp -- rhttp at
+# --- first, then the whole transfer core and the crypto. ADR-0004 links one
+# --- static ELF and there is no dlopen, and "statically link it instead" is
+# --- not available: the crate graph is tokio, hyper, reqwest, rustls and ring,
+# --- and tokio's I/O driver wants epoll, which this console does not have.
+# --- v1.15.4 is pure Dart end to end, so the networking axis is still real.
+localsend/localsend                 fd8140b68813e968dc9253130a27abc1ff328fe5
     entry app/lib/main.dart
 
 # --- Remote content, code generation, and deferred FFI. Chosen over spotube
