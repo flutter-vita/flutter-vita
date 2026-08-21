@@ -30,6 +30,48 @@ The reasons: a module inside SceShell can hang the shell, two earlier
 `config.txt` experiments left the console unbootable, and there is one console.
 A dev loop that risks the only device it runs on is not a faster dev loop.
 
+## Amendment, 2026-08-21: in-process user hooks are not what this declined
+
+The constraint above is written flat — "no taiHEN" — and the GPU work found a
+case its *reasons* do not reach.
+
+vitaGL's shader compiler chain ends at taiHEN:
+
+```
+libvitaGL.a        -> shark_*, sceShaccCg*   (gxm.o calls shark_init from vglInit)
+libvitashark.a     -> sceShaccCgExt*
+libSceShaccCgExt.a -> taiHookFunctionOffsetForUser, taiInjectDataForUser, ...
+```
+
+The edge is the **`*ForUser`** family. Every `ForKernel` entry point in
+`taihen.h` takes an explicit `SceUID pid`; the `ForUser` ones take none. They
+patch `SceShaccCg` **inside our own address space**, and they die with the
+process.
+
+The reasons this ADR gives for the constraint are specific: *a module inside
+SceShell can hang the shell*, and *two `config.txt` experiments left the console
+unbootable*. An in-process hook can do neither. It cannot touch SceShell, it
+does not survive a reboot, and there is nothing to write into `config.txt`.
+
+Measured rather than argued: `shark_init(NULL)` returns **0** on this console
+from an UNSAFE self, and `spikes/g1-vitagl` then passes every check including a
+correct green readback out of an FBO.
+
+**Decided 2026-08-21: the constraint is narrowed to what it meant.**
+
+| Declined, still | Permitted |
+|---|---|
+| Kernel plugins (`taiLoadStartKernelModule`) | In-process user hooks that die with the app |
+| SceShell modules (`inject`) | — |
+| Anything in `ur0:tai/config.txt` | — |
+
+The loader keeps its `kload` and `inject` commands and keeps not using them.
+[ADR-0001](0001-aot-only-no-jit.md)'s product promise is unaffected: a console
+that can run homebrew at all already has taiHEN, and it is the same population
+that installs `libshacccg.suprx`.
+
+See [ADR-0014](0014-gpu-backend-via-vitagl.md) for the evidence.
+
 ## What that rules out
 
 | Idea | Verdict |
