@@ -113,6 +113,99 @@ they present by swapping buffers"*. That is about
 about damage support. The GL path tracks existing damage **per back buffer**
 instead, which is more work in the embedder but is the supported, upstream way.
 
+## Criterion 1: passed on hardware, 2026-08-21
+
+`spikes/g1-vitagl` runs on the console and reports:
+
+```
+GL_VENDOR                   Rinnegatamante
+GL_RENDERER                 SGX543MP4+
+GL_VERSION                  OpenGL ES 2.0 VitaGL
+GL_SHADING_LANGUAGE_VERSION 1.00 ES
+
+compile fragment shader            PASS
+compile vertex shader              PASS
+link program                       PASS
+FBO with texture attachment        PASS  status 0x8CD5
+draw into FBO and read back        PASS  centre pixel rgba 0,255,0,255
+```
+
+The readback is the load-bearing line: green is what the fragment shader
+writes, so it proves runtime GLSL compilation, program linkage, render-to-
+texture and a real draw, rather than merely the absence of reported errors.
+Render-to-texture passing matters most, because every `saveLayer` is one — and
+`saveLayer` is what costs half of localsend's 199 ms frame.
+
+### Limits, for criterion 3
+
+| Limit | Value | Note |
+|---|---|---|
+| `GL_MAX_TEXTURE_SIZE` | 4096 | Comfortable |
+| `GL_MAX_RENDERBUFFER_SIZE` | 4096 | Comfortable |
+| `GL_MAX_VERTEX_ATTRIBS` | 16 | Comfortable |
+| `GL_MAX_TEXTURE_IMAGE_UNITS` | 16 | Comfortable |
+| `GL_MAX_VERTEX_UNIFORM_VECTORS` | 128 | Comfortable |
+| `GL_MAX_VARYING_VECTORS` | 8 | The GLES2 floor; Ganesh targets it |
+| `GL_MAX_FRAGMENT_UNIFORM_VECTORS` | **16** | **64 floats. Worth watching** |
+
+Free pools after a context: VRAM 76 MiB, RAM 124 MiB, phycont 26 MiB.
+
+Sixteen fragment uniform vectors is the one number that is not obviously
+enough. It is the GLES2 minimum, and Skia's generated fragment shaders for
+gradients, complex clips and colour filters can exceed it — which would surface
+in criterion 3 as a link failure on a *specific* paint rather than as anything
+systemic. Flagged here so it is not read as a surprise later.
+
+## Three findings that cost the spike four runs
+
+**1. The shader compiler works, and the taiHEN chain under it is real but not
+a blocker.** Removing one layer at a time from the link line gives:
+
+```
+libvitaGL.a        -> shark_*, sceShaccCg*   (gxm.o, ffp.o, custom_shaders.o)
+libvitashark.a     -> sceShaccCgExt*
+libSceShaccCgExt.a -> taiHookFunctionOffsetForUser, taiInjectDataForUser, ...
+```
+
+`gxm.o` is vitaGL's own init, so `vglInit` calls `shark_init` before any Skia
+code exists, and `ffp.o` means vitaGL compiles even its built-in fixed-function
+shaders at run time. The chain is not optional in the packaged build.
+
+It is also not a problem: `shark_init(NULL)` returns **0** on this console. The
+module is present at `ur0:data/libshacccg.suprx` and the hooks resolve.
+
+The taiHEN edge is the `*ForUser` family. Every `ForKernel` entry point in
+`taihen.h` takes an explicit `SceUID pid`; the `ForUser` ones take none — they
+patch `SceShaccCg` **inside our own address space** and die with the process.
+That is not what [ADR-0011](0011-crash-recovery-without-taihen.md) declined:
+its stated reasons are *a module inside SceShell can hang the shell* and *two
+`config.txt` experiments left the console unbootable*, and an in-process hook
+reaches neither. It is recorded here rather than treated as settled, because
+ADR-0011's rule is written flat.
+
+**2. A safe self fails in ways that look like hardware limits.**
+`vita_create_self` builds a *safe* self by default, and a safe self cannot read
+`ur0:` or resolve taiHEN's user hooks — regardless of the HENkaku "unsafe
+homebrew" setting. The spike was built safe while the loader and the app
+template have always been `UNSAFE`. The symptom was `vglInit` returning
+`GL_FALSE` on a console with 182 MB free and the module correctly installed,
+which reads as a platform limitation and is a missing keyword.
+
+**3. `vglInit` returns `GL_FALSE` on a context that works.** Every check above
+passes immediately after it. Removing the spike's own `shark_init` call did not
+change the return value, so it is not induced by the probe. Three runs treated
+the boolean as authoritative and exited without calling a single GL entry
+point; what contradicted them was the console itself, showing vitaGL's splash
+screen — `invoke_splashscreen`, on its own thread — rotating at a smooth 60 fps
+while the report on disk claimed there was no context.
+
+**Do not trust `vglInit`'s return value. Probe the context.**
+
+A related trap, from the same run: vitaGL defers shark translation to link
+time, so `glCompileShader` validates almost nothing. A vertex shader missing
+its `attribute vec2 aPos;` declaration reported `PASS` from both compiles and
+then hung the console inside `glLinkProgram`.
+
 ## Decision
 
 **The GPU is now the primary performance target, and Skia Ganesh over vitaGL is
@@ -124,10 +217,10 @@ establishes that nothing *forbids* this and says nothing about whether vitaGL
 serves what Ganesh asks for. The spike is not the port; it is the smallest
 program that answers that. Exit criteria, all on real hardware:
 
-1. A vitaGL GLES2 context initialises, and `libshacccg.suprx` compiles a
-   trivial shader at runtime. (The module is user-installed; the community
-   already relies on it, so this is not a reason to stop — but it is a
-   dependency to state.)
+1. ~~A vitaGL GLES2 context initialises, and `libshacccg.suprx` compiles a
+   trivial shader at runtime.~~ **PASSED 2026-08-21** — see above. The module
+   is user-installed and the community already relies on it; the dependency it
+   drags in is stated in full above.
 2. Skia builds with `skia_use_gl = true` and `skia_gl_standard = "gles"` for
    `target_os = vita`, and a `GrDirectContext` is successfully created on a
    vitaGL context.

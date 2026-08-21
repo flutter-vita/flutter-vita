@@ -23,7 +23,6 @@ include_directories(${CMAKE_SOURCE_DIR}/../../templates/vita-app)
 
 add_executable(${PROJECT_NAME}
   src/main.c
-  ${CMAKE_SOURCE_DIR}/../../templates/vita-app/bailout.c
 )
 
 # vitaGL is a static archive, which is the whole reason ADR-0004 survives this
@@ -42,10 +41,19 @@ add_executable(${PROJECT_NAME}
 # optional even though this spike never calls gluPerspective.
 target_link_libraries(${PROJECT_NAME}
   vitaGL
+  # vitaGL's gxm.o calls shark_init/shark_end from vglInit itself, and ffp.o
+  # compiles the fixed-function shaders at run time, so the runtime shader
+  # compiler is not optional in the VitaSDK build of vitaGL -- it is reached
+  # before any Ganesh code exists. The chain below is what that costs:
+  #   libvitaGL.a        -> shark_*, sceShaccCg*
+  #   libvitashark.a     -> sceShaccCgExt*
+  #   libSceShaccCgExt.a -> taiHookFunctionOffsetForUser, taiInjectDataForUser
+  # The taiHEN edge is the *ForUser* family, which takes no pid and so patches
+  # SceShaccCg inside this process only. See ADR-0014.
   vitashark
+  SceShaccCg_stub
   SceShaccCgExt
   taihen_stub
-  SceShaccCg_stub
   mathneon
   SceGxm_stub
   SceDisplay_stub
@@ -56,6 +64,8 @@ target_link_libraries(${PROJECT_NAME}
   SceKernelDmacMgr_stub
   SceIofilemgr_stub
   SceSysmodule_stub
+  SceNet_stub
+  SceNetCtl_stub
   stdc++
   pthread
   m
@@ -69,7 +79,19 @@ target_link_libraries(${PROJECT_NAME}
 # libstdc++ compiles to a silent no-op. See docs/phase-2-workplan.md.
 target_link_options(${PROJECT_NAME} PRIVATE -Wl,-u,pthread_cancel)
 
-vita_create_self(${PROJECT_NAME}.self ${PROJECT_NAME})
+# UNSAFE, and this was the bug that cost three runs.
+#
+# vita_create_self builds a *safe* self by default, and a safe self is confined
+# no matter what the HENkaku "unsafe homebrew" setting says: ur0: is not
+# readable and taiHEN's user hooks do not resolve. Both are things vglInit
+# needs -- it calls shark_init, which loads ur0:data/libshacccg.suprx through
+# a taiHEN-patched SceShaccCg. So vglInit returned GL_FALSE on a console with
+# 182 MB free and the module correctly installed, and the failure looked like
+# a platform limitation rather than a missing keyword.
+#
+# The loader and the Flutter app template have always built UNSAFE. Only this
+# spike did not.
+vita_create_self(${PROJECT_NAME}.self ${PROJECT_NAME} UNSAFE)
 vita_create_vpk(${PROJECT_NAME}.vpk ${VITA_TITLEID} ${PROJECT_NAME}.self
   VERSION ${VITA_VERSION}
   NAME ${VITA_APP_NAME}

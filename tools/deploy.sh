@@ -45,7 +45,10 @@ say()  { printf '%s\n' "$2" | nc -w "${3:-30}" "$HOST" "$1" 2>/dev/null; }
 # and a single probe races the accept loop.
 alive() {
   local port="$1" want="$2"
-  for _ in 1 2 3; do
+  # Six, not three: measured on 2026-08-21, the loader answered on the fifth
+  # probe from a cold connect. Three tries reported a live loader as dead and
+  # sent the script down the "wait for a human tap" path for no reason.
+  for _ in 1 2 3 4 5 6; do
     say "$port" ping 6 | grep -q "$want" && return 0
     sleep 1
   done

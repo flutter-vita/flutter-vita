@@ -29,11 +29,26 @@
 #include <string.h>
 #include <psp2/kernel/processmgr.h>
 #include <psp2/kernel/sysmem.h>
+#include <psp2/io/fcntl.h>
 #include <psp2/io/stat.h>
+#include <psp2/kernel/threadmgr.h>
+#include <psp2/net/net.h>
+#include <psp2/net/netctl.h>
+#include <psp2/sysmodule.h>
 #include <vitaGL.h>
+#include <vitashark.h>
 
-#include "bailout.h"
 
+// Deliberately NOT bailout.h.
+//
+// vita_bail_to_loader launches the loader and exits, which is the right
+// behaviour for a Flutter app and the wrong one here. A failed vglInit leaves
+// sceGxm and the display part-configured, and asking the shell to start
+// another app from that state wedged the console hard enough that the PS
+// button stopped responding and it took a 30-second power hold -- while the
+// report on disk showed the spike had already finished its work and reached
+// the bail. So this exits plainly and lets the console return to LiveArea.
+// One tap to reopen the loader beats any chance of repeating that.
 #define REPORT "ux0:data/flutter-vita/gl-spike.txt"
 
 // vitaGL allocates from the newlib heap as well as from its own GPU pools, and
@@ -84,12 +99,22 @@ static int drain_gl_errors(const char* stage) {
   return seen;
 }
 
+// Valid GLSL ES 1.00, declarations included.
+//
+// The first version of these omitted `attribute vec2 aPos;` on the theory that
+// vitaGL's translator supplies the semantic from glBindAttribLocation. Both
+// shaders then reported PASS from glCompileShader and the console hung inside
+// glLinkProgram -- because vitaGL defers the real shark translation to link
+// time, so glCompileShader validates almost nothing and an undefined
+// identifier surfaces as a hang in the linker rather than a compile error.
 static const char* kVert =
+    "attribute vec2 aPos;\n"
     "void main() {\n"
     "  gl_Position = vec4(aPos, 0.0, 1.0);\n"
     "}\n";
 
 static const char* kFrag =
+    "precision mediump float;\n"
     "void main() {\n"
     "  gl_FragColor = vec4(0.0, 1.0, 0.0, 1.0);\n"
     "}\n";
@@ -108,12 +133,92 @@ static GLuint compile(GLenum type, const char* src, const char* label) {
   return ok == GL_TRUE ? s : 0;
 }
 
+// Serve the report over TCP, then exit. Called on every exit path.
+//
+// Without this the report is unreadable: the spike returns to LiveArea when it
+// exits, which leaves the loader closed, and the loader's `get` command is the
+// only other way to pull a file off this console. Every iteration would need
+// somebody to walk over and tap the loader bubble -- the exact cost ADR-0011
+// exists to remove, reintroduced through the back door.
+//
+// Deliberately NOT the bail-to-loader route. Launching another app after a
+// half-completed vglInit is what wedged the console hard enough to need a
+// 30-second power hold; this touches no app manager at all.
+//
+// Bounded by kServeSeconds so a run nobody collects still returns the console
+// to LiveArea on its own rather than sitting on a listener forever.
+#define SPIKE_PORT 1342
+#define kServeSeconds 240
+
+static char g_net_pool[16 * 1024];
+
+static void serve_report_then_exit(void) {
+  if (g_out) { fclose(g_out); g_out = NULL; }
+
+  if (sceSysmoduleLoadModule(SCE_SYSMODULE_NET) < 0) sceKernelExitProcess(0);
+  SceNetInitParam np;
+  np.memory = g_net_pool;
+  np.size = sizeof g_net_pool;
+  np.flags = 0;
+  const int ni = sceNetInit(&np);
+  if (ni < 0 && ni != (int)0x80410103) sceKernelExitProcess(0);
+  sceNetCtlInit();
+
+  const int srv =
+      sceNetSocket("fvita-g1", SCE_NET_AF_INET, SCE_NET_SOCK_STREAM, 0);
+  if (srv < 0) sceKernelExitProcess(0);
+  int one = 1;
+  sceNetSetsockopt(srv, SCE_NET_SOL_SOCKET, SCE_NET_SO_REUSEADDR, &one,
+                   sizeof one);
+  SceNetSockaddrIn addr;
+  memset(&addr, 0, sizeof addr);
+  addr.sin_family = SCE_NET_AF_INET;
+  addr.sin_addr.s_addr = sceNetHtonl(SCE_NET_INADDR_ANY);
+  addr.sin_port = sceNetHtons(SPIKE_PORT);
+  if (sceNetBind(srv, (SceNetSockaddr*)&addr, sizeof addr) < 0 ||
+      sceNetListen(srv, 2) < 0) {
+    sceNetSocketClose(srv);
+    sceKernelExitProcess(0);
+  }
+  sceNetSetsockopt(srv, SCE_NET_SOL_SOCKET, SCE_NET_SO_NBIO, &one, sizeof one);
+
+  // 10 polls a second, so the deadline is in tenths.
+  for (int tick = 0; tick < kServeSeconds * 10; tick++) {
+    const int c = sceNetAccept(srv, NULL, NULL);
+    if (c >= 0) {
+      int zero = 0;
+      sceNetSetsockopt(c, SCE_NET_SOL_SOCKET, SCE_NET_SO_NBIO, &zero,
+                       sizeof zero);
+      SceUID fd = sceIoOpen(REPORT, SCE_O_RDONLY, 0777);
+      if (fd >= 0) {
+        static char buf[4096];
+        int n;
+        while ((n = sceIoRead(fd, buf, sizeof buf)) > 0) {
+          int off = 0;
+          while (off < n) {
+            const int w = sceNetSend(c, buf + off, n - off, 0);
+            if (w <= 0) { n = -1; break; }
+            off += w;
+          }
+          if (n < 0) break;
+        }
+        sceIoClose(fd);
+      }
+      sceNetSocketClose(c);
+      break;  // one reader is all this needs
+    }
+    sceKernelDelayThread(100 * 1000);
+  }
+
+  sceNetSocketClose(srv);
+  sceKernelExitProcess(0);
+}
+
 int main(void) {
   sceIoMkdir("ux0:data", 0777);
   sceIoMkdir("ux0:data/flutter-vita", 0777);
   g_out = fopen(REPORT, "w");
   if (!g_out) {
-    vita_bail_to_loader("gl-spike: cannot open report file");
     return 1;
   }
 
@@ -140,32 +245,52 @@ int main(void) {
     }
   }
 
-  GLboolean up = GL_FALSE;
-  const char* how = "";
+  // One init attempt per run, and this run tries the canonical call.
+  //
+  // Two runs have failed and between them they tested three of the four
+  // interesting combinations. Run 1 was vglInit(0x100000) against VitaSDK's
+  // default heap, which is far too small for vitaGL. Run 2 raised the heap to
+  // 64 MB but asked for a *zero* legacy pool, by both routes, on the reasoning
+  // that Ganesh never uses immediate mode. Zero is not obviously a value
+  // vitaGL accepts, and "the pool Ganesh needs" is not the same question as
+  // "the pool vglInit will start with".
+  //
+  // So: the documented call, with a real pool, on a heap that is big enough --
+  // the combination neither previous run covered. Only one attempt, because a
+  // failed init leaves the GPU in a state the next attempt inherits.
+  // No pre-emptive shark_init here any more.
+  //
+  // One run did call it directly, and it returned 0 -- which settled the open
+  // question: libshacccg.suprx loads and the SceShaccCgExt -> taiHEN hook chain
+  // resolves from an UNSAFE self. That answer is banked and the probe removed,
+  // because vitaGL's gxm.o calls shark_init itself from inside vglInit, and a
+  // compiler this program already initialised is a plausible reason for vglInit
+  // to return GL_FALSE while every context it built works perfectly.
+  enter("vglInit(0x100000)");
+  const GLboolean up = vglInit(0x100000);
 
-  // Attempt A: explicit, modest sizes. vglInit's defaults reserve pools sized
-  // for a game; this asks for the screen and little else.
-  enter("vglInitExtended");
-  up = vglInitExtended(0, 960, 544, 0x800000, SCE_GXM_MULTISAMPLE_NONE);
-  if (up == GL_TRUE) how = "vglInitExtended 960x544, 8 MiB threshold";
-
-  // Attempt B: the plain entry point with no legacy immediate-mode pool.
-  // Ganesh never uses immediate mode, so zero is the honest ask.
-  if (up != GL_TRUE) {
-    say("vglInitExtended returned false; trying vglInit(0)\n");
-    enter("vglInit(0)");
-    up = vglInit(0);
-    if (up == GL_TRUE) how = "vglInit(0)";
-  }
-
-  check("GL context", up == GL_TRUE, how);
-  if (up != GL_TRUE) {
-    say("\nNo context by either route; nothing below can run.\n");
-    fclose(g_out);
-    vita_bail_to_loader("gl-spike: no GL context");
-    return 1;
-  }
-
+  // Report the raw value rather than a verdict, and DO NOT stop on a false.
+  //
+  // Three runs treated GL_FALSE here as "no context" and exited without
+  // touching a single GL entry point. That was wrong, and the console said so:
+  // vitaGL's splash screen -- invoke_splashscreen, on its own thread, started
+  // early inside vglInit and stopped only by clear_splashscreen -- was
+  // observed rotating at a smooth 60 fps while the report on disk claimed
+  // there was no context. A splash that animates is GXM initialised, a display
+  // configured, and vitaGL's own shaders compiled at run time. Whatever
+  // vglInit is unhappy about, it is not any of those.
+  //
+  // So the boolean is now one data point among several, and the checks below
+  // run either way. glGetString returning a real vendor string is stronger
+  // evidence of a working context than a return code is of a broken one.
+  // Reported, not counted. vglInit returns GL_FALSE on this console while
+  // every context it builds works: strings, limits, runtime shader compile,
+  // link, FBO and a correct green readback all pass immediately afterwards.
+  // Removing this program's own shark_init call did not change the return
+  // value, so it is not induced by the probe. Treating it as a failure is what
+  // stopped three earlier runs before they touched a single GL entry point.
+  say("vglInit returned %d (0x100000 pool, 64 MiB heap)%s\n", (int)up,
+      up == GL_TRUE ? "" : "  <- known vitaGL quirk, context works anyway");
   // The runtime GLSL compiler, reported separately so that a context without a
   // compiler is a distinguishable result. Ganesh generates shader source at
   // run time, so a precompiled .gxp cache cannot substitute for this.
@@ -290,9 +415,7 @@ int main(void) {
 
   say("\n=============================================\n");
   say("%s (%d failed)\n", g_fail == 0 ? "ALL CHECKS PASSED" : "FAILURES PRESENT", g_fail);
-  fclose(g_out);
 
-  vita_bail_to_loader(g_fail == 0 ? "gl-spike: all checks passed"
-                                  : "gl-spike: failures, see gl-spike.txt");
+  serve_report_then_exit();
   return 0;
 }
