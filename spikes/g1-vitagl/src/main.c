@@ -31,6 +31,7 @@
 #include <psp2/kernel/sysmem.h>
 #include <psp2/appmgr.h>
 #include <psp2/gxm.h>
+#include <psp2/io/dirent.h>
 #include <psp2/io/fcntl.h>
 #include <psp2/io/stat.h>
 #include <psp2/kernel/threadmgr.h>
@@ -231,6 +232,34 @@ int main(void) {
     }
   }
 
+  // Make the shader cache usable before vitaGL starts.
+  //
+  // The archive carries the cache (vglSetShaderCachePath is defined, and the
+  // path format "ux0:data/shader_cache/v%d/f/%08X-%016llX.gxp" is in the
+  // binary) but recompiling the identical shader in a later run cost the same
+  // 194 ms as the first, so nothing was being written. The likeliest reason is
+  // that vitaGL opens the .gxp for writing without creating the directories
+  // above it, and sceIoOpen does not make parents. Report whether the tree was
+  // already there, then create it.
+  {
+    SceUID d = sceIoDopen("ux0:data/shader_cache");
+    say("shader cache dir %s\n",
+        d >= 0 ? "exists" : "absent -- creating");
+    if (d >= 0) sceIoDclose(d);
+    sceIoMkdir("ux0:data/shader_cache", 0777);
+    // The version directory is a number this program does not know, so cover
+    // the plausible range; a mkdir that already exists is harmless.
+    for (int v = 0; v < 8; v++) {
+      char p[64];
+      snprintf(p, sizeof p, "ux0:data/shader_cache/v%d", v);
+      sceIoMkdir(p, 0777);
+      snprintf(p, sizeof p, "ux0:data/shader_cache/v%d/v", v);
+      sceIoMkdir(p, 0777);
+      snprintf(p, sizeof p, "ux0:data/shader_cache/v%d/f", v);
+      sceIoMkdir(p, 0777);
+    }
+  }
+
   // One init attempt per run, and this run tries the canonical call.
   //
   // Two runs have failed and between them they tested three of the four
@@ -342,6 +371,131 @@ int main(void) {
     if (ok != GL_TRUE) prog = 0;
   } else {
     check("link program", 0, "skipped, a shader did not compile");
+  }
+
+  // 3b. What a shader costs to compile at run time.
+  //
+  // This is the risk ADR-0014's criteria missed. Ganesh generates GLSL per
+  // paint configuration and libshacccg compiles it on a 333 MHz ARM, so a GPU
+  // backend can trade a slow steady-state frame for a stall every time a new
+  // paint appears -- which for a UI toolkit is worse, however fast the
+  // steady state gets.
+  //
+  // vitaGL's shader cache is compiled into the packaged archive
+  // (vglSetShaderCachePath is defined, and the .gxp path format strings are in
+  // the binary), so the question has two halves: what a cold compile costs,
+  // and what the cache saves. Each shader below is textually unique, so every
+  // one of them is a cache miss by construction; the fixed pair above has
+  // already been compiled by an earlier run and is the warm case.
+  // Stop the splash screen before timing anything.
+  //
+  // vitaGL starts invoke_splashscreen on its own thread inside vglInit and
+  // stops it in clear_splashscreen, which runs on the first buffer swap. This
+  // spike renders to an FBO and reads back, so it never swapped and the logo
+  // was still rotating at 60 fps through every measurement below -- a render
+  // thread competing for the GPU and holding splash_mutex while a compile is
+  // supposedly being timed.
+  //
+  // The tell was in the numbers: twelve samples over two runs, six textually
+  // different shaders, all within 191.9-195.0 ms. Compilers vary with their
+  // input. That flat a result is something periodic being waited on, not work
+  // being done, so the first measurements are void rather than merely noisy.
+  enter("vglSwapBuffers (ends the splash screen)");
+  vglSwapBuffers(GL_FALSE);
+  vglSwapBuffers(GL_FALSE);
+
+  say("\n-- runtime shader compilation cost --\n");
+  //
+  // Six near-identical shaders all cost the same, which says nothing: they
+  // differ by one literal, so identical cost is what a working compiler would
+  // also produce. What separates "libshacccg is slow" from "something fixed is
+  // paid per link" is whether the time tracks complexity. These three differ by
+  // roughly an order of magnitude in arithmetic each.
+  {
+    static const char* kTrivial =
+        "precision mediump float;\n"
+        "void main() { gl_FragColor = vec4(%d.0/255.0, 0.0, 0.0, 1.0); }\n";
+    static const char* kMedium =
+        "precision mediump float;\n"
+        "void main() {\n"
+        "  vec4 c = vec4(%d.0/255.0);\n"
+        "  for (int i = 0; i < 8; i++) c = c * 0.99 + sin(c) * 0.01;\n"
+        "  gl_FragColor = c;\n"
+        "}\n";
+    static const char* kHeavy =
+        "precision highp float;\n"
+        "void main() {\n"
+        "  vec4 c = vec4(%d.0/255.0);\n"
+        "  for (int i = 0; i < 64; i++) {\n"
+        "    c = c * 0.99 + sin(c) * 0.01 + cos(c.yzwx) * 0.005;\n"
+        "    c = normalize(c + vec4(0.001)) * length(c);\n"
+        "  }\n"
+        "  gl_FragColor = c;\n"
+        "}\n";
+    struct { const char* name; const char* tmpl; } kCases[] = {
+      {"trivial", kTrivial}, {"medium ", kMedium}, {"heavy  ", kHeavy},
+    };
+    for (unsigned k = 0; k < sizeof kCases / sizeof kCases[0]; k++) {
+      char src[1024];
+      snprintf(src, sizeof src, kCases[k].tmpl, 40 + (int)k);
+      const char* sp = src;
+      GLuint sh = glCreateShader(GL_FRAGMENT_SHADER);
+      glShaderSource(sh, 1, &sp, NULL);
+      glCompileShader(sh);
+      GLuint pr = glCreateProgram();
+      glAttachShader(pr, vs);
+      glAttachShader(pr, sh);
+      glBindAttribLocation(pr, 0, "aPos");
+      const uint64_t t0 = sceKernelGetProcessTimeWide();
+      glLinkProgram(pr);
+      GLint lok = 0;
+      glGetProgramiv(pr, GL_LINK_STATUS, &lok);
+      const uint64_t us = sceKernelGetProcessTimeWide() - t0;
+      say("  %s link %7llu us  (%u chars)  %s\n", kCases[k].name,
+          (unsigned long long)us, (unsigned)strlen(src),
+          lok == GL_TRUE ? "ok" : "FAILED");
+      glDeleteProgram(pr);
+      glDeleteShader(sh);
+    }
+
+    // Same source twice in one process: if the second is free, vitaGL caches
+    // in memory and only the on-disk cache is broken.
+    char src[256];
+    snprintf(src, sizeof src, kTrivial, 99);
+    for (int rep = 0; rep < 2; rep++) {
+      const char* sp = src;
+      GLuint sh = glCreateShader(GL_FRAGMENT_SHADER);
+      glShaderSource(sh, 1, &sp, NULL);
+      glCompileShader(sh);
+      GLuint pr = glCreateProgram();
+      glAttachShader(pr, vs);
+      glAttachShader(pr, sh);
+      glBindAttribLocation(pr, 0, "aPos");
+      const uint64_t t0 = sceKernelGetProcessTimeWide();
+      glLinkProgram(pr);
+      const uint64_t us = sceKernelGetProcessTimeWide() - t0;
+      say("  identical source, pass %d: %llu us\n", rep + 1,
+          (unsigned long long)us);
+      glDeleteProgram(pr);
+      glDeleteShader(sh);
+    }
+
+    for (int v = 0; v < 4; v++) {
+      for (int kk = 0; kk < 2; kk++) {
+        char dir[64];
+        snprintf(dir, sizeof dir, "ux0:data/shader_cache/v%d/%s", v,
+                 kk ? "f" : "v");
+        SceUID d = sceIoDopen(dir);
+        if (d < 0) continue;
+        int n = 0;
+        SceIoDirent ent;
+        memset(&ent, 0, sizeof ent);
+        while (sceIoDread(d, &ent) > 0) { n++; memset(&ent, 0, sizeof ent); }
+        sceIoDclose(d);
+        say("  cache %s: %d file(s)\n", dir, n);
+      }
+    }
+    say("\n  A frame at 30 fps is 33,333 us. Compare.\n");
   }
 
   // 4. Render to texture. Every saveLayer is one of these.
