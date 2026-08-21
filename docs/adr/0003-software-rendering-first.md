@@ -61,6 +61,21 @@ If the M3 baseline measurement shows the software path cannot reach the
 "laggy but working" bar on a counter app, GLES2 stops being an optimisation and
 becomes a Phase 3 blocker. That reordering should be an explicit new ADR.
 
+> **Triggered 2026-08-21, and the ADR exists: [ADR-0014](0014-gpu-backend-via-vitagl.md).**
+> Timing the raster pass separately from the present put localsend's Receive
+> screen at **raster 97% of the frame**, against a 0.6% blit. This ADR is not
+> superseded — shipping software first was right, and is why there was
+> something to measure — but the ordering it deferred has now flipped.
+>
+> Two things above are obsoleted by that measurement and should not be acted
+> on. **The NEON blit is no longer "the cheapest large win in the embedder":**
+> [ADR-0007](0007-enable-partial-repaint-in-software-path.md) made the blit
+> proportional to damage, so it is now under 1% of a frame and optimising it
+> perfectly buys nothing. **The 720×408 fallback is not sufficient on its own
+> either** — 1.78× fewer pixels against the ~6.7× reduction localsend needs —
+> though it remains useful per workload, and would plausibly take
+> flutter_manga_reader to 60 fps.
+
 ## Related
 
 [ADR-0002](0002-skia-not-impeller.md)

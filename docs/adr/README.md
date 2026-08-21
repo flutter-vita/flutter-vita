@@ -23,6 +23,7 @@ ADR-0001 through ADR-0004 are back-filled from §1 of `Flutter Vita Plan.md`
 | [0011](0011-crash-recovery-without-taihen.md) | A crash returns to the loader by exiting cleanly | Accepted — no taiHEN, and a clean exit shows no dialog |
 | [0012](0012-app-corpus-as-measurement-instrument.md) | The app corpus is an instrument, and its output is a diff | Accepted — five axes, one control, patch size is the score |
 | [0013](0013-ffi-needs-static-linking.md) | `dart:ffi` needs static linking, and that is the admission test | Accepted — decided one app in and one app out |
+| [0014](0014-gpu-backend-via-vitagl.md) | The raster pass is the bottleneck, so the GPU becomes the target | **Accepted** — raster is 97% of a frame; engine work gated on a spike |
 
 ## Open questions not yet decided
 
