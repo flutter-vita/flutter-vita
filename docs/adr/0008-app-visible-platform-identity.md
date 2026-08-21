@@ -106,6 +106,24 @@ scrollbars, and no mobile overscroll glow, which is right for a handheld with
 physical buttons and no mobile OS. flutter-pi and flutter-elinux report linux
 for the same reason.
 
+> **Amended 2026-08-19.** That paragraph was asserted, not measured, and most
+> of it does not survive being checked — see
+> [platform-identity-options.md](../platform-identity-options.md), which prices
+> all six candidates instead of only linux against `vita`. In short: paths and
+> fonts do not route through the identity at all (`path_provider_vita` and
+> `platform_vita.cc` handle both), and "desktop text-editing shortcuts" are
+> unreachable input, because [ADR-0010](0010-input-layering-and-psvita-api.md)
+> synthesizes arrows and scroll but no modifier keys. Android and linux differ
+> in **43 of 93** exhaustive switches, and the Linux identity has already cost
+> one corpus patch — localsend's `checkPlatformIsDesktop()` returned true,
+> `window_manager` threw during `preInit`, and the app never reached `runApp`.
+>
+> **The decision is unchanged**, but the surviving reason is different: the
+> Android ecosystem assumes a plugin host and its branches lead to
+> MethodChannels we do not implement, whereas Linux branches usually lead to
+> pure Dart, which [ADR-0009](0009-plugins-via-non-endorsed-vita-implementations.md)
+> is built to substitute.
+
 **`psvita` is a pure-Dart package, not a plugin.** It talks over
 `MethodChannel('vita/gamepad')` and friends to an embedder we control, so it
 needs no registrant, no plugin resolution, and does not collide with

@@ -16,6 +16,7 @@
 | [vita3k-as-a-target.md](vita3k-as-a-target.md) | What the emulator can and cannot be trusted for |
 | [../VERSIONS.md](../VERSIONS.md) | Pinned commits and why 3.44.8 |
 | [../tools/apply-patches.sh](../tools/apply-patches.sh) | `--apply` puts the 26 patches into their six repos; `--verify` checks the series and the trees still agree |
+| [platform-identity-options.md](platform-identity-options.md) | Which OS the Vita should claim to be: all six candidates priced, linux vs android measured, and why a real `vita` platform stays rejected |
 | [flutter-upgrade-cost.md](flutter-upgrade-cost.md) | How to price a Flutter/Dart upgrade before committing to it, and the priced answer for 3.47.0 |
 
 ## Where the project stands
