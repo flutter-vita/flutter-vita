@@ -249,17 +249,81 @@ not; a Vita is capability-wise a phone with buttons. It is:
 Point 2 is the one that would survive an argument. Points 1 and 3 are real but
 contingent — 3 expires as soon as someone is willing to re-run the corpus.
 
-**What is not settled** is whether the desktop *furniture* — the persistent
-scrollbar in particular — is costing frames. That is cheap to answer now that
-the raster pass is timed separately, and it is worth answering before anyone
-argues about identity again:
+## How much of this is overridable without changing the identity
 
-> Run keklist, whose scrolling list is the corpus's worst frame-rate case, with
-> `ScrollConfiguration` overridden to the mobile scrollbar behaviour, and
-> compare `raster us`. If a scrollbar nobody asked for is measurable in the
-> raster pass, that is a concrete cost of the Linux identity rather than a
-> stylistic one — and it is fixable from `psvita` without touching the identity
-> at all.
+More than ADR-0008 implies, and the answer splits cleanly by layer.
+
+### `ThemeData.platform` — one line, and it reaches most of the furniture
+
+```dart
+MaterialApp(theme: ThemeData(platform: TargetPlatform.android))
+```
+
+`ThemeData.platform` defaults to `defaultTargetPlatform` (`theme_data.dart:399`)
+and is settable. Everything below reads *it*, not `defaultTargetPlatform`:
+
+| Behaviour | Where it reads the theme |
+|---|---|
+| Scrollbar and overscroll indicator | `MaterialScrollBehavior.getPlatform(context) => Theme.of(context).platform` |
+| Page transitions | `page_transitions_theme.dart:870` |
+| Visual density — **`compact` on desktop**, standard on mobile | `visualDensity ??= VisualDensity.defaultDensityForPlatform(platform)` |
+| 51 further reads across the material library | `Theme.of(context).platform` |
+
+So the persistent desktop scrollbar, the compact touch targets and the zoom
+page transition are all removable from inside an app that keeps reporting
+`"linux"`. **That settles the open question this document previously raised:**
+if the scrollbar turns out to cost raster time, it is a fixable annoyance
+rather than an argument about identity.
+
+For a non-Material app the equivalent is
+`ScrollConfiguration.of(context).copyWith(platform: ...)`, which
+`_WrappedScrollBehavior` honours (`scroll_configuration.dart:357`).
+
+### What the theme does not reach
+
+The widgets layer reads `defaultTargetPlatform` **directly, 104 times**, and no
+theme sits between. About 85 of those are three files:
+
+```
+widgets/text_selection.dart      30
+widgets/editable_text.dart       25
+widgets/selectable_region.dart   23
+```
+
+**Text selection and editing therefore stay desktop-flavoured** whatever the
+theme says — selection gestures, handles, context menu shape, shortcuts. There
+is no override hook for the gesture behaviour, only for the controls
+(`selectionControls`) and the styling (`TextSelectionTheme`).
+
+### `Platform.operatingSystem` — not overridable at all
+
+- **`IOOverrides` has no `Platform` support.** It covers files, directories and
+  sockets; `operatingSystem` appears nowhere in `sdk/lib/io/overrides.dart`.
+- `Platform.isLinux` is `static final bool isLinux = (operatingSystem == "linux")`,
+  from a compile-time constant.
+- `debugDefaultTargetPlatformOverride` is guarded by `kDebugMode`, and this port
+  builds AOT release only.
+
+The `#define` is the only lever. Any app or package asking `Platform.isLinux`
+gets the declared answer, permanently — which is why localsend needed a patch
+rather than a setting.
+
+### One reason not to reach for android reflexively
+
+`FocusManager._defaultModeForPlatform` gives mobile platforms **touch mode with
+no focus highlights**, and everything else "traditional mouse and keyboard" —
+visible focus rings. Since [ADR-0010](adr/0010-input-layering-and-psvita-api.md)
+synthesizes arrow keys from the D-pad for navigation, **visible focus highlights
+are exactly what this device wants**, and the Linux identity supplies them free.
+An android theme suppresses them until a key is pressed.
+
+So the useful shape is not "pretend to be android". It is a `psvita`-provided
+theme that takes the **mobile furniture** — no scrollbar, standard density,
+cheaper transition — while the identity keeps supplying **desktop focus
+behaviour**. That is the "widget-level override in `psvita`" that ADR-0008 named
+and never made concrete, and it is now a known-reachable one-liner rather than
+an aspiration.
+
 
 ## Revisit triggers, refined from ADR-0008
 
@@ -269,8 +333,10 @@ sharper ones, from what is now known:
 - **A second corpus app dies before `runApp` on a desktop-capability check.**
   One is an anecdote; two is a pattern, and it means the failure mode is
   systematically early and fatal rather than late and catchable.
-- **The scrollbar measurement above shows a material raster cost** *and*
-  overriding it from `psvita` turns out not to work for third-party scrollables.
+- **Text selection turns out to be the blocker.** It is the one substantial
+  behaviour `ThemeData.platform` cannot reach, so if desktop selection gestures
+  make text unusable on a touchscreen with no modifier keys, the theme escape
+  hatch has run out and the identity is the only lever left.
 
 Neither triggers a change to `"android"` on its own. Both would justify
 reopening the comparison with numbers instead of adjectives.
