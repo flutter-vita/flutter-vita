@@ -78,8 +78,34 @@ class PathProviderVita extends PathProviderPlatform {
   @override
   Future<List<String>?> getExternalStoragePaths({StorageDirectory? type}) async => null;
 
-  /// There is no Downloads folder, and no browser or mail client that would
-  /// fill one.
+  /// `ux0:downloads`, the device's own convention — the directory VitaShell
+  /// downloads into, so a file that lands here is somewhere the user already
+  /// knows to look.
+  ///
+  /// This returned null until 2026-08-21, on the reasoning that "there is no
+  /// Downloads folder, and no browser or mail client that would fill one".
+  /// Both halves were wrong. localsend fills one, and it is the corpus app
+  /// this port cares most about; and the claim that "callers already handle
+  /// null" did not survive contact with a real caller:
+  ///
+  ///     Unhandled Exception: Null check operator used on a null value
+  ///     #0  getDefaultDestinationDirectory (util/native/directories.dart:29)
+  ///     #1  ReceiveController._prepareUploadHandler (receive_controller.dart:216)
+  ///
+  /// localsend *does* check for null. Its fallback is the problem: under
+  /// [ADR-0008]'s Linux identity it takes the desktop branch and reaches for
+  /// `Platform.environment['HOME']!`, which is unset here, so the `!` throws.
+  /// The exception escaped a shelf handler, no response was ever written, and
+  /// the sending device simply waited — the symptom being "nothing happens on
+  /// the Vita", with discovery working perfectly the whole time.
+  ///
+  /// Returning a real path is the fix that works for every app rather than
+  /// one, because it means the desktop fallback is never entered at all.
+  ///
+  /// Not keyed on the title id, unlike the paths above: a downloads folder is
+  /// a place the user goes looking, and burying it under a nine-character id
+  /// would defeat the point. Apps that want privacy have
+  /// [getApplicationDocumentsPath].
   @override
-  Future<String?> getDownloadsPath() async => null;
+  Future<String?> getDownloadsPath() => _ensure('ux0:downloads');
 }
