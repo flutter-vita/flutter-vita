@@ -30,6 +30,7 @@
 #include <psp2/kernel/processmgr.h>
 #include <psp2/kernel/sysmem.h>
 #include <psp2/appmgr.h>
+#include <psp2/gxm.h>
 #include <psp2/io/fcntl.h>
 #include <psp2/io/stat.h>
 #include <psp2/kernel/threadmgr.h>
@@ -158,7 +159,27 @@ static GLuint compile(GLenum type, const char* src, const char* label) {
 #define VITA_LOADER_TITLEID "FVTA00003"
 
 static void hand_back_to_loader(void) {
+  // Let go of the GPU before asking the shell to switch.
+  //
+  // bailout.c does the launch-then-exit with nothing in between and never
+  // prompts, but the app it runs in has never touched the GPU. This one holds
+  // a live GXM context and a configured display, and it *did* prompt on every
+  // run: "close the current application?" appears while the outgoing app is
+  // still alive, and a process still tearing down the GPU is still alive.
+  //
+  // vitaGL offers no shutdown -- there is no vglEnd in the archive -- so this
+  // goes to GXM directly. Draining the display queue first matters: terminating
+  // with frames still in flight is a use-after-free of the buffers they name.
+  //
+  // Failures are ignored on purpose. If the GPU was never brought up these
+  // return errors and there is nothing to release, which is the good case.
+  sceGxmDisplayQueueFinish();
+  sceGxmTerminate();
+
   sceAppMgrLaunchAppByUri(0xFFFFF, "psgm:play?titleid=" VITA_LOADER_TITLEID);
+
+  // Nothing between the launch and the exit -- see bailout.c, where a 100 ms
+  // delay here cost a prompt on every bail.
   sceKernelExitProcess(0);
 }
 
