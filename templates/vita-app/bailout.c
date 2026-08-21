@@ -110,10 +110,29 @@ void vita_bail_to_loader(const char* reason) {
   // console.
   sceAppMgrLaunchAppByUri(0xFFFFF, "psgm:play?titleid=" VITA_LOADER_TITLEID);
 
-  // The launch is asynchronous. Exiting instantly has been known to race it,
-  // and a tenth of a second costs nothing on a path that is already ending.
-  sceKernelDelayThread(100 * 1000);
-
+  // Exit immediately. Nothing may go between the launch and this line.
+  //
+  // There was a `sceKernelDelayThread(100 * 1000)` here, justified as "the
+  // launch is asynchronous, exiting instantly has been known to race it, and a
+  // tenth of a second costs nothing on a path that is already ending". The
+  // tenth of a second cost a prompt on every single bail, which is the whole
+  // thing this file exists to avoid, and the answer was already written down
+  // in the loader that does the same switch in the other direction:
+  //
+  //     Exit at once rather than lingering. The "close the current
+  //     application?" prompt appears only because the outgoing app is still
+  //     alive; launchers that switch silently exit straight after issuing the
+  //     launch.
+  //         -- spikes/vita-loader/src/main.c, cmd_launch
+  //
+  // The loader launches an app on every deploy and has never prompted. This
+  // did, on every bail, and the only difference was the sleep.
+  //
+  // There is nothing left to race, either: record() above already called
+  // sceIoSyncByFd and sceIoClose, so the reason is on disk before the launch
+  // is even requested. The delay was protecting a write that had already
+  // completed.
+  //
   // Clean exit, which is the entire point: no fault, so no dialog, so no tap.
   // If the launch failed the console lands on LiveArea instead, which is still
   // one step better than an error dialog.
