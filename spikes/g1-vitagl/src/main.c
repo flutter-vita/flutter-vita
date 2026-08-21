@@ -29,12 +29,10 @@
 #include <string.h>
 #include <psp2/kernel/processmgr.h>
 #include <psp2/kernel/sysmem.h>
+#include <psp2/appmgr.h>
 #include <psp2/io/fcntl.h>
 #include <psp2/io/stat.h>
 #include <psp2/kernel/threadmgr.h>
-#include <psp2/net/net.h>
-#include <psp2/net/netctl.h>
-#include <psp2/sysmodule.h>
 #include <vitaGL.h>
 #include <vitashark.h>
 
@@ -147,72 +145,39 @@ static GLuint compile(GLenum type, const char* src, const char* label) {
 //
 // Bounded by kServeSeconds so a run nobody collects still returns the console
 // to LiveArea on its own rather than sitting on a listener forever.
-#define SPIKE_PORT 1342
-#define kServeSeconds 240
 
-static char g_net_pool[16 * 1024];
+// Hand the console back to the loader, exactly as templates/vita-app/bailout.c
+// does. Exiting to LiveArea instead leaves the loader closed, so the next
+// deploy stalls waiting for somebody to walk over and tap it -- which is the
+// cost ADR-0011 exists to remove, reintroduced by a spike.
+//
+// Nothing may go between the launch and the exit. The "close the current
+// application?" prompt appears only while the outgoing app is still alive; a
+// sceKernelDelayThread here cost a prompt on every single bail until it was
+// removed from bailout.c.
+#define VITA_LOADER_TITLEID "FVTA00003"
 
-static void serve_report_then_exit(void) {
-  if (g_out) { fclose(g_out); g_out = NULL; }
-
-  if (sceSysmoduleLoadModule(SCE_SYSMODULE_NET) < 0) sceKernelExitProcess(0);
-  SceNetInitParam np;
-  np.memory = g_net_pool;
-  np.size = sizeof g_net_pool;
-  np.flags = 0;
-  const int ni = sceNetInit(&np);
-  if (ni < 0 && ni != (int)0x80410103) sceKernelExitProcess(0);
-  sceNetCtlInit();
-
-  const int srv =
-      sceNetSocket("fvita-g1", SCE_NET_AF_INET, SCE_NET_SOCK_STREAM, 0);
-  if (srv < 0) sceKernelExitProcess(0);
-  int one = 1;
-  sceNetSetsockopt(srv, SCE_NET_SOL_SOCKET, SCE_NET_SO_REUSEADDR, &one,
-                   sizeof one);
-  SceNetSockaddrIn addr;
-  memset(&addr, 0, sizeof addr);
-  addr.sin_family = SCE_NET_AF_INET;
-  addr.sin_addr.s_addr = sceNetHtonl(SCE_NET_INADDR_ANY);
-  addr.sin_port = sceNetHtons(SPIKE_PORT);
-  if (sceNetBind(srv, (SceNetSockaddr*)&addr, sizeof addr) < 0 ||
-      sceNetListen(srv, 2) < 0) {
-    sceNetSocketClose(srv);
-    sceKernelExitProcess(0);
-  }
-  sceNetSetsockopt(srv, SCE_NET_SOL_SOCKET, SCE_NET_SO_NBIO, &one, sizeof one);
-
-  // 10 polls a second, so the deadline is in tenths.
-  for (int tick = 0; tick < kServeSeconds * 10; tick++) {
-    const int c = sceNetAccept(srv, NULL, NULL);
-    if (c >= 0) {
-      int zero = 0;
-      sceNetSetsockopt(c, SCE_NET_SOL_SOCKET, SCE_NET_SO_NBIO, &zero,
-                       sizeof zero);
-      SceUID fd = sceIoOpen(REPORT, SCE_O_RDONLY, 0777);
-      if (fd >= 0) {
-        static char buf[4096];
-        int n;
-        while ((n = sceIoRead(fd, buf, sizeof buf)) > 0) {
-          int off = 0;
-          while (off < n) {
-            const int w = sceNetSend(c, buf + off, n - off, 0);
-            if (w <= 0) { n = -1; break; }
-            off += w;
-          }
-          if (n < 0) break;
-        }
-        sceIoClose(fd);
-      }
-      sceNetSocketClose(c);
-      break;  // one reader is all this needs
-    }
-    sceKernelDelayThread(100 * 1000);
-  }
-
-  sceNetSocketClose(srv);
+static void hand_back_to_loader(void) {
+  sceAppMgrLaunchAppByUri(0xFFFFF, "psgm:play?titleid=" VITA_LOADER_TITLEID);
   sceKernelExitProcess(0);
 }
+
+// Write the report, hand the console back, exit. No waiting.
+//
+// This used to run a TCP server and sit on it for up to 45 seconds so the
+// report could be collected before the process ended. That was necessary only
+// while the spike exited to LiveArea, which left no loader to read the file
+// with. Now that it bails to the loader, the loader's own `get` command serves
+// the report -- so the server was duplicating a facility that already existed,
+// and the only thing it added was an app that sat on screen doing nothing.
+//
+// Read it with:
+//   printf 'get REPORT\n' | nc -w 12 <vita> 1341
+static void finish_and_hand_back(void) {
+  if (g_out) { fclose(g_out); g_out = NULL; }
+  hand_back_to_loader();
+}
+
 
 int main(void) {
   sceIoMkdir("ux0:data", 0777);
@@ -416,6 +381,6 @@ int main(void) {
   say("\n=============================================\n");
   say("%s (%d failed)\n", g_fail == 0 ? "ALL CHECKS PASSED" : "FAILURES PRESENT", g_fail);
 
-  serve_report_then_exit();
+  finish_and_hand_back();
   return 0;
 }
