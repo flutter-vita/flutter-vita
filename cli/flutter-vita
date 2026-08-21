@@ -15,4 +15,4 @@ else
   [ -x "$DART" ] || { echo "No dart found. Install Flutter or set FLUTTER_ROOT." >&2; exit 1; }
 fi
 
-exec "$DART" run "$HERE/flutter_vita/bin/flutter_vita.dart" "$@"
+exec "$DART" run "$HERE/bin/flutter_vita.dart" "$@"

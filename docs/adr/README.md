@@ -92,7 +92,7 @@ Nothing here needs a rebuild to decide.
   `package-engine.sh` writes the pins into `MANIFEST.txt` and **nothing reads
   it** — both entry points instead read `VERSIONS.md` from the repo working
   tree ([build-vita-app.sh:21](../../tools/build-vita-app.sh:21),
-  [flutter_vita.dart:352](../../tools/flutter_vita/bin/flutter_vita.dart:352)),
+  [flutter_vita.dart:352](../../cli/bin/flutter_vita.dart:352)),
   which a downstream user does not have. Proposal: `MANIFEST.txt` becomes the
   source of truth and a mismatch is a hard refusal. Consequence to accept
   first: **one engine artifact per Flutter version, rebuilt by us.** That is the

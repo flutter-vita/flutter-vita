@@ -123,7 +123,7 @@ void vita_bail_to_loader(const char* reason) {
   //     application?" prompt appears only because the outgoing app is still
   //     alive; launchers that switch silently exit straight after issuing the
   //     launch.
-  //         -- spikes/vita-loader/src/main.c, cmd_launch
+  //         -- loader/src/main.c, cmd_launch
   //
   // The loader launches an app on every deploy and has never prompted. This
   // did, on every bail, and the only difference was the sleep.

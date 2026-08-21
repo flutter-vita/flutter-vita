@@ -24,7 +24,7 @@ HERE="$(cd "$(dirname "$0")" && pwd)"
 HOST="${VITA_HOST:-192.168.0.32}"
 PORT=1341
 STAGE="ux0:data/flutter-vita/loader-pkg"
-VPK="$HERE/../spikes/vita-loader/build/flutter_vita_loader.vpk"
+VPK="$HERE/../loader/build/flutter_vita_loader.vpk"
 
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -34,7 +34,7 @@ while [ $# -gt 0 ]; do
   esac
 done
 
-[ -f "$VPK" ] || { echo "!! no $VPK — build spikes/vita-loader first" >&2; exit 1; }
+[ -f "$VPK" ] || { echo "!! no $VPK — build loader first" >&2; exit 1; }
 
 say() { printf '%s\n' "$2" | nc -w "${3:-30}" "$HOST" "$PORT"; }
 

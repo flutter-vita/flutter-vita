@@ -3,7 +3,7 @@
 #
 #   ./tools/install-vpk.sh <vpk> [--host IP] [--title-id ID] [--no-launch]
 #
-# Talks to the loader from spikes/vita-loader over TCP. No FTP, no card
+# Talks to the loader from loader over TCP. No FTP, no card
 # swapping, no taps in the normal case.
 #
 # This does *not* install the way VitaShell does. The loader replaces

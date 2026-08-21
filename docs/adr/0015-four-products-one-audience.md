@@ -66,7 +66,7 @@ be strictly worse than the one that works.
 
 **The loader does not gain an FTP server.** The word "FTP" in the framing of
 this interview meant the loader's existing `get`/`put` commands, not a new
-service. `spikes/vita-loader/src/main.c` says why this matters:
+service. `loader/src/main.c` says why this matters:
 
 > `// This is what removes BGFTP from the loop entirely.`
 

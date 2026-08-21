@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_vita/src/device.dart';
+import 'package:flutter_vita/src/paths.dart';
 import 'package:flutter_vita/src/discovery.dart';
 import 'package:flutter_vita/src/png.dart';
 
@@ -31,11 +32,6 @@ Options
   --title-id FVTA00002      target slot (build)
 ''';
 
-late final String repoRoot = () {
-  // bin/ -> flutter_vita/ -> tools/ -> repo
-  var dir = File.fromUri(Platform.script).parent.parent.parent.parent;
-  return dir.path;
-}();
 
 Future<int> main(List<String> argv) async {
   final args = <String>[];
@@ -81,6 +77,11 @@ Future<int> main(List<String> argv) async {
         stdout.write(usage);
         return 2;
     }
+  } on MissingDependency catch (e) {
+    // Printed as written: it carries the paths tried and the fix, which is the
+    // whole point of the type. A stack trace here would bury both.
+    stderr.writeln(e);
+    return 1;
   } on VitaException catch (e) {
     stderr.writeln('!! $e');
     return 1;
@@ -187,13 +188,13 @@ Future<String?> _build(List<String> args, Map<String, String> opts) async {
   if (app.endsWith('.vpk')) return app;
 
   final cmd = [
-    '$repoRoot/tools/build-vita-app.sh',
+    requireScript('build-vita-app.sh'),
     app,
     if (opts['name'] != null) ...['--name', opts['name']!],
     if (opts['title-id'] != null) ...['--title-id', opts['title-id']!],
   ];
   final result = await Process.start(cmd.first, cmd.skip(1).toList(),
-      mode: ProcessStartMode.inheritStdio);
+      environment: scriptEnvironment(), mode: ProcessStartMode.inheritStdio);
   if (await result.exitCode != 0) return null;
 
   final out = Directory('$app/build/vita');
@@ -232,8 +233,9 @@ Future<int> _install(
   }
 
   final result = await Process.start(
-    '$repoRoot/tools/install-vpk.sh',
+    requireScript('install-vpk.sh'),
     [vpk, '--host', device.host, if (opts['title-id'] != null) ...['--title-id', opts['title-id']!]],
+    environment: scriptEnvironment(),
     mode: ProcessStartMode.inheritStdio,
   );
   if (await result.exitCode != 0) return 1;
@@ -355,15 +357,9 @@ Future<bool> _localNetworkBlocked() async {
   return !await reachable('$subnet.1', 80) && !await reachable('$subnet.1', 443);
 }
 
-String _engineDir() {
-  final override = Platform.environment['FLUTTER_VITA_ENGINE'];
-  if (override != null) return override;
-  return '$repoRoot/out/artifacts/flutter-engine-vita-${_flutterPin()}';
-}
+String _engineDir() => engineDir();
 
-String _flutterDir() =>
-    Platform.environment['FLUTTER_ROOT'] ??
-    '${Platform.environment['HOME']}/fvm/versions/${_flutterPin()}';
+String _flutterDir() => flutterDir();
 
 /// A key from the engine artifact's `MANIFEST.txt`, or null.
 String? _manifestValue(String engineDir, String key) {
@@ -392,15 +388,6 @@ String? _sdkRevision(String flutterDir) {
   }
 }
 
-String _flutterPin() {
-  final versions = File('$repoRoot/VERSIONS.md');
-  if (versions.existsSync()) {
-    final match =
-        RegExp(r'3\.\d+\.\d+').firstMatch(versions.readAsStringSync());
-    if (match != null) return match.group(0)!;
-  }
-  return '3.44.8';
-}
 
 /// Matches `uname -s | tr '[:upper:]' '[:lower:]'`, which is what
 /// package-engine.sh and build-vita-app.sh use to name the host bundle. Dart

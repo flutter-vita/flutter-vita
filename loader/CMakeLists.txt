@@ -61,7 +61,7 @@ vita_create_self(${PROJECT_NAME}.self ${PROJECT_NAME} UNSAFE)
 # still builds a copy: if a loader vpk is ever installed by hand through
 # VitaShell, it arrives with a working supervisor rather than none.
 add_executable(fvita_supervisor
-  ${CMAKE_CURRENT_SOURCE_DIR}/../../templates/vita-app/supervisor.c)
+  ${CMAKE_CURRENT_SOURCE_DIR}/../templates/vita-app/supervisor.c)
 target_link_libraries(fvita_supervisor
   SceIofilemgr_stub
   SceSysmem_stub
