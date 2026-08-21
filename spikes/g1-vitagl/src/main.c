@@ -53,6 +53,17 @@ static void say(const char* fmt, ...) {
   fflush(g_out);
 }
 
+// Announce a step before entering it. The report is flushed line by line, so
+// the last `>>` on disk is the call that did not return -- which is the only
+// way to locate a hang on a console with no debugger and no way to interrupt.
+//
+// Added after the first run that reached the GPU wedged the console: vitaGL had
+// clearly initialised (the display showed a band of garbage along the bottom),
+// but nothing said which of the six calls after it never came back.
+static void enter(const char* what) {
+  say(">> %s\n", what);
+}
+
 static void check(const char* what, int ok, const char* detail) {
   say("%-34s %s%s%s\n", what, ok ? "PASS" : "FAIL",
       detail && detail[0] ? "  " : "", detail ? detail : "");
@@ -134,6 +145,7 @@ int main(void) {
 
   // Attempt A: explicit, modest sizes. vglInit's defaults reserve pools sized
   // for a game; this asks for the screen and little else.
+  enter("vglInitExtended");
   up = vglInitExtended(0, 960, 544, 0x800000, SCE_GXM_MULTISAMPLE_NONE);
   if (up == GL_TRUE) how = "vglInitExtended 960x544, 8 MiB threshold";
 
@@ -141,6 +153,7 @@ int main(void) {
   // Ganesh never uses immediate mode, so zero is the honest ask.
   if (up != GL_TRUE) {
     say("vglInitExtended returned false; trying vglInit(0)\n");
+    enter("vglInit(0)");
     up = vglInit(0);
     if (up == GL_TRUE) how = "vglInit(0)";
   }
@@ -156,6 +169,7 @@ int main(void) {
   // The runtime GLSL compiler, reported separately so that a context without a
   // compiler is a distinguishable result. Ganesh generates shader source at
   // run time, so a precompiled .gxp cache cannot substitute for this.
+  enter("vglSetupRuntimeShaderCompiler");
   vglSetupRuntimeShaderCompiler(SHARK_OPT_DEFAULT, 0, 0, 0);
 
   // 2. Who are we talking to.
@@ -195,7 +209,9 @@ int main(void) {
   // vertex shader but the fragment one passes, the compiler is present and the
   // dialect is the problem, which is a very different result from "no
   // compiler at all".
+  enter("glCompileShader fragment");
   GLuint fs = compile(GL_FRAGMENT_SHADER, kFrag, "compile fragment shader");
+  enter("glCompileShader vertex");
   GLuint vs = compile(GL_VERTEX_SHADER, kVert, "compile vertex shader");
 
   GLuint prog = 0;
@@ -204,6 +220,7 @@ int main(void) {
     glAttachShader(prog, vs);
     glAttachShader(prog, fs);
     glBindAttribLocation(prog, 0, "aPos");
+    enter("glLinkProgram");
     glLinkProgram(prog);
     GLint ok = 0;
     glGetProgramiv(prog, GL_LINK_STATUS, &ok);
@@ -218,6 +235,7 @@ int main(void) {
 
   // 4. Render to texture. Every saveLayer is one of these.
   GLuint tex = 0, fbo = 0;
+  enter("FBO setup");
   glGenTextures(1, &tex);
   glBindTexture(GL_TEXTURE_2D, tex);
   glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, 64, 64, 0, GL_RGBA, GL_UNSIGNED_BYTE, NULL);
@@ -238,14 +256,24 @@ int main(void) {
   unsigned char px[4] = {0, 0, 0, 0};
   if (st == GL_FRAMEBUFFER_COMPLETE && prog) {
     static const float tri[] = { -1.f, -1.f,  3.f, -1.f,  -1.f, 3.f };
+    enter("viewport/clear/useProgram");
     glViewport(0, 0, 64, 64);
     glClearColor(1.f, 0.f, 0.f, 1.f);   // red, so a failed draw is obvious
     glClear(GL_COLOR_BUFFER_BIT);
     glUseProgram(prog);
     glEnableVertexAttribArray(0);
     glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 0, tri);
+    enter("glDrawArrays");
     glDrawArrays(GL_TRIANGLES, 0, 3);
-    glFinish();
+
+    // No glFinish. It is an unbounded wait for the GPU to retire work, and in
+    // a probe whose whole question is "does this GPU work at all" that is the
+    // wrong primitive: the first run that got this far hung the console hard
+    // enough that the PS button stopped responding and it needed a 30-second
+    // power hold. glReadPixels below synchronises anyway -- it must, since it
+    // returns pixels -- so the glFinish was buying nothing but a second place
+    // to hang.
+    enter("glReadPixels");
     glReadPixels(32, 32, 1, 1, GL_RGBA, GL_UNSIGNED_BYTE, px);
     readback_ok = (px[1] > 200 && px[0] < 64);
   }
