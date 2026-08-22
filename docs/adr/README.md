@@ -25,6 +25,7 @@ ADR-0001 through ADR-0004 are back-filled from §1 of `Flutter Vita Plan.md`
 | [0013](0013-ffi-needs-static-linking.md) | `dart:ffi` needs static linking, and that is the admission test | Accepted — decided one app in and one app out |
 | [0014](0014-gpu-backend-via-vitagl.md) | The raster pass is the bottleneck, so the GPU becomes the target | **Accepted** — raster is 97% of a frame; engine work gated on a spike |
 | [0015](0015-four-products-one-audience.md) | The toolchain is four products with one audience | Accepted — the product boundary ends at the `.vpk` |
+| [0016](0016-the-loader-becomes-a-flutter-app.md) | The loader becomes a Flutter app, and stops being invisible | Accepted — pinned engine, software rendering, C layer holds the port |
 
 ## Open questions not yet decided
 
