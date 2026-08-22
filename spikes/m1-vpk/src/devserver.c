@@ -90,6 +90,9 @@ void dev_server_set_framebuffer_source(
   g_read_framebuffer = read_framebuffer;
 }
 
+// Defined next to the supervisor switch, used by `handoff` well above it.
+static int read_loader_titleid(char* out, int max);
+
 static void logf_(const char* fmt, ...) {
   if (g_log == NULL) return;
   char buf[256];
@@ -360,16 +363,36 @@ static int serve(int sock, const char* log_path, const char* eboot_path) {
       for (;;) {
         sceKernelDelayThread(1000 * 1000);
       }
-    } else if (strcmp(line, "handoff") == 0) {
+    } else if (strncmp(line, "handoff", 7) == 0 &&
+               (line[7] == '\0' || line[7] == ' ')) {
       // The other half of the loop. We cannot replace our own eboot.bin, and
       // while we run nobody else can either -- so hand control to the loader,
       // which can do both once we are gone. It launches us back afterwards.
-      send_str(sock, "OK handing off to FVTA00003\n");
+      //
+      // Which loader is not a constant any more. It used to be FVTA00003 and
+      // nothing else, which was true right up until that slot was emptied and
+      // every handoff started launching a title that did not exist -- the
+      // shell falls back to something, so the failure looks like a puzzle
+      // rather than an error. Resolution order: the argument, then
+      // loader.titleid, then the historical default. The file is there so a
+      // console whose loader has moved can be corrected with one `put`,
+      // without rebuilding and reinstalling every app on it.
+      char loader[16];
+      if (line[7] == ' ' && line[8] != '\0') {
+        snprintf(loader, sizeof loader, "%s", line + 8);
+      } else if (!read_loader_titleid(loader, sizeof loader)) {
+        snprintf(loader, sizeof loader, "%s", DEVSERVER_DEFAULT_LOADER);
+      }
+      char msg[64];
+      snprintf(msg, sizeof msg, "OK handing off to %s\n", loader);
+      send_str(sock, msg);
       sceNetSocketClose(sock);
-      logf_("  [dev] handing off to the loader\n");
+      logf_("  [dev] handing off to %s\n", loader);
       release_gpu();
       sceKernelDelayThread(200 * 1000);
-      sceAppMgrLaunchAppByUri(0xFFFFF, "psgm:play?titleid=FVTA00003");
+      char uri[64];
+      snprintf(uri, sizeof uri, "psgm:play?titleid=%s", loader);
+      sceAppMgrLaunchAppByUri(0xFFFFF, uri);
       // Exit immediately. Lingering here is what produced the "close the
       // current application?" prompt: the shell only asks because we are still
       // running. Launchers that switch silently (HEXFlow, RetroFlow) all exit
@@ -469,7 +492,9 @@ static int serve(int sock, const char* log_path, const char* eboot_path) {
       *(volatile unsigned int*)0 = 0xDEAD;
       return 1;  // not reached
     } else if (n > 0) {
-      send_str(sock, "ERR unknown (ping|probe|log|get|put|shot|shotinfo|tap <x> <y>|overlay on|off|handoff|relaunch|crash|exit)\n");
+    send_str(sock, "ERR unknown (ping|probe|log|get|put|shot|shotinfo|"
+                                    "tap <x> <y>|overlay on|off|handoff [titleid]|relaunch|"
+                                    "crash|exit)\n");
     }
   }
 }
@@ -499,6 +524,29 @@ static int serve(int sock, const char* log_path, const char* eboot_path) {
 // need a delete, which the loader currently installed on the device cannot do.
 //
 //   echo -n 1 > on  &&  dev.sh put on ux0:data/flutter-vita/supervisor.on
+// Which title `handoff` hands to. One line, no newline needed:
+//
+//   printf 'put 9 ux0:data/flutter-vita/loader.titleid\nFVTA00004' | nc <ip> 1339
+//
+// Returns 0 when the file is absent or does not hold nine plausible
+// characters, so a truncated or half-written file falls back rather than
+// launching something arbitrary.
+static int read_loader_titleid(char* out, int max) {
+  const SceUID fd =
+      sceIoOpen("ux0:data/flutter-vita/loader.titleid", SCE_O_RDONLY, 0777);
+  if (fd < 0) return 0;
+  char buf[16];
+  const int n = sceIoRead(fd, buf, sizeof buf - 1);
+  sceIoClose(fd);
+  if (n < 9) return 0;
+  buf[9] = '\0';
+  for (int i = 0; i < 9; i++) {
+    if (buf[i] <= ' ') return 0;
+  }
+  snprintf(out, max, "%s", buf);
+  return 1;
+}
+
 static int supervisor_enabled(void) {
   const SceUID fd =
       sceIoOpen("ux0:data/flutter-vita/supervisor.on", SCE_O_RDONLY, 0777);

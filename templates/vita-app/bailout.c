@@ -46,6 +46,31 @@
 #define VITA_LOADER_TITLEID "FVTA00003"
 #endif
 
+// Which loader to bail out to, read the same way the dev server's `handoff`
+// reads it -- ux0:data/flutter-vita/loader.titleid, falling back to the
+// compiled-in default. Duplicated here rather than shared, because this file
+// runs after something has already gone wrong and deliberately depends on
+// nothing but sceIo: a helper reached through the engine is a helper that can
+// be part of the fault.
+//
+// Returns a pointer to a static buffer, valid until the next call.
+static const char* loader_titleid(void) {
+  static char id[16];
+  const SceUID fd =
+      sceIoOpen("ux0:data/flutter-vita/loader.titleid", SCE_O_RDONLY, 0777);
+  if (fd < 0) return VITA_LOADER_TITLEID;
+  char buf[16];
+  const int n = sceIoRead(fd, buf, sizeof buf - 1);
+  sceIoClose(fd);
+  if (n < 9) return VITA_LOADER_TITLEID;
+  for (int i = 0; i < 9; i++) {
+    if (buf[i] <= ' ') return VITA_LOADER_TITLEID;
+  }
+  memcpy(id, buf, 9);
+  id[9] = '\0';
+  return id;
+}
+
 // Why we bailed, kept where the host can read it after the fact.
 //
 // Separate from the engine log on purpose: the log is written through the
@@ -127,7 +152,11 @@ void vita_bail_to_loader(const char* reason) {
     flutter_vita_gpu_shutdown();
   }
 
-  sceAppMgrLaunchAppByUri(0xFFFFF, "psgm:play?titleid=" VITA_LOADER_TITLEID);
+  {
+    char uri[48];
+    snprintf(uri, sizeof uri, "psgm:play?titleid=%s", loader_titleid());
+    sceAppMgrLaunchAppByUri(0xFFFFF, uri);
+  }
 
   // Exit immediately. Nothing may go between the launch and this line.
   //
