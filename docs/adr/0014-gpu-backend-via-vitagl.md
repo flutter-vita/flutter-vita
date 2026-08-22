@@ -585,6 +585,65 @@ recovery rather than about rendering.
 **Revisit** when crashes are rare enough that the cost is theoretical, or if
 there is a way to release the GPU from outside the faulting process.
 
+### manga_reader: the case where raster *is* the constraint, and it wins
+
+localsend was the wrong app to judge this on. manga_reader is the right one —
+it is where ADR-0014's own evidence came from, the 5%-damage-costs-as-much-as-
+89% pair — and here raster and the blit are the larger share rather than a
+co-bottleneck with Dart.
+
+Same app, same screen (Library, loading), switched at run time, debug overlay
+off on the software side:
+
+| | software | GL |
+|---|---|---|
+| fps | 45.2–46.6 | **59.0–61.3** |
+| frame period | ~21,900 us | ~16,700 us |
+| raster | 11,956 us | **2,034 us** |
+| blit / swap | 9,286 us | ~650 us |
+| **work per frame** | **21,242 us** | **2,684 us** |
+| raster thread idle | — | 10,356 us |
+
+**7.9× less work per frame, and the frame rate goes 45 → 60.** The 60 is the
+panel, not the ceiling: `gl wait` says the raster thread is idle for 10.4 ms of
+every 16.7 ms frame, so there is substantial headroom vsync is hiding.
+
+Two things this fixes that the software path could not:
+
+- **The blit disappears.** 9,286 us of memcpy per frame becomes a swap, because
+  the GPU renders into the display target and there is nothing to copy.
+  [ADR-0007](0007-enable-partial-repaint-in-software-path.md) made that copy
+  proportional to damage; at 89% damage, proportional is nearly all of it.
+- **Raster stops tracking area.** 11,956 us to 2,034 us on the same content.
+
+So the honest summary across both apps is that the GPU does exactly what the
+spike said, and whether that shows up as frame rate depends on which stage was
+slowest to begin with — which is the ordinary answer for a pipelined renderer
+and should have been the expectation going in.
+
+### The shader cache works; the one-second frame is something else
+
+Checked on device: `ux0:data/shader_cache/v0/v` holds 14 programs and `.../f`
+holds 20. vitaGL creates the directory tree itself in `vglInitExtended`, so the
+manual `sceIoMkdir` loop this embedder inherited from the g1 spike is
+redundant — and it was creating the wrong names anyway. Two caches exist and
+they are not the same shape:
+
+- **Fixed-function**, `ffp.c`: `ux0:data/shader_cache/v<FFP_MAGIC>/{v,f}/...`
+- **Custom shaders** — what Skia uses — `custom_shaders.c`:
+  `<root>/v<SHADER_CACHE_MAGIC>/{v,f}/<hash>.gxp`, where `root` defaults to
+  `ux0:data/shader_cache/<TITLEID>` unless `vglSetShaderCachePath` overrides it.
+
+This embedder overrides it to the bare `ux0:data/shader_cache`, which works but
+puts our programs in the tree other homebrew shares. The per-title default is
+tidier and is what a shipped app should use.
+
+With the cache demonstrably populated, **the ~1,130,000 us frame in the first
+window of every launch is not compilation.** 34 cached programs at the ~3 ms
+each criterion 0 measured is ~100 ms, not 1.1 s. The likely candidate is the
+first frame's texture uploads: `make_resource_current` is null, so every upload
+is synchronous on the raster thread. Unverified.
+
 ### Known gaps in the GL path
 
 - **No partial repaint.** `populate_existing_damage` is null, so every frame is
