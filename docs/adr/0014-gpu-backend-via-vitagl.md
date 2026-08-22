@@ -451,26 +451,78 @@ Two smaller findings sit inside that:
 - **`vglSwapBuffers` returns in 196 us**, so the frame rate is not vsync and
   not the present.
 
-### What is not yet known
+### Where the other 143 ms goes: the raster thread is starved
 
-Roughly 194 ms per frame is now outside the raster window, against 12 ms on the
-software path, and that is not explained. The obvious candidate is that the UI
-thread was always a co-bottleneck and is now exposed — Flutter pipelines UI and
-raster, so the period is the slower of the two, not their sum. But the software
-run's own arithmetic argues against it: a 168 ms period with 156 ms of raster
-leaves no room for a 194 ms UI thread.
+Two instruments settle it, and they agree.
 
-So one of the two measurements is describing something other than what its name
-says, and the honest position is that this is undiagnosed. An instrument for it
-is in the embedder and has not yet been run: the raster thread's idle time,
-present-done to the next `make_current`, reported as `gl wait`. If that is
-~194 ms the raster thread is starved and the bottleneck genuinely moved
-upstream; if it is near zero, the raster thread is busy somewhere this file does
-not time and the 5.1 ms figure is incomplete.
+```
+FRAMES active 60 @ 159249 us = 6.27 fps (raster 28380 us = 17%, blit 356 us)
+                             | raster max 1002816 us | gl wait 144108 us
+LOOP   300 iterations @ 16627 us mean | 0 tasks
+```
 
-**No performance claim should be made for the GL path until that number
-exists.** The 30× on raster is measured and stands on its own; "the GPU makes
-localsend faster" is not yet supported by anything.
+`gl wait` is the raster thread's idle time — present finished to the next
+`make_current`. It is **144,108 us of a 159,249 us frame**: the thread that
+draws is doing nothing for 90% of the period. `LOOP` eliminates the other
+suspect, the platform thread, which is running at 16,627 us — the panel's exact
+vblank — with no tasks pending in steady state.
+
+So the frame rate is set upstream of both: **the UI thread.** Dart's build and
+layout for localsend's Receive screen costs roughly 150 ms per frame, and it
+always did.
+
+### The correction this forces
+
+**"raster is 97% of the frame" was measured correctly and read as if the frame
+were serial.** It is not. Flutter runs UI and raster on separate threads and
+pipelines them, so the period is `max(UI, raster)` rather than their sum, and
+`raster / period` is a ratio of two overlapping things — not a share of a
+budget. A raster pass at 97% of the period is exactly as consistent with "UI is
+also ~100% of the period" as with "raster is the whole cost", and here it was
+the former.
+
+The arithmetic that seemed to rule this out earlier in this document — *a
+168 ms period with 156 ms of raster leaves no room for a 150 ms UI thread* —
+was the same mistake in miniature. With pipelining there is nothing to leave
+room for:
+
+| | UI | raster | period = max |
+|---|---|---|---|
+| software | ~150 ms | 156 ms | 168 ms observed |
+| GL | ~150 ms | 28 ms | 159 ms observed |
+
+Two paths whose raster differs by 30× land 6% apart, which is the proof on its
+own.
+
+**None of this makes the GPU decision wrong.** The spike predicted the raster
+pass would collapse and it collapsed, by 30×, on hardware, in a real app. What
+changes is the claim that could be made afterwards: *localsend is not slow
+because of the rasteriser.* It is slow because Dart takes 150 ms to build a
+frame, and the software rasteriser happened to take almost exactly as long, so
+neither was visible behind the other.
+
+![localsend's Receive screen, rendered by Ganesh on vitaGL](../results/localsend-gl-2026-08-22.png)
+
+*The rotating dashed ring is the `Transform.rotate` + `ColorFiltered` widget
+that cost 199 ms a frame on the CPU.*
+
+### What the GPU is now worth, stated carefully
+
+- **Headroom, not frame rate, on localsend.** 128 ms of raster thread came free
+  and nothing is currently able to use it.
+- **Frame rate wherever raster is the larger of the two.** manga_reader's
+  library screen — 5% damage costing the same 13,933 us as 89% damage — is the
+  clean case, and it has not been run under GL yet.
+- **A different next question.** ADR-0006's bar is now a UI-thread question for
+  at least one corpus app, which is Dart AOT performance on a 444 MHz Cortex-A9
+  and a completely different investigation from this one.
+
+### Still unexplained
+
+Every launch reports one frame of `raster max ~1,002,000 us` — a full second —
+and it recurs with the shader cache warm, so it is not the first-paint
+compilation that criterion 0 measured. Excluding it, raster is about 12 ms.
+Worth chasing, and not chased yet.
 
 ### Known gaps in the GL path
 
