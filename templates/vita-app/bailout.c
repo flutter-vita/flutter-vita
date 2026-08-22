@@ -93,6 +93,21 @@ static void record_memory(void) {
   record(msg);
 }
 
+// Let go of the GPU before the process ends, when there is one to let go of.
+//
+// Weak: the embedder defines it only on the GL path. A crash exit that leaves
+// a live GXM context and queued flips behind does not merely lose the app --
+// it takes the shell's compositor with it, and the console needs the power
+// button. That happened twice on 2026-08-22 through the dev server's handoff,
+// which had the same omission for the same reason: this file was written when
+// the app never touched the GPU.
+//
+// It is bounded, and it runs before the launch rather than between the launch
+// and the exit -- the delay this file spent a day removing was in the latter
+// position, where it costs a "close the current application?" prompt. Here
+// there is no outgoing launch to race yet.
+extern void flutter_vita_gpu_shutdown(void) __attribute__((weak));
+
 void vita_bail_to_loader(const char* reason) {
   // Re-entry is a real possibility: the launch below can fail, and anything it
   // touches could abort again. A second pass would recurse until the stack ran
@@ -108,6 +123,10 @@ void vita_bail_to_loader(const char* reason) {
   // 0xFFFFF rather than the documented 0x20000, matching what the loader
   // itself uses to launch the app; it is the value known to work on this
   // console.
+  if (flutter_vita_gpu_shutdown != NULL) {
+    flutter_vita_gpu_shutdown();
+  }
+
   sceAppMgrLaunchAppByUri(0xFFFFF, "psgm:play?titleid=" VITA_LOADER_TITLEID);
 
   // Exit immediately. Nothing may go between the launch and this line.

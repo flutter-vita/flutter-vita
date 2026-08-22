@@ -42,6 +42,23 @@ void dev_server_set_overlay_handler(void (*overlay)(int on)) {
   g_overlay = overlay;
 }
 
+// Let go of the GPU before this process ends.
+//
+// Defined by the embedder when it is running the GL path, absent otherwise --
+// hence weak. Every exit below launches another application and then calls
+// sceKernelExitProcess, and under GL that leaves a live GXM context and queued
+// flips pointing at memory the kernel is about to reclaim. The console locks
+// up hard enough to need the power button; the PS button does not respond,
+// because the shell composites through the same driver. See the note on
+// flutter_vita_gpu_shutdown in vita_embedder.cc.
+extern void flutter_vita_gpu_shutdown(void) __attribute__((weak));
+
+static void release_gpu(void) {
+  if (flutter_vita_gpu_shutdown != NULL) {
+    flutter_vita_gpu_shutdown();
+  }
+}
+
 void dev_server_set_framebuffer_source(
     const void* (*read_framebuffer)(unsigned int* size,
                                     char* describe,
@@ -272,6 +289,11 @@ static int serve(int sock, const char* log_path, const char* eboot_path) {
       send_str(sock, "OK bailing to the loader\n");
       sceNetSocketClose(sock);
       logf_("  [dev] bail requested\n");
+      // Not before abort(): a deliberate abort is testing the crash path, and
+      // quiescing the GPU first would make it a different test.
+      if (line[0] != 'a') {
+        release_gpu();
+      }
       sceKernelDelayThread(200 * 1000);
       if (line[0] == 'a') {
         abort();
@@ -290,6 +312,7 @@ static int serve(int sock, const char* log_path, const char* eboot_path) {
       send_str(sock, "OK handing off to FVTA00003\n");
       sceNetSocketClose(sock);
       logf_("  [dev] handing off to the loader\n");
+      release_gpu();
       sceKernelDelayThread(200 * 1000);
       sceAppMgrLaunchAppByUri(0xFFFFF, "psgm:play?titleid=FVTA00003");
       // Exit immediately. Lingering here is what produced the "close the
@@ -304,6 +327,7 @@ static int serve(int sock, const char* log_path, const char* eboot_path) {
       send_str(sock, "OK relaunching\n");
       sceNetSocketClose(sock);
       logf_("  [dev] relaunching\n");
+      release_gpu();
       sceKernelDelayThread(200 * 1000);  // let the socket drain
       sceAppMgrLoadExec("app0:eboot.bin", NULL, NULL);
       // Only reached if LoadExec refused.

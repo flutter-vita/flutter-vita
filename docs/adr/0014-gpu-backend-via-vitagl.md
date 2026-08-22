@@ -524,6 +524,67 @@ and it recurs with the shader cache warm, so it is not the first-paint
 compilation that criterion 0 measured. Excluding it, raster is about 12 ms.
 Worth chasing, and not chased yet.
 
+### A hard crash under GL takes the console down, so GL is opt-in
+
+Three console lockups on 2026-08-22, each needing the power button — the PS
+button did not respond. All three were under GL, and they have one cause.
+
+**Every exit path launched the loader and called `sceKernelExitProcess` with
+nothing in between.** That was correct for as long as this process never
+touched the GPU: the software path owns a CDRAM block and a memcpy, and there
+is nothing to hand back. Under GL it leaves a live GXM context and queued flips
+naming memory the kernel is about to reclaim, and the shell composites through
+the same driver — so the console goes, not just the app.
+
+`spikes/g2-ganesh` hit this and fixed it with `sceGxmDisplayQueueFinish()` and
+`sceGxmTerminate()` before the launch. The spike had the easy version: one
+thread, nothing else running. Here the exit is requested on the dev server's
+thread while the *raster* thread is inside vitaGL, so the same two calls from
+the caller would be the identical use-after-free one level up. The raster
+thread has to be stopped first, and the only handle the embedder has on it is
+`make_current` — refuse, and the engine stops handing it frames.
+
+`flutter_vita_gpu_shutdown` does that, and every exit calls it: the dev
+server's `handoff`, `relaunch` and `exit`, and `bailout.c`'s abort path. Weakly
+referenced, so the software-only build is unchanged. Verified on hardware:
+
+```
+  [dev] handing off to the loader
+flutter-vita: releasing the GPU before exit
+[ERROR:gpu_surface_gl_skia.cc(220)] Could not make the context current   (x18)
+flutter-vita: GPU released
+```
+
+— eighteen frames refused while the raster thread quiesced, then a clean
+handoff and the loader back.
+
+**The crash path cannot be fixed the same way, and this is the important
+part.** `bailout.c` says it in its own first paragraph:
+
+> Nothing can catch a hardware fault here. `excpmgr.h` exists only in [kernel]
+> […] a data abort is not an exception.
+
+A deliberate `crash` — a write to address zero — still wedges the console, and
+no user code runs to prevent it. The supervisor cannot help: it is a separate
+process and cannot release another process's GXM context.
+
+So **GL costs a power cycle per hard crash**, on a port that still has them.
+That is a bad trade for a default and a fine one for a deliberate measurement,
+so the switch is inverted from what the performance numbers alone would
+suggest:
+
+```
+ux0:data/flutter-vita/gl.on   -- a '1' selects the GPU path
+```
+
+Software otherwise. This does not weaken the decision this ADR records — the
+GPU is still the right target and the raster numbers still stand. It says the
+GL path is not yet safe to leave switched on, which is a statement about crash
+recovery rather than about rendering.
+
+**Revisit** when crashes are rare enough that the cost is theoretical, or if
+there is a way to release the GPU from outside the faulting process.
+
 ### Known gaps in the GL path
 
 - **No partial repaint.** `populate_existing_damage` is null, so every frame is
@@ -669,6 +730,9 @@ pathological is involved in it.
   three operations, this ADR is wrong and the answer is per-workload work:
   reduced resolution for fill-bound screens, and a `psvita` lint or widget set
   that steers apps away from the operations that hurt.
+- **Crash recovery under GL.** A hard crash currently costs a power cycle
+  because a data abort runs no user code and nothing releases the GXM context.
+  Until that changes, GL stays opt-in whatever the frame rate says.
 - **Layer-heavy screens turn out slower on the GPU.** Criterion 4 measured
   `saveLayer` at 0.6×, and a Flutter tree is full of them. If a real app's frame
   regresses once the embedder GL path exists, the answer is not to abandon the

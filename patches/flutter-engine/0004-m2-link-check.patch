@@ -240,10 +240,10 @@ index 00000000..a5e0625d
 +}  // extern "C"
 diff --git a/engine/src/flutter/shell/platform/embedder/vita_embedder.cc b/engine/src/flutter/shell/platform/embedder/vita_embedder.cc
 new file mode 100644
-index 00000000..0f62adf4
+index 00000000..bbececb8
 --- /dev/null
 +++ b/engine/src/flutter/shell/platform/embedder/vita_embedder.cc
-@@ -0,0 +1,2483 @@
+@@ -0,0 +1,2590 @@
 +// Copyright (c) 2026, the Flutter Authors. All rights reserved.
 +// Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
@@ -284,6 +284,8 @@ index 00000000..0f62adf4
 +#include <psp2/kernel/sysmem.h>
 +#include <psp2/apputil.h>
 +#include <psp2/common_dialog.h>
++
++#include <atomic>
 +
 +// vitaGL, for the GL path (ADR-0014). A static archive, so ADR-0004's
 +// single-binary rule is untouched -- there is no dlopen and no .suprx of our
@@ -498,6 +500,20 @@ index 00000000..0f62adf4
 +// Raster-thread idle: present finished to the next make_current. GL only --
 +// see the note on g_gl_present_end_us for why it earns a column.
 +uint64_t g_win_gl_idle_us = 0;
++
++// The platform thread, counted because the GL path made it a suspect.
++//
++// Under GL, localsend's raster fell to 5.1 ms and its frame period stayed at
++// 199 ms, so ~194 ms per frame is being spent somewhere that is not drawing.
++// The main loop below runs at vblank and drains the engine's platform tasks;
++// if the frame pipeline needs several platform round trips per frame, the loop
++// -- not the GPU and not Dart -- sets the frame rate, and it would have been
++// invisible while software raster was 156 ms. These say whether it is: the
++// loop's real period, how many tasks a window ran, and how long they took.
++uint64_t g_loop_iterations = 0;
++uint64_t g_loop_tasks_run = 0;
++uint64_t g_loop_task_us = 0;
++uint64_t g_loop_first_us = 0;
 +uint64_t g_win_damage_px = 0;  // summed damaged pixels inside it
 +uint64_t g_win_hud_us = 0;     // summed time spent drawing the HUD
 +uint64_t g_win_raster_us = 0;  // summed Skia raster time inside it
@@ -1735,7 +1751,17 @@ index 00000000..0f62adf4
 +// the measurement is wrong. Guessing between those is how a wrong conclusion
 +// gets written down.
 +uint64_t g_gl_present_end_us = 0;
++// Set when the process is on its way out, so the raster thread stops being
++// handed frames. See FlutterVitaGpuShutdown.
++std::atomic<bool> g_gl_stopping{false};
++std::atomic<bool> g_gl_in_frame{false};
++
 +bool GlMakeCurrent(void* /* user_data */) {
++  // Refusing here makes GPUSurfaceGLSkia::AcquireFrame return null and the
++  // engine drop the frame, which is how the raster thread is brought to a stop
++  // without reaching into it.
++  if (g_gl_stopping.load(std::memory_order_acquire)) return false;
++  g_gl_in_frame.store(true, std::memory_order_release);
 +  g_gl_frame_start_us = sceKernelGetSystemTimeWide();
 +  if (g_gl_present_end_us != 0) {
 +    g_win_gl_idle_us += g_gl_frame_start_us - g_gl_present_end_us;
@@ -1764,6 +1790,7 @@ index 00000000..0f62adf4
 +  vglSwapBuffers(GL_FALSE);
 +  g_gl_present_end_us = sceKernelGetSystemTimeWide();
 +  g_win_blit_us += g_gl_present_end_us - swap_start;
++  g_gl_in_frame.store(false, std::memory_order_release);
 +
 +  ReportFrameWindow();
 +  return true;
@@ -1774,6 +1801,51 @@ index 00000000..0f62adf4
 +uint32_t GlFboCallback(void* /* user_data */) { return 0; }
 +
 +}  // namespace
++
++// Let go of the GPU before this process ends. Called from every exit path.
++//
++// This is the bug that locked the console hard enough to need the power
++// button, twice, on 2026-08-22. The dev server's `handoff` -- and `relaunch`,
++// and `exit`, and bailout.c's crash path -- launch the loader and call
++// sceKernelExitProcess with nothing in between. That was correct for as long
++// as this process never touched the GPU: ADR-0003's software path owns a CDRAM
++// block and a memcpy, and there is nothing to hand back. Under GL there is a
++// live GXM context, a display queue with frames still in flight, and memory
++// blocks those frames name, and tearing the process down underneath them takes
++// the driver with it. The shell composites through the same driver, so the
++// whole console goes -- PS button included.
++//
++// spikes/g2-ganesh hit exactly this and fixed it with the two calls below. It
++// had the easy version: one thread, nothing else running. Here the exit is
++// requested on the dev server's thread while the *raster* thread is inside
++// vitaGL, so calling sceGxmTerminate directly from the caller would be the
++// same use-after-free one level up. The raster thread has to be stopped first,
++// and the only handle this file has on it is make_current -- refuse, and the
++// engine stops handing it frames.
++//
++// The wait is bounded because this runs on the way out. If the raster thread
++// is genuinely wedged, exiting without a clean teardown is no worse than the
++// hang, and hanging here instead would be strictly worse.
++extern "C" void flutter_vita_gpu_shutdown(void) {
++  if (!g_gl_enabled) return;
++  VLog("flutter-vita: releasing the GPU before exit\n");
++
++  g_gl_stopping.store(true, std::memory_order_release);
++  for (int i = 0; i < 200 && g_gl_in_frame.load(std::memory_order_acquire);
++       i++) {
++    sceKernelDelayThread(5 * 1000);
++  }
++  if (g_gl_in_frame.load(std::memory_order_acquire)) {
++    VLog("flutter-vita: raster thread still in a frame; tearing down anyway\n");
++  }
++
++  // Drain before terminate. Terminating with flips still queued is a
++  // use-after-free of the buffers they name -- which is the same fault as the
++  // one above, in the driver's own bookkeeping.
++  sceGxmDisplayQueueFinish();
++  sceGxmTerminate();
++  VLog("flutter-vita: GPU released\n");
++}
 +
 +// The AOT snapshot, linked into eboot.bin rather than loaded. gen_snapshot
 +// emits these four symbols into the assembly file that is assembled alongside
@@ -1907,6 +1979,7 @@ index 00000000..0f62adf4
 +  for (size_t i = 0; i < due_count; i++) {
 +    FlutterEngineRunTask(engine, &due[i]);
 +  }
++  g_loop_tasks_run += due_count;
 +}
 +
 +// ---------------------------------------------------------------------------
@@ -2525,23 +2598,33 @@ index 00000000..0f62adf4
 +
 +  // Which backend, decided once and here.
 +  //
-+  // GL by default, because ADR-0014 measured 36x on the operations that
-+  // dominate a real frame. Software on request, because the same measurement
-+  // found saveLayer 0.6x -- slower -- on this tile-based GPU, so a layer-heavy
-+  // screen with no expensive per-pixel work is genuinely better off on the
-+  // CPU. The choice therefore has to survive to run time rather than being
-+  // baked in, and this is the switch:
++  // **Software by default, GL on request**, which is the opposite of what
++  // ADR-0014's measurements alone would suggest and is decided by a different
++  // fact: under GL a hard crash takes the whole console down.
 +  //
-+  //   ux0:data/flutter-vita/software.on   -- force the CPU path
++  // A data abort runs no user code. bailout.c says so in its own first
++  // paragraph -- excpmgr is kernel-only, and a fault is not an exception -- so
++  // nothing releases the GXM context or drains the display queue, and the
++  // driver the shell composites through goes with the process. The PS button
++  // stops responding and the console needs the power button. The software path
++  // has none of this: it owns a CDRAM block and a memcpy, the supervisor
++  // notices the app died, and the loader comes back.
 +  //
-+  // Absent that, GL is tried and the CPU path is the fallback if vitaGL cannot
-+  // bring a context up -- which is what happens on a console with no
-+  // libshacccg.suprx installed, and is a supported configuration rather than
-+  // an error.
-+  const bool force_software =
-+      DevSwitchOn("ux0:data/flutter-vita/software.on");
-+  if (force_software) {
-+    VLog("flutter-vita: software.on present -- GL path skipped\n");
++  // Verified on 2026-08-22, both directions: `handoff`, `relaunch` and the
++  // abort path all recover cleanly now that they release the GPU first, and a
++  // deliberate `crash` -- a write to address zero -- still wedges the console.
++  //
++  // So GL costs a power cycle per hard crash, on a port that still has them.
++  // That is a bad trade for a default and a fine trade for a deliberate
++  // measurement, so it is opt-in:
++  //
++  //   ux0:data/flutter-vita/gl.on   -- a '1' here selects the GPU path
++  //
++  // Revisit when crashes are rare enough that the cost is theoretical, or if a
++  // way is found to release the GPU from outside the faulting process.
++  const bool want_gl = DevSwitchOn("ux0:data/flutter-vita/gl.on");
++  if (!want_gl) {
++    VLog("flutter-vita: software path (write '1' to gl.on for the GPU)\n");
 +  } else {
 +    g_gl_enabled = InitGl();
 +    if (!g_gl_enabled) {
@@ -2720,9 +2803,33 @@ index 00000000..0f62adf4
 +    PumpIme(engine);
 +    // A platform message that arrived while we were blocked should be answered
 +    // before another frame's worth of input is sampled.
++    const uint64_t task_start = sceKernelGetSystemTimeWide();
 +    DrainPlatformTasks(engine);
++    g_loop_task_us += sceKernelGetSystemTimeWide() - task_start;
 +    PumpTouch(engine);
 +    DrainInjectedTaps(engine);
++
++    // Is the platform thread keeping up with the panel, and is it doing the
++    // engine's work or its own? A loop period well over 16.6 ms means this
++    // thread is the pacer and the sceDisplayWaitVblankStart above is not what
++    // it is waiting on.
++    if (g_loop_first_us == 0) g_loop_first_us = sceKernelGetSystemTimeWide();
++    if (++g_loop_iterations >= 300) {
++      const uint64_t now = sceKernelGetSystemTimeWide();
++      VLog("flutter-vita: LOOP %u iterations @ %u us mean "
++           "| %u tasks (%u us total, %u us mean)\n",
++           static_cast<unsigned>(g_loop_iterations),
++           static_cast<unsigned>((now - g_loop_first_us) / g_loop_iterations),
++           static_cast<unsigned>(g_loop_tasks_run),
++           static_cast<unsigned>(g_loop_task_us),
++           g_loop_tasks_run != 0
++               ? static_cast<unsigned>(g_loop_task_us / g_loop_tasks_run)
++               : 0u);
++      g_loop_iterations = 0;
++      g_loop_tasks_run = 0;
++      g_loop_task_us = 0;
++      g_loop_first_us = 0;
++    }
 +  }
 +
 +  return 0;
