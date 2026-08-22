@@ -50,6 +50,29 @@ extern "C" unsigned int _newlib_heap_size_user = 128 * 1024 * 1024;
 // several frames down from MakeGL.
 extern "C" unsigned int sceUserMainThreadStackSize = 1 * 1024 * 1024;
 
+// Thread-safe statics, supplied because libstdc++'s are not usable here.
+//
+// A function-local static with a dynamic initialiser -- `static T* p = new
+// T();` -- compiles to a __cxa_guard_acquire / __cxa_guard_release pair around
+// the construction. Those come from libstdc++, and on this statically linked
+// VitaSDK build calling one faults: the probe in main() shows a plain `new`
+// succeeding and the identical allocation behind a function-local static
+// killing the process.
+//
+// These are the ARM EABI shape: the guard is a 32-bit word whose low bit means
+// "already initialised". They are correct for single-threaded initialisation
+// and nothing more, which is what this spike does -- everything here runs on
+// the main thread before any Skia worker exists. A real fix belongs in the
+// engine build rather than in one program's translation unit.
+//
+// Defining them here overrides the archive's, so Skia's own function-local
+// statics -- SkMessageBus::Get() being the one that faulted -- use these too.
+extern "C" {
+int __cxa_guard_acquire(int* g) { return !(*g & 1); }
+void __cxa_guard_release(int* g) { *g = 1; }
+void __cxa_guard_abort(int*) {}
+}
+
 static FILE* g_out;
 static int g_fail;
 
@@ -325,6 +348,33 @@ int main() {
   g_out = fopen(REPORT, "w");
   if (!g_out) return 1;
 
+  // The fault is inside SkMessageBus::Get(), which is
+  //
+  //     static auto* bus = new SkMessageBus<...>();
+  //
+  // -- a function-local static and a new, with no Skia or GL in it. If that
+  // pattern is broken in this binary then the problem is the C++ runtime on a
+  // statically linked VitaSDK build, not Ganesh, and it would be a much larger
+  // fact about the port than a GPU backend. Testing it before assuming Skia.
+  say("-- C++ runtime probes --\n");
+  {
+    int* heap = new int(42);
+    say("plain new                  %s\n", (heap && *heap == 42) ? "ok" : "FAIL");
+    delete heap;
+  }
+  {
+    struct Probe { int v; Probe() : v(7) {} };
+    auto local_static = []() -> Probe* {
+      static Probe* p = new Probe();  // exactly SkMessageBus::Get()'s shape
+      return p;
+    };
+    Probe* a = local_static();
+    Probe* b = local_static();
+    say("function-local static new  %s (same=%d, v=%d)\n",
+        (a && a->v == 7 && a == b) ? "ok" : "FAIL", a == b, a ? a->v : -1);
+  }
+  say("\n");
+
   say("ADR-0014 spike -- Ganesh on vitaGL\n");
   say("==================================\n\n");
 
@@ -413,7 +463,7 @@ int main() {
 
   if (ctx) {
     say("\n-- what Ganesh thinks it is talking to --\n");
-    say("backend                     %d (1 = OpenGL)\n",
+    say("backend                     %d (0 = kOpenGL)\n",
         (int)ctx->backend());
     say("maxTextureSize              %d\n", ctx->maxTextureSize());
     say("maxRenderTargetSize         %d\n", ctx->maxRenderTargetSize());
