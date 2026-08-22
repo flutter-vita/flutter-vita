@@ -47,6 +47,19 @@ else()
 endif()
 message(STATUS "engine archive: ${ENGINE_ARCHIVE}")
 
+# Same local-vitaGL preference as g1: the packaged archive is built with
+# HAVE_SHADER_CACHE=0, and a GPU backend that recompiles every shader on every
+# launch is not one worth measuring.
+set(VGL_LOCAL "${CMAKE_CURRENT_SOURCE_DIR}/../../third_party/vitaGL")
+if(EXISTS "${VGL_LOCAL}/libvitaGL.a")
+  message(STATUS "vitaGL: local build with shader cache")
+  include_directories(BEFORE "${VGL_LOCAL}/source")
+  set(VGL_LIB "${VGL_LOCAL}/libvitaGL.a")
+else()
+  message(STATUS "vitaGL: VitaSDK package (no shader cache)")
+  set(VGL_LIB vitaGL)
+endif()
+
 add_executable(${PROJECT_NAME} src/main.cpp)
 
 # NOT --whole-archive, unlike a real app.
@@ -57,7 +70,7 @@ add_executable(${PROJECT_NAME} src/main.cpp)
 # embedder path for a program that starts none of them.
 target_link_libraries(${PROJECT_NAME}
   "${ENGINE_ARCHIVE}"
-  vitaGL
+  ${VGL_LIB}
   vitashark
   SceShaccCg_stub
   SceShaccCgExt

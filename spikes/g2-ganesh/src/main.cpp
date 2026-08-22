@@ -180,6 +180,24 @@ extern "C" void fvita_gl_trace(const char* file, int line) {
 static void vita_glGetIntegerv(GLenum pname, GLint* params) {
   if (params) *params = 0;  // so an unhandled pname is 0, not stack garbage
   if (g_trace) say("  glGetIntegerv(0x%04X)\n", (unsigned)pname);
+
+  // Report zero program binary formats, which switches Skia's program-binary
+  // path off at its own branch:
+  //
+  //     GR_GL_GetIntegerv(gli, GR_GL_NUM_PROGRAM_BINARY_FORMATS, &count);
+  //     if (count > 0) { ... } else { fProgramBinarySupport = false; }
+  //         -- GrGLCaps.cpp:847
+  //
+  // vitaGL answers 1 here and advertises GL_OES_get_program_binary, and the
+  // trace stops on the very next call. Claiming an extension without providing
+  // its entry points is a thing this driver does -- GL_EXT_debug_marker was the
+  // case that broke validate() -- so this tests whether it is doing it again.
+  if (pname == 0x87FE) {  // GL_NUM_PROGRAM_BINARY_FORMATS
+    if (params) *params = 0;
+    if (g_trace) say("    -> 0 (forced; program binaries disabled)\n");
+    return;
+  }
+
   glGetIntegerv(pname, params);
   if (g_trace) say("    -> %d\n", params ? (int)*params : 0);
 }
@@ -312,6 +330,7 @@ int main() {
   // through malloc, so Ganesh was being handed 16 MB to build a GrDirectContext
   // in, and MakeGL never returned. This leaves 64 MB of the 128 MB heap for
   // malloc and gives the rest to vitaGL.
+  vglSetShaderCachePath("ux0:data/shader_cache");
   enter("vglInitExtended(0x100000, 960, 544, 64 MiB threshold)");
   const GLboolean up = vglInitExtended(0x100000, 960, 544,
                                        64 * 1024 * 1024,
