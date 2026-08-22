@@ -39,8 +39,26 @@ add_executable(${PROJECT_NAME}
 # packages on the critical path. vitaGL's matrices.o and splashscreen.o
 # reference matmul4_neon and tanf_neon_hfp unconditionally, so this is not
 # optional even though this spike never calls gluPerspective.
+# Prefer a locally built vitaGL when one exists.
+#
+# The VitaSDK-packaged archive is built with HAVE_SHADER_CACHE=0: its
+# vglSetShaderCachePath is a two-byte `bx lr` and the archive imports only
+# sceIoMkdir, so it cannot write a .gxp no matter what path it is given. That
+# is why an identical shader cost the same 193 ms on every link. Building
+# vitaGL from source with the flag on is the only way to measure what the cache
+# is worth -- see ADR-0014.
+set(VGL_LOCAL "${CMAKE_CURRENT_SOURCE_DIR}/../../third_party/vitaGL")
+if(EXISTS "${VGL_LOCAL}/libvitaGL.a")
+  message(STATUS "vitaGL: local build with shader cache")
+  include_directories(BEFORE "${VGL_LOCAL}/source")
+  set(VGL_LIB "${VGL_LOCAL}/libvitaGL.a")
+else()
+  message(STATUS "vitaGL: VitaSDK package (no shader cache)")
+  set(VGL_LIB vitaGL)
+endif()
+
 target_link_libraries(${PROJECT_NAME}
-  vitaGL
+  ${VGL_LIB}
   # vitaGL's gxm.o calls shark_init/shark_end from vglInit itself, and ffp.o
   # compiles the fixed-function shaders at run time, so the runtime shader
   # compiler is not optional in the VitaSDK build of vitaGL -- it is reached

@@ -156,6 +156,53 @@ gradients, complex clips and colour filters can exceed it — which would surfac
 in criterion 3 as a link failure on a *specific* paint rather than as anything
 systemic. Flagged here so it is not read as a surprise later.
 
+## Criterion 0, added 2026-08-21: what a shader costs at run time
+
+This was not in the exit criteria and should have been. The criteria gate on
+whether the API works and say nothing about what using it costs, and shader
+compilation is the one cost that could make a working GPU backend *worse* than
+software for a UI toolkit -- a slow steady state is usable, a freeze every time
+a new widget first paints is not.
+
+Measured on hardware. `glCompileShader` is 10 us, because vitaGL only records
+the source; all of the cost is `glLinkProgram`, where libshacccg runs:
+
+| Shader | Cold | Cached, fresh process |
+|---|---|---|
+| trivial (89 chars) | 205,450 us | **2,916 us** |
+| medium (150 chars) | 318,446 us | **3,290 us** |
+| heavy (229 chars) | 404,640 us | **3,132 us** |
+
+It is real compilation -- the cold time tracks complexity across an order of
+magnitude of arithmetic -- with a floor of ~200 ms that even a one-line shader
+pays. A frame at 30 fps is 33,333 us, so an uncached shader costs six frames at
+minimum, and Ganesh generates one per paint configuration.
+
+**The cache is what makes this survivable, and it is off in the VitaSDK
+package.** That build has `HAVE_SHADER_CACHE=0`: `vglSetShaderCachePath` is a
+two-byte `bx lr` and the archive imports only `sceIoMkdir`, no `sceIoOpen` or
+`sceIoWrite`, so it cannot write a `.gxp` whatever path it is handed. The
+documented setter silently does nothing. This was diagnosed by symbol size --
+`vglSetTextureCacheFrequency` and `vglSetupScratchMemory` are also two bytes,
+and the header documents both as requiring a `HAVE_*` flag, while every real
+`vglSet*` is 0xc to 0x26 bytes.
+
+Rebuilt from source with `make HAVE_SHADER_CACHE=1`, the same shaders load in
+about 3 ms **regardless of complexity**, and the cache survives a process
+restart. So the cost is once per shader per device, not once per launch.
+
+### Consequences for the GPU direction
+
+- **vitaGL must be built from source.** The packaged archive cannot be used as
+  shipped. That is a new build dependency, and a small one next to what it buys.
+- **First run still pays.** N distinct shaders cost N x ~250 ms the first time
+  each is seen. For a hundred shaders that is ~25 seconds spread over first use.
+- **A pre-warmed cache looks shippable.** The cache is plain `.gxp` files keyed
+  by a hash of the source, and every Vita has the same SGX543MP4+, so a cache
+  built on one console should be valid on all of them. Shipping one inside the
+  `.vpk` would remove the first-run cost entirely. Unverified, and the obvious
+  next question.
+
 ## Three findings that cost the spike four runs
 
 **1. The shader compiler works, and the taiHEN chain under it is real but not

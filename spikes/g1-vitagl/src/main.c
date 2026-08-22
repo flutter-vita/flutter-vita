@@ -232,6 +232,11 @@ int main(void) {
     }
   }
 
+  // Point the cache somewhere writable before vitaGL starts. With
+  // HAVE_SHADER_CACHE compiled in this actually does something; against the
+  // VitaSDK package it is a two-byte no-op.
+  vglSetShaderCachePath("ux0:data/shader_cache");
+
   // Make the shader cache usable before vitaGL starts.
   //
   // The archive carries the cache (vglSetShaderCachePath is defined, and the
@@ -551,7 +556,7 @@ int main(void) {
   say("\n-- memory pools --\n");
   say("VRAM  free %u\n", (unsigned)vglMemFree(VGL_MEM_VRAM));
   say("RAM   free %u\n", (unsigned)vglMemFree(VGL_MEM_RAM));
-  say("SLOW  free %u\n", (unsigned)vglMemFree(VGL_MEM_SLOW));
+  say("PHYC  free %u\n", (unsigned)vglMemFree(VGL_MEM_PHYCONT));
 
   say("\n=============================================\n");
   say("%s (%d failed)\n", g_fail == 0 ? "ALL CHECKS PASSED" : "FAILURES PRESENT", g_fail);
