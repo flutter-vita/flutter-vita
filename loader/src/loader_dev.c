@@ -133,6 +133,26 @@ static void note(const char* fmt, ...) {
   publish();
 }
 
+// Bytes below a kilobyte, kilobytes below a megabyte, then megabytes to one
+// decimal. "put 0 KB" for an 82-byte manifest is the sort of thing that reads
+// as a bug on a screen whose whole job is to be read.
+static const char* human_size(int bytes) {
+  static char out[24];
+  if (bytes < 1024) {
+    snprintf(out, sizeof out, "%d B", bytes);
+  } else if (bytes < 1024 * 1024) {
+    snprintf(out, sizeof out, "%d KB", bytes / 1024);
+  } else {
+    snprintf(out, sizeof out, "%d.%d MB", bytes / (1024 * 1024),
+             (int)(((bytes % (1024 * 1024)) * 10) / (1024 * 1024)));
+  }
+  return out;
+}
+
+static void note_size(const char* what, int bytes) {
+  note("%s %s", what, human_size(bytes));
+}
+
 // ------------------------------------------------------------ the commands
 
 static void mkdirs(void) {
@@ -201,7 +221,7 @@ static int receive_to(int sock, const char* dest, int size, const char* what) {
     dev_server_send(sock, "ERR rename\n");
     return -1;
   }
-  note("%s %d KB", what, size / 1024);
+  note_size(what, size);
   set_status("Waiting", NULL);
   dev_server_send(sock, "OK\n");
   return 0;
@@ -258,7 +278,7 @@ static int cmd_install(int sock) {
     dev_server_send(sock, "ERR rename\n");
     return -1;
   }
-  note("installed %d KB into %s", total / 1024, g_target);
+  note("installed %s into %s", human_size(total), g_target);
   set_status("Waiting", NULL);
   dev_server_send(sock, "OK\n");
   return 0;

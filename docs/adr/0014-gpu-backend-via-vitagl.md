@@ -865,6 +865,35 @@ transform — are the ones hardware performs for free. manga_reader's
 5%-costs-as-much-as-89% pair is the cleaner evidence, because nothing
 pathological is involved in it.
 
+## The system IME is unusable under GL, and fine without it
+
+Found on 2026-08-22 by a gallery build that froze on a tap into a text field:
+the process stayed alive, its dev server answered, the platform loop held a
+clean 16,627 us and touches kept arriving -- and not one frame reached the
+panel again.
+
+The same tap on the same app rebuilt for software opens `SceImeDialog` over
+the app and everything keeps running: `present #1980`, loop unchanged, the
+dialog rendering normally.
+
+The difference is who owns the display. On the software path this embedder
+allocates the CDRAM framebuffer and calls `sceDisplaySetFrameBuf` itself, so
+the common dialog has somewhere to composite. Under GL, vitaGL owns GXM and
+the display, and the dialog has nothing it can draw into -- it takes the
+screen and the app never gets it back.
+
+So text input and the GPU are currently exclusive. That is a second cost on
+the GL path beyond the crash behaviour above, and it lands on exactly the
+apps most likely to want the GPU.
+
+The frozen build also produced a smaller lesson worth keeping. It reported
+`match=vitaGL` while `gl.on` contained `0`, which looked like the opt-in
+switch failing. It was not: the `.vpk` was built 56 minutes before the engine
+artifact was repackaged, so it linked the engine from *before* GL became
+opt-in and ran the GPU unconditionally. **Any binary built against an older
+artifact ignores the switch**, and `shotinfo` is the cheapest way to find out
+which path an installed app actually took.
+
 ## Revisit trigger
 
 - **The spike fails criterion 4.** If vitaGL plus Ganesh is under 10× on those

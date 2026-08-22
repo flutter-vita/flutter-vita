@@ -4,6 +4,7 @@
 #   ./tools/deploy.sh apps/conformance          build, then deploy
 #   ./tools/deploy.sh apps/gallery --no-build   deploy what is already built
 #   ./tools/deploy.sh --vpk path/to/app.vpk
+#   ./tools/deploy.sh --vpk x.vpk --loader-port 1342
 #
 # The tap was never necessary while the app was alive. `handoff` has been in
 # the dev server since M1 -- the app launches the loader and exits, and the
@@ -31,6 +32,9 @@ LAUNCH=1
 while [ $# -gt 0 ]; do
   case "$1" in
     --host)      HOST="$2"; shift 2 ;;
+    # Which loader to deploy through. The Flutter loader (ADR-0016) is tested
+    # from a scratch slot on 1342 before it ever replaces the one on 1341.
+    --loader-port) LDR="$2"; shift 2 ;;
     --vpk)       VPK="$2"; BUILD=0; shift 2 ;;
     --no-build)  BUILD=0; shift ;;
     --no-launch) LAUNCH=0; shift ;;
@@ -49,6 +53,8 @@ alive() {
   # probe from a cold connect. Three tries reported a live loader as dead and
   # sent the script down the "wait for a human tap" path for no reason.
   for _ in 1 2 3 4 5 6; do
+    # "loader" matches both the C loader's bare reply and the Flutter
+    # loader's "pong loader <slot> <port>".
     say "$port" ping 6 | grep -q "$want" && return 0
     sleep 1
   done
