@@ -62,12 +62,19 @@ endif()
 
 add_executable(${PROJECT_NAME} src/main.cpp)
 
-# NOT --whole-archive, unlike a real app.
+# NOT --whole-archive, and the reason is worth recording since the engine's
+# MANIFEST.txt tells apps to use it.
 #
-# The engine needs it because static initialisers in unreferenced translation
-# units must survive; this spike needs the opposite -- only the Skia GL objects
-# it actually calls -- and whole-archive would drag in the Dart VM and every
-# embedder path for a program that starts none of them.
+# Tried, because the manifest warns that plain -l semantics drop static
+# initialisers in translation units nothing references and "fails at runtime
+# rather than at link time", which described this fault well. It does not link:
+# whole-archive pulls in vita_embedder.cc, whose own main() collides with this
+# spike's and whose dev_server and SceAppUtil dependencies are absent here.
+#
+# It also cannot be the explanation. The fault is *inside* the
+# TextBlobRedrawCoordinator constructor, so its translation unit is demonstrably
+# linked already, and the SkMessageBus Get() it calls is defined in that same
+# file.
 target_link_libraries(${PROJECT_NAME}
   "${ENGINE_ARCHIVE}"
   ${VGL_LIB}

@@ -43,6 +43,13 @@
 // Ganesh allocates on top of that, so this is larger.
 extern "C" unsigned int _newlib_heap_size_user = 128 * 1024 * 1024;
 
+// The Vita's main thread gets a small default stack, and Skia's context
+// construction is a deep chain of nested C++ constructors. spikes/m1-vpk
+// already raises this for the same reason, so the project has met the limit
+// before; this spike had not set it, and the fault is inside a constructor
+// several frames down from MakeGL.
+extern "C" unsigned int sceUserMainThreadStackSize = 1 * 1024 * 1024;
+
 static FILE* g_out;
 static int g_fail;
 
