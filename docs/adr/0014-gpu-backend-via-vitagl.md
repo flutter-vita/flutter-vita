@@ -1,7 +1,7 @@
 # ADR-0014: The raster pass is the bottleneck, so the GPU becomes the target
 
-**Status:** Accepted — direction settled by measurement; engine work gated on a
-spike with the exit criteria below
+**Status:** Accepted — direction settled by measurement; the gating spike
+passed all four exit criteria on hardware on 2026-08-22
 **Date:** 2026-08-21
 
 ## Context
@@ -203,6 +203,187 @@ restart. So the cost is once per shader per device, not once per launch.
   `.vpk` would remove the first-run cost entirely. Unverified, and the obvious
   next question.
 
+## Criterion 2: passed on hardware, 2026-08-21, and the cause was not the GPU
+
+```
+GrDirectContext created            PASS
+backend                     0 (kOpenGL)
+maxTextureSize              4096
+maxRenderTargetSize         4096
+GPU render target surface          PASS
+draw and submit                    PASS
+```
+
+Three things had to be supplied before `GrDirectContexts::MakeGL` returned a
+context, and none of them is the interesting one:
+
+- **Six shims** for entry points vitaGL declares in `GLES2/gl2.h` and does not
+  implement. `GrGLInterface::validate()` rejects an interface with any of the
+  92 unconditionally required functions missing, and reports which branch fired
+  to nobody in a release build. Two of the six are not honest implementations:
+  `glBlendColor` discards its argument because vitaGL has no constant blend
+  colour, and `glGetRenderbufferParameteriv` returns zeroes.
+- **A suffix-stripping loader.** Skia's assembler asks for extension entry
+  points by their suffixed names — `GET_PROC_SUFFIX(PopGroupMarker, EXT)`
+  requests `glPopGroupMarkerEXT` — and vitaGL exports the core spelling with no
+  alias. A function that is present fails to resolve on its name alone, which is
+  why an offline symbol-table diff said the debug-marker block was satisfied and
+  the console disagreed.
+- **`GL_NUM_PROGRAM_BINARY_FORMATS` forced to zero.** vitaGL answers 1 and
+  advertises `GL_OES_get_program_binary` without providing its entry points,
+  which is the same trick that broke `validate()` one layer up.
+
+**What actually blocked it was libstdc++.** Bisecting down from `MakeGL` with
+per-call-site traces ended at `SkMessageBus::Get()`, which is
+
+```cpp
+static auto* bus = new SkMessageBus<...>();
+```
+
+— a function-local static with a dynamic initialiser, and no GL or Skia in it.
+A probe added to the spike shows a plain `new` succeeding and the identical
+allocation behind a function-local static killing the process: **libstdc++'s
+`__cxa_guard_acquire` faults in this statically linked VitaSDK build.**
+Supplying the ARM EABI pair by hand — the guard is a 32-bit word whose low bit
+means initialised — makes the probe pass and carries Ganesh all the way to a
+drawn frame, because a definition in the program overrides the archive's and
+Skia's own statics then use it too.
+
+This is a much larger fact than the GPU work. Every dynamically initialised
+function-local static anywhere in the engine goes through those guards, and it
+is a candidate explanation for the intermittent hard fault that has been open
+since the corpus work. The spike's version is correct for single-threaded
+initialisation and nothing more; the engine needs a real one, and it is the
+first item of the engine work below.
+
+## Criteria 3 and 4: passed on hardware, 2026-08-22
+
+`spikes/g2-ganesh` now draws the three operations from the measurement above,
+on a 960×544 Ganesh render target and on an `SkSurfaces::Raster` of the same
+size and colour type, and compares both the pixels and the clock. A baseline
+draw — the same image, unscaled, unfiltered, no offscreen — runs alongside so
+the three can be read as differences rather than absolutes.
+
+### Criterion 3: the GPU agrees with the software rasteriser
+
+There is no oracle on this console, so "correct" is defined as agreement with
+the path the port ships today. A 320×320 window centred on the widget is read
+back from both surfaces and compared per channel.
+
+| operation | px gpu | px sw | colours gpu | colours sw | mean err | max | >8 | >24 |
+|---|---|---|---|---|---|---|---|---|
+| baseline image draw | 21,890 | 21,890 | 71 | 71 | 0.00 | 0 | 0.00% | 0.00% |
+| saveLayer | 21,890 | 21,890 | 71 | 71 | 0.00 | 0 | 0.00% | 0.00% |
+| colour filter | 21,898 | 21,898 | 47 | 47 | 0.00 | 1 | 0.00% | 0.00% |
+| rotated 512→200 | 27,830 | 27,836 | 242 | 238 | 0.03 | 7 | 0.00% | 0.00% |
+| localsend composite | 27,842 | 27,852 | 55 | 54 | 0.08 | 11 | 0.01% | 0.00% |
+
+The first three are bit-exact. The two that resample disagree on a handful of
+edge pixels by at most 11 of 255, which is two bilinear implementations
+rounding differently and nothing more.
+
+![GPU, software, and the difference amplified 16×](../results/g2-ganesh-composite-2026-08-22.png)
+
+*Left: Ganesh on vitaGL. Centre: the software rasteriser. Right: the absolute
+difference, multiplied by 16 to make it visible at all.*
+
+**The first version of this check passed on nothing.** The source image had an
+opaque white background, and `kSrcATop` is `src * dstAlpha + dst * (1 -
+srcAlpha)` — an opaque tint over an opaque image is just the tint. The composite rendered
+a flat 200×200 square in **two colours total**, and two identical flat squares
+agree perfectly. Every number in the table was zero and every row said PASS.
+
+It was caught by dumping the pixels and looking at the histogram, which is the
+only reason this section is not a fabrication. Two things changed as a result:
+the source image now has a real alpha silhouette, matching localsend's logo,
+which is a PNG with transparency; and the comparison counts **distinct
+colours** and fails below sixteen. Non-blank does not mean drawn, and a check
+that cannot tell a solid fill from a photograph cannot answer this question.
+
+### Criterion 4: 36× on the composite, and one operation that got slower
+
+Twenty iterations each, microseconds per operation. `gpu` submits and waits
+(`GrSyncCpu::kYes` → `glFinish` → `sceGxmFinish`) once per iteration; `gpu
+batch` submits once for all twenty, which is the pipelining headroom.
+
+| operation | software | gpu | gpu batch | ×  | × batched | first draw |
+|---|---|---|---|---|---|---|
+| baseline image draw | 1,155 | 1,626 | 259 | **0.7** | 4.5 | 2,663 |
+| saveLayer | 2,419 | 4,035 | 3,920 | **0.6** | 0.6 | 4,182 |
+| colour filter | 36,628 | 1,851 | 486 | **19.8** | 75.4 | 2,970 |
+| rotated 512→200 | 107,519 | 1,992 | 551 | **54.0** | 195.0 | 2,800 |
+| localsend composite | 172,054 | 4,761 | 3,946 | **36.1** | 43.6 | 4,618 |
+
+**Criterion 4 passes: 36.1× against a bar of 10×.** The verdict is taken on the
+per-submit column, not the batched one, because a frame ends in a submit
+whether or not the operations inside it pipeline.
+
+The software composite at 172 ms independently reproduces the 199 ms measured
+in localsend's real frame, from a different image and a synthetic scene. The
+model is faithful.
+
+### What the isolated rows say, which is not what was expected
+
+**`saveLayer` is slower on the GPU. So is a plain image draw.** Both come in at
+0.6-0.7×, and batching rescues the image draw but not the offscreen: twenty
+`saveLayer`s in one submit still cost 3,920 us each. That is not submit
+overhead, it is the operation.
+
+The Vita's SGX543 is a **tile-based deferred renderer**. Every render-target
+switch resolves the tile buffer to memory and reloads it, so an offscreen costs
+a full framebuffer round trip that an immediate-mode GPU does not pay. The
+consequences section below predicted this would be where the spike got hard and
+named readbacks; it is the same mechanism, one step earlier.
+
+So the win is not "the GPU is faster". It is narrower and worth stating
+precisely:
+
+- **Per-pixel work moves to hardware and collapses.** The colour filter is
+  19.8× and the rotated downscale is 54×. These are the operations that made
+  the software rasteriser's cost depend on *what* is drawn rather than how
+  much, which is the finding this whole ADR rests on.
+- **Structural work does not.** Offscreens get *more* expensive, and cheap
+  draws gain nothing.
+- **The composite still wins by 36×** because software pays 170 ms for the
+  filter and the resample, against which one 4 ms tile round trip is noise.
+
+There is also a floor: the baseline costs 1,626 us per submit-and-wait against
+259 us batched, so a submit costs about **1.4 ms**. That is 4% of a 33 ms frame
+and 8% of a 16 ms one — acceptable, and a reason not to submit more than once
+per frame.
+
+`first draw` is 2.6-4.6 ms across the board, which is the ~3 ms warm-cache
+figure from criterion 0 and not the ~250 ms cold compile. The shader cache was
+already populated from earlier runs, so this measures the good case only.
+
+### What this means for localsend
+
+The widget drops from ~172 ms to ~4.8 ms. Holding everything else in that frame
+on the CPU — which is pessimistic, since it would move too — localsend's
+199 ms raster pass becomes roughly **32 ms, about 31 fps**, from 4.87. That
+clears [ADR-0006](0006-performance-bar-set-from-measurement.md)'s bar with the
+conservative assumption still in place.
+
+### The risk this creates for the embedder work
+
+A Flutter tree is full of offscreens. `Opacity`, `ClipRRect` with antialiasing,
+`ShaderMask`, `BackdropFilter` and every `ColorFiltered` lower to a `saveLayer`,
+and the row above says each one costs ~4 ms on this GPU against ~2.4 ms on the
+CPU. A screen with ten layers and no expensive per-pixel work would be *slower*
+on the GPU than it is today.
+
+That is not an argument against the direction — the operations that actually
+hurt are 20× to 54× better, and they are the ones the corpus found. It is an
+argument that the embedder needs the software path kept and selectable, which
+[ADR-0003](0003-software-rendering-first.md) already requires for a different
+reason, and that layer count becomes a thing to measure. It is added to the
+revisit triggers below.
+
+One shim question is answered: `glBlendColor` is stubbed to a no-op because
+vitaGL has no constant blend colour, and the colour filter renders bit-exact
+anyway, so Skia did not select a constant-colour blend coefficient for these
+paints. That is evidence for these five operations and not a general result.
+
 ## Three findings that cost the spike four runs
 
 **1. The shader compiler works, and the taiHEN chain under it is real but not
@@ -268,19 +449,29 @@ program that answers that. Exit criteria, all on real hardware:
    trivial shader at runtime.~~ **PASSED 2026-08-21** — see above. The module
    is user-installed and the community already relies on it; the dependency it
    drags in is stated in full above.
-2. Skia builds with `skia_use_gl = true` and `skia_gl_standard = "gles"` for
+2. ~~Skia builds with `skia_use_gl = true` and `skia_gl_standard = "gles"` for
    `target_os = vita`, and a `GrDirectContext` is successfully created on a
-   vitaGL context.
-3. Skia draws the three operations that dominate the measurement above —
+   vitaGL context.~~ **PASSED 2026-08-21.** The blocker was neither Skia nor
+   vitaGL: libstdc++'s `__cxa_guard_acquire` faults in this statically linked
+   build, so every function-local static with a dynamic initialiser is a hard
+   fault.
+3. ~~Skia draws the three operations that dominate the measurement above —
    `saveLayer`, a colour filter, and a rotated downscale of a 512×512 image —
-   and the output is correct.
-4. The same three are timed against the software path. **The bar is 10×**, not
+   and the output is correct.~~ **PASSED 2026-08-22** — bit-exact on three of
+   the five, and at most 11 of 255 on the two that resample.
+4. ~~The same three are timed against the software path. **The bar is 10×**, not
    "faster": below that, the binary-size and complexity cost is not obviously
-   worth it and the per-workload tools above deserve another look.
+   worth it and the per-workload tools above deserve another look.~~
+   **PASSED 2026-08-22 at 36.1×** on the composite widget — with one operation,
+   `saveLayer`, coming out *slower* on the GPU.
 
-If the spike passes, the engine work is: a `FlutterOpenGLRendererConfig` path in
-`vita_embedder.cc`, `populate_existing_damage` against GXM's buffering, and the
-GN branch above rewritten with its stale premise removed.
+**The spike has passed, and the engine work is unblocked**: a
+`FlutterOpenGLRendererConfig` path in `vita_embedder.cc`,
+`populate_existing_damage` against GXM's buffering, the GN branch above
+rewritten with its stale premise removed, and — first, because nothing else
+runs without it — a thread-safe `__cxa_guard_acquire` for the engine build. The
+spike's is correct for single-threaded initialisation only, and the engine has
+a UI thread, a raster thread, an IO thread and Dart's workers.
 
 ## Consequences
 
@@ -323,6 +514,11 @@ pathological is involved in it.
   three operations, this ADR is wrong and the answer is per-workload work:
   reduced resolution for fill-bound screens, and a `psvita` lint or widget set
   that steers apps away from the operations that hurt.
+- **Layer-heavy screens turn out slower on the GPU.** Criterion 4 measured
+  `saveLayer` at 0.6×, and a Flutter tree is full of them. If a real app's frame
+  regresses once the embedder GL path exists, the answer is not to abandon the
+  GPU but to choose the backend per app or per screen — which makes the
+  two-path embedder a permanent feature rather than a transition.
 - **`libshacccg.suprx` becomes unavailable or unacceptable.** Then Ganesh has
   no runtime shader compiler and the route is a precompiled shader cache, which
   is a materially different project.

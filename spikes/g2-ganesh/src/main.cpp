@@ -1,4 +1,5 @@
-// ADR-0014 spike, criterion 2: can Ganesh build a GrDirectContext on vitaGL?
+// ADR-0014 spike, criteria 2 to 4: can Ganesh build a GrDirectContext on
+// vitaGL, does it draw the right thing, and is it ten times faster?
 //
 // g1 proved the GL context itself: runtime shader compilation, program
 // linkage, render-to-texture and a correct readback, all on hardware. It said
@@ -26,11 +27,18 @@
 
 #include "required_names.h"
 
+#include "include/core/SkBitmap.h"
+#include "include/core/SkBlendMode.h"
 #include "include/core/SkCanvas.h"
+#include "include/core/SkColorFilter.h"
 #include "include/core/SkColorSpace.h"
+#include "include/core/SkImage.h"
 #include "include/core/SkPaint.h"
+#include "include/core/SkRRect.h"
+#include "include/core/SkSamplingOptions.h"
 #include "include/core/SkSurface.h"
 #include "include/gpu/ganesh/GrContextOptions.h"
+#include "include/gpu/ganesh/GrTypes.h"
 #include "include/gpu/ganesh/SkSurfaceGanesh.h"
 #include "include/gpu/ganesh/GrDirectContext.h"
 #include "include/gpu/ganesh/gl/GrGLAssembleInterface.h"
@@ -342,6 +350,414 @@ static GrGLFuncPtr vita_get_proc(void*, const char name[]) {
   return nullptr;
 }
 
+// ---------------------------------------------------------------------------
+// Criteria 3 and 4: do the three expensive operations draw correctly on the
+// GPU, and how much faster are they than the software rasteriser?
+//
+// The three come from the measurement in ADR-0014, not from a list of things
+// GPUs are good at. localsend's 199 ms raster pass is one widget:
+//
+//     Transform.rotate(child: ColorFiltered(child: image 512 -> 200))
+//
+// and removing only the ColorFiltered took it to ~110 ms, so the colour filter
+// is about half and the rotated downscale is the other half. ColorFiltered
+// forces a saveLayer, which is the third.
+//
+// Each is measured on its own *and* as the composite widget, because the
+// isolated numbers say where the cost is and only the composite says whether
+// localsend gets fixed. A baseline draw -- same image, no scale, no filter, no
+// layer -- runs alongside them so ops 1..3 can be read as differences rather
+// than absolutes.
+// ---------------------------------------------------------------------------
+
+static constexpr int kW = 960;    // the Vita's screen, so the numbers compare
+static constexpr int kH = 544;    // directly with the corpus measurements
+static constexpr int kIters = 20;
+static constexpr int kWarm = 3;
+static constexpr SkScalar kCx = 480, kCy = 272;
+static constexpr SkScalar kSide = 200;   // localsend draws its logo at 200x200
+
+// The correctness readback covers a 320x320 window centred on the widget --
+// large enough to contain the 200x200 square rotated to its 283 px diagonal.
+static constexpr int kRegion = 320;
+static constexpr int kRegionX = (int)(kCx) - kRegion / 2;
+static constexpr int kRegionY = (int)(kCy) - kRegion / 2;
+
+static sk_sp<SkImage> g_src;
+
+// A 512x512 source with deliberate high-frequency content on a **transparent**
+// background. Both properties are load-bearing and the first version had
+// neither by accident:
+//
+//   - Detail, because a flat image lets a bilinear downscale look correct
+//     while doing nothing, and the question about resampling is what it does
+//     to detail.
+//   - Transparency, because kSrcATop over an opaque destination is
+//     `src * dstAlpha + dst * (1 - srcAlpha)`, and with an opaque tint over an
+//     opaque image that is just the tint. The first source had a white
+//     background, so the composite rendered a flat 200x200 square of
+//     0xFF3B5BDB in **two** colours total -- and two identical flat squares
+//     agree perfectly, which is how a meaningless correctness check reports
+//     PASS. localsend's logo is a PNG with alpha, so srcATop recolours a shape
+//     there rather than erasing one.
+static sk_sp<SkImage> make_source_image() {
+  SkBitmap bm;
+  if (!bm.tryAllocPixels(SkImageInfo::MakeN32Premul(512, 512))) return nullptr;
+  SkCanvas c(bm);
+  c.clear(SK_ColorTRANSPARENT);
+
+  // Everything lives inside a disc, so the image has a real alpha silhouette
+  // and not just a rectangle of pixels.
+  c.save();
+  c.clipRRect(SkRRect::MakeOval(SkRect::MakeXYWH(16, 16, 480, 480)), true);
+
+  SkPaint p;
+  p.setAntiAlias(false);
+  for (int y = 0; y < 512; y += 16) {
+    for (int x = 0; x < 512; x += 16) {
+      // Half the squares stay transparent: alpha varies across the interior,
+      // not only at the silhouette.
+      p.setColor((((x / 16) ^ (y / 16)) & 1) ? 0xFF202020 : 0x40FFFFFF);
+      c.drawRect(SkRect::MakeXYWH(x, y, 16, 16), p);
+    }
+  }
+  p.setAntiAlias(true);
+  p.setColor(0x80E03131); c.drawCircle(180, 180, 150, p);
+  p.setColor(0xC0339AF0); c.drawCircle(340, 320, 130, p);
+  p.setColor(0xFF2F9E44); c.drawCircle(256, 256,  60, p);
+  c.restore();
+
+  bm.setImmutable();
+  return SkImages::RasterFromBitmap(bm);
+}
+
+static SkRect widget_rect() {
+  return SkRect::MakeXYWH(kCx - kSide / 2, kCy - kSide / 2, kSide, kSide);
+}
+
+static sk_sp<SkColorFilter> tint() {
+  // localsend's ColorFilter.mode(primary, BlendMode.srcATop).
+  return SkColorFilters::Blend(0xFF3B5BDB, SkBlendMode::kSrcATop);
+}
+
+typedef void (*OpFn)(SkCanvas*, int);
+
+// Baseline: one image draw, 1:1, nearest, no filter and no layer.
+static void op_baseline(SkCanvas* c, int) {
+  const SkSamplingOptions s(SkFilterMode::kNearest, SkMipmapMode::kNone);
+  c->drawImageRect(g_src, SkRect::MakeWH(kSide, kSide), widget_rect(), s,
+                   nullptr, SkCanvas::kStrict_SrcRectConstraint);
+}
+
+// Baseline plus an offscreen. This is the allocate / render / composite cost
+// with nothing else in it, and it is what every ColorFiltered, Opacity and
+// ShaderMask in a Flutter tree pays.
+static void op_savelayer(SkCanvas* c, int i) {
+  c->saveLayer(widget_rect(), nullptr);
+  op_baseline(c, i);
+  c->restore();
+}
+
+// Baseline plus a per-pixel blend against a constant colour.
+static void op_colorfilter(SkCanvas* c, int) {
+  SkPaint p;
+  p.setColorFilter(tint());
+  const SkSamplingOptions s(SkFilterMode::kNearest, SkMipmapMode::kNone);
+  c->drawImageRect(g_src, SkRect::MakeWH(kSide, kSide), widget_rect(), s, &p,
+                   SkCanvas::kStrict_SrcRectConstraint);
+}
+
+// 512 -> 200 bilinear under a matrix that changes every frame. The changing
+// angle is the point: a fixed transform lets Skia cache, and the widget this
+// models rotates at 30 fps so nothing ever does.
+static void op_rotscale(SkCanvas* c, int i) {
+  const SkSamplingOptions s(SkFilterMode::kLinear, SkMipmapMode::kNone);
+  c->save();
+  c->rotate(i * 12.0f + 7.0f, kCx, kCy);
+  c->drawImageRect(g_src, SkRect::MakeWH(512, 512), widget_rect(), s, nullptr,
+                   SkCanvas::kStrict_SrcRectConstraint);
+  c->restore();
+}
+
+// The widget itself. ColorFiltered lowers to a saveLayer whose *paint* carries
+// the filter -- the child draws normally into the offscreen and the filter runs
+// over the result -- so this is the shape Flutter actually emits, not a colour
+// filter bolted onto the image paint.
+static void op_composite(SkCanvas* c, int i) {
+  const SkSamplingOptions s(SkFilterMode::kLinear, SkMipmapMode::kNone);
+  SkPaint layer;
+  layer.setColorFilter(tint());
+  c->save();
+  c->rotate(i * 12.0f + 7.0f, kCx, kCy);
+  c->saveLayer(widget_rect(), &layer);
+  c->drawImageRect(g_src, SkRect::MakeWH(512, 512), widget_rect(), s, nullptr,
+                   SkCanvas::kStrict_SrcRectConstraint);
+  c->restore();
+  c->restore();
+}
+
+struct Op { const char* name; OpFn fn; };
+static const Op kOps[] = {
+    {"baseline image draw", op_baseline},
+    {"saveLayer", op_savelayer},
+    {"colour filter", op_colorfilter},
+    {"rotated 512->200", op_rotscale},
+    {"localsend composite", op_composite},
+};
+static const int kNumOps = (int)(sizeof kOps / sizeof kOps[0]);
+
+// GPU work is asynchronous, so a timing loop that only records commands
+// measures the driver's command buffer. GrSyncCpu::kYes makes Skia call
+// glFinish, which vitaGL implements as sceGxmFinish -- a real wait on the GPU.
+static void gpu_sync(GrDirectContext* ctx, SkSurface* s) {
+  ctx->flushAndSubmit(s, GrSyncCpu::kYes);
+}
+
+struct Result {
+  double sw_us;      // software, per iteration
+  double gpu_us;     // GPU, one submit-and-wait per iteration
+  double gpu_bat_us; // GPU, kIters iterations then one submit-and-wait
+  double warm_us;    // first-ever draw, which is where shader compilation lands
+};
+
+static double bench_sw(SkSurface* s, OpFn fn) {
+  SkCanvas* c = s->getCanvas();
+  for (int i = 0; i < kWarm; i++) fn(c, i);
+  const uint64_t t0 = sceKernelGetProcessTimeWide();
+  for (int i = 0; i < kIters; i++) fn(c, i);
+  return (double)(sceKernelGetProcessTimeWide() - t0) / kIters;
+}
+
+static void bench_gpu(GrDirectContext* ctx, SkSurface* s, OpFn fn, Result* r) {
+  SkCanvas* c = s->getCanvas();
+
+  // The first draw of a given paint configuration is where Ganesh generates
+  // and links its GLSL, which criterion 0 measured at ~250 ms cold and ~3 ms
+  // from the cache. Reported separately rather than folded into the mean,
+  // because it is a once-per-shader cost and the steady state is not.
+  const uint64_t w0 = sceKernelGetProcessTimeWide();
+  fn(c, 0);
+  gpu_sync(ctx, s);
+  r->warm_us = (double)(sceKernelGetProcessTimeWide() - w0);
+
+  for (int i = 1; i < kWarm; i++) fn(c, i);
+  gpu_sync(ctx, s);
+
+  const uint64_t t0 = sceKernelGetProcessTimeWide();
+  for (int i = 0; i < kIters; i++) { fn(c, i); gpu_sync(ctx, s); }
+  r->gpu_us = (double)(sceKernelGetProcessTimeWide() - t0) / kIters;
+
+  const uint64_t t1 = sceKernelGetProcessTimeWide();
+  for (int i = 0; i < kIters; i++) fn(c, i);
+  gpu_sync(ctx, s);
+  r->gpu_bat_us = (double)(sceKernelGetProcessTimeWide() - t1) / kIters;
+}
+
+// Criterion 3. "The output is correct" has no oracle on this console, so
+// correctness is defined as agreement with the software rasteriser, which is
+// the path the port ships today and the one the corpus screenshots came from.
+//
+// The non-blank counts are load-bearing: two identical blank surfaces agree
+// perfectly, and that is the failure this check exists to catch.
+struct Diff {
+  int nonblank_sw, nonblank_gpu;
+  int distinct_gpu, distinct_sw;  // see count_distinct
+  double mean_err, pct_over_8, pct_over_24;
+  int max_err;
+};
+
+// How many different colours are actually on the surface, quantised to RGB565
+// so that antialiasing noise does not inflate it.
+//
+// This exists because the first run of criterion 3 passed on an image that had
+// been reduced to two colours. Non-blank does not mean drawn: a solid fill is
+// as non-blank as a photograph, and a check that cannot tell them apart cannot
+// answer "is the output correct".
+static int count_distinct(const uint8_t* buf, size_t n) {
+  static uint32_t seen[65536 / 32];
+  memset(seen, 0, sizeof seen);
+  int distinct = 0;
+  for (size_t px = 0; px < n; px++) {
+    const uint8_t* q = buf + px * 4;
+    const unsigned key = ((q[0] >> 3) << 11) | ((q[1] >> 2) << 5) | (q[2] >> 3);
+    if (seen[key >> 5] & (1u << (key & 31))) continue;
+    seen[key >> 5] |= 1u << (key & 31);
+    distinct++;
+  }
+  return distinct;
+}
+
+static bool compare_region(GrDirectContext* ctx, SkSurface* gpu, SkSurface* sw,
+                           OpFn fn, const SkImageInfo& region_info,
+                           uint8_t* buf_gpu, uint8_t* buf_sw, Diff* d) {
+  const size_t rb = region_info.minRowBytes();
+
+  gpu->getCanvas()->clear(SK_ColorBLACK);
+  fn(gpu->getCanvas(), 3);
+  gpu_sync(ctx, gpu);
+
+  sw->getCanvas()->clear(SK_ColorBLACK);
+  fn(sw->getCanvas(), 3);
+
+  if (!gpu->readPixels(region_info, buf_gpu, rb, kRegionX, kRegionY)) return false;
+  if (!sw->readPixels(region_info, buf_sw, rb, kRegionX, kRegionY)) return false;
+
+  const size_t n = (size_t)kRegion * kRegion;
+  long long sum = 0;
+  int over8 = 0, over24 = 0;
+  *d = Diff{};
+  for (size_t px = 0; px < n; px++) {
+    const uint8_t* a = buf_gpu + px * 4;
+    const uint8_t* b = buf_sw + px * 4;
+    int worst = 0;
+    for (int ch = 0; ch < 4; ch++) {
+      const int delta = a[ch] > b[ch] ? a[ch] - b[ch] : b[ch] - a[ch];
+      if (delta > worst) worst = delta;
+    }
+    sum += worst;
+    if (worst > 8) over8++;
+    if (worst > 24) over24++;
+    if (worst > d->max_err) d->max_err = worst;
+    // Anything not still the black we cleared to
+    if (a[0] || a[1] || a[2]) d->nonblank_gpu++;
+    if (b[0] || b[1] || b[2]) d->nonblank_sw++;
+  }
+  d->distinct_gpu = count_distinct(buf_gpu, n);
+  d->distinct_sw = count_distinct(buf_sw, n);
+  d->mean_err = (double)sum / (double)n;
+  d->pct_over_8 = 100.0 * over8 / (double)n;
+  d->pct_over_24 = 100.0 * over24 / (double)n;
+  return true;
+}
+
+static void dump_raw(const char* path, const uint8_t* buf, size_t bytes) {
+  FILE* f = fopen(path, "wb");
+  if (!f) return;
+  fwrite(buf, 1, bytes, f);
+  fclose(f);
+}
+
+static void run_benchmarks(GrDirectContext* ctx) {
+  say("\n\n-- criteria 3 and 4 --\n");
+
+  enter("make 512x512 source image");
+  g_src = make_source_image();
+  check("source image", g_src != nullptr, "");
+  if (!g_src) return;
+
+  // N32 is what the engine's software surface uses. If Ganesh cannot make a
+  // renderable target in it, fall back and say so -- but both surfaces must
+  // agree on the colour type or the pixel comparison is comparing channel
+  // orders.
+  SkColorType ct = kN32_SkColorType;
+  SkImageInfo info = SkImageInfo::Make(kW, kH, ct, kPremul_SkAlphaType);
+  enter("SkSurfaces::RenderTarget 960x544");
+  sk_sp<SkSurface> gpu =
+      SkSurfaces::RenderTarget(ctx, skgpu::Budgeted::kYes, info);
+  if (!gpu) {
+    ct = kRGBA_8888_SkColorType;
+    info = SkImageInfo::Make(kW, kH, ct, kPremul_SkAlphaType);
+    gpu = SkSurfaces::RenderTarget(ctx, skgpu::Budgeted::kYes, info);
+    say("N32 render target failed; fell back to kRGBA_8888\n");
+  }
+  check("960x544 GPU surface", gpu != nullptr, "");
+  if (!gpu) return;
+
+  sk_sp<SkSurface> sw = SkSurfaces::Raster(info);
+  check("960x544 raster surface", sw != nullptr, "");
+  if (!sw) return;
+  say("colour type %d (N32 is %d)\n\n", (int)ct, (int)kN32_SkColorType);
+
+  // ---- criterion 3 -------------------------------------------------------
+  const SkImageInfo region = SkImageInfo::Make(kRegion, kRegion, ct,
+                                               kPremul_SkAlphaType);
+  const size_t region_bytes = region.minRowBytes() * kRegion;
+  uint8_t* buf_gpu = (uint8_t*)malloc(region_bytes);
+  uint8_t* buf_sw = (uint8_t*)malloc(region_bytes);
+
+  if (buf_gpu && buf_sw) {
+    say("-- criterion 3: GPU output against the software rasteriser --\n");
+    say("%-22s %7s %7s %6s %6s %7s %5s %6s %6s\n", "operation", "px gpu",
+        "px sw", "col g", "col s", "mean", "max", ">8", ">24");
+    for (int i = 0; i < kNumOps; i++) {
+      enter(kOps[i].name);
+      Diff d;
+      if (!compare_region(ctx, gpu.get(), sw.get(), kOps[i].fn, region,
+                          buf_gpu, buf_sw, &d)) {
+        check(kOps[i].name, false, "readPixels failed");
+        continue;
+      }
+      say("%-22s %7d %7d %6d %6d %7.2f %5d %5.2f%% %5.2f%%\n", kOps[i].name,
+          d.nonblank_gpu, d.nonblank_sw, d.distinct_gpu, d.distinct_sw,
+          d.mean_err, d.max_err, d.pct_over_8, d.pct_over_24);
+
+      // Both drew something, they drew it in the same place, and they agree
+      // almost everywhere. Edges will not match -- two different rasterisers
+      // antialias differently -- so the bar is on the bulk, not the maximum.
+      const bool drew = d.nonblank_gpu > 5000 && d.nonblank_sw > 5000 &&
+                        d.distinct_gpu >= 16 && d.distinct_sw >= 16;
+      const bool same_coverage =
+          drew && (double)d.nonblank_gpu / d.nonblank_sw > 0.9 &&
+          (double)d.nonblank_gpu / d.nonblank_sw < 1.1;
+      char note[96];
+      snprintf(note, sizeof note, "%s%s%s",
+               drew ? "" : "blank, or too few distinct colours to mean anything; ",
+               same_coverage ? "" : "coverage differs; ",
+               d.pct_over_24 < 5.0 ? "" : "over 5% of pixels differ by >24");
+      check("  correct", drew && same_coverage && d.pct_over_24 < 5.0, note);
+    }
+
+    // The composite pair goes to disk as raw pixels. Numbers can agree while
+    // both images are wrong in the same way; this is the one that gets looked
+    // at.
+    enter("dump composite pair");
+    Diff d;
+    if (compare_region(ctx, gpu.get(), sw.get(), op_composite, region, buf_gpu,
+                       buf_sw, &d)) {
+      dump_raw("ux0:data/flutter-vita/g2-composite-gpu.raw", buf_gpu,
+               region_bytes);
+      dump_raw("ux0:data/flutter-vita/g2-composite-sw.raw", buf_sw,
+               region_bytes);
+      say("wrote %dx%d raw pairs (%u bytes each, colour type %d)\n", kRegion,
+          kRegion, (unsigned)region_bytes, (int)ct);
+    }
+  }
+  free(buf_gpu);
+  free(buf_sw);
+
+  // ---- criterion 4 -------------------------------------------------------
+  say("\n-- criterion 4: microseconds per operation, bar is 10x --\n");
+  say("%-22s %10s %10s %10s %8s %8s %10s\n", "operation", "software", "gpu",
+      "gpu batch", "x", "x batch", "first draw");
+
+  Result results[kNumOps];
+  for (int i = 0; i < kNumOps; i++) {
+    Result r = {};
+    enter(kOps[i].name);
+    sw->getCanvas()->clear(SK_ColorBLACK);
+    r.sw_us = bench_sw(sw.get(), kOps[i].fn);
+    gpu->getCanvas()->clear(SK_ColorBLACK);
+    bench_gpu(ctx, gpu.get(), kOps[i].fn, &r);
+    results[i] = r;
+    say("%-22s %10.0f %10.0f %10.0f %8.1f %8.1f %10.0f\n", kOps[i].name,
+        r.sw_us, r.gpu_us, r.gpu_bat_us,
+        r.gpu_us > 0 ? r.sw_us / r.gpu_us : 0.0,
+        r.gpu_bat_us > 0 ? r.sw_us / r.gpu_bat_us : 0.0, r.warm_us);
+  }
+
+  // The verdict is taken on the composite and on the per-submit column, not on
+  // the batched one. The composite because it is the widget that produced the
+  // 199 ms frame; per-submit because a frame ends in a submit whether or not
+  // the ops inside it pipeline, and claiming the batched figure would be
+  // measuring a frame that never happens.
+  const Result& c = results[kNumOps - 1];
+  const double ratio = c.gpu_us > 0 ? c.sw_us / c.gpu_us : 0.0;
+  say("\ncomposite widget: %.0f us software, %.0f us GPU -> %.1fx\n", c.sw_us,
+      c.gpu_us, ratio);
+  check("criterion 4 (10x on the composite)", ratio >= 10.0,
+        ratio >= 10.0 ? "" : "below the bar set in ADR-0014");
+}
+
 int main() {
   sceIoMkdir("ux0:data", 0777);
   sceIoMkdir("ux0:data/flutter-vita", 0777);
@@ -488,6 +904,8 @@ int main() {
       ctx->flushAndSubmit();
       check("draw and submit", true, "no fault");
     }
+
+    run_benchmarks(ctx.get());
   }
 
   say("\n==================================\n");
