@@ -683,14 +683,48 @@ essentially every homebrew title selects — not an overclock.
 
 So every measurement in this repository, back to Phase 0.5, was taken on a
 downclocked console, and the stage that dominates is precisely the one a CPU
-clock affects. `scePowerSetArmClockFrequency(444)` and the bus, GPU and xbar
+clock affects. `scePowerSetArmClockFrequency(444)` plus the bus, GPU and xbar
 equivalents now run before the engine starts.
 
-**Unmeasured.** The change is in and the app is built; the run that would have
-confirmed it has not happened. A third more clock should take roughly a third
-off the UI-thread figure if that thread is compute-bound, and nothing if it is
-waiting on something else — which is exactly the sort of assumption this
-document exists to stop being made.
+Measured, localsend's Receive screen under GL, same build, same screen:
+
+| | 333 MHz | 444 MHz |
+|---|---|---|
+| fps | 5.00 | **5.83** |
+| frame period | 199,582 us | **171,285 us** |
+| UI thread (`gl wait`) | ~190,000 us | **158,301 us** |
+
+**+17% frame rate, free.** The clock ratio predicts −25% on a compute-bound
+stage and the UI thread gave back −17%, so it is mostly compute and partly
+waiting on something else — memory, most likely, which the bus clock only
+partly addresses.
+
+Transitions move by roughly the same proportion and remain dominated by the UI
+thread: 85 / 327 / 338 ms at 444 against 296 / 493 / 384 at 333, with raster
+between 2 and 11 ms throughout. Noisy, because the app's own state differs run
+to run, but the direction is consistent and the split does not change.
+
+It costs battery and heat, which is the trade every other Vita application
+already makes.
+
+### Draining platform tasks faster does not help
+
+Tried and reverted, recorded so it is not retried.
+
+The platform thread answers the engine once per vblank, which bounds the
+*latency* of a platform reply at 16.6 ms however fast the reply itself is. The
+log shows the framework issuing `LiveText.isLiveTextInputAvailable`,
+`Clipboard.hasStrings` and `ProcessText.queryTextActions` on every navigation,
+and a chain of replies that each gate the next would pay a frame apiece — ten
+sequential round trips is 166 ms, which is a real fraction of a 400 ms
+transition.
+
+Draining fifteen times a frame at 1 ms granularity instead produced no
+improvement and made the noisier samples worse. The mechanism is
+straightforward in hindsight: waking the platform thread fifteen times a frame
+and taking the task mutex each time competes for a core with the UI thread, and
+the UI thread is exactly what the transition is waiting on. The change spends
+the thing it was trying to save.
 
 ### Known gaps in the GL path
 

@@ -240,10 +240,10 @@ index 00000000..a5e0625d
 +}  // extern "C"
 diff --git a/engine/src/flutter/shell/platform/embedder/vita_embedder.cc b/engine/src/flutter/shell/platform/embedder/vita_embedder.cc
 new file mode 100644
-index 00000000..3c76b97e
+index 00000000..ab9f289b
 --- /dev/null
 +++ b/engine/src/flutter/shell/platform/embedder/vita_embedder.cc
-@@ -0,0 +1,2648 @@
+@@ -0,0 +1,2662 @@
 +// Copyright (c) 2026, the Flutter Authors. All rights reserved.
 +// Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
@@ -2861,6 +2861,20 @@ index 00000000..3c76b97e
 +    PumpIme(engine);
 +    // A platform message that arrived while we were blocked should be answered
 +    // before another frame's worth of input is sampled.
++    //
++    // Once per vblank, which bounds the *latency* of a platform reply at
++    // 16.6 ms however fast the reply itself is. That looked like a candidate
++    // for the ~400 ms screen transitions -- the framework issues
++    // LiveText.isLiveTextInputAvailable, Clipboard.hasStrings and
++    // ProcessText.queryTextActions on navigation, and a chain of replies that
++    // each gate the next would pay a frame apiece.
++    //
++    // Tried, on 2026-08-22: drain fifteen times a frame at 1 ms granularity.
++    // Transitions did not improve and the noisier measurements got worse.
++    // Waking this thread fifteen times a frame and taking the task mutex each
++    // time competes with the UI thread for a core, and the UI thread is what
++    // the transition is waiting on -- so the change spends the thing it was
++    // trying to save. Reverted, and recorded here so it is not retried.
 +    const uint64_t task_start = sceKernelGetSystemTimeWide();
 +    DrainPlatformTasks(engine);
 +    g_loop_task_us += sceKernelGetSystemTimeWide() - task_start;
