@@ -33,3 +33,15 @@ spikes/m1-vpk/out/
 # Packaged engine artifacts — 20 MB tarball plus a 1.1 GB staging tree.
 # Built by tools/package-engine.sh and published as a release, not committed.
 out/artifacts/
+
+# What tools/deploy.sh has already sent to the console.
+#
+# One file per pushed asset, each holding a SHA-1, so a deploy can skip the
+# 2.7 MiB of fonts and icudtl.dat that never change between builds. It
+# describes the state of one physical Vita on one developer's desk — it is not
+# reproducible, it is not shared, and it was being rewritten on every single
+# deploy, so every commit picked up unrelated churn.
+#
+# A fresh clone has no stamps and re-pushes the data files once, which is the
+# right answer: another machine cannot know what is on this console.
+out/.pushed/
