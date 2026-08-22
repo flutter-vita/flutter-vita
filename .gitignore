@@ -45,3 +45,11 @@ out/artifacts/
 # A fresh clone has no stamps and re-pushes the data files once, which is the
 # right answer: another machine cannot know what is on this console.
 out/.pushed/
+
+# The blessed engine the loader links against. 73 MB, reproduced by
+# tools/bless-loader-engine.sh; loader/engine-pin.txt is the committed record.
+out/artifacts/loader-engine/
+
+# Crash dumps and framebuffer captures pulled off the device.
+out/dumps/
+loader/app/lib/build_info.dart

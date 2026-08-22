@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Install a new loader from the running loader.
 #
-#   ./tools/update-loader.sh [--host IP]
+#   ./tools/update-loader.sh [--host IP] [--vpk PATH] [--port N]
 #
 # The loader installs the app under test; until now nothing installed the
 # loader. That meant VitaShell and a card swap for every loader change, which
@@ -22,13 +22,18 @@ set -euo pipefail
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
 HOST="${VITA_HOST:-192.168.0.32}"
+# The port of the loader *doing* the installing, which is not necessarily the
+# port of the one being installed: a scratch loader (ADR-0016) is promoted by
+# the working one and then answers somewhere else.
 PORT=1341
 STAGE="ux0:data/flutter-vita/loader-pkg"
-VPK="$HERE/../loader/build/flutter_vita_loader.vpk"
+VPK="$HERE/../loader/app/build/vita/flutter_vita_loader.vpk"
 
 while [ $# -gt 0 ]; do
   case "$1" in
     --host)    HOST="$2"; shift 2 ;;
+    --port)    PORT="$2"; shift 2 ;;
+    --vpk)     VPK="$2"; shift 2 ;;
     -h|--help) sed -n '2,21p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
     *)         echo "unknown option: $1" >&2; exit 2 ;;
   esac
@@ -43,7 +48,12 @@ say() { printf '%s\n' "$2" | nc -w "${3:-30}" "$HOST" "$PORT"; }
 # reported the port closed while `ls` on the same port answered fine.
 alive=0
 for _ in 1 2 3; do
-  if say $PORT ping 8 2>/dev/null | grep -q loader; then alive=1; break; fi
+  # Either spelling: the C loader answers "loader", the Flutter one answers
+  # "pong loader <slot> <port>". Both identify themselves, which is the point
+  # -- an app's dev server answers a bare "pong" and must not be promoted onto.
+  if say $PORT ping 8 2>/dev/null | grep -qE '^(loader|pong loader)'; then
+    alive=1; break
+  fi
   sleep 2
 done
 [ "$alive" -eq 1 ] || {
@@ -53,12 +63,23 @@ WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
 unzip -q "$VPK" -d "$WORK"
 
-# Every file, before anything is sent. `put` refuses an empty payload now, but
-# a vpk missing eboot2.bin would otherwise promote a loader whose supervisor
-# does not exist and report success.
-for f in eboot.bin eboot2.bin sce_sys/param.sfo sce_sys/param2.sfo; do
+# Every file, before anything is sent, because a promote of a half-staged
+# package succeeds and leaves a loader that does not start. eboot2.bin is
+# checked only when the vpk has one: the Flutter loader ships no supervisor
+# (ADR-0016 decision 8), and requiring one here would refuse the very package
+# this script now exists to install.
+for f in eboot.bin sce_sys/param.sfo; do
   [ -s "$WORK/$f" ] || { echo "!! $f missing or empty in the vpk" >&2; exit 1; }
 done
+if [ -e "$WORK/eboot2.bin" ] || [ -e "$WORK/sce_sys/param2.sfo" ]; then
+  for f in eboot2.bin sce_sys/param2.sfo; do
+    [ -s "$WORK/$f" ] || { echo "!! $f missing or empty in the vpk" >&2; exit 1; }
+  done
+fi
+
+TARGET_ID="$(strings "$WORK/sce_sys/param.sfo" | grep -m1 -E '^[A-Z]{4}[0-9]{5}$' || echo '?????????')"
+SIZE="$(du -h "$VPK" | cut -f1)"
+echo "==> installing $(basename "$VPK") [$TARGET_ID], $SIZE, via the loader on :$PORT"
 
 put() {  # <local> <device path>
   local size; size=$(wc -c <"$1" | tr -d ' ')
@@ -80,5 +101,5 @@ grep -q '^OK' "$WORK/promote.out" || {
   exit 1; }
 
 echo
-echo "Installed. The running process is still the old loader; it is replaced by"
-echo "the next launch of FVTA00003."
+echo "Installed as $TARGET_ID. The running process is unchanged; the new build"
+echo "starts on the next launch of that title."

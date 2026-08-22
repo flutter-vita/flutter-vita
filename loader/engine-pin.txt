@@ -1,0 +1,15 @@
+# The engine the loader links against -- ADR-0016 decision 2.
+#
+# Written by tools/bless-loader-engine.sh; read by tools/build-loader.sh, which
+# refuses to build if out/artifacts/loader-engine does not match. Bump it by
+# running the bless script, never by editing this file: the sha is what makes
+# the check mean anything.
+
+flutter          3.44.8
+framework_rev    058e0af2c2b57e369d905a03ac9748b0ebf543c6
+engine           058e0af2c2b57e369d905a03ac9748b0ebf543c6
+dart             d684a576a6aa954ae107a03b2b4e1d61c3bebe93
+archive_sha256   ddc0033222ee23fe10ff4eb905489efc02eacb0ade4bbc35907f53f042425723
+blessed_at       2026-08-22T13:17:18Z
+blessed_from     out/artifacts/flutter-engine-vita-3.44.8
+reason           first pin: the engine that first rendered Flutter on the Vita GPU and in software

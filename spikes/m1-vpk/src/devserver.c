@@ -42,6 +42,30 @@ void dev_server_set_overlay_handler(void (*overlay)(int on)) {
   g_overlay = overlay;
 }
 
+// See devserver.h: the loader (ADR-0016) links this same server and needs a
+// different port, three commands of its own, and a smaller surface.
+static int g_port = DEVSERVER_PORT;
+static int (*g_extra)(int, const char*, int*) = NULL;
+static int g_minimal = 0;
+static void (*g_ready)(void) = NULL;
+
+void dev_server_set_port(int port) {
+  g_port = port;
+}
+
+void dev_server_set_command_handler(
+    int (*handle)(int sock, const char* line, int* stop)) {
+  g_extra = handle;
+}
+
+void dev_server_set_minimal(int minimal) {
+  g_minimal = minimal;
+}
+
+void dev_server_set_ready_handler(void (*ready)(void)) {
+  g_ready = ready;
+}
+
 // Let go of the GPU before this process ends.
 //
 // Defined by the embedder when it is running the GL path, absent otherwise --
@@ -95,6 +119,14 @@ static int recv_line(int sock, char* out, int max) {
 
 static void send_str(int sock, const char* s) {
   sceNetSend(sock, s, strlen(s), 0);
+}
+
+void dev_server_send(int sock, const char* s) {
+  send_str(sock, s);
+}
+
+void dev_server_log(const char* msg) {
+  if (g_log != NULL) g_log(msg);
 }
 
 // Writes `size` bytes from the socket to `dest`, via a sibling temp file that is
@@ -173,6 +205,29 @@ static int serve(int sock, const char* log_path, const char* eboot_path) {
   for (;;) {
     const int n = recv_line(sock, line, sizeof line);
     if (n <= 0) return 0;
+
+    // The product's own commands run first, so they can also shadow a
+    // built-in rather than only extend the set.
+    if (g_extra != NULL) {
+      int stop = 0;
+      if (g_extra(sock, line, &stop)) {
+        if (stop) return 1;
+        continue;
+      }
+    }
+
+    // In minimal mode everything outside the deploy and debug loop is refused
+    // -- see dev_server_set_minimal. The list is spelled out here rather than
+    // deleted from the dispatch below because both products link the same
+    // file, and an app under development still wants the whole thing.
+    if (g_minimal && strcmp(line, "ping") != 0 && strcmp(line, "probe") != 0 &&
+        strcmp(line, "log") != 0 && strncmp(line, "get ", 4) != 0 &&
+        strncmp(line, "put ", 4) != 0 && strcmp(line, "shot") != 0 &&
+        strcmp(line, "shotinfo") != 0) {
+      send_str(sock, "ERR not served here (ping|probe|log|get|put|shot"
+                     "|shotinfo|ls|stage|install|launch|promote)\n");
+      continue;
+    }
 
     if (strcmp(line, "ping") == 0) {
       send_str(sock, "pong\n");
@@ -455,6 +510,11 @@ static int supervisor_enabled(void) {
 }
 
 static void start_supervisor(void) {
+  // Never for the loader. The supervisor's job is to relaunch the loader when
+  // an app dies; a loader that starts one is asking to be recovered to itself,
+  // and the two would contend for the same background title id besides.
+  // ADR-0016 decision 8.
+  if (g_minimal) return;
   if (!supervisor_enabled()) return;
   const int mod = sceSysmoduleLoadModule(SCE_SYSMODULE_BG_APP_UTIL);
   if (mod < 0) {
@@ -492,9 +552,9 @@ int dev_server_run(void (*log_line)(const char* msg),
 
   SceNetCtlInfo info;
   if (sceNetCtlInetGetInfo(SCE_NETCTL_INFO_GET_IP_ADDRESS, &info) >= 0) {
-    logf_("  [dev] listening on %s:%d\n", info.ip_address, DEVSERVER_PORT);
+    logf_("  [dev] listening on %s:%d\n", info.ip_address, g_port);
   } else {
-    logf_("  [dev] listening on port %d (no IP yet)\n", DEVSERVER_PORT);
+    logf_("  [dev] listening on port %d (no IP yet)\n", g_port);
   }
 
   const int srv = sceNetSocket("fvita-dev", SCE_NET_AF_INET,
@@ -511,10 +571,10 @@ int dev_server_run(void (*log_line)(const char* msg),
   memset(&addr, 0, sizeof addr);
   addr.sin_family = SCE_NET_AF_INET;
   addr.sin_addr.s_addr = sceNetHtonl(SCE_NET_INADDR_ANY);
-  addr.sin_port = sceNetHtons(DEVSERVER_PORT);
+  addr.sin_port = sceNetHtons(g_port);
   if (sceNetBind(srv, (SceNetSockaddr*)&addr, sizeof addr) < 0 ||
       sceNetListen(srv, 2) < 0) {
-    logf_("  [dev] bind/listen on %d failed\n", DEVSERVER_PORT);
+    logf_("  [dev] bind/listen on %d failed\n", g_port);
     sceNetSocketClose(srv);
     return -1;
   }
@@ -525,6 +585,11 @@ int dev_server_run(void (*log_line)(const char* msg),
 
   SceCtrlData pad;
   sceCtrlSetSamplingMode(SCE_CTRL_MODE_ANALOG);
+
+  // Everything the network needs is up. Anything registered here can now call
+  // into SceNet and SceNetCtl, which before this point are unresolved stubs
+  // rather than functions that fail politely.
+  if (g_ready != NULL) g_ready();
 
   for (;;) {
     const int c = sceNetAccept(srv, NULL, NULL);

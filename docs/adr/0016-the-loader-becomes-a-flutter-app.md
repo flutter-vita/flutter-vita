@@ -102,14 +102,24 @@ recovers *to*. A second copy would contend for the same background title id,
 and "relaunch the loader when the loader dies" has no obvious stopping
 condition. A loader crash therefore still costs a tap, as it does today.
 
-**9. The command surface is trimmed.** `ping`, `install`, `launch`, `get`,
-`put`, `ls`, `probe` — the deploy loop and the debug loop. Dropped: `kload`,
-`inject` and `exec`, which were kernel and taiHEN experiments that ADR-0011
-closed off; and `touch`, `rm`, `mkdir`, `cp`, `canwrite`, `promote`, `stage`,
-`deploy`, `screen`, `exit`. Less surface on the one component with the
-strongest reliability requirement. `ls` survives because it has repeatedly
-answered "is this path writable" without a rebuild, including twice in this
-session.
+**9. The command surface is trimmed.** Nineteen commands become twelve:
+`ping`, `probe`, `log`, `get`, `put`, `shot`, `shotinfo`, `stage`, `install`,
+`launch`, `promote`, `ls`. Dropped: `kload`, `inject` and `exec`, which were kernel and taiHEN
+experiments that ADR-0011 closed off; and `touch`, `rm`, `mkdir`, `cp`,
+`canwrite`, `deploy`, `screen`, `exit`. `shot` and `shotinfo` are in because
+the loader now has a screen: capturing it is how a change to it is checked,
+and this is the one component whose panel is the deliverable. Less surface on the one component with
+the strongest reliability requirement.
+
+Two of those were on the drop list when this was first written and were put
+back on reading what the CLI actually sends, which is what "trim to what the
+CLI and I actually use" has to mean. `stage` is half of `install` —
+`tools/deploy.sh` streams the eboot with it and then installs from the staged
+copy. `promote` is how the loader replaces *itself*, and it matters more now
+than it did: a Flutter loader is ~13 MB and `ux0:app/<self>` is a read-only
+mount, so the promoter is the only route by which a new loader can reach the
+console at all. `ls` survives because it has repeatedly answered "is this path
+writable" without a rebuild, including twice in this session.
 
 ## The status model
 
@@ -130,7 +140,8 @@ loader has no state after it, because it has no self after it.
 
 ## Consequences
 
-- **The loader grows from 91 KB to roughly 20 MB.** It carries an engine, a
+- **The loader grows from 91 KB to 13 MB** (measured; this said "roughly
+  20 MB" before it was built). It carries an engine, a
   snapshot, `icudtl.dat` and assets. It is installed rarely, so this is a
   one-time transfer rather than a per-cycle cost, but `tools/update-loader.sh`
   becomes a slow command.
@@ -145,6 +156,43 @@ loader has no state after it, because it has no self after it.
 - The `.vpk` the CLI installs and the loader itself are now built the same way,
   which means the loader is a working example of the toolchain rather than an
   exception to it.
+
+## Where this stands, and the one thing blocking it
+
+Built and measured on hardware on 2026-08-22, running from a scratch slot on
+port 1342 rather than `FVTA00003`, because replacing the loader in place is
+replacing the only way to install anything.
+
+Working: the C layer holds the port before the engine starts, the panel renders
+all five elements, the watcher publishes the address within a second of Wi-Fi
+associating, the log fills live, `launch <titleid>` hands the console over, and
+the whole thing is 13 MB rather than the 20 MB this ADR guessed.
+
+**Not working: `promote`, which is the only route by which the Flutter loader
+can reach `FVTA00003`.** An app cannot write its own install directory —
+`ux0:app/<self>` is the read-only `app0:` mount — so a new loader has to go
+through the system promoter, and on this console
+`sceSysmoduleLoadModuleInternal(SCE_SYSMODULE_INTERNAL_PROMOTER_UTIL)` returns
+`SCE_KERNEL_ERROR_MODULEMGR_NO_LIB` (`0x8002D003`). The `WithArg` spelling
+returns the same code once it is given a real `SceSysmoduleOpt` — passing
+`NULL` for `option` returns `INVALID_MEMORY_ACCESS` and says nothing about the
+module. **The existing C loader fails identically**, so this is the console's
+state rather than anything this rework introduced, and it is not a reason to
+doubt the design.
+
+Two things learned the hard way while getting here, both worth more than the
+code they fixed:
+
+- **A Vita import stub for a module that is not resident is address zero, not
+  a function that fails.** The first watcher called `sceNetCtlInetGetInfo` from
+  its constructor, before the dev server had loaded `SCE_SYSMODULE_NET`, and
+  the process died with a prefetch abort at PC 0 — no frame, no symbol, nothing
+  to read but the LR. `dev_server_set_ready_handler` exists because of it. The
+  same mistake, made deliberately on the promoter path in the belief that a
+  failed load could be survived, produced the same abort a second time.
+- **The supervisor works.** When the scratch loader faulted, `FVTA00003` came
+  back on its own and the next deploy went out without a tap. ADR-0011's
+  recovery path was exercised by accident and held.
 
 ## Revisit trigger
 

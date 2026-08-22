@@ -9,6 +9,9 @@
 #   --flutter DIR     Flutter SDK, default $HOME/fvm/versions/<pinned>
 #   --out DIR         default <app-dir>/build/vita
 #   --entry-point F   default lib/main.dart; real apps use flavors
+#   --extra-source F  extra C/C++ compiled into the app; repeatable
+#   --no-supervisor   leave out eboot2.bin (the loader; ADR-0016)
+#   --define K=V      preprocessor define for the extra sources; repeatable
 #
 # The app configures itself in pubspec.yaml, which is the opt-in surface:
 #
@@ -50,6 +53,12 @@ OUT_DIR=""
 # or lib/main_dev.dart and lib/main.dart does not exist. Hard-coding it made the
 # corpus unbuildable for an app whose only sin was shipping three build flavors.
 ENTRY_POINT="lib/main.dart"
+# Product-specific C, and whether to ship the crash supervisor. Both exist for
+# the loader (ADR-0016), which is an ordinary app from this same script plus a
+# translation unit that owns its port and its commands.
+EXTRA_SOURCES=""
+NO_SUPERVISOR="OFF"
+EXTRA_DEFINES=""
 
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -59,13 +68,19 @@ while [ $# -gt 0 ]; do
     --flutter)  FLUTTER_DIR="$2"; shift 2 ;;
     --out)      OUT_DIR="$2"; shift 2 ;;
     --entry-point) ENTRY_POINT="$2"; shift 2 ;;
-    -h|--help)  sed -n '2,17p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    --extra-source)
+      src="$(cd "$(dirname "$2")" && pwd)/$(basename "$2")"
+      [ -f "$src" ] || { echo "no such file: $2" >&2; exit 1; }
+      EXTRA_SOURCES="${EXTRA_SOURCES:+$EXTRA_SOURCES;}$src"; shift 2 ;;
+    --no-supervisor) NO_SUPERVISOR="ON"; shift ;;
+    --define) EXTRA_DEFINES="${EXTRA_DEFINES:+$EXTRA_DEFINES;}$2"; shift 2 ;;
+    -h|--help)  sed -n '2,20p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
     -*)         echo "unknown option: $1" >&2; exit 2 ;;
     *)          APP_DIR="$1"; shift ;;
   esac
 done
 
-[ -n "$APP_DIR" ] || { sed -n '2,17p' "$0" | sed 's/^# \{0,1\}//'; exit 2; }
+[ -n "$APP_DIR" ] || { sed -n '2,20p' "$0" | sed 's/^# \{0,1\}//'; exit 2; }
 APP_DIR="$(cd "$APP_DIR" && pwd)"
 [ -f "$APP_DIR/pubspec.yaml" ] || { echo "No pubspec.yaml in $APP_DIR" >&2; exit 1; }
 [ -f "$APP_DIR/$ENTRY_POINT" ] || { echo "No $ENTRY_POINT in $APP_DIR" >&2; exit 1; }
@@ -303,7 +318,10 @@ cmake -S "${FLUTTER_VITA_TEMPLATE:-$ROOT/templates/vita-app}" -B "$OUT_DIR/cmake
   -DSUPERVISOR_TITLE_ID="$SUPERVISOR_TITLE_ID" \
   -DSNAPSHOT_S="$OUT_DIR/snapshot.S" \
   -DFLUTTER_ASSETS="$ASSETS" \
-  -DENGINE_DIR="$ENGINE_DIR" >/dev/null
+  -DENGINE_DIR="$ENGINE_DIR" \
+  -DEXTRA_SOURCES="$EXTRA_SOURCES" \
+  -DNO_SUPERVISOR="$NO_SUPERVISOR" \
+  -DEXTRA_DEFINES="$EXTRA_DEFINES" >/dev/null
 cmake --build "$OUT_DIR/cmake" -j"$(getconf _NPROCESSORS_ONLN 2>/dev/null || echo 4)"
 
 VPK="$(find "$OUT_DIR/cmake" -name '*.vpk' | head -1)"

@@ -12,6 +12,11 @@
 #   SNAPSHOT_S      gen_snapshot output for the app's kernel
 #   FLUTTER_ASSETS  the app's `flutter build bundle` output
 #   ENGINE_DIR      unpacked flutter-engine-vita-<version>/
+#
+# Optional:
+#   EXTRA_SOURCES   ;-list of extra C/C++ files to compile into the app
+#   NO_SUPERVISOR   ON to leave out eboot2.bin and param2.sfo
+#   EXTRA_DEFINES   ;-list of K=V preprocessor defines
 cmake_minimum_required(VERSION 3.16)
 
 if(NOT DEFINED CMAKE_TOOLCHAIN_FILE)
@@ -74,8 +79,17 @@ add_executable(${PROJECT_NAME}
   ${ENGINE_DIR}/src/devserver.c
   ${CMAKE_CURRENT_SOURCE_DIR}/bailout.c
   ${CMAKE_CURRENT_SOURCE_DIR}/heap.c
+  # Product-specific C, compiled beside the dev server. The loader (ADR-0016)
+  # uses this to register its own commands and its own port from a constructor,
+  # which is what lets it be an ordinary app built from this same template
+  # rather than a private build path.
+  ${EXTRA_SOURCES}
 )
 target_include_directories(${PROJECT_NAME} PRIVATE ${ENGINE_DIR}/src)
+# For EXTRA_SOURCES to be configured from the outside -- the loader builds
+# twice, once into its real slot and once into a scratch one on a different
+# port, and the difference is two defines rather than two source trees.
+target_compile_definitions(${PROJECT_NAME} PRIVATE ${EXTRA_DEFINES})
 
 # Link as C++: Skia, ICU and the engine are C++, and ICU is built *with*
 # exceptions while Dart is -fno-exceptions, so its objects carry exception
@@ -153,6 +167,11 @@ target_link_libraries(${PROJECT_NAME}
   # vitaGL's vgl_memcpy goes through the DMAC for anything large.
   SceKernelDmacMgr_stub
   SceIme_stub SceAppUtil_stub
+  # For the loader's `promote`, which installs a whole extracted .vpk through
+  # the system promoter -- the only route by which the loader can replace
+  # itself. A stub archive contributes nothing to an app that never calls into
+  # it, so this is listed unconditionally rather than behind another switch.
+  ScePromoterUtil_stub
   pthread m
 )
 
@@ -171,6 +190,11 @@ vita_create_self(${PROJECT_NAME}.self ${PROJECT_NAME} UNSAFE)
 # memory budget is not cosmetic: a background process cannot be handed the
 # whole foreground app budget, and 2 MiB is far more than a socket and a 16 KiB
 # net pool need.
+#
+# Left out entirely when NO_SUPERVISOR is set. The loader is what the
+# supervisor recovers *to*, so a loader carrying one would contend for the same
+# background title id and have no stopping condition -- ADR-0016 decision 8.
+if(NOT NO_SUPERVISOR)
 add_executable(fvita_supervisor ${CMAKE_CURRENT_SOURCE_DIR}/supervisor.c)
 target_link_libraries(fvita_supervisor
   SceIofilemgr_stub SceSysmem_stub SceLibKernel_stub SceKernelThreadMgr_stub
@@ -204,6 +228,7 @@ add_custom_command(OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/param2.sfo
   COMMENT "Generating param2.sfo for the supervisor"
   VERBATIM
 )
+endif()
 
 # Everything the engine reads at runtime from app0:.
 #
@@ -220,8 +245,6 @@ file(GLOB_RECURSE APP_ASSETS RELATIVE "${FLUTTER_ASSETS}" "${FLUTTER_ASSETS}/*")
 list(FILTER APP_ASSETS EXCLUDE REGEX "kernel_blob.bin|\\.last_build_id")
 
 set(VPK_FILES
-  FILE "${CMAKE_CURRENT_BINARY_DIR}/fvita_supervisor.self" eboot2.bin
-  FILE "${CMAKE_CURRENT_BINARY_DIR}/param2.sfo" sce_sys/param2.sfo
   FILE "${ENGINE_DIR}/data/icudtl.dat" icudtl.dat
   # The system font, scanned from app0:/fonts. Deliberately not inside
   # flutter_assets: that directory holds icon fonts meant to be looked up by
@@ -229,6 +252,12 @@ set(VPK_FILES
   # paragraphs in icons.
   FILE "${ENGINE_DIR}/data/Roboto-Regular.ttf" fonts/Roboto-Regular.ttf
 )
+if(NOT NO_SUPERVISOR)
+  list(APPEND VPK_FILES
+    FILE "${CMAKE_CURRENT_BINARY_DIR}/fvita_supervisor.self" eboot2.bin
+    FILE "${CMAKE_CURRENT_BINARY_DIR}/param2.sfo" sce_sys/param2.sfo)
+endif()
+
 foreach(asset ${APP_ASSETS})
   list(APPEND VPK_FILES FILE "${FLUTTER_ASSETS}/${asset}" "flutter_assets/${asset}")
 endforeach()

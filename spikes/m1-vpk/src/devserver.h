@@ -55,4 +55,51 @@ void dev_server_set_tap_handler(void (*tap)(int x, int y));
 // debugging has it in the corner. This turns it off without a rebuild.
 void dev_server_set_overlay_handler(void (*overlay)(int on));
 
+// --- Extension points, for a product that embeds this server -------------
+//
+// The loader (ADR-0016) is a Flutter app built from the same template as any
+// other, so it links this same server rather than carrying a private copy.
+// What it needs on top is a different port, three commands of its own, and a
+// much smaller surface than an app under development wants. All three are
+// registered from a constructor in the product's own translation unit, which
+// runs before main() and therefore before dev_server_run.
+
+// Listen somewhere other than DEVSERVER_PORT. Must be called before
+// dev_server_run; ignored afterwards.
+void dev_server_set_port(int port);
+
+// Handle a command this server does not know.
+//
+// Called for every line, before the built-in dispatch, so it can also shadow
+// a built-in. Returns 1 if it handled the line and 0 to fall through. Set
+// `*stop` to 1 to close the listener and return from dev_server_run, which is
+// what a command that hands the console to another process wants.
+void dev_server_set_command_handler(
+    int (*handle)(int sock, const char* line, int* stop));
+
+// Reply on a connection, and write a line to the product's log. Exposed for
+// the command handler above, which has no other way to do either.
+void dev_server_send(int sock, const char* s);
+void dev_server_log(const char* msg);
+
+// Called once the network is up: SCE_SYSMODULE_NET loaded, sceNetInit and
+// sceNetCtlInit done, immediately before the accept loop starts.
+//
+// This exists because there is no other safe moment. Registration happens in a
+// constructor, which runs before main() and therefore long before any of that
+// -- and a Vita stub for a module that is not resident is not a stub that
+// returns an error, it is address zero. The loader's first attempt at watching
+// the IP called sceNetCtlInetGetInfo from its constructor and took the process
+// down with a prefetch abort at PC 0.
+void dev_server_set_ready_handler(void (*ready)(void));
+
+// Serve only the deploy and debug loop: ping, probe, log, get, put, plus
+// whatever the command handler adds. Everything else is refused.
+//
+// ADR-0016 decision 9. The loader is the component that recovers from
+// crashes, so it carries the least surface of anything here -- no handoff, no
+// relaunch, no deliberate fault, and no crash supervisor either, since the
+// supervisor's job is to bring the loader back.
+void dev_server_set_minimal(int minimal);
+
 #endif  // DEVSERVER_H
