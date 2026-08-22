@@ -240,10 +240,10 @@ index 00000000..a5e0625d
 +}  // extern "C"
 diff --git a/engine/src/flutter/shell/platform/embedder/vita_embedder.cc b/engine/src/flutter/shell/platform/embedder/vita_embedder.cc
 new file mode 100644
-index 00000000..bbececb8
+index 00000000..3c76b97e
 --- /dev/null
 +++ b/engine/src/flutter/shell/platform/embedder/vita_embedder.cc
-@@ -0,0 +1,2590 @@
+@@ -0,0 +1,2648 @@
 +// Copyright (c) 2026, the Flutter Authors. All rights reserved.
 +// Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
@@ -284,6 +284,7 @@ index 00000000..bbececb8
 +#include <psp2/kernel/sysmem.h>
 +#include <psp2/apputil.h>
 +#include <psp2/common_dialog.h>
++#include <psp2/power.h>
 +
 +#include <atomic>
 +
@@ -500,6 +501,20 @@ index 00000000..bbececb8
 +// Raster-thread idle: present finished to the next make_current. GL only --
 +// see the note on g_gl_present_end_us for why it earns a column.
 +uint64_t g_win_gl_idle_us = 0;
++
++// The last frame's numbers, kept per-frame rather than only summed.
++//
++// A sixty-frame mean cannot see a screen transition: a single 500 ms frame
++// inside a window of 16 ms frames moves the mean by 8 ms and disappears. The
++// user-visible complaint is the spike, not the mean, so the spike gets its own
++// log line -- see the jank report in NotePresent.
++uint64_t g_last_raster_us = 0;
++uint64_t g_last_idle_us = 0;
++uint64_t g_frame_index = 0;
++
++// Anything above this is visible as a stutter rather than a slow frame. Two
++// panel refreshes is 33 ms; 50 ms is comfortably past "the animation hitched".
++constexpr uint64_t kJankUs = 50000;
 +
 +// The platform thread, counted because the GL path made it a suspect.
 +//
@@ -941,6 +956,7 @@ index 00000000..bbececb8
 +//
 +// Same raster thread as OnFrameDamage and the present, one frame at a time.
 +void OnRasterTiming(uint64_t raster_us) {
++  g_last_raster_us = raster_us;
 +  g_win_raster_us += raster_us;
 +  if (raster_us > g_win_raster_max_us) {
 +    g_win_raster_max_us = raster_us;
@@ -1269,6 +1285,20 @@ index 00000000..bbececb8
 +      const uint64_t gap = now - g_last_present_us;
 +      if (gap > g_win_max_gap_us) g_win_max_gap_us = gap;
 +      if (gap > g_hud_max_gap_us) g_hud_max_gap_us = gap;
++      // One line per stutter, with the split that says whose fault it was.
++      //
++      // raster is this thread's own work. wait is how long the raster thread
++      // sat idle before being handed the frame, which under GL is the UI
++      // thread plus scheduling -- so a spike with small raster and large wait
++      // is Dart building a screen, and no renderer change will touch it.
++      if (gap > kJankUs) {
++        VLog("flutter-vita: JANK frame #%u gap %u us "
++             "(raster %u us, wait %u us)\n",
++             static_cast<unsigned>(g_frame_index),
++             static_cast<unsigned>(gap),
++             static_cast<unsigned>(g_last_raster_us),
++             static_cast<unsigned>(g_last_idle_us));
++      }
 +      if (gap > kIdleGapUs) {
 +        g_win_idle++;
 +      } else {
@@ -1282,6 +1312,7 @@ index 00000000..bbececb8
 +    }
 +    if (g_win_first_us == 0) g_win_first_us = now;
 +    g_last_present_us = now;
++    g_frame_index++;
 +  }
 +}
 +
@@ -1764,7 +1795,8 @@ index 00000000..bbececb8
 +  g_gl_in_frame.store(true, std::memory_order_release);
 +  g_gl_frame_start_us = sceKernelGetSystemTimeWide();
 +  if (g_gl_present_end_us != 0) {
-+    g_win_gl_idle_us += g_gl_frame_start_us - g_gl_present_end_us;
++    g_last_idle_us = g_gl_frame_start_us - g_gl_present_end_us;
++    g_win_gl_idle_us += g_last_idle_us;
 +  }
 +  return true;
 +}
@@ -1775,6 +1807,7 @@ index 00000000..bbececb8
 +  if (g_gl_frame_start_us != 0) {
 +    const uint64_t raster_us =
 +        sceKernelGetSystemTimeWide() - g_gl_frame_start_us;
++    g_last_raster_us = raster_us;
 +    g_win_raster_us += raster_us;
 +    g_hud_raster_us += raster_us;
 +    if (raster_us > g_win_raster_max_us) g_win_raster_max_us = raster_us;
@@ -2595,6 +2628,31 @@ index 00000000..bbececb8
 +  // Before the engine, deliberately. If startup hangs or dies, the dev server
 +  // is already answering and the log can be pulled without the app exiting.
 +  StartDevServer();
++
++  // Clock the console up before anything is measured on it.
++  //
++  // The Vita starts an application at 333 MHz with the bus and GPU well below
++  // their maximums, and nothing in this port ever raised them -- so every
++  // number this project has recorded, back to Phase 0.5, was taken on a
++  // downclocked console. 444 MHz is what essentially every homebrew title
++  // sets, it is the hardware's rated speed rather than an overclock, and the
++  // GPU work in ADR-0014 makes the bus and GXM clocks matter too.
++  //
++  // This is on the critical path for the thing that actually hurts. The GL
++  // measurements on 2026-08-22 put localsend's frame at ~200 ms of which
++  // ~185 ms is the UI thread, and a screen transition at ~400 ms of which
++  // 95% is the UI thread. That is Dart executing on this CPU, so a third more
++  // clock is a third off the part that dominates.
++  //
++  // It costs battery and heat, which is the trade every other Vita
++  // application already makes.
++  scePowerSetArmClockFrequency(444);
++  scePowerSetBusClockFrequency(222);
++  scePowerSetGpuClockFrequency(222);
++  scePowerSetGpuXbarClockFrequency(166);
++  VLog("flutter-vita: clocks arm=%d bus=%d gpu=%d xbar=%d\n",
++       scePowerGetArmClockFrequency(), scePowerGetBusClockFrequency(),
++       scePowerGetGpuClockFrequency(), scePowerGetGpuXbarClockFrequency());
 +
 +  // Which backend, decided once and here.
 +  //

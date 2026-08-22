@@ -644,6 +644,54 @@ each criterion 0 measured is ~100 ms, not 1.1 s. The likely candidate is the
 first frame's texture uploads: `make_resource_current` is null, so every upload
 is synchronous on the raster thread. Unverified.
 
+### Screen transitions: 95% of the lag is Dart, on either path
+
+Reported from the console: transitions still stutter under GL exactly as they
+did on the CPU. They do, and the measurement says why. Sixty-frame means cannot
+see this — a single 500 ms frame inside a window of 16 ms frames moves the mean
+by 8 ms and vanishes — so the embedder now logs any frame whose period exceeds
+50 ms on its own line, with the split between raster and raster-thread idle.
+
+Driven reproducibly through localsend's left nav with the dev server's `tap`,
+same three destinations on both paths:
+
+| | software | GL, first visit | GL, repeat visit |
+|---|---|---|---|
+| transition frame | 472–506 ms | 341–471 ms | 296–493 ms |
+| of which raster | 38–67 ms | 110–366 ms | **5–21 ms** |
+| remainder — the UI thread | ~430 ms | ~230–405 ms | **272–483 ms** |
+
+**The renderer is 5–21 ms of a ~400 ms transition.** Building and laying out a
+new route is the whole cost, it is Dart, and no renderer change reaches it. GL
+feeling identical to the CPU here is the correct outcome rather than a defect.
+
+The second and third columns are the other half of the answer: on a screen's
+**first** paint under GL, raster spikes to 110–366 ms, and repeating the exact
+same navigation in the same process drops it to 5–21 ms. That is the one-time
+cost of a new paint configuration — criterion 0's "a freeze every time a new
+widget first paints", landing exactly where it was predicted. It does not
+recur in-process. It will recur per launch for any screen the shader cache has
+not seen, which is what makes shipping a pre-warmed cache worth doing rather
+than merely tidy.
+
+### The console has been running at 333 MHz the whole time
+
+Found while looking for what could move a UI-thread bound number: **nothing in
+this port ever set the clocks.** The Vita starts an application at 333 MHz with
+the bus and GPU below their maximums, and 444 MHz is the rated speed that
+essentially every homebrew title selects — not an overclock.
+
+So every measurement in this repository, back to Phase 0.5, was taken on a
+downclocked console, and the stage that dominates is precisely the one a CPU
+clock affects. `scePowerSetArmClockFrequency(444)` and the bus, GPU and xbar
+equivalents now run before the engine starts.
+
+**Unmeasured.** The change is in and the app is built; the run that would have
+confirmed it has not happened. A third more clock should take roughly a third
+off the UI-thread figure if that thread is compute-bound, and nothing if it is
+waiting on something else — which is exactly the sort of assumption this
+document exists to stop being made.
+
 ### Known gaps in the GL path
 
 - **No partial repaint.** `populate_existing_damage` is null, so every frame is
