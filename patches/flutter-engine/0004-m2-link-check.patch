@@ -1,8 +1,8 @@
 diff --git a/engine/src/flutter/shell/platform/embedder/BUILD.gn b/engine/src/flutter/shell/platform/embedder/BUILD.gn
-index 61abe64a..b92ae80c 100644
+index 61abe64a..0beff971 100644
 --- a/engine/src/flutter/shell/platform/embedder/BUILD.gn
 +++ b/engine/src/flutter/shell/platform/embedder/BUILD.gn
-@@ -562,6 +562,65 @@ if (is_mac && !embedder_for_target) {
+@@ -562,6 +562,68 @@ if (is_mac && !embedder_for_target) {
    }
  }
  
@@ -59,7 +59,10 @@ index 61abe64a..b92ae80c 100644
 +  # _kDart* symbols come from the assembly gen_snapshot emits, which is not part
 +  # of this target, so this only links inside the .vpk build.
 +  source_set("vita_embedder") {
-+    sources = [ "vita_embedder.cc" ]
++    sources = [
++      "vita_cxa_guard.cc",
++      "vita_embedder.cc",
++    ]
 +    deps = [ ":embedder" ]
 +    public_configs = [ "//flutter:config" ]
 +  }
@@ -68,12 +71,179 @@ index 61abe64a..b92ae80c 100644
  group("flutter_engine") {
    deps = []
  
+diff --git a/engine/src/flutter/shell/platform/embedder/vita_cxa_guard.cc b/engine/src/flutter/shell/platform/embedder/vita_cxa_guard.cc
+new file mode 100644
+index 00000000..a5e0625d
+--- /dev/null
++++ b/engine/src/flutter/shell/platform/embedder/vita_cxa_guard.cc
+@@ -0,0 +1,161 @@
++// Thread-safe statics for the Vita, because libstdc++'s do not work here.
++//
++// A function-local static with a dynamic initialiser --
++//
++//     static auto* bus = new SkMessageBus<...>();
++//
++// -- compiles to a __cxa_guard_acquire / __cxa_guard_release pair around the
++// construction, and those come from libstdc++. On this statically linked
++// VitaSDK build, calling one faults. The probe in spikes/g2-ganesh shows a
++// plain `new` succeeding and the identical allocation behind a function-local
++// static killing the process, with no Skia and no GL anywhere near it.
++//
++// That is why ADR-0014's criterion 2 spent five bisection layers ending inside
++// SkMessageBus::Get(): the GPU had nothing to do with it. It is also a
++// candidate explanation for the intermittent hard fault open since the corpus
++// work, because *every* dynamically initialised function-local static in the
++// engine goes through these.
++//
++// The spike defined a three-line version that assumes single-threaded
++// initialisation. That is true of a spike whose whole life is on the main
++// thread and false of the engine, which has a platform thread, a UI thread, a
++// raster thread, an IO thread and Dart's workers, any of which can be first to
++// touch a given static. This is the real one.
++//
++// ## The ABI
++//
++// ARM EABI (IHI0041, §3.2.3) rather than Itanium: the guard is a **32-bit**
++// word, not 64, and bit 0 of its first byte means "initialisation complete".
++// The compiler is explicitly permitted to test that bit inline without calling
++// anything, which is why __cxa_guard_release must publish with a release
++// barrier -- on a multi-core Cortex-A9 another core can otherwise observe the
++// flag set before the object it guards is visible.
++//
++// The remaining bytes are the implementation's. Byte 1 is used here for
++// "someone is constructing", the same byte libstdc++ uses for its pending bit,
++// so the layout is unsurprising to anything that looks.
++//
++// ## Why one global lock
++//
++// Per-guard locks would need somewhere to live, and the guard word has no room
++// for a pointer. A single mutex serialises all static initialisation in the
++// process, which sounds worse than it is: these run once each, they are short,
++// and the contended case is two threads racing to first-touch the same static
++// -- which has to serialise anyway.
++#include <pthread.h>
++#include <stdint.h>
++#include <stdio.h>
++
++extern "C" {
++
++namespace {
++
++pthread_mutex_t g_guard_mutex = PTHREAD_MUTEX_INITIALIZER;
++pthread_cond_t g_guard_cond = PTHREAD_COND_INITIALIZER;
++
++constexpr uint8_t kDone = 1;      // byte 0, bit 0 -- defined by the ABI
++constexpr uint8_t kPending = 1;   // byte 1 -- ours
++
++// Who is currently constructing what, so that a static whose constructor
++// reaches the same static can be reported instead of deadlocking.
++//
++// Recursive initialisation is a program bug and libstdc++ answers it by
++// throwing __gnu_cxx::recursive_init_error. This build has no exceptions, and
++// the alternative -- waiting on a condition variable that the waiting thread
++// is itself responsible for signalling -- is a silent hang on a console with
++// no debugger, which is the worst outcome available. Sixteen entries is well
++// past any real nesting depth; overflowing it only costs the diagnostic.
++struct InProgress {
++  void* guard;
++  pthread_t owner;
++};
++constexpr int kMaxInProgress = 16;
++InProgress g_in_progress[kMaxInProgress];
++
++bool OwnedByCurrentThread(void* guard) {
++  for (const InProgress& e : g_in_progress) {
++    if (e.guard == guard) return pthread_equal(e.owner, pthread_self()) != 0;
++  }
++  return false;
++}
++
++void NoteInProgress(void* guard) {
++  for (InProgress& e : g_in_progress) {
++    if (e.guard == nullptr) {
++      e.guard = guard;
++      e.owner = pthread_self();
++      return;
++    }
++  }
++}
++
++void ClearInProgress(void* guard) {
++  for (InProgress& e : g_in_progress) {
++    if (e.guard == guard) {
++      e.guard = nullptr;
++      return;
++    }
++  }
++}
++
++}  // namespace
++
++// Returns non-zero if the caller must run the initialiser, zero if it is
++// already done. Blocks while another thread is running it.
++int __cxa_guard_acquire(int* guard) {
++  uint8_t* bytes = reinterpret_cast<uint8_t*>(guard);
++
++  pthread_mutex_lock(&g_guard_mutex);
++  for (;;) {
++    if (bytes[0] & kDone) {
++      pthread_mutex_unlock(&g_guard_mutex);
++      return 0;
++    }
++    if (!(bytes[1] & kPending)) {
++      bytes[1] |= kPending;
++      NoteInProgress(guard);
++      pthread_mutex_unlock(&g_guard_mutex);
++      return 1;
++    }
++    if (OwnedByCurrentThread(guard)) {
++      // Deliberately not a wait. See the note on InProgress above.
++      pthread_mutex_unlock(&g_guard_mutex);
++      fprintf(stderr,
++              "flutter-vita: recursive initialisation of the static at %p\n",
++              static_cast<void*>(guard));
++      __builtin_trap();
++    }
++    pthread_cond_wait(&g_guard_cond, &g_guard_mutex);
++  }
++}
++
++void __cxa_guard_release(int* guard) {
++  uint8_t* bytes = reinterpret_cast<uint8_t*>(guard);
++
++  // Publish the object before the flag that says it exists. The compiler tests
++  // bit 0 inline and without a lock, so this barrier is the only thing
++  // standing between a second core and a fully constructed pointer to
++  // uninitialised memory.
++  __sync_synchronize();
++
++  pthread_mutex_lock(&g_guard_mutex);
++  bytes[0] |= kDone;
++  bytes[1] &= static_cast<uint8_t>(~kPending);
++  ClearInProgress(guard);
++  pthread_cond_broadcast(&g_guard_cond);
++  pthread_mutex_unlock(&g_guard_mutex);
++}
++
++// The initialiser did not complete. Leave the done bit clear so the next
++// caller tries again, and wake anyone waiting so they can be the one to try.
++void __cxa_guard_abort(int* guard) {
++  uint8_t* bytes = reinterpret_cast<uint8_t*>(guard);
++
++  pthread_mutex_lock(&g_guard_mutex);
++  bytes[1] &= static_cast<uint8_t>(~kPending);
++  ClearInProgress(guard);
++  pthread_cond_broadcast(&g_guard_cond);
++  pthread_mutex_unlock(&g_guard_mutex);
++}
++
++}  // extern "C"
 diff --git a/engine/src/flutter/shell/platform/embedder/vita_embedder.cc b/engine/src/flutter/shell/platform/embedder/vita_embedder.cc
 new file mode 100644
-index 00000000..4b621a25
+index 00000000..0f62adf4
 --- /dev/null
 +++ b/engine/src/flutter/shell/platform/embedder/vita_embedder.cc
-@@ -0,0 +1,2034 @@
+@@ -0,0 +1,2483 @@
 +// Copyright (c) 2026, the Flutter Authors. All rights reserved.
 +// Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
@@ -114,6 +284,13 @@ index 00000000..4b621a25
 +#include <psp2/kernel/sysmem.h>
 +#include <psp2/apputil.h>
 +#include <psp2/common_dialog.h>
++
++// vitaGL, for the GL path (ADR-0014). A static archive, so ADR-0004's
++// single-binary rule is untouched -- there is no dlopen and no .suprx of our
++// own. It does pull libshacccg.suprx in at run time, which is a user-installed
++// module the homebrew community already depends on, and which the software
++// path below exists to do without.
++#include <vitaGL.h>
 +#include <psp2/gxm.h>
 +#include <psp2/ime_dialog.h>
 +#include <psp2/kernel/threadmgr.h>
@@ -173,6 +350,24 @@ index 00000000..4b621a25
 +// already is, but the constant is named rather than assumed because it stops
 +// being true the moment the resolution changes.
 +constexpr int kPitch = 960;
++
++// GL path sizing.
++//
++// kGlRamThresholdBytes is the one to reach for if the engine starts failing
++// allocations under GL. vitaGL claims the newlib arena for its own RAM pool
++// and leaves *this much* behind for malloc; its own default is 16 MB, which is
++// not enough to build a GrDirectContext in. templates/vita-app/heap.c sizes
++// the arena at 160 MB, so this leaves vitaGL roughly 40 MB and the engine the
++// rest -- and the software surfaces the CPU path allocates are gone, which
++// pays for some of it.
++constexpr int kGlLegacyPoolBytes = 0x100000;
++constexpr int kGlRamThresholdBytes = 120 * 1024 * 1024;
++constexpr const char* kShaderCachePath = "ux0:data/shader_cache";
++
++// Which backend this process is running. Decided once in main() and then read
++// from several places that have to behave differently -- InitIme must not
++// initialise GXM a second time, and the software present must not run at all.
++bool g_gl_enabled = false;
 +
 +// SCE_DISPLAY_PIXELFORMAT_A8B8G8R8 is R,G,B,A in memory order on a
 +// little-endian target, which is byte-identical to
@@ -300,6 +495,9 @@ index 00000000..4b621a25
 +// guessing.
 +uint64_t g_win_first_us = 0;   // start of the current window
 +uint64_t g_win_blit_us = 0;    // summed memcpy time inside it
++// Raster-thread idle: present finished to the next make_current. GL only --
++// see the note on g_gl_present_end_us for why it earns a column.
++uint64_t g_win_gl_idle_us = 0;
 +uint64_t g_win_damage_px = 0;  // summed damaged pixels inside it
 +uint64_t g_win_hud_us = 0;     // summed time spent drawing the HUD
 +uint64_t g_win_raster_us = 0;  // summed Skia raster time inside it
@@ -518,7 +716,13 @@ index 00000000..4b621a25
 +                "base=%p ours=%p match=%s %ux%u pitch=%u fmt=0x%08X "
 +                "vcount=%d->%d scanning=%s\n",
 +                fb.base, g_display.base,
-+                fb.base == g_display.base ? "yes" : "NO", fb.width, fb.height,
++                // Under GL the buffer belongs to vitaGL, so "ours" is null and
++                // a mismatch is the expected answer rather than a fault. The
++                // capture itself is still correct: this reads what the display
++                // controller is scanning out, whoever allocated it.
++                g_gl_enabled ? "vitaGL"
++                             : (fb.base == g_display.base ? "yes" : "NO"),
++                fb.width, fb.height,
 +                fb.pitch, fb.pixelformat, vcount_before, vcount_after,
 +                vcount_after != vcount_before ? "yes" : "NO");
 +
@@ -990,11 +1194,14 @@ index 00000000..4b621a25
 +  g_hud_dirty = false;
 +}
 +
-+// |SoftwareSurfacePresentCallback|
-+bool PresentSurface(void* /* user_data */,
-+                    const void* allocation,
-+                    size_t row_bytes,
-+                    size_t height) {
++// Per-present bookkeeping, shared by both backends.
++//
++// Extracted from PresentSurface when the GL path arrived, because every
++// number this port is steered by comes from here and a backend that did not
++// report them would be unmeasurable -- which is the one thing ADR-0006 does
++// not allow. row_bytes and height are the surface the frame was drawn into;
++// under GL that is the display target rather than a CPU allocation.
++void NotePresent(size_t row_bytes, size_t height) {
 +  // A black panel has two very different causes and this separates them: the
 +  // engine never producing a frame, or producing frames that are themselves
 +  // black. Logging the first present and then every 60th keeps the answer in
@@ -1060,6 +1267,91 @@ index 00000000..4b621a25
 +    if (g_win_first_us == 0) g_win_first_us = now;
 +    g_last_present_us = now;
 +  }
++}
++
++// The 60-frame rolling report, shared by both backends.
++//
++// The columns mean slightly different things per backend, and the difference
++// is worth knowing before reading a number off:
++//
++//   raster  software: the rasterizer's own report, via patch 0008's observer.
++//           GL: make_current to present, so GL command submission -- the GPU
++//           may still be busy when present is entered.
++//   blit    software: the present memcpy. GL: vglSwapBuffers, which is mostly
++//           the wait for vblank and for the GPU to finish.
++//   dmg     software only. The GL path does no partial repaint yet.
++//
++// `active` is the same measurement on both, and is vsync-limited under GL --
++// it saturates at 60 and says nothing beyond "this frame fitted".
++void ReportFrameWindow() {
++if (g_win_frames >= 60) {
++  // Two numbers, because they answer different questions.
++  //
++  // `active` is the rendering rate: mean gap over frames that followed
++  // another frame promptly. That is the figure to optimise and the figure to
++  // quote.
++  //
++  // `blit%` is the share of an active frame spent in the present memcpy, and
++  // it is the whole reason this instrument exists. Phase 0.5 measured that
++  // memcpy at 8.06 ms and ADR-0007 built its case on it. If the share is
++  // small, a GPU backend removes a small thing and the remaining time is
++  // Dart, layout and Skia; if it is large, ADR-0007's damage tracking is the
++  // answer. Guessing between those without this number is how optimisation
++  // budgets get spent on the wrong half.
++  const unsigned active_us =
++      g_win_active != 0 ? static_cast<unsigned>(g_win_active_us / g_win_active)
++                        : 0;
++  const unsigned blit_us =
++      static_cast<unsigned>(g_win_blit_us / g_win_frames);
++  //
++  // `dmg` is the share of the screen the rasterizer said actually changed,
++  // averaged over the window. It is what decides whether partial repaint is
++  // doing anything: at 100% the app repaints everything every frame and the
++  // clip is pure overhead, and any fps that a GPU backend would buy has to
++  // come from somewhere other than painting less.
++  const unsigned dmg_pct = static_cast<unsigned>(
++      g_win_damage_px / g_win_frames * 100 / (kWidth * kHeight));
++  //
++  // `raster` is the third share, and the one that decides the GPU question.
++  // An active frame is raster + blit + everything else, where everything
++  // else is the UI thread and any wait. Reporting all three means the answer
++  // never has to be inferred from the damage rectangle again -- which was
++  // tried, and does not work, because area is not work.
++  const unsigned raster_us =
++      static_cast<unsigned>(g_win_raster_us / g_win_frames);
++  VLog("flutter-vita: FRAMES active %u @ %u us = %u.%02u fps "
++       "(raster %u us = %u%%, blit %u us = %u%%, dmg %u%%, hud %u us) "
++       "| raster max %u us | idle gaps %u | max %u ms | gl wait %u us\n",
++       g_win_active, active_us,
++       active_us != 0 ? 1000000u / active_us : 0,
++       active_us != 0 ? (100000000u / active_us) % 100 : 0, raster_us,
++       active_us != 0 ? raster_us * 100 / active_us : 0, blit_us,
++       active_us != 0 ? blit_us * 100 / active_us : 0, dmg_pct,
++       static_cast<unsigned>(g_win_hud_us / g_win_frames),
++       static_cast<unsigned>(g_win_raster_max_us), g_win_idle,
++       static_cast<unsigned>(g_win_max_gap_us / 1000),
++       static_cast<unsigned>(g_win_gl_idle_us / g_win_frames));
++  g_win_frames = 0;
++  g_win_blit_us = 0;
++  g_win_raster_us = 0;
++  g_win_raster_max_us = 0;
++  g_win_damage_px = 0;
++  g_win_hud_us = 0;
++  g_win_max_gap_us = 0;
++  g_win_gl_idle_us = 0;
++  g_win_active_us = 0;
++  g_win_active = 0;
++  g_win_idle = 0;
++  g_win_first_us = 0;
++}
++}
++
++// |SoftwareSurfacePresentCallback|
++bool PresentSurface(void* /* user_data */,
++                    const void* allocation,
++                    size_t row_bytes,
++                    size_t height) {
++  NotePresent(row_bytes, height);
 +
 +  if (g_display.base == nullptr) {
 +    g_display_stale = true;
@@ -1158,67 +1450,328 @@ index 00000000..4b621a25
 +  // a frame the observer never reported would silently reuse the last rect.
 +  g_damage = Damage{};
 +
-+  if (g_win_frames >= 60) {
-+    // Two numbers, because they answer different questions.
-+    //
-+    // `active` is the rendering rate: mean gap over frames that followed
-+    // another frame promptly. That is the figure to optimise and the figure to
-+    // quote.
-+    //
-+    // `blit%` is the share of an active frame spent in the present memcpy, and
-+    // it is the whole reason this instrument exists. Phase 0.5 measured that
-+    // memcpy at 8.06 ms and ADR-0007 built its case on it. If the share is
-+    // small, a GPU backend removes a small thing and the remaining time is
-+    // Dart, layout and Skia; if it is large, ADR-0007's damage tracking is the
-+    // answer. Guessing between those without this number is how optimisation
-+    // budgets get spent on the wrong half.
-+    const unsigned active_us =
-+        g_win_active != 0 ? static_cast<unsigned>(g_win_active_us / g_win_active)
-+                          : 0;
-+    const unsigned blit_us =
-+        static_cast<unsigned>(g_win_blit_us / g_win_frames);
-+    //
-+    // `dmg` is the share of the screen the rasterizer said actually changed,
-+    // averaged over the window. It is what decides whether partial repaint is
-+    // doing anything: at 100% the app repaints everything every frame and the
-+    // clip is pure overhead, and any fps that a GPU backend would buy has to
-+    // come from somewhere other than painting less.
-+    const unsigned dmg_pct = static_cast<unsigned>(
-+        g_win_damage_px / g_win_frames * 100 / (kWidth * kHeight));
-+    //
-+    // `raster` is the third share, and the one that decides the GPU question.
-+    // An active frame is raster + blit + everything else, where everything
-+    // else is the UI thread and any wait. Reporting all three means the answer
-+    // never has to be inferred from the damage rectangle again -- which was
-+    // tried, and does not work, because area is not work.
-+    const unsigned raster_us =
-+        static_cast<unsigned>(g_win_raster_us / g_win_frames);
-+    VLog("flutter-vita: FRAMES active %u @ %u us = %u.%02u fps "
-+         "(raster %u us = %u%%, blit %u us = %u%%, dmg %u%%, hud %u us) "
-+         "| raster max %u us | idle gaps %u | max %u ms\n",
-+         g_win_active, active_us,
-+         active_us != 0 ? 1000000u / active_us : 0,
-+         active_us != 0 ? (100000000u / active_us) % 100 : 0, raster_us,
-+         active_us != 0 ? raster_us * 100 / active_us : 0, blit_us,
-+         active_us != 0 ? blit_us * 100 / active_us : 0, dmg_pct,
-+         static_cast<unsigned>(g_win_hud_us / g_win_frames),
-+         static_cast<unsigned>(g_win_raster_max_us), g_win_idle,
-+         static_cast<unsigned>(g_win_max_gap_us / 1000));
-+    g_win_frames = 0;
-+    g_win_blit_us = 0;
-+    g_win_raster_us = 0;
-+    g_win_raster_max_us = 0;
-+    g_win_damage_px = 0;
-+    g_win_hud_us = 0;
-+    g_win_max_gap_us = 0;
-+    g_win_active_us = 0;
-+    g_win_active = 0;
-+    g_win_idle = 0;
-+    g_win_first_us = 0;
-+  }
++  ReportFrameWindow();
 +
 +  return true;
 +}
++
++// ===========================================================================
++// The GL path (ADR-0014)
++// ===========================================================================
++//
++// Everything above this line draws on the CPU and blits with sceDisplay. This
++// section is the alternative: Skia's Ganesh backend on GLES2, through vitaGL.
++//
++// ADR-0014 measured why. localsend's raster pass was 199 ms of a 205 ms frame,
++// and the spike in spikes/g2-ganesh put the same three operations on the GPU:
++//
++//   colour filter      36,628 us -> 1,851 us    19.8x
++//   rotated 512->200  107,519 us -> 1,992 us    54.0x
++//   the composite     172,054 us -> 4,761 us    36.1x
++//
++// and one that went the other way:
++//
++//   saveLayer           2,419 us -> 4,035 us     0.6x
++//
++// The SGX543 is a tile-based deferred renderer, so a render-target switch
++// resolves the tile buffer to memory and reloads it. Offscreens are therefore
++// *more* expensive here than on the CPU, and a Flutter tree is full of them --
++// Opacity, antialiased ClipRRect, ShaderMask, every ColorFiltered. That is why
++// the software path stays and stays selectable, and why the fallback below is
++// a supported configuration rather than an error path.
++
++// A dev switch file under ux0:data/flutter-vita, which is how a decision gets
++// made on a console with no command line.
++//
++// On is a '1' in the first byte, not merely the file existing. Same shape as
++// ime.on, and for a practical reason: the dev server can `put` a file but
++// cannot delete one, so a switch that keys on existence is a switch that
++// cannot be turned back off without walking to the console.
++bool DevSwitchOn(const char* path) {
++  const SceUID fd = sceIoOpen(path, SCE_O_RDONLY, 0777);
++  if (fd < 0) return false;
++  char c = '0';
++  sceIoRead(fd, &c, 1);
++  sceIoClose(fd);
++  return c == '1';
++}
++
++// vitaGL owns GXM and the display once it initialises, which is a different
++// arrangement from the software path: there, this file allocates the CDRAM
++// framebuffer and calls sceDisplaySetFrameBuf itself. Only one of the two may
++// run in a process.
++bool InitGl() {
++  // Point the shader cache somewhere writable before vitaGL starts.
++  //
++  // Without it every Ganesh program pays libshacccg's compile on every launch:
++  // ADR-0014 measured 205 ms for a one-line shader and 405 ms for a short one,
++  // against ~3 ms once cached. Ganesh generates a program per paint
++  // configuration, so uncached is not a slow start, it is a stutter every time
++  // a new widget first paints.
++  //
++  // Two things have to be true for this to work, and both were found the hard
++  // way. The archive must be built with HAVE_SHADER_CACHE=1 -- the VitaSDK
++  // package has it off, and vglSetShaderCachePath there is a two-byte `bx lr`
++  // that silently does nothing. And the directories have to exist, because
++  // vitaGL opens the .gxp for writing and sceIoOpen does not create parents.
++  // The version number in the path is vitaGL's, not ours, so cover the range;
++  // an mkdir of a directory that exists costs nothing.
++  vglSetShaderCachePath(kShaderCachePath);
++  sceIoMkdir("ux0:data", 0777);
++  sceIoMkdir(kShaderCachePath, 0777);
++  for (int v = 0; v < 8; v++) {
++    char p[64];
++    std::snprintf(p, sizeof p, "%s/v%d", kShaderCachePath, v);
++    sceIoMkdir(p, 0777);
++    std::snprintf(p, sizeof p, "%s/v%d/v", kShaderCachePath, v);
++    sceIoMkdir(p, 0777);
++    std::snprintf(p, sizeof p, "%s/v%d/f", kShaderCachePath, v);
++    sceIoMkdir(p, 0777);
++  }
++
++  // The fourth argument is the one that matters and the one that is easy to
++  // get wrong. vitaGL takes the newlib arena for its own RAM pool and leaves
++  // *ram_threshold* behind for malloc -- 16 MB by default, which is not enough
++  // to build a GrDirectContext in, let alone run Dart. templates/vita-app/
++  // heap.c sizes the arena at 160 MB; this hands vitaGL the top of it and
++  // leaves the rest to the engine.
++  const GLboolean up = vglInitExtended(kGlLegacyPoolBytes, kWidth, kHeight,
++                                       kGlRamThresholdBytes,
++                                       SCE_GXM_MULTISAMPLE_NONE);
++
++  // Do not believe that return value. It is GL_FALSE on a context that works
++  // -- three runs of the g1 spike exited on it while the console was showing
++  // vitaGL's splash screen rotating at 60 fps. Probe instead.
++  const char* version = reinterpret_cast<const char*>(glGetString(GL_VERSION));
++  if (version == nullptr) {
++    VLog("flutter-vita: vitaGL has no context (vglInit returned %d)\n",
++         static_cast<int>(up));
++    return false;
++  }
++  VLog("flutter-vita: GL up -- %s / %s (vglInit returned %d)\n", version,
++       reinterpret_cast<const char*>(glGetString(GL_RENDERER)),
++       static_cast<int>(up));
++
++  // End the splash screen. vitaGL draws its logo from a thread of its own and
++  // stops on the first swap; without this it rotates over the first frames the
++  // engine produces.
++  vglSwapBuffers(GL_FALSE);
++  vglSwapBuffers(GL_FALSE);
++  return true;
++}
++
++// --------------------------------------------------------------------------
++// Entry points Skia asks for that vitaGL does not have
++// --------------------------------------------------------------------------
++//
++// GrGLInterface::validate() rejects an interface with any of its 92
++// unconditionally required functions missing, and in a release build reports
++// which of its 55 branches fired to nobody. These six are the difference
++// between the GLES2 vitaGL declares in GLES2/gl2.h and the GLES2 it
++// implements, found by diffing that list against the archive's symbol table.
++//
++// Two of them are not honest implementations and are marked as such.
++
++// Exact. Every pname Skia passes here is scalar, so the vector form is the
++// scalar form with one element.
++void VitaGlTexParameterfv(GLenum target, GLenum pname, const GLfloat* params) {
++  glTexParameterf(target, pname, params[0]);
++}
++
++// NOT exact. vitaGL exposes no constant blend colour, so this drops the value.
++// Correct only for as long as Skia never selects a constant-colour blend
++// coefficient. ADR-0014's criterion 3 rendered five operations bit-exact
++// against the software rasteriser with this in place, which is evidence for
++// those five and not a general result. If a paint ever comes out wrong in a
++// way that looks like a missing blend factor, this is the first suspect.
++void VitaGlBlendColor(GLfloat, GLfloat, GLfloat, GLfloat) {}
++
++// Stub. Skia gates compressed-texture *updates* on caps it queries separately,
++// so the pointer has to be non-null to pass validation while the path behind
++// it stays unreached.
++void VitaGlCompressedTexSubImage2D(GLenum, GLint, GLint, GLint, GLsizei,
++                                   GLsizei, GLenum, GLsizei, const void*) {}
++
++// Stub. Skia calls this to interrogate a renderbuffer it did not create.
++// Ganesh allocates its own render targets, so the query should not be reached.
++void VitaGlGetRenderbufferParameteriv(GLenum, GLenum, GLint* params) {
++  if (params) *params = 0;
++}
++
++// Genuinely correct as a no-op: an event marker is a debug annotation for a
++// GPU profiler with no rendering effect. vitaGL advertises GL_EXT_debug_marker
++// and implements two of the three entry points that extension promises, which
++// is why Skia asked for it at all.
++void VitaGlInsertEventMarker(GLsizei, const GLchar*) {}
++
++// Stub with real values, and the one most likely to be wrong. These are what a
++// driver reports for highp float. The SGX543 supports highp properly in vertex
++// shaders and approximates it in fragment shaders, so claiming it
++// unconditionally may cost accuracy rather than correctness.
++//
++// The int enums are spelled numerically because vitaGL's headers omit
++// GL_LOW_INT, GL_MEDIUM_INT and GL_HIGH_INT -- the same gap as the missing
++// functions, one layer up.
++void VitaGlGetShaderPrecisionFormat(GLenum, GLenum precisiontype, GLint* range,
++                                    GLint* precision) {
++  const bool is_int = precisiontype == 0x8DF3 ||  // GL_LOW_INT
++                      precisiontype == 0x8DF4 ||  // GL_MEDIUM_INT
++                      precisiontype == 0x8DF5;    // GL_HIGH_INT
++  if (range) {
++    range[0] = 127;
++    range[1] = 127;
++  }
++  if (precision) *precision = is_int ? 0 : 23;
++}
++
++// Filtered. Everything else passes through.
++//
++// vitaGL answers 1 for GL_NUM_PROGRAM_BINARY_FORMATS and advertises
++// GL_OES_get_program_binary without providing its entry points, and Skia
++// trusts the count:
++//
++//     GR_GL_GetIntegerv(gli, GR_GL_NUM_PROGRAM_BINARY_FORMATS, &count);
++//     if (count > 0) { ... } else { fProgramBinarySupport = false; }
++//         -- GrGLCaps.cpp:847
++//
++// Reporting zero takes the branch that turns the feature off. Skia's own
++// program cache is redundant here anyway: vitaGL caches the compiled .gxp.
++//
++// The unconditional zeroing of the out-parameter is separate and also load
++// bearing. vitaGL is an incomplete GLES2, and a pname it does not recognise
++// leaves the caller's variable untouched -- which hands Skia whatever was on
++// the stack.
++void VitaGlGetIntegerv(GLenum pname, GLint* params) {
++  if (params) *params = 0;
++  if (pname == 0x87FE) return;  // GL_NUM_PROGRAM_BINARY_FORMATS
++  glGetIntegerv(pname, params);
++}
++
++int g_gl_unresolved = 0;
++
++void* VitaGlProcResolver(void* /* user_data */, const char* name) {
++  struct Shim {
++    const char* name;
++    void* fn;
++  };
++  static const Shim kShims[] = {
++      {"glTexParameterfv", reinterpret_cast<void*>(VitaGlTexParameterfv)},
++      {"glBlendColor", reinterpret_cast<void*>(VitaGlBlendColor)},
++      {"glCompressedTexSubImage2D",
++       reinterpret_cast<void*>(VitaGlCompressedTexSubImage2D)},
++      {"glGetRenderbufferParameteriv",
++       reinterpret_cast<void*>(VitaGlGetRenderbufferParameteriv)},
++      {"glGetIntegerv", reinterpret_cast<void*>(VitaGlGetIntegerv)},
++      {"glGetShaderPrecisionFormat",
++       reinterpret_cast<void*>(VitaGlGetShaderPrecisionFormat)},
++      // Keyed by the name Skia asks for, not the name the spec gives it.
++      {"glInsertEventMarkerEXT",
++       reinterpret_cast<void*>(VitaGlInsertEventMarker)},
++  };
++  for (const Shim& s : kShims) {
++    if (std::strcmp(name, s.name) == 0) return s.fn;
++  }
++
++  if (void* p = vglGetProcAddress(name)) return p;
++
++  // Retry without the vendor suffix.
++  //
++  // Skia's assembler asks for extension entry points by their suffixed names
++  // -- GET_PROC_SUFFIX(PopGroupMarker, EXT) requests "glPopGroupMarkerEXT" --
++  // while vitaGL exports the core spelling and no alias. So a function that is
++  // present fails to resolve purely on its name, which is why an offline
++  // symbol-table diff said the debug-marker block was satisfied and the
++  // console disagreed.
++  static const char* const kSuffixes[] = {"EXT", "OES", "ARB",   "KHR",
++                                          "APPLE", "ANGLE", "NV", "IMG"};
++  const size_t len = std::strlen(name);
++  for (const char* suffix : kSuffixes) {
++    const size_t slen = std::strlen(suffix);
++    if (len <= slen || std::strcmp(name + len - slen, suffix) != 0) continue;
++    char base[128];
++    if (len - slen >= sizeof base) continue;
++    std::memcpy(base, name, len - slen);
++    base[len - slen] = '\0';
++    if (void* p = vglGetProcAddress(base)) return p;
++  }
++
++  // Worth logging rather than swallowing. A driver that advertises an
++  // extension without its entry points defeats Skia's null checks, because
++  // Skia trusts the extension string and calls straight through -- so any name
++  // here is a candidate for a jump to zero later.
++  g_gl_unresolved++;
++  VLog("flutter-vita: GL unresolved %s\n", name);
++  return nullptr;
++}
++
++// --------------------------------------------------------------------------
++// The renderer callbacks
++// --------------------------------------------------------------------------
++//
++// There is one context and it is never unbound, so make_current and
++// clear_current have nothing to do. That is not a shortcut around EGL: vitaGL
++// has no context object to bind, and GXM's context is process-wide. What keeps
++// it correct is that the engine touches GL only from its raster thread.
++
++// When the raster thread started this frame's GL work.
++//
++// The software path gets its raster time from the surface itself, through the
++// observer patch 0008 installs; there is no equivalent hook on the GL surface,
++// so this measures the same window from outside: make_current is the engine
++// saying "I am about to draw", present is it saying "I am done". Command
++// submission only -- the GPU is still working when present is entered, and the
++// swap below is where that gets waited on.
++uint64_t g_gl_frame_start_us = 0;
++
++// How long the raster thread sat between finishing one frame and being handed
++// the next.
++//
++// This exists because the first GL run of localsend cut raster from 156 ms to
++// 5.1 ms -- 30x, exactly what ADR-0014's spike predicted -- and the frame rate
++// did not move: 5.01 fps against 5.94 on the CPU. Something outside the raster
++// window costs ~194 ms per frame, and the two candidates behave completely
++// differently. If the raster thread is *waiting*, the bottleneck moved to the
++// UI thread and the GPU did its job; if it is busy in code this does not time,
++// the measurement is wrong. Guessing between those is how a wrong conclusion
++// gets written down.
++uint64_t g_gl_present_end_us = 0;
++bool GlMakeCurrent(void* /* user_data */) {
++  g_gl_frame_start_us = sceKernelGetSystemTimeWide();
++  if (g_gl_present_end_us != 0) {
++    g_win_gl_idle_us += g_gl_frame_start_us - g_gl_present_end_us;
++  }
++  return true;
++}
++
++bool GlClearCurrent(void* /* user_data */) { return true; }
++
++bool GlPresent(void* /* user_data */) {
++  if (g_gl_frame_start_us != 0) {
++    const uint64_t raster_us =
++        sceKernelGetSystemTimeWide() - g_gl_frame_start_us;
++    g_win_raster_us += raster_us;
++    g_hud_raster_us += raster_us;
++    if (raster_us > g_win_raster_max_us) g_win_raster_max_us = raster_us;
++    g_gl_frame_start_us = 0;
++  }
++  NotePresent(static_cast<size_t>(kPitch) * 4, kHeight);
++
++  // Everything after this point is the swap, and the swap is where the frame
++  // rate actually comes from: vitaGL waits for vblank, so `active` reads 60 fps
++  // for any frame that fits inside 16.6 ms and stops discriminating there. The
++  // raster figure above is what to read when it does.
++  const uint64_t swap_start = sceKernelGetSystemTimeWide();
++  vglSwapBuffers(GL_FALSE);
++  g_gl_present_end_us = sceKernelGetSystemTimeWide();
++  g_win_blit_us += g_gl_present_end_us - swap_start;
++
++  ReportFrameWindow();
++  return true;
++}
++
++// Zero is the default framebuffer, which under vitaGL is the display target it
++// created in InitGl.
++uint32_t GlFboCallback(void* /* user_data */) { return 0; }
 +
 +}  // namespace
 +
@@ -1582,22 +2135,36 @@ index 00000000..4b621a25
 +  // every other application on this console passes, and 16 MiB out of roughly
 +  // 87 MiB free is affordable; guessing again would cost another deploy to
 +  // learn the same thing.
-+  SceGxmInitializeParams gxm = {};
-+  gxm.flags = 0;
-+  gxm.displayQueueMaxPendingCount = 2;
-+  gxm.displayQueueCallback = nullptr;
-+  gxm.displayQueueCallbackDataSize = 0;
-+  gxm.parameterBufferSize = SCE_GXM_DEFAULT_PARAMETER_BUFFER_SIZE;
-+  const int gr = sceGxmInitialize(&gxm);
-+  if (gr < 0) {
-+    VLog("flutter-vita: sceGxmInitialize 0x%08X\n", (unsigned)gr);
-+    return;
++  // Under GL, vitaGL has already done all of this and owns it.
++  //
++  // sceGxmInitialize is once per process, and a second call returns
++  // SCE_GXM_ERROR_ALREADY_INITIALIZED -- so the software path's bespoke
++  // "minimal GXM pipeline whose only job is to own the framebuffer" is exactly
++  // what vitaGL is, and better. The note under OpenImeDialog calls that the
++  // real remaining Phase 8 work; the GL path supplies it as a side effect, and
++  // the common-dialog surfaces still need pointing at vitaGL's back buffer
++  // rather than at g_display.base before the IME can actually be turned on.
++  // Left off here rather than half-wired.
++  if (g_gl_enabled) {
++    VLog("flutter-vita: GXM belongs to vitaGL; IME stays off under GL\n");
++  } else {
++    SceGxmInitializeParams gxm = {};
++    gxm.flags = 0;
++    gxm.displayQueueMaxPendingCount = 2;
++    gxm.displayQueueCallback = nullptr;
++    gxm.displayQueueCallbackDataSize = 0;
++    gxm.parameterBufferSize = SCE_GXM_DEFAULT_PARAMETER_BUFFER_SIZE;
++    const int gr = sceGxmInitialize(&gxm);
++    if (gr < 0) {
++      VLog("flutter-vita: sceGxmInitialize 0x%08X\n", (unsigned)gr);
++      return;
++    }
++    if (!InitGxmSurfaces()) {
++      VLog("flutter-vita: GXM surfaces unavailable, IME stays off\n");
++      return;
++    }
++    g_ime.gxm_ready = true;
 +  }
-+  if (!InitGxmSurfaces()) {
-+    VLog("flutter-vita: GXM surfaces unavailable, IME stays off\n");
-+    return;
-+  }
-+  g_ime.gxm_ready = true;
 +  SceAppUtilInitParam init = {};
 +  SceAppUtilBootParam boot = {};
 +  sceAppUtilInit(&init, &boot);
@@ -1956,22 +2523,74 @@ index 00000000..4b621a25
 +  // is already answering and the log can be pulled without the app exiting.
 +  StartDevServer();
 +
-+  if (!InitDisplay()) {
++  // Which backend, decided once and here.
++  //
++  // GL by default, because ADR-0014 measured 36x on the operations that
++  // dominate a real frame. Software on request, because the same measurement
++  // found saveLayer 0.6x -- slower -- on this tile-based GPU, so a layer-heavy
++  // screen with no expensive per-pixel work is genuinely better off on the
++  // CPU. The choice therefore has to survive to run time rather than being
++  // baked in, and this is the switch:
++  //
++  //   ux0:data/flutter-vita/software.on   -- force the CPU path
++  //
++  // Absent that, GL is tried and the CPU path is the fallback if vitaGL cannot
++  // bring a context up -- which is what happens on a console with no
++  // libshacccg.suprx installed, and is a supported configuration rather than
++  // an error.
++  const bool force_software =
++      DevSwitchOn("ux0:data/flutter-vita/software.on");
++  if (force_software) {
++    VLog("flutter-vita: software.on present -- GL path skipped\n");
++  } else {
++    g_gl_enabled = InitGl();
++    if (!g_gl_enabled) {
++      VLog("flutter-vita: GL unavailable, falling back to software\n");
++    }
++  }
++
++  if (!g_gl_enabled && !InitDisplay()) {
 +    VLog("flutter-vita: display init failed\n");
 +    return 1;
 +  }
 +
 +  FlutterRendererConfig config = {};
-+  config.type = kSoftware;
-+  config.software.struct_size = sizeof(FlutterSoftwareRendererConfig);
-+  config.software.surface_present_callback = PresentSurface;
++  if (g_gl_enabled) {
++    config.type = kOpenGL;
++    config.open_gl.struct_size = sizeof(FlutterOpenGLRendererConfig);
++    config.open_gl.make_current = GlMakeCurrent;
++    config.open_gl.clear_current = GlClearCurrent;
++    config.open_gl.present = GlPresent;
++    config.open_gl.fbo_callback = GlFboCallback;
++    config.open_gl.gl_proc_resolver = VitaGlProcResolver;
++    // The default framebuffer stays bound across a swap under vitaGL, so there
++    // is nothing to restore.
++    config.open_gl.fbo_reset_after_present = false;
++    // make_resource_current is deliberately null. Providing it would tell the
++    // engine it may upload textures from the IO thread on a second context,
++    // and vitaGL has exactly one -- GXM's, process-wide. Leaving it null keeps
++    // every GL call on the raster thread, which is what makes the no-op
++    // make_current above correct.
++    //
++    // populate_existing_damage is also null, so every frame is a full repaint.
++    // ADR-0007's partial repaint is a software-path property today; wiring the
++    // GL equivalent needs damage tracked per back buffer against GXM's
++    // buffering, and that is worth doing only once there is a frame rate to
++    // improve.
++  } else {
++    config.type = kSoftware;
++    config.software.struct_size = sizeof(FlutterSoftwareRendererConfig);
++    config.software.surface_present_callback = PresentSurface;
++  }
 +
 +  // Partial repaint (ADR-0007). The rasterizer reports what changed; the blit
 +  // above copies only that. Installed before FlutterEngineInitialize so no
 +  // frame can be presented without it -- a present with no observer would use
 +  // the default whole-screen rect, which is correct but measures nothing.
-+  flutter::SetSoftwareFrameDamageObserver(OnFrameDamage);
-+  flutter::SetSoftwareRasterTimingObserver(OnRasterTiming);
++  if (!g_gl_enabled) {
++    flutter::SetSoftwareFrameDamageObserver(OnFrameDamage);
++    flutter::SetSoftwareRasterTimingObserver(OnRasterTiming);
++  }
 +
 +  // Captured before FlutterEngineRun, because the engine may post a task
 +  // during startup and RunsTasksOnCurrentThread must already be truthful.

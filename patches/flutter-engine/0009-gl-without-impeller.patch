@@ -1,0 +1,105 @@
+diff --git a/engine/src/flutter/shell/platform/embedder/embedder.cc b/engine/src/flutter/shell/platform/embedder/embedder.cc
+index a9a4b213..5eeeac99 100644
+--- a/engine/src/flutter/shell/platform/embedder/embedder.cc
++++ b/engine/src/flutter/shell/platform/embedder/embedder.cc
+@@ -286,6 +286,14 @@ static const flutter::DlIRect FlutterRectToDlIRect(FlutterRect flutter_rect) {
+ #define GL_BGRA8_EXT 0x93A1
+ #endif
+ 
++// And GL_RGBA8 for the same reason, which on every other GL target arrives
++// through a platform header this file never includes. GLES2 does not define
++// the sized internal formats at all -- they are GL_RGBA8_OES there -- so on
++// the Vita nothing supplies it.
++#ifndef GL_RGBA8
++#define GL_RGBA8 0x8058
++#endif
++
+ static std::optional<SkColorType> FlutterFormatToSkColorType(uint32_t format) {
+   switch (format) {
+     case GL_BGRA8_EXT:
+@@ -486,6 +494,15 @@ InferOpenGLPlatformViewCreationCallback(
+            std::move(external_view_embedder)](flutter::Shell& shell) mutable {
+         std::shared_ptr<flutter::EmbedderExternalViewEmbedder> view_embedder =
+             std::move(external_view_embedder);
++        // A runtime branch on a class that is not always compiled.
++        //
++        // BUILD.gn adds embedder_surface_gl_impeller.cc only when
++        // impeller_supports_rendering is true, and this reference is not
++        // guarded to match -- so shell_enable_gl=true with Impeller off does
++        // not link. Upstream never builds that combination; the Vita does,
++        // because Impeller has no software fallback and nothing here needs it.
++        // Same gate as BUILD.gn already applies, one level up.
++#ifdef IMPELLER_SUPPORTS_RENDERING
+         if (enable_impeller) {
+           return std::make_unique<flutter::PlatformViewEmbedder>(
+               shell,                   // delegate
+@@ -497,6 +514,9 @@ InferOpenGLPlatformViewCreationCallback(
+               view_embedder             // external view embedder
+           );
+         }
++#else
++        (void)enable_impeller;
++#endif  // IMPELLER_SUPPORTS_RENDERING
+         return std::make_unique<flutter::PlatformViewEmbedder>(
+             shell,                   // delegate
+             shell.GetTaskRunners(),  // task runners
+diff --git a/engine/src/flutter/shell/platform/embedder/embedder_external_texture_gl.cc b/engine/src/flutter/shell/platform/embedder/embedder_external_texture_gl.cc
+index d6279fee..43b30138 100644
+--- a/engine/src/flutter/shell/platform/embedder/embedder_external_texture_gl.cc
++++ b/engine/src/flutter/shell/platform/embedder/embedder_external_texture_gl.cc
+@@ -5,6 +5,16 @@
+ #include "flutter/shell/platform/embedder/embedder_external_texture_gl.h"
+ 
+ #include "flutter/fml/logging.h"
++
++// GL without Impeller is a configuration upstream does not build, and this is
++// where it shows. BUILD.gn already gates the //flutter/impeller/renderer/
++// backend/gles dependency on impeller_supports_rendering, but these includes
++// are unconditional -- so with shell_enable_gl=true and
++// impeller_supports_rendering=false the file asks for GLES3/gl3.h with no
++// include path to find it on, and the Vita has GLES2 headers only.
++//
++// Guarding them matches the gate BUILD.gn already applies one level up.
++#ifdef IMPELLER_SUPPORTS_RENDERING
+ #include "impeller/core/texture_descriptor.h"
+ #include "impeller/display_list/aiks_context.h"
+ #include "impeller/display_list/dl_image_impeller.h"
+@@ -12,6 +22,7 @@
+ #include "impeller/renderer/backend/gles/context_gles.h"
+ #include "impeller/renderer/backend/gles/handle_gles.h"
+ #include "impeller/renderer/backend/gles/texture_gles.h"
++#endif  // IMPELLER_SUPPORTS_RENDERING
+ 
+ #include "third_party/skia/include/core/SkAlphaType.h"
+ #include "third_party/skia/include/core/SkColorSpace.h"
+@@ -68,11 +79,12 @@ sk_sp<DlImage> EmbedderExternalTextureGL::ResolveTexture(
+     GrDirectContext* context,
+     impeller::AiksContext* aiks_context,
+     const SkISize& size) {
++#ifdef IMPELLER_SUPPORTS_RENDERING
+   if (!!aiks_context) {
+     return ResolveTextureImpeller(texture_id, aiks_context, size);
+-  } else {
+-    return ResolveTextureSkia(texture_id, context, size);
+   }
++#endif  // IMPELLER_SUPPORTS_RENDERING
++  return ResolveTextureSkia(texture_id, context, size);
+ }
+ 
+ sk_sp<DlImage> EmbedderExternalTextureGL::ResolveTextureSkia(
+@@ -127,6 +139,7 @@ sk_sp<DlImage> EmbedderExternalTextureGL::ResolveTextureSkia(
+   return DlImage::Make(std::move(image));
+ }
+ 
++#ifdef IMPELLER_SUPPORTS_RENDERING
+ sk_sp<DlImage> EmbedderExternalTextureGL::ResolveTextureImpeller(
+     int64_t texture_id,
+     impeller::AiksContext* aiks_context,
+@@ -190,6 +203,7 @@ sk_sp<DlImage> EmbedderExternalTextureGL::ResolveTextureImpeller(
+ 
+   return impeller::DlImageImpeller::Make(image);
+ }
++#endif  // IMPELLER_SUPPORTS_RENDERING
+ 
+ // |flutter::Texture|
+ void EmbedderExternalTextureGL::OnGrContextCreated() {}

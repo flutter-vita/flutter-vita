@@ -11,13 +11,14 @@ disposable; these patches are the artifact.
 
 | # | Patch | What it does |
 |---|---|---|
-| 0001 | [gn-vita-toolchain](0001-gn-vita-toolchain.patch) | Teaches the engine's GN about `target_os=vita` |
+| 0001 | [gn-vita-toolchain](0001-gn-vita-toolchain.patch) | Teaches the engine's GN about `target_os=vita`, including which renderers it builds |
 | 0002 | [fml-for-vita](0002-fml-for-vita.patch) | Teaches `fml` the platform, and gets it off `mmap`. **Read the message-loop note** |
 | 0003 | [engine-sources-for-vita](0003-engine-sources-for-vita.patch) | Clang-only flags, missing `<cstring>`, two more platform chains, one Skia type |
-| 0004 | [m2-link-check](0004-m2-link-check.patch) | An executable that makes the linker answer the M2 question |
+| 0004 | [m2-link-check](0004-m2-link-check.patch) | An executable that makes the linker answer the M2 question — and, because it owns those files, the embedder itself: both renderer paths and the C++ runtime's static guards |
 | 0005 | [skia-target-for-vita](0005-skia-target-for-vita.patch) | `flutter/skia/BUILD.gn` — the log backend, and where `-ldl` was hiding |
 | 0006 | [vita-fonts](0006-vita-fonts.patch) | `txt` gets a real font manager, plus two probes promoted out of `FML_DLOG` |
 | 0008 | [partial-repaint-in-the-software-path](0008-partial-repaint-in-the-software-path.patch) | The software surface claims `supports_partial_repaint`, and reports the damage rect to the embedder |
+| 0009 | [gl-without-impeller](0009-gl-without-impeller.patch) | Two upstream files that assume `shell_enable_gl` implies Impeller |
 
 **There is no 0007.** It was `boringssl-no-asm-for-vita`, a bisect that put the
 Vita on BoringSSL's `no_asm_config` to test whether ARM assembly was crashing
@@ -315,3 +316,35 @@ excludes the 0004 exception by construction.
 
 Running this on the fresh engine checkout is what caught that a Dart patch had
 gone stale. It is worth running after every change to either tree.
+
+---
+
+## 0009 — GL without Impeller
+
+`shell_enable_gl = true` with `impeller_supports_rendering = false` is a
+configuration upstream does not build, and two files assume it cannot happen.
+Both were found by turning GL on for ADR-0014, and both are fixed by applying
+the gate `BUILD.gn` already applies one level up.
+
+**`embedder_external_texture_gl.cc`** includes Impeller's GLES backend
+unconditionally. `BUILD.gn` adds the
+`//flutter/impeller/renderer/backend/gles` dependency only when Impeller
+renders, so without it the file asks for `GLES3/gl3.h` with no include path to
+find it on — and VitaSDK ships GLES2 headers only. The includes and
+`ResolveTextureImpeller` are guarded on `IMPELLER_SUPPORTS_RENDERING`, and
+`ResolveTexture` falls through to the Skia path.
+
+**`embedder.cc`** picks between `EmbedderSurfaceGLImpeller` and
+`EmbedderSurfaceGLSkia` with a *runtime* `if (enable_impeller)`, referencing a
+class whose translation unit `BUILD.gn` did not build. It links on every other
+GL target because they all have Impeller. Guarded the same way.
+
+It also needed `GL_RGBA8`, which arrives through a platform GL header on every
+other target and through nothing at all here — GLES2 does not define the sized
+internal formats. Defined next to the `GL_BGRA8_EXT` the file already defines
+for itself.
+
+Impeller stays off for a reason worth restating: it has no software backend,
+and [ADR-0014](../../docs/adr/0014-gpu-backend-via-vitagl.md) measured
+`saveLayer` *slower* on this tile-based GPU, so the Vita needs both paths
+selectable at run time.

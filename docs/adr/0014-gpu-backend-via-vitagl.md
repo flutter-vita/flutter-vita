@@ -384,6 +384,109 @@ vitaGL has no constant blend colour, and the colour filter renders bit-exact
 anyway, so Skia did not select a constant-colour blend coefficient for these
 paints. That is evidence for these five operations and not a general result.
 
+## Flutter on the GPU, 2026-08-22: the raster pass is fixed and the frame is not
+
+The embedder now has both paths. `shell_enable_gl = true`, a
+`FlutterOpenGLRendererConfig` in `vita_embedder.cc`, the six shims and the
+suffix-stripping loader moved out of the spike into a proc resolver, and
+vitaGL owning GXM and the display in place of this file's own CDRAM
+framebuffer. Which path runs is decided at startup: GL unless
+`ux0:data/flutter-vita/software.on` holds a `1`, and software automatically if
+vitaGL cannot bring a context up.
+
+Three things had to be fixed before any of it linked, and only the first is
+about the Vita:
+
+- **A thread-safe `__cxa_guard_acquire`.** The spike's was three lines and
+  correct only for single-threaded initialisation. The engine has a platform
+  thread, a UI thread, a raster thread, an IO thread and Dart's workers, any of
+  which can be first to touch a given static. `vita_cxa_guard.cc` is the real
+  one: a global mutex and condition variable, a release barrier before the ABI's
+  done-bit because the compiler tests that bit inline without a lock, and a
+  recursive-initialisation check that traps with a message rather than waiting
+  forever on a signal the waiting thread owes itself.
+- **`embedder_external_texture_gl.cc`** includes Impeller's GLES backend
+  unconditionally while `BUILD.gn` gates the dependency on
+  `impeller_supports_rendering`, so it asks for `GLES3/gl3.h` with no include
+  path to find it on.
+- **`embedder.cc`** chooses `EmbedderSurfaceGLImpeller` on a *runtime* branch,
+  referencing a class its own `BUILD.gn` did not build.
+
+The second and third are the same upstream assumption: **`shell_enable_gl`
+implies Impeller.** It holds everywhere else and cannot hold here, because
+Impeller has no software backend and this port needs both. Recorded as
+[patch 0009](../../patches/flutter-engine/0009-gl-without-impeller.patch).
+
+### It renders
+
+The gallery app draws correctly through Ganesh on vitaGL — text, Material
+widgets, icons, an indeterminate spinner, a slider, antialiased rounded rects —
+at 60 fps, which is the vsync ceiling rather than a measurement.
+
+### localsend: 30× on raster, and no change to the frame rate
+
+The corpus app that motivated this whole ADR, measured on hardware, same build,
+switched between paths at run time:
+
+| | software | GL |
+|---|---|---|
+| frame period | 168,268 us | 199,582 us |
+| fps | **5.94** | **5.01** |
+| raster | 156,103 us (92%) | **5,129 us (2%)** |
+| raster max | 215,423 us | 9,713 us |
+| present | 1,304 us | 196 us |
+
+**Raster fell by 30×, from 156 ms to 5.1 ms, and the frame got no faster.** The
+spike's 36× was not wrong — the raster column is the spike's prediction landing
+almost exactly — but it was the answer to a question that turned out not to be
+the binding one at the app level.
+
+Two smaller findings sit inside that:
+
+- **The first GL run of an app is not the one to measure.** It reported
+  `raster max 1,006,493 us` — a one-second frame — and 5.40 fps. That is
+  libshacccg compiling Ganesh's programs on first paint, at the ~250 ms each
+  criterion 0 measured. The second launch, with the cache warm, is the table
+  above. Anything quoting a cold run is quoting shader compilation.
+- **`vglSwapBuffers` returns in 196 us**, so the frame rate is not vsync and
+  not the present.
+
+### What is not yet known
+
+Roughly 194 ms per frame is now outside the raster window, against 12 ms on the
+software path, and that is not explained. The obvious candidate is that the UI
+thread was always a co-bottleneck and is now exposed — Flutter pipelines UI and
+raster, so the period is the slower of the two, not their sum. But the software
+run's own arithmetic argues against it: a 168 ms period with 156 ms of raster
+leaves no room for a 194 ms UI thread.
+
+So one of the two measurements is describing something other than what its name
+says, and the honest position is that this is undiagnosed. An instrument for it
+is in the embedder and has not yet been run: the raster thread's idle time,
+present-done to the next `make_current`, reported as `gl wait`. If that is
+~194 ms the raster thread is starved and the bottleneck genuinely moved
+upstream; if it is near zero, the raster thread is busy somewhere this file does
+not time and the 5.1 ms figure is incomplete.
+
+**No performance claim should be made for the GL path until that number
+exists.** The 30× on raster is measured and stands on its own; "the GPU makes
+localsend faster" is not yet supported by anything.
+
+### Known gaps in the GL path
+
+- **No partial repaint.** `populate_existing_damage` is null, so every frame is
+  a full repaint. ADR-0007 is a software-path property today.
+- **No IME.** vitaGL owns GXM, so the common dialog's surfaces need pointing at
+  its back buffer rather than at the CDRAM block. This is closer than it was:
+  the note in `OpenImeDialog` says text input needs "a minimal GXM pipeline
+  whose only job is to own the framebuffer", and vitaGL is exactly that.
+- **No debug HUD.** It paints into a CPU framebuffer that no longer exists.
+- **No resource context.** `make_resource_current` is null, so texture uploads
+  are synchronous on the raster thread and the engine says so once at startup.
+  Providing one needs a second GL context, and vitaGL has one.
+- Screenshots still work, because `sceDisplayGetFrameBuf` asks the hardware
+  what it is scanning out and does not care who allocated it.
+
 ## Three findings that cost the spike four runs
 
 **1. The shader compiler works, and the taiHEN chain under it is real but not

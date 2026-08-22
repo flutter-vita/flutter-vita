@@ -102,6 +102,21 @@ target_link_options(${PROJECT_NAME} PRIVATE
   "-Wl,-u,pthread_cancel"
 )
 
+# Prefer a vitaGL built from source over the VitaSDK package.
+#
+# FLUTTER_VITA_VITAGL points at a checkout built with `make HAVE_SHADER_CACHE=1`.
+# Without the cache, Ganesh recompiles every shader on every launch -- ADR-0014
+# measured 205 ms for a one-line shader and 405 ms for a short one, against
+# ~3 ms once cached -- which is the difference between a GPU backend that is
+# worth having and one that stutters whenever a new widget first paints.
+if(DEFINED ENV{FLUTTER_VITA_VITAGL} AND EXISTS "$ENV{FLUTTER_VITA_VITAGL}/libvitaGL.a")
+  message(STATUS "vitaGL: $ENV{FLUTTER_VITA_VITAGL} (built from source)")
+  set(VITAGL_LIB "$ENV{FLUTTER_VITA_VITAGL}/libvitaGL.a")
+else()
+  message(WARNING "vitaGL: VitaSDK package -- no shader cache, every launch recompiles")
+  set(VITAGL_LIB vitaGL)
+endif()
+
 target_link_libraries(${PROJECT_NAME}
   # --whole-archive, and this is load-bearing rather than cautious. The engine
   # relies on static initialisers in translation units nothing references by
@@ -109,10 +124,34 @@ target_link_libraries(${PROJECT_NAME}
   # undefined reference, so a plain link succeeds and then fails at runtime.
   -Wl,--whole-archive "${ENGINE_LIB}" -Wl,--no-whole-archive
 
+  # vitaGL and the shader compiler under it, for the GL path (ADR-0014).
+  #
+  # Order matters: vitaGL calls into vitashark, vitashark into SceShaccCgExt,
+  # and that into taiHEN's *ForUser* hooks, which patch SceShaccCg inside this
+  # process and die with it. That is not what ADR-0011 declined -- it declined
+  # kernel plugins and SceShell modules -- and the note there is explicit about
+  # the difference.
+  #
+  # The archive is preferred from third_party/vitaGL when it is present,
+  # because the VitaSDK package is built with HAVE_SHADER_CACHE=0: its
+  # vglSetShaderCachePath is a two-byte stub, and without a cache every Ganesh
+  # program pays libshacccg's 200-400 ms compile on every launch.
+  #
+  # Linked unconditionally, even for an app that will run software: the branch
+  # is a runtime one, and a binary that cannot take it is not a fallback.
+  ${VITAGL_LIB}
+  vitashark
+  SceShaccCg_stub
+  SceShaccCgExt
+  taihen_stub
+  mathneon
+
   SceDisplay_stub SceCtrl_stub SceTouch_stub SceIofilemgr_stub
   SceNet_stub SceNetCtl_stub SceSysmodule_stub SceAppMgr_stub SceBgAppUtil_stub
   SceSysmem_stub SceLibKernel_stub SceKernelThreadMgr_stub
   ScePower_stub SceGxm_stub SceCommonDialog_stub
+  # vitaGL's vgl_memcpy goes through the DMAC for anything large.
+  SceKernelDmacMgr_stub
   SceIme_stub SceAppUtil_stub
   pthread m
 )
