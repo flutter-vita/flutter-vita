@@ -1,0 +1,93 @@
+diff --git a/source/textures.c b/source/textures.c
+index 27e8a6c..2a2b532 100644
+--- a/source/textures.c
++++ b/source/textures.c
+@@ -1000,10 +1000,25 @@ static inline __attribute__((always_inline)) void _glTexSubImage2D(texture *tex,
+ 			size = orig_h * VGL_ALIGN(orig_w, 8) * bpp;
+ 		}
+ 		void *texture_data = gpu_alloc_mapped_for_gpu(size);
+-		vgl_fast_memcpy(texture_data, tex->data, size);
+-		gpu_free_texture_data(tex);
+-		sceGxmTextureSetData(&tex->gxm_tex, texture_data);
+-		tex->data = texture_data;
++		// The allocation above CAN fail -- every pool is finite and the
++		// unsafe allocator gives up after FRAME_PURGE_FREQ collection cycles.
++		// Copying into the NULL it returns is a data abort, which on a Vita
++		// takes the whole console down rather than the app: nothing releases
++		// the GXM context, so the PS button stops responding and only the
++		// power button recovers it. Seen on 2026-08-24 with a 4 MB glyph
++		// atlas.
++		//
++		// Skipping the clone writes into the buffer the GPU may still be
++		// reading this frame. That is a tear on one frame of one texture.
++		extern unsigned int vgl_oom_count;
++		if (!texture_data)
++			vgl_oom_count++;
++		else {
++			vgl_fast_memcpy(texture_data, tex->data, size);
++			gpu_free_texture_data(tex);
++			sceGxmTextureSetData(&tex->gxm_tex, texture_data);
++			tex->data = texture_data;
++		}
+ 		tex->last_frame = OBJ_NOT_USED;
+ #ifdef HAVE_TEX_CACHE
+ 		mark_as_cacheable(tex)
+diff --git a/source/utils/gpu_utils.c b/source/utils/gpu_utils.c
+index 36b40f0..99bcc7a 100644
+--- a/source/utils/gpu_utils.c
++++ b/source/utils/gpu_utils.c
+@@ -88,6 +88,14 @@ void dxt_compress(uint8_t *dst, uint8_t *src, int w, int h, int isdxt5) {
+ 	}
+ }
+ 
++// How many texture allocations have failed since launch.
++//
++// vgl_log is sceClibPrintf, which needs a kernel plugin to read, and this port
++// deliberately runs without one -- so the count goes in a global the embedder
++// can print into its own log instead. Non-zero means textures are being
++// skipped and anything on screen may be stale.
++unsigned int vgl_oom_count = 0;
++
+ static inline __attribute__((always_inline)) void *gpu_alloc_mapped_aligned_for_cpu_inner(size_t alignment, size_t size) {
+ 	void *res;
+ 	vgl_alloc_attempt(alignment, size, VGL_MEM_RAM)
+@@ -466,6 +474,12 @@ void gpu_alloc_paletted_texture(int32_t level, uint32_t w, uint32_t h, SceGxmTex
+ 	int num_entries = is_p8 ? 256 : 16;
+ 	tex->palette_data = gpu_alloc_mapped_aligned_for_gpu(SCE_GXM_PALETTE_ALIGNMENT, num_entries * sizeof(uint32_t));
+ 	tex->data = gpu_alloc_mapped_for_gpu(tex_size);
++	// Same as above. The texture stays invalid, which the callers already
++	// handle; writing the palette into NULL does not.
++	if (!tex->palette_data || !tex->data) {
++		vgl_oom_count++;
++		return;
++	}
+ 
+ 	// Populating palette data
+ 	uint32_t *palette_data = (uint32_t *)tex->palette_data;
+@@ -702,6 +716,14 @@ void gpu_alloc_compressed_texture(int32_t mip_level, uint32_t w, uint32_t h, Sce
+ 			if (!texture_data) {
+ 				// Reallocation in the same mspace failed, try manually.
+ 				texture_data = gpu_alloc_mapped_for_gpu(tex_size);
++				// See the note in textures.c: a failed allocation here used
++				// to memcpy into NULL, and a data abort on this console wedges
++				// it rather than killing the app. Leave the texture at its old
++				// size instead.
++				if (!texture_data) {
++					vgl_oom_count++;
++					return;
++				}
+ 				const int old_data_size = gpu_get_compressed_mipchain_size(mip_count, aligned_max_width, aligned_max_height, format);
+ 				vgl_memcpy(texture_data, tex->data, old_data_size);
+ 				gpu_free_texture_data(tex);
+@@ -855,6 +877,11 @@ void gpu_alloc_mipmaps(int level, texture *tex) {
+ 		if (count <= 0 && !texture_data) {
+ 			// Reallocation in the same mspace failed, try manually.
+ 			texture_data = gpu_alloc_mapped_for_gpu(size);
++			// Same as above: no mipchain is better than a wedged console.
++			if (!texture_data) {
++				vgl_oom_count++;
++				return;
++			}
+ 			vgl_memcpy(texture_data, tex->data, VGL_ALIGN(orig_w, 8) * orig_h * bpp);
+ 			gpu_free_texture_data(tex);
+ 		}

@@ -56,6 +56,7 @@ tree_path() {
     e_skia)   echo "third_party/flutter/engine/src/flutter/third_party/skia" ;;
     e_abseil) echo "third_party/flutter/engine/src/third_party/abseil-cpp" ;;
     e_ssl)    echo "third_party/flutter/engine/src/flutter/third_party/boringssl/src" ;;
+    vitagl)   echo "third_party/vitaGL" ;;
     *) return 1 ;;
   esac
 }
@@ -73,6 +74,7 @@ targets_for() {
     patches/skia/*)               echo "e_skia" ;;
     patches/abseil/*)             echo "e_abseil" ;;
     patches/boringssl/*)          echo "e_ssl" ;;
+    patches/vitagl/*)             echo "vitagl" ;;
     patches/corpus/*)             echo "EXTERNAL" ;;
     *) return 1 ;;
   esac

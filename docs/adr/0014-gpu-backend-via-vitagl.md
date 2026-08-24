@@ -595,6 +595,35 @@ loader forces it through a strong `flutter_vita_force_software` symbol
 ([ADR-0016](0016-the-loader-becomes-a-flutter-app.md) decision 7), and anything
 needing text input wants it until the common dialog can composite over vitaGL.
 
+#### The first thing the new default did was wedge the console
+
+Same day, during a benchmark run. `vitaGL`'s `_glTexSubImage2D` clones a
+texture before modifying one the GPU used recently, and the clone's allocation
+is unchecked:
+
+```c
+void *texture_data = gpu_alloc_mapped_for_gpu(size);
+vgl_fast_memcpy(texture_data, tex->data, size);   /* NULL when the pools are dry */
+```
+
+The dump named the size: `0x3FFFC0`, 4 MB — a 2048×2048 A8 glyph atlas, which
+is what Skia pushes through `glTexSubImage2D` as text comes and goes. Every
+pool had been tried (VRAM, RAM, PHYCONT, BUDGET) and the collector had run its
+`FRAME_PURGE_FREQ` cycles. So this is genuine GPU-memory exhaustion, and the
+crash is what the code does about it.
+
+[patches/vitagl/0001](../../patches/vitagl/0001-no-memcpy-into-a-failed-allocation.patch)
+skips the clone instead, and three sibling paths with the same shape with it.
+The cost is writing into a buffer the GPU may still be reading: a tear on one
+frame of one texture, against a power cycle. A dropped upload is otherwise
+invisible — and invisible is how a benchmark ends up measuring a picture of a
+frame rather than a frame — so the patch also counts them, and the embedder
+prints the count with its periodic loop statistics.
+
+This does not make GL safe; it removes one way of reaching the unsafe state.
+**The exhaustion itself is unexplained** and is the open question, not the
+`memcpy`.
+
 **Still open**, unchanged: a way to release the GPU from outside the faulting
 process.
 

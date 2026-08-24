@@ -19,6 +19,47 @@ const double kVsyncMs = 1000.0 / 60.0;
 /// see [SceneStats.stallMs] for why a single one is not yet a stall.
 const double kSlowFrameMs = kVsyncMs * 2;
 
+/// One frame, split into the four things that can make it late.
+///
+/// Medians say a transition runs at 60 fps; they cannot say what the three
+/// frames that took 150 ms were doing. These can. The split matters because
+/// each part points somewhere different: [gapMs] at the platform or IO thread
+/// holding the UI thread up, [buildMs] at Dart, [waitMs] at a raster thread
+/// still busy with the previous frame, [rasterMs] at the renderer.
+class FrameSample {
+  const FrameSample({
+    required this.index,
+    required this.periodMs,
+    required this.gapMs,
+    required this.buildMs,
+    required this.waitMs,
+    required this.rasterMs,
+  });
+
+  /// Position in the scene, so a spike can be located -- first frame of every
+  /// repeat reads very differently from three scattered frames.
+  final int index;
+
+  final double periodMs;
+
+  /// vsync to build start. Time the frame existed but nothing had begun.
+  final double gapMs;
+  final double buildMs;
+
+  /// Build finish to raster start. The handoff, and the queue in front of it.
+  final double waitMs;
+  final double rasterMs;
+
+  Map<String, Object> toJson() => {
+        'i': index,
+        'period_ms': SceneStats._r(periodMs),
+        'gap_ms': SceneStats._r(gapMs),
+        'build_ms': SceneStats._r(buildMs),
+        'wait_ms': SceneStats._r(waitMs),
+        'raster_ms': SceneStats._r(rasterMs),
+      };
+}
+
 /// What one scene produced, reduced to the numbers the report and the gate
 /// are made of.
 class SceneStats {
@@ -32,6 +73,7 @@ class SceneStats {
     required this.stallFrames,
     required this.buildMs,
     required this.rasterMs,
+    this.worstFrames = const <FrameSample>[],
   });
 
   /// How many frames the window covered. A scene with very few frames is not
@@ -70,6 +112,13 @@ class SceneStats {
   final double buildMs;
   final double rasterMs;
 
+  /// The slowest few frames, split by phase, slowest first.
+  ///
+  /// Kept because the aggregate above hides exactly the frames worth looking
+  /// at: a scene with a 16.67 ms median and a 150 ms worst frame is not a slow
+  /// scene, it is a fast scene with a defect, and the defect is in here.
+  final List<FrameSample> worstFrames;
+
   bool get passed => stallMs == 0;
 
   Map<String, Object> toJson() => {
@@ -82,6 +131,7 @@ class SceneStats {
         'stall_frames': stallFrames,
         'build_ms': _r(buildMs),
         'raster_ms': _r(rasterMs),
+        'worst_frames': worstFrames.map((f) => f.toJson()).toList(),
       };
 
   static double _r(double v) => (v * 100).roundToDouble() / 100;
@@ -94,6 +144,10 @@ class SceneStats {
 /// at scene start would miss frames belonging to the scene, and one removed at
 /// scene end would drop the last few. Slicing an always-on buffer by index has
 /// neither problem.
+/// How many slow frames a scene reports individually. Five covers "one bad
+/// frame per repeat" without turning the result file into a trace.
+const int _kWorstKept = 5;
+
 class FrameRecorder {
   final List<FrameTiming> _all = <FrameTiming>[];
   bool _attached = false;
@@ -150,6 +204,7 @@ class FrameRecorder {
     // frame, it is a 33.3 ms frame, because it misses its vsync and waits for
     // the following one. Only the period says what was actually seen.
     final periods = <double>[];
+    final samples = <FrameSample>[];
     for (var i = 1; i < window.length; i++) {
       final prev =
           window[i - 1].timestampInMicroseconds(FramePhase.vsyncStart);
@@ -180,6 +235,22 @@ class FrameRecorder {
       if (ms > 100 && work < ms * 0.25) continue;
 
       periods.add(ms);
+
+      // Same frame, split by phase. Recorded for every kept frame and sorted
+      // at the end rather than tracked as a running maximum, because the
+      // interesting question is usually "are the slow frames in the same
+      // place" and that needs more than one of them.
+      final t = window[i];
+      double at(FramePhase phase) =>
+          t.timestampInMicroseconds(phase) / 1000.0;
+      samples.add(FrameSample(
+        index: i,
+        periodMs: ms,
+        gapMs: at(FramePhase.buildStart) - at(FramePhase.vsyncStart),
+        buildMs: at(FramePhase.buildFinish) - at(FramePhase.buildStart),
+        waitMs: at(FramePhase.rasterStart) - at(FramePhase.buildFinish),
+        rasterMs: at(FramePhase.rasterFinish) - at(FramePhase.rasterStart),
+      ));
     }
     if (periods.isEmpty) {
       return const SceneStats(
@@ -227,6 +298,9 @@ class FrameRecorder {
         .toList()
       ..sort();
 
+    final worst = List<FrameSample>.from(samples)
+      ..sort((a, b) => b.periodMs.compareTo(a.periodMs));
+
     return SceneStats(
       frames: periods.length,
       spanMs: periods.fold<double>(0, (a, b) => a + b),
@@ -237,6 +311,7 @@ class FrameRecorder {
       stallFrames: longestStallFrames,
       buildMs: _percentile(builds, 0.50),
       rasterMs: _percentile(rasters, 0.50),
+      worstFrames: worst.take(_kWorstKept).toList(),
     );
   }
 

@@ -240,10 +240,10 @@ index 00000000..a5e0625d
 +}  // extern "C"
 diff --git a/engine/src/flutter/shell/platform/embedder/vita_embedder.cc b/engine/src/flutter/shell/platform/embedder/vita_embedder.cc
 new file mode 100644
-index 00000000..b0c8ad90
+index 00000000..35535b1e
 --- /dev/null
 +++ b/engine/src/flutter/shell/platform/embedder/vita_embedder.cc
-@@ -0,0 +1,2782 @@
+@@ -0,0 +1,2805 @@
 +// Copyright (c) 2026, the Flutter Authors. All rights reserved.
 +// Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
@@ -372,6 +372,16 @@ index 00000000..b0c8ad90
 +// the arena at 160 MB, so this leaves vitaGL roughly 40 MB and the engine the
 +// rest -- and the software surfaces the CPU path allocates are gone, which
 +// pays for some of it.
++// vitaGL's failed-allocation counter, and what we have already reported of it.
++//
++// Strong, not weak, deliberately. A weak *variable* that nothing defines
++// resolves to address zero and reading it is a data abort -- this port has
++// been bitten by exactly that twice, both times through an import stub for a
++// module that was not resident. If a build ever stops linking vitaGL this
++// should fail at link time, where the message is legible.
++extern "C" unsigned int vgl_oom_count;
++static unsigned int g_vgl_oom_reported = 0;
++
 +constexpr int kGlLegacyPoolBytes = 0x100000;
 +constexpr int kGlRamThresholdBytes = 120 * 1024 * 1024;
 +constexpr const char* kShaderCachePath = "ux0:data/shader_cache";
@@ -3017,6 +3027,19 @@ index 00000000..b0c8ad90
 +           g_loop_tasks_run != 0
 +               ? static_cast<unsigned>(g_loop_task_us / g_loop_tasks_run)
 +               : 0u);
++      // vitaGL drops a texture upload rather than copying into a failed
++      // allocation, and says so only through this counter -- its own vgl_log
++      // is sceClibPrintf, which needs a kernel plugin this port does not have.
++      // A non-zero count means the GPU pools are exhausted and what is on
++      // screen may be stale, which is the difference between a benchmark
++      // result and a picture of one.
++      if (vgl_oom_count != g_vgl_oom_reported) {
++        VLog("flutter-vita: vitaGL dropped %u texture uploads -- out of GPU "
++             "memory\n",
++             static_cast<unsigned>(vgl_oom_count - g_vgl_oom_reported));
++        g_vgl_oom_reported = vgl_oom_count;
++      }
++
 +      g_loop_iterations = 0;
 +      g_loop_tasks_run = 0;
 +      g_loop_task_us = 0;

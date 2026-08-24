@@ -59,6 +59,10 @@ def main():
     ap.add_argument("--baseline", required=True)
     ap.add_argument("--modes", default="sw gl")
     ap.add_argument("--write-baseline", action="store_true")
+    ap.add_argument(
+        "--frames", nargs="*", metavar="SCENE",
+        help="print the slowest frames split by phase; no names means every "
+             "scene that stalled")
     args = ap.parse_args()
 
     modes = args.modes.split()
@@ -140,6 +144,33 @@ def main():
               f"above 1.00 means the GPU is faster on that scene{OFF}")
     print(f"{DIM}* a stall is 2+ consecutive frames at or below 30 fps"
           f" — see ADR-0017{OFF}")
+
+    if args.frames is not None:
+        wanted = set(args.frames)
+        for m in have:
+            for s_ in scenes_of(results[m]).values():
+                if wanted and s_["name"] not in wanted:
+                    continue
+                if not wanted and not s_.get("stall_ms"):
+                    continue
+                rows = s_.get("worst_frames") or []
+                if not rows:
+                    continue
+                print(f"\n{m} {s_['name']}{DIM} — slowest frames, "
+                      f"{s_['frames']} total{OFF}")
+                print(f"{'#':>6}{'period':>9}{'gap':>8}{'build':>8}"
+                      f"{'wait':>8}{'raster':>8}{'unaccounted':>13}")
+                for f in rows:
+                    known = (f["gap_ms"] + f["build_ms"]
+                             + f["wait_ms"] + f["raster_ms"])
+                    rest = f["period_ms"] - known
+                    print(f"{f['i']:>6}{f['period_ms']:>9.1f}"
+                          f"{f['gap_ms']:>8.1f}{f['build_ms']:>8.1f}"
+                          f"{f['wait_ms']:>8.1f}{f['raster_ms']:>8.1f}"
+                          f"{rest:>13.1f}")
+        print(f"\n{DIM}phases are of the frame that ENDED the period; "
+              f"unaccounted is the period minus them, which is mostly the "
+              f"previous frame still finishing{OFF}")
     print(f"{DIM}stresses is a label, not a measurement{OFF}")
 
     # ---- the gate --------------------------------------------------------

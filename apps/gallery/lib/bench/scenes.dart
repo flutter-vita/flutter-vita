@@ -18,7 +18,11 @@ import 'scene.dart';
 /// Deliberately not a solid rectangle: a single colour composites at a cost
 /// unrelated to anything real, and every scene would then measure the same
 /// fill. Fifty-odd tiles with text is closer to what a screen actually is.
-Widget _content({double seed = 0}) {
+/// 48 coloured cells, optionally with a numeral in each.
+///
+/// [text] exists so `route_boxes` and `route_push` differ by exactly one
+/// thing: whether 48 glyph runs have to be laid out.
+Widget _content({double seed = 0, bool text = true}) {
   return GridView.count(
     physics: const NeverScrollableScrollPhysics(),
     crossAxisCount: 8,
@@ -27,9 +31,11 @@ Widget _content({double seed = 0}) {
       return Container(
         margin: const EdgeInsets.all(2),
         color: HSVColor.fromAHSV(1, h * 360, 0.55, 0.75).toColor(),
-        child: Center(
-          child: Text('$i', style: const TextStyle(fontSize: 12)),
-        ),
+        child: text
+            ? Center(
+                child: Text('$i', style: const TextStyle(fontSize: 12)),
+              )
+            : null,
       );
     }),
   );
@@ -215,9 +221,30 @@ final List<AnimatedScene> animatedScenes = <AnimatedScene>[
 ];
 
 final List<RouteScene> routeScenes = <RouteScene>[
-  // A real Navigator push, which includes building the incoming route for the
-  // first time -- the part a controller-driven scene skips, and the part that
-  // stutters.
+  // Three pushes of increasing weight, which is the point of having three.
+  //
+  // The 2026-08-24 GPU run showed both route scenes spending 47-179 ms in
+  // *build* with raster at 7 ms -- one such frame per transition, the frame
+  // that first builds the incoming route. Raster is not the problem and the
+  // GPU cannot fix it. These three separate the transition machinery from what
+  // is being transitioned to: an empty page, the same page with 48 boxes, and
+  // the same 48 boxes with a glyph in each.
+  RouteScene(
+    name: 'route_bare',
+    stresses: Stresses.fill,
+    page: (context) => Scaffold(
+      appBar: AppBar(title: const Text('bare')),
+      body: const ColoredBox(color: Color(0xFF204060)),
+    ),
+  ),
+  RouteScene(
+    name: 'route_boxes',
+    stresses: Stresses.fill,
+    page: (context) => Scaffold(
+      appBar: AppBar(title: const Text('boxes')),
+      body: _content(seed: 3, text: false),
+    ),
+  ),
   RouteScene(
     name: 'route_push',
     stresses: Stresses.fill,
