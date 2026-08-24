@@ -118,7 +118,9 @@ target_link_options(${PROJECT_NAME} PRIVATE
 
 # Prefer a vitaGL built from source over the VitaSDK package.
 #
-# FLUTTER_VITA_VITAGL points at a checkout built with `make HAVE_SHADER_CACHE=1`.
+# FLUTTER_VITA_VITAGL points at a checkout built with
+# `make HAVE_SHADER_CACHE=1 TEXTURES_SPEEDHACK=1`; patches/vitagl/README.md says
+# why each flag is needed.
 # Without the cache, Ganesh recompiles every shader on every launch -- ADR-0014
 # measured 205 ms for a one-line shader and 405 ms for a short one, against
 # ~3 ms once cached -- which is the difference between a GPU backend that is

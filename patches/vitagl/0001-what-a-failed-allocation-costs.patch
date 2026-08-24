@@ -33,7 +33,7 @@ index 27e8a6c..2a2b532 100644
  #ifdef HAVE_TEX_CACHE
  		mark_as_cacheable(tex)
 diff --git a/source/utils/gpu_utils.c b/source/utils/gpu_utils.c
-index 36b40f0..99bcc7a 100644
+index 36b40f0..fc25270 100644
 --- a/source/utils/gpu_utils.c
 +++ b/source/utils/gpu_utils.c
 @@ -88,6 +88,14 @@ void dxt_compress(uint8_t *dst, uint8_t *src, int w, int h, int isdxt5) {
@@ -51,7 +51,55 @@ index 36b40f0..99bcc7a 100644
  static inline __attribute__((always_inline)) void *gpu_alloc_mapped_aligned_for_cpu_inner(size_t alignment, size_t size) {
  	void *res;
  	vgl_alloc_attempt(alignment, size, VGL_MEM_RAM)
-@@ -466,6 +474,12 @@ void gpu_alloc_paletted_texture(int32_t level, uint32_t w, uint32_t h, SceGxmTex
+@@ -164,7 +172,22 @@ void *gpu_alloc_mapped_aligned_unsafe_for_cpu(size_t alignment, size_t size) {
+ #else
+ 	sceKernelWaitSema(gc_mutex[1], 1, NULL);
+ 	sceKernelSignalSema(gc_mutex[0], 1);
+-	sceKernelDelayThread(1000000);
++	// Wait for the collector to finish, rather than sleeping a flat second and
++	// hoping. It signals gc_mutex[1] at the end of every cycle, so waiting on
++	// it is the event this code actually wants; the slot goes straight back so
++	// the credit accounting is unchanged, and the ceiling keeps a wedged
++	// collector from wedging the caller.
++	//
++	// The second was not a rounding error. This function retries itself up to
++	// FRAME_PURGE_FREQ times, so one contended allocation cost four seconds of
++	// frozen raster thread -- measured on 2026-08-24 as an 8 s frame -- while
++	// the collector's actual work is freeing a pointer list and destroying a
++	// few render targets.
++	{
++		SceUInt gc_timeout = 50000;
++		if (sceKernelWaitSema(gc_mutex[1], 1, &gc_timeout) >= 0)
++			sceKernelSignalSema(gc_mutex[1], 1);
++	}
+ #endif
+ 
+ 	// Allocating requested memblock
+@@ -190,7 +213,22 @@ void *gpu_alloc_mapped_aligned_unsafe_for_gpu(size_t alignment, size_t size) {
+ #else
+ 	sceKernelWaitSema(gc_mutex[1], 1, NULL);
+ 	sceKernelSignalSema(gc_mutex[0], 1);
+-	sceKernelDelayThread(1000000);
++	// Wait for the collector to finish, rather than sleeping a flat second and
++	// hoping. It signals gc_mutex[1] at the end of every cycle, so waiting on
++	// it is the event this code actually wants; the slot goes straight back so
++	// the credit accounting is unchanged, and the ceiling keeps a wedged
++	// collector from wedging the caller.
++	//
++	// The second was not a rounding error. This function retries itself up to
++	// FRAME_PURGE_FREQ times, so one contended allocation cost four seconds of
++	// frozen raster thread -- measured on 2026-08-24 as an 8 s frame -- while
++	// the collector's actual work is freeing a pointer list and destroying a
++	// few render targets.
++	{
++		SceUInt gc_timeout = 50000;
++		if (sceKernelWaitSema(gc_mutex[1], 1, &gc_timeout) >= 0)
++			sceKernelSignalSema(gc_mutex[1], 1);
++	}
+ #endif
+ 
+ 	// Allocating requested memblock
+@@ -466,6 +504,12 @@ void gpu_alloc_paletted_texture(int32_t level, uint32_t w, uint32_t h, SceGxmTex
  	int num_entries = is_p8 ? 256 : 16;
  	tex->palette_data = gpu_alloc_mapped_aligned_for_gpu(SCE_GXM_PALETTE_ALIGNMENT, num_entries * sizeof(uint32_t));
  	tex->data = gpu_alloc_mapped_for_gpu(tex_size);
@@ -64,7 +112,7 @@ index 36b40f0..99bcc7a 100644
  
  	// Populating palette data
  	uint32_t *palette_data = (uint32_t *)tex->palette_data;
-@@ -702,6 +716,14 @@ void gpu_alloc_compressed_texture(int32_t mip_level, uint32_t w, uint32_t h, Sce
+@@ -702,6 +746,14 @@ void gpu_alloc_compressed_texture(int32_t mip_level, uint32_t w, uint32_t h, Sce
  			if (!texture_data) {
  				// Reallocation in the same mspace failed, try manually.
  				texture_data = gpu_alloc_mapped_for_gpu(tex_size);
@@ -79,7 +127,7 @@ index 36b40f0..99bcc7a 100644
  				const int old_data_size = gpu_get_compressed_mipchain_size(mip_count, aligned_max_width, aligned_max_height, format);
  				vgl_memcpy(texture_data, tex->data, old_data_size);
  				gpu_free_texture_data(tex);
-@@ -855,6 +877,11 @@ void gpu_alloc_mipmaps(int level, texture *tex) {
+@@ -855,6 +907,11 @@ void gpu_alloc_mipmaps(int level, texture *tex) {
  		if (count <= 0 && !texture_data) {
  			// Reallocation in the same mspace failed, try manually.
  			texture_data = gpu_alloc_mapped_for_gpu(size);

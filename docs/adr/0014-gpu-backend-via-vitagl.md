@@ -621,8 +621,32 @@ frame rather than a frame — so the patch also counts them, and the embedder
 prints the count with its periodic loop statistics.
 
 This does not make GL safe; it removes one way of reaching the unsafe state.
-**The exhaustion itself is unexplained** and is the open question, not the
-`memcpy`.
+
+#### And then the exhaustion explained itself
+
+`TEXTURES_SPEEDHACK=1` — a vitaGL build flag, upstream-documented as making
+`glTexSubImage2D` "non fully OpenGL compliant but … slightly faster" — took the
+dropped-upload count from three to **zero** on the same run.
+
+What it compiles out is the clone: without it, `_glTexSubImage2D` copies any
+texture the GPU touched in the last four frames before modifying it, and the
+old copy waits for the collector. Skia's glyph atlas is that 4 MB texture and
+Skia sub-uploads into it whenever text changes, so every text change cost 4 MB
+allocated and 4 MB pending. The compliance traded away is a tear on one frame of
+one texture — the same trade the patch above makes when an allocation fails,
+made unconditionally.
+
+Reaching the NULL had a second cost, too. The unsafe allocator asks the
+collector to run and then `sceKernelDelayThread(1000000)` — one flat second —
+and retries itself up to four times. So one contended allocation froze the
+raster thread for four seconds, and the log showed an 8 s frame where two
+landed back to back. The collector already signals a semaphore at the end of
+every cycle; waiting on that with a 50 ms ceiling took the worst frame gap
+across a full benchmark run from **8145 ms to 66 ms**.
+
+Both are in
+[patches/vitagl/0001](../../patches/vitagl/0001-what-a-failed-allocation-costs.patch)
+and its README.
 
 **Still open**, unchanged: a way to release the GPU from outside the faulting
 process.

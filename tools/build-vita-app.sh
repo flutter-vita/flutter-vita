@@ -42,10 +42,12 @@ APP_DIR=""
 TITLE_ID=""
 APP_NAME=""
 ENGINE_DIR="${FLUTTER_VITA_ENGINE:-$ROOT/out/artifacts/flutter-engine-vita-$FLUTTER_PIN}"
-# vitaGL for the GL path (ADR-0014). The repo's own checkout by default, which
-# is built with HAVE_SHADER_CACHE=1; the template falls back to the VitaSDK
-# package with a warning when this is not set to something real, because that
-# build cannot cache a compiled shader and recompiles on every launch.
+# vitaGL for the GL path (ADR-0014). The repo's own checkout by default, built
+# with `make HAVE_SHADER_CACHE=1 TEXTURES_SPEEDHACK=1` -- see
+# patches/vitagl/README.md, which is the authority on both flags. The template
+# falls back to the VitaSDK package with a warning when this is not set to
+# something real, because that build cannot cache a compiled shader, recompiles
+# on every launch, and clones Skia's 4 MB glyph atlas on every text change.
 export FLUTTER_VITA_VITAGL="${FLUTTER_VITA_VITAGL:-$ROOT/third_party/vitaGL}"
 FLUTTER_DIR="$HOME/fvm/versions/$FLUTTER_PIN"
 OUT_DIR=""
