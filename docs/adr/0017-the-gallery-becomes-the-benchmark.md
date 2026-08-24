@@ -282,6 +282,47 @@ The `GridView` step is a smaller second finding: 48 cells in a `GridView` cost
 26.9 ms where the same 48 in a `Wrap` cost 1.0 ms. 12 cells in a `GridView` are
 free, so unlike the text cost this one does scale, just very steeply.
 
+### And the Dart side, timed without touching the framework
+
+`TextPainter` is ordinary Dart calling ordinary `dart:ui`, so the same work can
+be done in the app with a `Stopwatch` around each layer — no framework patch,
+no engine patch. [text_probe.dart](../../apps/gallery/lib/bench/text_probe.dart)
+does that, 48 single-glyph paragraphs with 8 warm-up passes discarded.
+
+One single-glyph `TextPainter.layout` costs **416 us** with a bare
+`TextStyle(fontSize: 12)` and **759 us** with the style a `Text` in a Material
+app actually receives. Against ~260 us of engine time and ~950 us at the widget
+level, that places roughly 500 us in Dart and ~190 us in widget and
+render-object inflation.
+
+Then the field bisect, one field at a time onto the bare style:
+
+| style | us | delta |
+|---|---|---|
+| bare `TextStyle(fontSize: 12)` | 416 | — |
+| `+fontWeight: w400` | 409 | **0** |
+| `+letterSpacing: 0.25` | 766 | +350 |
+| `+color` | 770 | +354 |
+| `+height: 1.43` | 774 | +358 |
+| `+fontFamily: 'Roboto'` | 813 | +397 |
+| all five | 759 | +343 |
+
+**It is not per-field, it is a step.** Any one field costs the same ~350 us as
+all five together, and `fontWeight: w400` — which sets a field to the value it
+already had — costs nothing. So the trigger is not "a field was named", it is
+"a value differs from the default", and paying it once pays it for everything.
+
+A `TextStyle` that differs from the default at all is therefore **1.8x** one
+that does not, and **every `Text` in a Material app is on the expensive side**,
+because `DefaultTextStyle` always sets at least a colour and a family.
+
+The mechanism is not established. The shape — a fixed cost, triggered by any
+divergence, not additive — is what a second style block in the paragraph looks
+like: `pushStyle` with a style matching the paragraph's default may leave one
+run where anything else creates two, and per-run cost is fixed. That is a
+hypothesis and the next thing to test, and it is worth testing, because ~45% of
+every `Text` on this console is behind it.
+
 ## Revisit trigger
 
 - **A scene goes red and nobody can act on it.** Then decision 4 or 5 is not

@@ -15,6 +15,7 @@ import 'package:flutter/scheduler.dart';
 
 import 'frame_recorder.dart';
 import 'scene.dart';
+import 'text_probe.dart';
 import 'scenes.dart';
 
 const String kDataDir = 'ux0:data/flutter-vita';
@@ -172,6 +173,11 @@ class BenchRunner {
   Future<void> runAll(BuildContext context, {void Function(String)? onProgress}) async {
     recorder.attach();
     await prepareAssets();
+    // Before any scene, because it is a measurement of the machine rather than
+    // of a scene, and because a scene that has already run has warmed caches
+    // this wants cold-ish. See text_probe.dart.
+    final probe = probeText();
+    print('bench: $probe');
     try {
       // Each scene is isolated. An unattended run that hangs because one
       // scene threw reports nothing at all, which is strictly worse than
