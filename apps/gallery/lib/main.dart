@@ -10,7 +10,19 @@ import 'package:flutter/material.dart';
 ///
 /// Folding the two together would cost the conformance run its automation,
 /// which is the whole reason it survived the crash investigation.
-void main() => runApp(const GalleryApp());
+void main() {
+  // A positive control for the engine's log_message_callback. Dart print had
+  // no destination on this port until 2026-08-24 -- it went to a stdout the
+  // device does not own -- so the conformance app writes its results to a file
+  // by hand. If this line does not appear in m3.log, that is still true and
+  // nothing else in the log about Dart can be trusted to be complete.
+  print('gallery: dart print reaches the engine log');
+  FlutterError.onError = (details) {
+    print('gallery: FlutterError ${details.exceptionAsString()}');
+    FlutterError.presentError(details);
+  };
+  runApp(const GalleryApp());
+}
 
 class GalleryApp extends StatelessWidget {
   const GalleryApp({super.key});
