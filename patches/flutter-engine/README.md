@@ -19,6 +19,7 @@ disposable; these patches are the artifact.
 | 0006 | [vita-fonts](0006-vita-fonts.patch) | `txt` gets a real font manager, plus two probes promoted out of `FML_DLOG` |
 | 0008 | [partial-repaint-in-the-software-path](0008-partial-repaint-in-the-software-path.patch) | The software surface claims `supports_partial_repaint`, and reports the damage rect to the embedder |
 | 0009 | [gl-without-impeller](0009-gl-without-impeller.patch) | Two upstream files that assume `shell_enable_gl` implies Impeller |
+| 0010 | [paragraph-timing](0010-paragraph-timing.patch) | Times `ui.Paragraph` construction, build and layout, because this port has no profiler |
 
 **There is no 0007.** It was `boringssl-no-asm-for-vita`, a bisect that put the
 Vita on BoringSSL's `no_asm_config` to test whether ARM assembly was crashing
@@ -348,3 +349,36 @@ Impeller stays off for a reason worth restating: it has no software backend,
 and [ADR-0014](../../docs/adr/0014-gpu-backend-via-vitagl.md) measured
 `saveLayer` *slower* on this tile-based GPU, so the Vita needs both paths
 selectable at run time.
+
+---
+
+## 0010 — paragraph timing
+
+Instrumentation, not a fix, and the only reason it is in the tree is that
+nothing else can answer the question. There is no DevTools here, no timeline
+and no profiler.
+
+The question came from [ADR-0017](../../docs/adr/0017-the-gallery-becomes-the-benchmark.md):
+a route push that builds 48 `Text` widgets spends 41 ms on the UI thread, and
+the same 48 glyphs inside *one* `Text` cost 1 ms. So the cost is flat per
+paragraph — but "per paragraph" covers resolving a text style, resolving a
+font, handing runs to the shaper and breaking lines, and those fail very
+differently.
+
+Three counters and a paragraph count, guarded by `FML_OS_VITA` so the files
+are untouched everywhere else, summed in
+`lib/ui/text/paragraph{,_builder}.cc` and printed by the embedder with its
+periodic loop statistics:
+
+```
+flutter-vita: PARAGRAPHS 304 | ctor 18270 us | build 27486 us | layout 30746 us | 251 us each
+```
+
+What it answered: **no single phase dominates.** Construction is about 22% of
+a paragraph, build 33%, layout 40%, and the per-paragraph total sits near
+260 us whatever the scene. It also showed that the engine is only about a third
+of the story — 48 paragraphs at 260 us is 12.5 ms of a 41 ms frame, and the
+rest is the Dart side of `TextPainter`.
+
+Delete this when there is a profiler, or when the paragraph cost stops being
+the thing that decides whether a screen holds 60 fps.

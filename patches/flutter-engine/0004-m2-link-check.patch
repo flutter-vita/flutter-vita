@@ -240,10 +240,10 @@ index 00000000..a5e0625d
 +}  // extern "C"
 diff --git a/engine/src/flutter/shell/platform/embedder/vita_embedder.cc b/engine/src/flutter/shell/platform/embedder/vita_embedder.cc
 new file mode 100644
-index 00000000..3e659b5a
+index 00000000..f7044286
 --- /dev/null
 +++ b/engine/src/flutter/shell/platform/embedder/vita_embedder.cc
-@@ -0,0 +1,2810 @@
+@@ -0,0 +1,2836 @@
 +// Copyright (c) 2026, the Flutter Authors. All rights reserved.
 +// Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
@@ -362,6 +362,16 @@ index 00000000..3e659b5a
 +// module that was not resident. If a build ever stops linking vitaGL this
 +// should fail at link time, where the message is legible.
 +extern "C" unsigned int vgl_oom_count;
++
++// Paragraph timing, defined in lib/ui/text/paragraph.cc. ADR-0017: 48 Text
++// widgets cost 41 ms of UI thread and one Text holding the same 48 glyphs
++// costs 1 ms, so the cost is flat per paragraph. These three say which part.
++extern "C" {
++extern uint64_t vita_para_ctor_us;
++extern uint64_t vita_para_build_us;
++extern uint64_t vita_para_layout_us;
++extern uint32_t vita_para_count;
++}
 +
 +namespace {
 +
@@ -3038,6 +3048,22 @@ index 00000000..3e659b5a
 +      // A non-zero count means the GPU pools are exhausted and what is on
 +      // screen may be stale, which is the difference between a benchmark
 +      // result and a picture of one.
++      if (vita_para_count != 0) {
++        VLog("flutter-vita: PARAGRAPHS %u | ctor %u us | build %u us | "
++             "layout %u us | %u us each\n",
++             static_cast<unsigned>(vita_para_count),
++             static_cast<unsigned>(vita_para_ctor_us),
++             static_cast<unsigned>(vita_para_build_us),
++             static_cast<unsigned>(vita_para_layout_us),
++             static_cast<unsigned>((vita_para_ctor_us + vita_para_build_us +
++                                    vita_para_layout_us) /
++                                   vita_para_count));
++        vita_para_ctor_us = 0;
++        vita_para_build_us = 0;
++        vita_para_layout_us = 0;
++        vita_para_count = 0;
++      }
++
 +      if (vgl_oom_count != g_vgl_oom_reported) {
 +        VLog("flutter-vita: vitaGL dropped %u texture uploads -- out of GPU "
 +             "memory\n",

@@ -230,11 +230,40 @@ do with how much text there is. Identical strings cost the same as unique ones
 paid on every repeat, not once: the spikes land at frames 5, 43, 81, 119 and
 267 of 291, one per push.
 
-For scale, a `Container` in the same scene costs about 20 us. A `Text` being
-**42x** a `Container` is not what this ratio looks like anywhere else, which is
-why this reads as a defect rather than as a slow CPU. Whether it is font
-resolution, shaper setup or paragraph construction is not yet known — the port
-has no profiler, and separating them needs engine instrumentation.
+For scale, a `Container` in the same scene costs about 20 us — a `Text` is
+**42x** a `Container`.
+
+### Where the 850 us goes, measured
+
+[patches/flutter-engine/0010](../../patches/flutter-engine/0010-paragraph-timing.patch)
+times the three phases of a `ui.Paragraph` and the embedder prints them:
+
+```
+flutter-vita: PARAGRAPHS 304 | ctor 18270 us | build 27486 us | layout 30746 us | 251 us each
+```
+
+**No single phase dominates.** Construction is ~22% of a paragraph, build 33%,
+layout 40%, and the per-paragraph total sits near **260 us** in every scene
+that makes paragraphs — `route_text_same` 251 us, `route_text_one` 267 us,
+`route_boxes12` 254 us. That the per-paragraph cost is identical between a
+scene making 48 paragraphs and one making 1 is the same finding from the other
+side: `route_text_one` is fast because it makes fewer, not cheaper, paragraphs.
+
+And **the engine is only about a third of it**. 48 paragraphs at 260 us is
+12.5 ms of a 41 ms frame. The other ~28 ms is the Dart side of `TextPainter` —
+encoding a `ui.ParagraphStyle` and a `ui.TextStyle` into typed lists, building
+the `RenderParagraph` — which this instrument does not see.
+
+So the honest verdict is narrower than "a defect": there is no hot spot to fix.
+Text costs about 850 us per widget, spread roughly 70/30 between framework and
+engine and spread evenly *within* the engine. The remedy is architectural —
+fewer paragraphs on a screen — until someone profiles the Dart side.
+
+It also explains the rest of the suite. `list_churn` is the worst scene in it,
+and one of its windows reports **1195 paragraphs with 506 ms of layout**: three
+`Text` widgets per `ListTile`, hundreds of tiles recycled while scrolling.
+`text_slide`, `route_push` and `route_hero` are the same story. Every scene the
+GPU could not rescue is paragraph-bound.
 
 The `GridView` step is a smaller second finding: 48 cells in a `GridView` cost
 26.9 ms where the same 48 in a `Wrap` cost 1.0 ms. 12 cells in a `GridView` are
