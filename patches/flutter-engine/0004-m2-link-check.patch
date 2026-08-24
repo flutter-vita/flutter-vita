@@ -240,10 +240,10 @@ index 00000000..a5e0625d
 +}  // extern "C"
 diff --git a/engine/src/flutter/shell/platform/embedder/vita_embedder.cc b/engine/src/flutter/shell/platform/embedder/vita_embedder.cc
 new file mode 100644
-index 00000000..ab9f289b
+index 00000000..984298aa
 --- /dev/null
 +++ b/engine/src/flutter/shell/platform/embedder/vita_embedder.cc
-@@ -0,0 +1,2662 @@
+@@ -0,0 +1,2707 @@
 +// Copyright (c) 2026, the Flutter Authors. All rights reserved.
 +// Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
@@ -1859,6 +1859,19 @@ index 00000000..ab9f289b
 +// The wait is bounded because this runs on the way out. If the raster thread
 +// is genuinely wedged, exiting without a clean teardown is no worse than the
 +// hang, and hanging here instead would be strictly worse.
++// |fml/thread.cc| on Vita
++//
++// Defined here rather than in fml because fml has no logging destination on
++// this platform: FML_DLOG goes to a stdout the device does not own, which is
++// the same gap that hid every Dart print until 2026-08-24.
++extern "C" void flutter_vita_log_affinity(const char* name,
++                                          int before,
++                                          int after) {
++  VLog("flutter-vita: thread %s affinity 0x%05X -> 0x%05X\n",
++       name != nullptr ? name : "?", static_cast<unsigned>(before),
++       static_cast<unsigned>(after));
++}
++
 +extern "C" void flutter_vita_gpu_shutdown(void) {
 +  if (!g_gl_enabled) return;
 +  VLog("flutter-vita: releasing the GPU before exit\n");
@@ -2385,6 +2398,22 @@ index 00000000..ab9f289b
 +  g_ime.open = false;
 +}
 +
++// |FlutterProjectArgs::log_message_callback|
++void OnLogMessage(const char* tag, const char* message, void* /* user_data */) {
++  // One write, not two: the log is read by pulling the whole file, and a
++  // torn line from another thread interleaving between tag and message is a
++  // line that cannot be grepped.
++  char line[512];
++  const int n = std::snprintf(line, sizeof line, "[%s] %s\n",
++                              tag != nullptr ? tag : "dart",
++                              message != nullptr ? message : "");
++  if (n > 0) {
++    VLogRaw(line, static_cast<size_t>(n) < sizeof line
++                      ? static_cast<size_t>(n)
++                      : sizeof line - 1);
++  }
++}
++
 +void OnPlatformMessage(const FlutterPlatformMessage* message,
 +                       void* /* user_data */) {
 +  if (message == nullptr) return;
@@ -2752,6 +2781,22 @@ index 00000000..ab9f289b
 +  args.struct_size = sizeof(FlutterProjectArgs);
 +  args.custom_task_runners = &task_runners;
 +  args.platform_message_callback = OnPlatformMessage;
++
++  // Dart's print, and every uncaught Flutter exception, into the same log the
++  // host already pulls with `get`.
++  //
++  // Without this they go to stdout, and on this device stdout goes nowhere at
++  // all. The cost of that is not theoretical: an app in the corpus rendered
++  // its own "Something went wrong" page for two sessions while the engine log
++  // showed a healthy 60 fps and nothing else, because the exception behind it
++  // was written to a file descriptor no one owns. FML_LOG output was already
++  // captured, which made the gap easy to miss -- the log looked like it was
++  // working.
++  //
++  // Called on an engine-managed thread, so it must be cheap and must not
++  // block. VLogRaw is an sceIoWrite on an already-open handle.
++  args.log_message_callback = OnLogMessage;
++  args.log_tag = "dart";
 +  // app0: is the read-only mount of the installed .vpk.
 +  args.assets_path = "app0:/flutter_assets";
 +  args.icu_data_path = "app0:/icudtl.dat";

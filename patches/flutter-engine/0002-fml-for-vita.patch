@@ -881,6 +881,69 @@ index b912bf50..53d91583 100644
    }
    signaled_ = false;
  }
+diff --git a/engine/src/flutter/fml/thread.cc b/engine/src/flutter/fml/thread.cc
+index 8fc43592..c5d1a35c 100644
+--- a/engine/src/flutter/fml/thread.cc
++++ b/engine/src/flutter/fml/thread.cc
+@@ -11,6 +11,11 @@
+ #include <utility>
+ 
+ #include "flutter/fml/build_config.h"
++
++#if defined(FML_OS_VITA)
++#include <psp2/kernel/cpu.h>
++#include <psp2/kernel/threadmgr.h>
++#endif
+ #include "flutter/fml/message_loop.h"
+ #include "flutter/fml/synchronization/waitable_event.h"
+ 
+@@ -22,6 +27,10 @@
+ #include <pthread.h>
+ #endif
+ 
++extern "C" void flutter_vita_log_affinity(const char* name,
++                                         int before,
++                                         int after);
++
+ namespace fml {
+ 
+ typedef std::function<void()> ThreadFunction;
+@@ -126,6 +135,35 @@ void SetThreadName(const std::string& name) {
+   }
+ #elif defined(OS_FUCHSIA)
+   zx::thread::self()->set_property(ZX_PROP_NAME, name.c_str(), name.size());
++#elif defined(FML_OS_VITA)
++  // The Vita has no pthread_setname_np, so this hook reports what it can
++  // instead: which cores the engine's threads are allowed to run on.
++  //
++  // Nothing sets that. fml::RequestAffinity is a no-op outside Android, and
++  // this console's three user cores are identical, so Flutter's
++  // performance/efficiency distinction has nothing to select between.
++  //
++  // Pinning was tried here on 2026-08-24 and did not work. The hypothesis was
++  // contention: route_push runs 14x faster under GL and its UI-thread build
++  // time falls from 48.9 ms to 1.2 ms, which should not depend on the
++  // renderer unless the renderer decides how much CPU the UI thread gets. So
++  // ui, raster and io were pinned to USER_0, USER_1 and USER_2. Every scene in
++  // the benchmark came back within noise of unpinned, and two came back 12 and
++  // 17 percent worse. The threads were not fighting over a core.
++  //
++  // What remains is bus contention rather than scheduling: the software
++  // rasteriser writes a 2 MB framebuffer every frame and Dart's own work
++  // slows down alongside it. That would be invisible to affinity, which is
++  // consistent with this result. Untested.
++  //
++  // The logging stays because it is the measurement that settled it, and
++  // because a `before` of 0 is worth knowing: no engine thread on this port
++  // has ever had an affinity mask set.
++  {
++    const SceUID self = sceKernelGetThreadId();
++    const int mask = sceKernelGetThreadCpuAffinityMask(self);
++    flutter_vita_log_affinity(name.c_str(), mask, mask);
++  }
+ #else
+   FML_DLOG(INFO) << "Could not set the thread name to '" << name
+                  << "' on this platform.";
 diff --git a/engine/src/flutter/fml/unique_fd.cc b/engine/src/flutter/fml/unique_fd.cc
 index bb9243d0..ce01eca0 100644
 --- a/engine/src/flutter/fml/unique_fd.cc
