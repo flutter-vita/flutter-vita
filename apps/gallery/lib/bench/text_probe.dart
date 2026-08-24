@@ -26,6 +26,8 @@ class TextProbe {
     required this.painterUs,
     required this.themedUs,
     required this.fieldUs,
+    required this.blockUs,
+    required this.stepUs,
   });
 
   final int n;
@@ -57,6 +59,18 @@ class TextProbe {
   /// fields is buying the difference between [painterUs] and [themedUs].
   final Map<String, double> fieldUs;
 
+  /// Direct dart:ui variants that vary the paragraph style and the pushed
+  /// style independently, to find out whether the ~350 us step is the cost of
+  /// *having* a pushed style block or of what is *in* it.
+  final Map<String, double> blockUs;
+
+  /// TextPainter's own sequence, hand-rolled and timed a call at a time.
+  ///
+  /// `getParagraphStyle` and `getTextStyle` are public on TextStyle, so the
+  /// framework's path can be reproduced here exactly and bisected without
+  /// patching the framework. Keys are `<variant>.<call>`.
+  final Map<String, double> stepUs;
+
   /// What TextPainter adds over driving dart:ui directly.
   double get frameworkUs => painterUs - (styleUs + buildUs + layoutUs);
 
@@ -67,7 +81,9 @@ class TextProbe {
       '= ${(styleUs + buildUs + layoutUs).toStringAsFixed(0)}us direct | '
       'TextPainter bare=${painterUs.toStringAsFixed(0)}us '
       'themed=${themedUs.toStringAsFixed(0)}us | '
-      '${fieldUs.entries.map((e) => '${e.key}=${e.value.toStringAsFixed(0)}').join(' ')}';
+      '${fieldUs.entries.map((e) => '${e.key}=${e.value.toStringAsFixed(0)}').join(' ')} | '
+      '${blockUs.entries.map((e) => '${e.key}=${e.value.toStringAsFixed(0)}').join(' ')} | '
+      '${stepUs.entries.map((e) => '${e.key}=${e.value.toStringAsFixed(0)}').join(' ')}';
 
   Map<String, Object> toJson() => {
         'n': n,
@@ -77,6 +93,8 @@ class TextProbe {
         'painter_us': _r(painterUs),
         'themed_us': _r(themedUs),
         'field_us': fieldUs.map((k, v) => MapEntry(k, _r(v))),
+        'block_us': blockUs.map((k, v) => MapEntry(k, _r(v))),
+        'step_us': stepUs.map((k, v) => MapEntry(k, _r(v))),
         'framework_us': _r(frameworkUs),
       };
 
@@ -89,6 +107,8 @@ const double _kWidth = 120;
 /// paragraph of a process pays for font resolution that the rest do not.
 TextProbe probeText({int n = 48, int warm = 8}) {
   final fields = <String, double>{};
+  final blocks = <String, double>{};
+  final steps = <String, double>{};
   for (var i = 0; i < warm; i++) {
     _direct('w$i');
     _painter('w$i');
@@ -129,6 +149,71 @@ TextProbe probeText({int n = 48, int warm = 8}) {
     fields[entry.key] = sw.elapsedMicroseconds / n;
   }
 
+  // Is the step the cost of having a pushed style block at all, or of what is
+  // in it? These vary the two independently.
+  //
+  //   nopush     paragraph style only, no pushStyle -- one block, by force
+  //   pushempty  an empty ui.TextStyle pushed -- a second block, same content
+  //   pushsame   a pushed style whose values match the paragraph style
+  //   pushdiff   a pushed style that diverges by one field
+  //
+  // nopush ~= pushempty << pushdiff says the content is the cost.
+  // nopush << pushempty ~= pushdiff says the block itself is.
+  const variants = <String, List<Object?>>{
+    'nopush': <Object?>[null],
+    'pushempty': <Object?>['empty'],
+    'pushsame': <Object?>['same'],
+    'pushdiff': <Object?>['diff'],
+  };
+  for (final entry in variants.entries) {
+    final kind = entry.value.first as String?;
+    for (var i = 0; i < warm; i++) {
+      _block(kind, 'w$i');
+    }
+    final sw = Stopwatch()..start();
+    for (var i = 0; i < n; i++) {
+      _block(kind, '$i');
+    }
+    sw.stop();
+    blocks[entry.key] = sw.elapsedMicroseconds / n;
+  }
+
+  // TextPainter's sequence, priced by cumulative passes rather than by
+  // stopwatches inside the loop.
+  //
+  // The first attempt at this put four Stopwatches around four calls and
+  // reported 719 us for a sequence TextPainter completes in 410 -- a total
+  // larger than the thing it decomposes, which is the tell. Eight clock reads
+  // an iteration are not free here; `clock` below is what they cost. So each
+  // pass does strictly more work than the last and the differences are the
+  // per-call costs.
+  {
+    final sw = Stopwatch()..start();
+    for (var i = 0; i < n; i++) {
+      Stopwatch()
+        ..start()
+        ..stop();
+    }
+    sw.stop();
+    steps['clock'] = sw.elapsedMicroseconds / n;
+  }
+  for (final v in <String, TextStyle>{
+    'bare': const TextStyle(fontSize: 12),
+    'diff': const TextStyle(fontSize: 12, height: 1.43),
+  }.entries) {
+    for (var depth = 1; depth <= 4; depth++) {
+      for (var i = 0; i < warm; i++) {
+        _upto(depth, v.value, 'w$i');
+      }
+      final sw = Stopwatch()..start();
+      for (var i = 0; i < n; i++) {
+        _upto(depth, v.value, '$i');
+      }
+      sw.stop();
+      steps['${v.key}.$depth'] = sw.elapsedMicroseconds / n;
+    }
+  }
+
   double per(Stopwatch s) => s.elapsedMicroseconds / n;
   return TextProbe(
     n: n,
@@ -138,7 +223,60 @@ TextProbe probeText({int n = 48, int warm = 8}) {
     painterUs: per(painter),
     themedUs: per(themed),
     fieldUs: fields,
+    blockUs: blocks,
+    stepUs: steps,
   );
+}
+
+// TextPainter's sequence, truncated after [depth] calls:
+//   1  getParagraphStyle
+//   2  + getTextStyle
+//   3  + ParagraphBuilder, pushStyle, addText, build
+//   4  + layout
+void _upto(int depth, TextStyle style, String text) {
+  final paraStyle = style.getParagraphStyle(textDirection: TextDirection.ltr);
+  if (depth == 1) return;
+
+  final textStyle = style.getTextStyle(textScaler: TextScaler.noScaling);
+  if (depth == 2) return;
+
+  final p = (ui.ParagraphBuilder(paraStyle)
+        ..pushStyle(textStyle)
+        ..addText(text))
+      .build();
+  if (depth == 3) {
+    p.dispose();
+    return;
+  }
+
+  p.layout(const ui.ParagraphConstraints(width: _kWidth));
+  p.dispose();
+}
+
+// The paragraph style every variant starts from: a family and a size, which
+// is what TextPainter derives from the root TextStyle.
+ui.ParagraphStyle _paraStyle() =>
+    ui.ParagraphStyle(fontFamily: 'Roboto', fontSize: 12);
+
+void _block(String? kind, String text) {
+  final b = ui.ParagraphBuilder(_paraStyle());
+  switch (kind) {
+    case null:
+      break;
+    case 'empty':
+      b.pushStyle(ui.TextStyle());
+      break;
+    case 'same':
+      b.pushStyle(ui.TextStyle(fontFamily: 'Roboto', fontSize: 12));
+      break;
+    case 'diff':
+      b.pushStyle(ui.TextStyle(fontFamily: 'Roboto', fontSize: 12, height: 1.43));
+      break;
+  }
+  b.addText(text);
+  final p = b.build()
+    ..layout(const ui.ParagraphConstraints(width: _kWidth));
+  p.dispose();
 }
 
 void _direct(String text,

@@ -316,12 +316,58 @@ A `TextStyle` that differs from the default at all is therefore **1.8x** one
 that does not, and **every `Text` in a Material app is on the expensive side**,
 because `DefaultTextStyle` always sets at least a colour and a family.
 
-The mechanism is not established. The shape — a fixed cost, triggered by any
-divergence, not additive — is what a second style block in the paragraph looks
-like: `pushStyle` with a style matching the paragraph's default may leave one
-run where anything else creates two, and per-run cost is fixed. That is a
-hypothesis and the next thing to test, and it is worth testing, because ~45% of
-every `Text` on this console is behind it.
+### The style-block hypothesis, tested and wrong
+
+The shape suggested a second style block: `pushStyle` with a style matching the
+paragraph default leaving one run where anything else creates two. Driving
+`dart:ui` directly, varying the paragraph style and the pushed style
+independently:
+
+| variant | us |
+|---|---|
+| `nopush` — paragraph style only, no `pushStyle` | 698 |
+| `pushempty` — an empty `ui.TextStyle` pushed | 413 |
+| `pushsame` — pushed style matching the paragraph style | 417 |
+| `pushdiff` — same plus `height: 1.43` | 770 |
+
+Not the block. Pushing *nothing* is the expensive case and pushing an empty
+style is the cheap one, which is the opposite of what the hypothesis predicted.
+
+### Where it actually is, and where it is not
+
+`getParagraphStyle` and `getTextStyle` are public on `TextStyle`, so
+TextPainter's sequence can be reproduced call by call. Cumulative passes, each
+doing strictly more than the last:
+
+| through | bare | +height |
+|---|---|---|
+| `getParagraphStyle` | 2 | 2 |
+| `+ getTextStyle` | 4 | 3 |
+| `+ builder, pushStyle, addText, build` | 305 | 305 |
+| `+ layout` | 756 | 753 |
+
+**The Dart style encoding is free** — 4 us of a 950 us widget. That retracts the
+"~500 us is Dart above dart:ui" in the section above, which was inferred rather
+than measured. The cost is `ParagraphBuilder.build` (~300 us) and
+`Paragraph.layout` (~450 us), both of which are `dart:ui` calling the engine.
+
+It also leaves a sharper question than the one it answered. Hand-rolled, **bare
+and themed cost the same** — 756 and 753. Through `TextPainter` they do not:
+418 and 766. So the ~350 us step is not a penalty the themed style pays; it is
+a **discount the bare style gets, and only through TextPainter**. 766 is simply
+what a paragraph costs, and something in the framework's bare path is half
+that.
+
+Whatever that path is, it is a 2x win that already exists and is already
+reachable. Finding what triggers it is the open question. It is worth finding:
+every `Text` in a Material app is on the wrong side of it.
+
+An instrument note, because it nearly produced a wrong answer. The first
+version of this bisect put four `Stopwatch`es inside the loop and reported
+719 us for a sequence `TextPainter` completes in 410 — a decomposition larger
+than the thing it decomposes, which is the tell that the instrument is in the
+measurement. A `Stopwatch` start/stop pair costs 3 us here and there were eight
+per iteration; the rewrite uses one stopwatch per cumulative pass.
 
 ## Revisit trigger
 

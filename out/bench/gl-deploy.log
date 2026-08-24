@@ -1,6 +1,7 @@
 ==> gallery.vpk
-    loader already up
-==> staging eboot.bin (13906556 bytes)
+    app is up — handing off to the loader
+    loader up, no tap needed
+==> staging eboot.bin (13909022 bytes)
 ==> installing
 ==> data files
 ==> launching
