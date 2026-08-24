@@ -583,10 +583,12 @@ larger than the crash cost:
 ux0:data/flutter-vita/software.on   -- a '1' forces the CPU path
 ```
 
-GPU otherwise. Worst-frame, software over GL, warm cache: 16.67× on a hero
-transition, 15.13× on a backdrop blur, 7.25× on a saveLayer tint, 5.20× on
-image scaling. Two scenes lose — transform_scale at 0.86× and list_churn at
-0.90× — by margins that do not pay for making every other scene slower.
+GPU otherwise. Worst-frame, software over GL, warm cache: 20.33× on a backdrop
+blur, 18.38× / 17.00× / 16.89× on the three route transitions, 7.25× on a
+saveLayer tint, 3.25× on image scaling. **No scene is below 1.00×.** The first
+reading of this table had GL losing two of them; both losses turned out to be
+measurement — a cold shader cache and a software frame rate too low to sample —
+and are written up in ADR-0017.
 
 Nothing above about the crash cost has been repaired. It is now a risk taken
 deliberately in exchange for those numbers, and the escape hatch is one `put`

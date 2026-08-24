@@ -148,23 +148,33 @@ two relaunches at about three seconds each.
   under GL wedges the console (ADR-0014), so an unattended GL run is a
   different risk from an unattended software run.
 
-## What the first full run said
+## What the run says
 
-Taken 2026-08-24 on the pinned engine, both renderers, warm shader cache;
+Taken 2026-08-24 on the pinned engine, both renderers, warm shader cache, with
+vitaGL built per [patches/vitagl/README.md](../../patches/vitagl/README.md);
 `apps/gallery/bench/{sw,gl}.json` is this run.
 
-**Eleven of the twelve scenes stall on both renderers.** Only `fill_lerp` holds
-60 fps, and only on GL. That is the headline, and it is a statement about the
-port rather than about the suite: a stall is two consecutive frames at or below
-30 fps, and this hardware produces them almost everywhere something moves.
+**The GPU wins every scene.** Worst-frame, software over GL: 20.33× on a
+backdrop blur, 18.38× / 17.00× / 16.89× on the three route transitions, 7.25×
+on a saveLayer tint, 3.25× on image scaling. The narrowest are `clip_rrect`,
+`opacity_fade` and `transform_rotate` at 1.00× and `list_churn` at 1.06×.
+Nothing is below 1.00. An earlier reading of this table had GL losing two
+scenes; both losses were measurement, not rendering — see below.
 
-GL wins by an order of magnitude where raster dominates — `route_hero` 16.67×,
-`blur_backdrop` 15.13×, `save_layer_tint` 7.25×, `image_scale` 5.20× — and
-loses narrowly on `transform_scale` (0.86×) and `list_churn` (0.90×). That
-spread is what flipped the app default to GL; the reasoning is in
-[ADR-0014](0014-gpu-backend-via-vitagl.md).
+**Three of fourteen scenes hold 60 fps**: `fill_lerp`, `image_scale`, and
+`route_bare`, all on GL only. Eleven still stall, where a stall is two
+consecutive frames at or below 30 fps. That is a statement about the port
+rather than about the suite.
 
-Two things the suite got wrong about itself, both worth keeping written down:
+**The route scenes settle what a transition costs.** `route_bare`,
+`route_boxes` and `route_push` push the same page with progressively more in
+it, and the UI-thread time goes 1.2 ms → 32 ms → 45 ms while raster stays at
+7 ms on every one of them; `route_hero` reaches 116 ms. So the transition
+machinery is not the cost and neither is the renderer. Building the destination
+page is, and text is about 14 ms of it. That decomposition is the reason the
+suite has three pushes instead of one.
+
+Three things the suite got wrong about itself, all worth keeping written down:
 
 **A cold shader cache is a different machine.** vitaGL compiles each shader on
 first use and keeps it under `ux0:data/shader_cache/<TITLEID>`, at 200–400 ms
@@ -174,6 +184,11 @@ charged that compilation to whichever frame happened to need the shader and put
 Warm, it is 133 ms against software's 2017 ms. **Any GL number taken on a fresh
 install is a number about compilation, not about rastering**, and a baseline
 must say which it is.
+
+**A slow renderer can be slow enough to stop being measurable.** Software
+`route_bare` produces three frames in 2.3 seconds and is graded "too short to
+grade" while GL holds 60 fps on the same scene — the honest report of a 40×
+gap, but only because decision 5's floor refuses to turn it into a number.
 
 **A ratio needs frames on both sides.** Software `route_push` produces *one*
 frame in six seconds — 2500 ms of raster in it — so its "worst frame" is its
