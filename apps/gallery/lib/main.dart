@@ -1,5 +1,8 @@
 import 'package:flutter/material.dart';
 
+import 'bench/bench_page.dart';
+import 'bench/runner.dart';
+
 /// What this port looks like, judged by eye.
 ///
 /// A separate app from the conformance suite, and the split is about how each
@@ -21,11 +24,17 @@ void main() {
     print('gallery: FlutterError ${details.exceptionAsString()}');
     FlutterError.presentError(details);
   };
-  runApp(const GalleryApp());
+  // Started by the host rather than by a person: tools/bench.sh writes
+  // bench.on and relaunches, and the app goes straight to the benchmark and
+  // runs it unattended. A person opening the gallery normally never sees this
+  // branch. ADR-0017.
+  runApp(GalleryApp(autoBench: switchOn(kSwitchPath)));
 }
 
 class GalleryApp extends StatelessWidget {
-  const GalleryApp({super.key});
+  const GalleryApp({super.key, this.autoBench = false});
+
+  final bool autoBench;
 
   @override
   Widget build(BuildContext context) => MaterialApp(
@@ -35,7 +44,7 @@ class GalleryApp extends StatelessWidget {
           colorSchemeSeed: const Color(0xFF4C8DFF),
           scaffoldBackgroundColor: const Color(0xFF10131A),
         ),
-        home: const Gallery(),
+        home: autoBench ? const BenchPage(autoRun: true) : const Gallery(),
       );
 }
 
@@ -83,10 +92,27 @@ class _GalleryState extends State<Gallery> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            const Padding(
-              padding: EdgeInsets.fromLTRB(12, 8, 12, 4),
-              child: Text('flutter-vita gallery',
-                  style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold)),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(12, 8, 12, 4),
+              child: Row(
+                children: [
+                  const Expanded(
+                    child: Text('flutter-vita gallery',
+                        style: TextStyle(
+                            fontSize: 15, fontWeight: FontWeight.bold)),
+                  ),
+                  // The gallery's stated job is "what this port looks like,
+                  // judged by eye"; this is the other half, added by ADR-0017,
+                  // and it produces numbers instead of impressions.
+                  TextButton(
+                    onPressed: () => Navigator.of(context).push(
+                      MaterialPageRoute<void>(
+                          builder: (_) => const BenchPage()),
+                    ),
+                    child: const Text('benchmark'),
+                  ),
+                ],
+              ),
             ),
             const Divider(height: 1),
             Expanded(
