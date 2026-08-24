@@ -197,6 +197,25 @@ TextProbe probeText({int n = 48, int warm = 8}) {
     sw.stop();
     steps['clock'] = sw.elapsedMicroseconds / n;
   }
+  // TextPainter's own argument set, and its builder.pop(). _upto stubbed
+  // getParagraphStyle down to textDirection alone; TextPainter passes eight
+  // arguments and pops the style it pushed. If that is the difference, this
+  // lands near the TextPainter number rather than near the hand-rolled one.
+  for (final v in <String, TextStyle>{
+    'fullbare': const TextStyle(fontSize: 12),
+    'fulldiff': const TextStyle(fontSize: 12, height: 1.43),
+  }.entries) {
+    for (var i = 0; i < warm; i++) {
+      _full(v.value, 'w$i');
+    }
+    final sw = Stopwatch()..start();
+    for (var i = 0; i < n; i++) {
+      _full(v.value, '$i');
+    }
+    sw.stop();
+    steps[v.key] = sw.elapsedMicroseconds / n;
+  }
+
   for (final v in <String, TextStyle>{
     'bare': const TextStyle(fontSize: 12),
     'diff': const TextStyle(fontSize: 12, height: 1.43),
@@ -226,6 +245,28 @@ TextProbe probeText({int n = 48, int warm = 8}) {
     blockUs: blocks,
     stepUs: steps,
   );
+}
+
+// Everything _upto does, plus the arguments TextPainter actually passes and
+// the pop it actually makes.
+void _full(TextStyle style, String text) {
+  final paraStyle = style.getParagraphStyle(
+    textAlign: TextAlign.start,
+    textDirection: TextDirection.ltr,
+    textScaler: TextScaler.noScaling,
+    maxLines: null,
+    textHeightBehavior: null,
+    ellipsis: null,
+    locale: null,
+    strutStyle: null,
+  );
+  final b = ui.ParagraphBuilder(paraStyle)
+    ..pushStyle(style.getTextStyle(textScaler: TextScaler.noScaling))
+    ..addText(text)
+    ..pop();
+  final p = b.build()
+    ..layout(const ui.ParagraphConstraints(width: _kWidth));
+  p.dispose();
 }
 
 // TextPainter's sequence, truncated after [depth] calls:

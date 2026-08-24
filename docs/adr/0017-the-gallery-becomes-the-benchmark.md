@@ -362,12 +362,47 @@ Whatever that path is, it is a 2x win that already exists and is already
 reachable. Finding what triggers it is the open question. It is worth finding:
 every `Text` in a Material app is on the wrong side of it.
 
-An instrument note, because it nearly produced a wrong answer. The first
-version of this bisect put four `Stopwatch`es inside the loop and reported
-719 us for a sequence `TextPainter` completes in 410 — a decomposition larger
-than the thing it decomposes, which is the tell that the instrument is in the
-measurement. A `Stopwatch` start/stop pair costs 3 us here and there were eight
-per iteration; the rewrite uses one stopwatch per cumulative pass.
+### The hand-rolled numbers are order-dependent, and I am retracting them
+
+The next run added a variant passing TextPainter's full argument set, ahead of
+the cumulative passes in the sequence. It refuted its own hypothesis — 727 us,
+not the ~410 predicted, so the paragraph-style arguments are not the
+difference. It also moved a number nothing had touched: **the cumulative pass
+through `layout` measured 756 us in one run and 384 us in the next**, same code,
+same style, only a different position in the probe.
+
+So the hand-rolled paths carry a warm-up or allocation effect that depends on
+where in the sequence they run, and their absolute levels mean nothing. That
+retracts the split above — `build ~300 us` and `layout ~450 us` are positions in
+a sequence, not costs — and with it the "style encoding is free" conclusion,
+which was read off the same passes. `getParagraphStyle` at 2 us against
+`layout` at 450 may still be right; it is no longer *shown*.
+
+**What survives is the TextPainter field bisect**, and it survives for a
+specific reason: its variants alternate inside one block rather than occupying
+different positions. `fontWeight: w400` comes out cheap sitting between
+`+color` and `+height`, which are expensive, in the same block, in three
+consecutive runs. A positional artifact cannot do that.
+
+So the finding stands and the explanation does not:
+
+- a `TextStyle` whose values differ from the default costs ~750 us through
+  `TextPainter`; one that does not costs ~400
+- setting a field to the value it already had is free, so the trigger is
+  divergence and not naming
+- **why** is unknown, and this harness cannot answer it
+
+What it would take is a profiler, or timing inside the framework rather than
+beside it. Both are larger than the question has earned so far — the actionable
+conclusion for an app is already available and does not depend on the
+mechanism: **a screen's cost is roughly its `Text` count times a millisecond.**
+
+An instrument note, twice earned. The first version of this bisect put four
+`Stopwatch`es inside the loop and reported 719 us for a sequence `TextPainter`
+completes in 410 — a decomposition larger than the thing it decomposes, which
+is the tell. A start/stop pair costs 3 us here and there were eight an
+iteration. Fixing that produced numbers that were merely wrong in a less
+obvious way.
 
 ## Revisit trigger
 
