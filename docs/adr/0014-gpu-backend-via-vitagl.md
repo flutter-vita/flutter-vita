@@ -569,21 +569,34 @@ no user code runs to prevent it. The supervisor cannot help: it is a separate
 process and cannot release another process's GXM context.
 
 So **GL costs a power cycle per hard crash**, on a port that still has them.
-That is a bad trade for a default and a fine one for a deliberate measurement,
-so the switch is inverted from what the performance numbers alone would
-suggest:
+That was judged a bad trade for a default and a fine one for a deliberate
+measurement, so the switch was first inverted from what the performance numbers
+alone would suggest: `gl.on` selected the GPU, software otherwise.
+
+#### The default flipped on 2026-08-24
+
+[ADR-0017](0017-the-gallery-becomes-the-benchmark.md) replaced the impression
+that GL is faster with twelve measured scenes, and the margin turned out to be
+larger than the crash cost:
 
 ```
-ux0:data/flutter-vita/gl.on   -- a '1' selects the GPU path
+ux0:data/flutter-vita/software.on   -- a '1' forces the CPU path
 ```
 
-Software otherwise. This does not weaken the decision this ADR records — the
-GPU is still the right target and the raster numbers still stand. It says the
-GL path is not yet safe to leave switched on, which is a statement about crash
-recovery rather than about rendering.
+GPU otherwise. Worst-frame, software over GL, warm cache: 16.67× on a hero
+transition, 15.13× on a backdrop blur, 7.25× on a saveLayer tint, 5.20× on
+image scaling. Two scenes lose — transform_scale at 0.86× and list_churn at
+0.90× — by margins that do not pay for making every other scene slower.
 
-**Revisit** when crashes are rare enough that the cost is theoretical, or if
-there is a way to release the GPU from outside the faulting process.
+Nothing above about the crash cost has been repaired. It is now a risk taken
+deliberately in exchange for those numbers, and the escape hatch is one `put`
+away rather than a rebuild. Two callers still want the CPU path and get it: the
+loader forces it through a strong `flutter_vita_force_software` symbol
+([ADR-0016](0016-the-loader-becomes-a-flutter-app.md) decision 7), and anything
+needing text input wants it until the common dialog can composite over vitaGL.
+
+**Still open**, unchanged: a way to release the GPU from outside the faulting
+process.
 
 ### manga_reader: the case where raster *is* the constraint, and it wins
 

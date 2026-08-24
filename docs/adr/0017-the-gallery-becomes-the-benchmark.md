@@ -90,8 +90,9 @@ hypothetical caution: on 2026-08-22 I attributed a 45-versus-60 fps difference
 to the HUD, then disproved it myself with a repeat A/B. An instrument that
 perturbs its own subject produces exactly that kind of retraction.
 
-**7. The host tool runs both renderers; the app never compares.** `gl.on` is
-read once at startup, so a comparison is always two runs and a relaunch.
+**7. The host tool runs both renderers; the app never compares.** The renderer
+switch is read once at startup, so a comparison is always two runs and a
+relaunch.
 One command deploys, runs, flips the switch, relaunches, runs again, pulls
 both result files and prints a table. Rejected having the app remember its
 last run per backend and draw both on screen: it demos well and it drifts out
@@ -146,6 +147,40 @@ two relaunches at about three seconds each.
 - **The GPU baseline can only be taken when GL is safe to run.** A hard crash
   under GL wedges the console (ADR-0014), so an unattended GL run is a
   different risk from an unattended software run.
+
+## What the first full run said
+
+Taken 2026-08-24 on the pinned engine, both renderers, warm shader cache;
+`apps/gallery/bench/{sw,gl}.json` is this run.
+
+**Eleven of the twelve scenes stall on both renderers.** Only `fill_lerp` holds
+60 fps, and only on GL. That is the headline, and it is a statement about the
+port rather than about the suite: a stall is two consecutive frames at or below
+30 fps, and this hardware produces them almost everywhere something moves.
+
+GL wins by an order of magnitude where raster dominates — `route_hero` 16.67×,
+`blur_backdrop` 15.13×, `save_layer_tint` 7.25×, `image_scale` 5.20× — and
+loses narrowly on `transform_scale` (0.86×) and `list_churn` (0.90×). That
+spread is what flipped the app default to GL; the reasoning is in
+[ADR-0014](0014-gpu-backend-via-vitagl.md).
+
+Two things the suite got wrong about itself, both worth keeping written down:
+
+**A cold shader cache is a different machine.** vitaGL compiles each shader on
+first use and keeps it under `ux0:data/shader_cache/<TITLEID>`, at 200–400 ms
+apiece. The first committed GL baseline was taken on a fresh install, which
+charged that compilation to whichever frame happened to need the shader and put
+`blur_backdrop` at 0.95× — read at the time as "the GPU cannot help a blur".
+Warm, it is 133 ms against software's 2017 ms. **Any GL number taken on a fresh
+install is a number about compilation, not about rastering**, and a baseline
+must say which it is.
+
+**A ratio needs frames on both sides.** Software `route_push` produces *one*
+frame in six seconds — 2500 ms of raster in it — so its "worst frame" is its
+only frame, and dividing by it reported 1.22× for a scene the GPU wins by two
+orders of magnitude. The report now prints `n/a` for the ratio when either side
+fails decision 5's soundness floor, rather than a number that reads as a
+measurement.
 
 ## Revisit trigger
 

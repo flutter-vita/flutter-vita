@@ -21,7 +21,7 @@ const String kDataDir = 'ux0:data/flutter-vita';
 const String kResultPath = '$kDataDir/bench-result.json';
 const String kDonePath = '$kDataDir/bench-done';
 const String kSwitchPath = '$kDataDir/bench.on';
-const String kGlSwitchPath = '$kDataDir/gl.on';
+const String kSoftwareSwitchPath = '$kDataDir/software.on';
 
 /// True when the host has asked for an unattended run.
 ///
@@ -214,15 +214,15 @@ class BenchRunner {
 
   /// The result file, plus a marker written strictly afterwards.
   ///
-  /// The renderer recorded here is what gl.on *asked for*, and the field is
-  /// named to say so. A binary built against an older engine artifact ignores
+  /// The renderer recorded here is what software.on *asked for*, and the
+  /// field is named to say so. A binary built against an older engine artifact ignores
   /// that switch entirely -- one did, on 2026-08-22, and reported a GPU frame
   /// while the file said 0. Only the host can settle it, with `shotinfo`, so
   /// only the host writes `renderer`.
   void write() {
     final payload = <String, Object>{
       'schema': 1,
-      'gl_on_requested': switchOn(kGlSwitchPath),
+      'software_on_requested': switchOn(kSoftwareSwitchPath),
       'dart_version': Platform.version.split(' ').first,
       'scenes': results.map((r) => r.toJson()).toList(),
     };

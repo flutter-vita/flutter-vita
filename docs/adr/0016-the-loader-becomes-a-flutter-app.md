@@ -87,14 +87,23 @@ difference. Rejected the alternative of painting the critical line in C first
 and letting Flutter take over, which would have hidden the cost. Three seconds
 is small against a build, and the CLI waits on the port rather than the screen.
 
-**7. Software rendering, always.** No `gl.on` switch, unlike apps.
+**7. Software rendering, always.** No renderer switch, unlike apps — and
+since the app default flipped to GL on 2026-08-24, the loader is now the
+exception rather than the rule. It links its own strong
+`int flutter_vita_force_software = 1;` against the engine's weak definition, so
+the CPU path is a link-time fact rather than a file the memory card might be
+missing: a switch the loader has to read is a switch that can be missing on the
+one component where that matters most.
 [ADR-0014](0014-gpu-backend-via-vitagl.md) established on 2026-08-22 that a
 hard crash under GL can wedge the entire console — the PS button stops
 responding and only the power button recovers it — because a data abort runs no
 user code and nothing releases the GXM context. **The loader is the component
 that recovers from crashes, so it is the last one permitted to cause an
-unrecoverable one.** The cost is real and accepted: the window into the Flutter
-world shows the CPU rasteriser.
+unrecoverable one.** The cost is real and accepted, and grew when the app
+default flipped: the window into the Flutter world now shows the slower of the
+two rasterisers, by margins [ADR-0017](0017-the-gallery-becomes-the-benchmark.md)
+puts between 5× and 17× on the scenes that move. The loader draws a logo, an
+address and a log — none of which are those scenes.
 
 **8. No crash supervisor.** The template ships one — a background application
 that relaunches the loader when the app dies — and the loader is what it

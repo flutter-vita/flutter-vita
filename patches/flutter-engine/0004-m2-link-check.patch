@@ -240,10 +240,10 @@ index 00000000..a5e0625d
 +}  // extern "C"
 diff --git a/engine/src/flutter/shell/platform/embedder/vita_embedder.cc b/engine/src/flutter/shell/platform/embedder/vita_embedder.cc
 new file mode 100644
-index 00000000..984298aa
+index 00000000..b0c8ad90
 --- /dev/null
 +++ b/engine/src/flutter/shell/platform/embedder/vita_embedder.cc
-@@ -0,0 +1,2707 @@
+@@ -0,0 +1,2782 @@
 +// Copyright (c) 2026, the Flutter Authors. All rights reserved.
 +// Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
@@ -340,6 +340,15 @@ index 00000000..984298aa
 +// a const at namespace scope has internal linkage in C++, which is the one
 +// thing a symbol meant to be overridden must not have.
 +extern "C" __attribute__((weak)) int flutter_vita_debug_overlay = 1;
++
++// Force the CPU path regardless of any switch file.
++//
++// Weak, so a product that must never touch the GPU defines its own strong
++// `int flutter_vita_force_software = 1;` and gets it at link time rather than
++// depending on a file being present on the memory card. The loader does
++// exactly that: a switch it has to read is a switch that can be missing on the
++// one device where that matters most.
++extern "C" __attribute__((weak)) int flutter_vita_force_software = 0;
 +
 +namespace {
 +
@@ -2709,9 +2718,44 @@ index 00000000..984298aa
 +  //
 +  // Revisit when crashes are rare enough that the cost is theoretical, or if a
 +  // way is found to release the GPU from outside the faulting process.
-+  const bool want_gl = DevSwitchOn("ux0:data/flutter-vita/gl.on");
-+  if (!want_gl) {
-+    VLog("flutter-vita: software path (write '1' to gl.on for the GPU)\n");
++  // **GPU by default, software on request**, flipped 2026-08-24 from the
++  // opposite default.
++  //
++  //   ux0:data/flutter-vita/software.on   -- a '1' here forces the CPU path
++  //
++  // The benchmark decided it. Worst-frame, software over GL, on the twelve
++  // scenes of ADR-0017 with a warm shader cache: 16.67x on a hero transition,
++  // 15.13x on a backdrop blur, 7.25x on a saveLayer tint, 5.20x on image
++  // scaling. The two scenes GL loses -- transform_scale at 0.86x and
++  // list_churn at 0.90x -- lose by margins that do not pay for making every
++  // other scene slower by default.
++  //
++  // The cache matters, and the first measurement of it was wrong. vitaGL
++  // compiles each shader on first use and keeps it in
++  // ux0:data/shader_cache/<TITLEID>, at 200-400 ms apiece. A cold-cache run
++  // charges that to whichever frame happens to need the shader, which put
++  // blur_backdrop at 0.95x and read as "the GPU cannot help a blur". Warm, it
++  // is 133 ms against software's 2017 ms. Any GL number taken on a fresh
++  // install is a number about compilation, not about rastering.
++  //
++  // What has not changed is why the old default existed: a hard crash under
++  // GL can still wedge the console, because a data abort runs no user code and
++  // nothing releases the GXM context. That risk is now taken deliberately in
++  // exchange for the numbers above, and the escape hatch is one `put` away
++  // rather than a rebuild.
++  //
++  // Two things still want the CPU path and get it. The loader forces it
++  // through the strong symbol below, because the component that recovers from
++  // crashes is the last one permitted to cause an unrecoverable one
++  // (ADR-0016 decision 7). And any app needing text input wants it until the
++  // common dialog can composite over vitaGL, since under GL the IME takes the
++  // screen and never gives it back.
++  const bool force_software =
++      flutter_vita_force_software != 0 ||
++      DevSwitchOn("ux0:data/flutter-vita/software.on");
++  if (force_software) {
++    VLog("flutter-vita: software path (%s)\n",
++         flutter_vita_force_software != 0 ? "built in" : "software.on");
 +  } else {
 +    g_gl_enabled = InitGl();
 +    if (!g_gl_enabled) {
@@ -2869,11 +2913,42 @@ index 00000000..984298aa
 +         display_result);
 +  }
 +
++  // Half-resolution rastering, with the layout left alone.
++  //
++  //   ux0:data/flutter-vita/halfres.on   -- a '1' here halves the surface
++  //
++  // An experiment, not a feature, and a narrow one. The GPU run on 2026-08-24
++  // dropped route_push's UI-thread build time from 164 ms to 1.25 ms while its
++  // raster time went from 2500 ms to 7.6 ms. Build time should not depend on
++  // the renderer. Thread
++  // affinity was the first explanation and pinning disproved it, which leaves
++  // memory bandwidth: the software rasteriser writes a 2 MB framebuffer every
++  // frame, and if that starves the bus then Dart slows down beside it without
++  // any two threads ever queueing for a core.
++  //
++  // Halving both dimensions and halving pixel_ratio with them keeps the
++  // logical size at 960x544, so the widget tree, the layout and every line of
++  // Dart are identical -- only the pixel count changes, to a quarter. If build
++  // time moves, the cause is the raster thread's memory traffic and nothing
++  // else. If it does not, bus contention is wrong too.
++  //
++  // The blit needs no changes: it already clamps to the smaller of the surface
++  // and the display, so a quarter-size frame lands in the top-left corner. It
++  // looks wrong on the panel, which is fine -- this measures Dart, it does not
++  // show anything to anyone.
++  const bool half_res = DevSwitchOn("ux0:data/flutter-vita/halfres.on");
++  const double surface_scale = half_res ? 0.5 : 1.0;
++  if (half_res) {
++    VLog("flutter-vita: half-resolution raster (%dx%d, logical %dx%d)\n",
++         static_cast<int>(kWidth * surface_scale),
++         static_cast<int>(kHeight * surface_scale), kWidth, kHeight);
++  }
++
 +  FlutterWindowMetricsEvent metrics = {};
 +  metrics.struct_size = sizeof(FlutterWindowMetricsEvent);
-+  metrics.width = kWidth;
-+  metrics.height = kHeight;
-+  metrics.pixel_ratio = 1.0;
++  metrics.width = static_cast<size_t>(kWidth * surface_scale);
++  metrics.height = static_cast<size_t>(kHeight * surface_scale);
++  metrics.pixel_ratio = surface_scale;
 +  // Same display the notify above described, so the framework can associate the
 +  // window with it rather than guessing.
 +  metrics.display_id = 0;

@@ -89,11 +89,13 @@ fi
 # turned out to be running the GPU on 2026-08-22. A deploy makes the binary
 # under test the binary that was just built.
 run_one() {  # <sw|gl>
-  local mode="$1" glval
-  [ "$mode" = "gl" ] && glval=1 || glval=0
+  # software.on, not gl.on: the default flipped to GL on 2026-08-24, so the
+  # switch that exists is the one that opts *out*.
+  local mode="$1" swval
+  [ "$mode" = "sw" ] && swval=1 || swval=0
 
   echo "==> $mode: arming"
-  put "$glval" "ux0:data/flutter-vita/gl.on"
+  put "$swval" "ux0:data/flutter-vita/software.on"
   put "1"      "ux0:data/flutter-vita/bench.on"
   # Cleared first so a stale file from the previous run cannot be mistaken for
   # this one's output.
@@ -121,17 +123,24 @@ run_one() {  # <sw|gl>
   # opt-in switch. shotinfo reports what the display controller is actually
   # scanning, so the renderer in the results comes from here and not from the
   # app.
-  local actual info
-  info="$(say "$DEV" shotinfo 8)"
-  case "$info" in
-    *match=vitaGL*) actual=gl ;;
-    *match=yes*)    actual=sw ;;
-    *)              actual=unknown ;;
-  esac
+  # Retried, because the first sample can be too early rather than wrong. On
+  # the GL path sceDisplayGetFrameBuf has nothing to report until vitaGL has
+  # presented once, and a single probe two seconds after launch caught exactly
+  # that and reported the renderer as "unknown".
+  local actual=unknown info=""
+  for _ in 1 2 3 4 5 6 7 8; do
+    info="$(say "$DEV" shotinfo 8)"
+    case "$info" in
+      *match=vitaGL*) actual=gl; break ;;
+      *match=yes*)    actual=sw; break ;;
+    esac
+    sleep 2
+  done
   if [ "$actual" != "$mode" ]; then
     echo "!! asked for $mode, the device is running $actual" >&2
     echo "   $info" >&2
-    echo "   A binary built against an older engine artifact ignores gl.on." >&2
+    echo "   A binary built against an older engine artifact ignores" >&2
+    echo "   software.on and picks its own renderer." >&2
     return 1
   fi
   echo "    renderer confirmed: $actual"
@@ -158,8 +167,9 @@ MODES="sw gl"
 for m in $MODES; do run_one "$m"; done
 
 # Leave the console on software. A hard crash under GL wedges the whole thing
-# (ADR-0014), so the resting state is the one that cannot.
-put "0" "ux0:data/flutter-vita/gl.on"
+# (ADR-0014), so the resting state is the one that cannot -- even though GL is
+# now the default for a normal run.
+put "1" "ux0:data/flutter-vita/software.on"
 put "0" "ux0:data/flutter-vita/bench.on"
 
 echo

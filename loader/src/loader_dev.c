@@ -56,6 +56,17 @@
 // by deleting this line and rebuilding.
 int flutter_vita_debug_overlay = 0;
 
+// Never the GPU, whatever the memory card says.
+//
+// The embedder's default became GL on 2026-08-24 and this is the exception,
+// for the reason ADR-0016 decision 7 gives: a hard crash under GL can wedge
+// the console, and the loader is the component that recovers from crashes --
+// so it is the last one permitted to cause an unrecoverable one. A strong
+// definition beats the engine's weak one at link time, which is deliberately
+// stronger than a switch file: a file can be absent, and the one device where
+// that matters is the one with no other way back.
+int flutter_vita_force_software = 1;
+
 #define LOG_LINES 12
 #define LOG_WIDTH 96
 

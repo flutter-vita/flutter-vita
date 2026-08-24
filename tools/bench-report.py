@@ -15,6 +15,13 @@ import sys
 # than mean, because worst-frame is the number the stall rule is made of.
 MARGIN = 0.10
 
+# Worst-frame is quantised: at 60 Hz a frame period is always a multiple of
+# 16.67 ms, so the smallest change any scene can report is one vsync. Near
+# 100 ms that is 17%, which means a flat 10% margin flags a single-step move as
+# a regression -- and it did, three times at once, on 2026-08-24. A change
+# smaller than the measurement's own resolution is not a change.
+VSYNC_MS = 1000.0 / 60.0
+
 # A scene has been sampled adequately when it ran long enough, not when it
 # produced many frames. The first run on hardware graded route_hero "pass" off
 # three frames -- worse than reporting nothing, because a green row is read as
@@ -79,6 +86,13 @@ def main():
     print(head)
     print("-" * len(head))
 
+    def sound(scene):
+        """Enough frames over enough time for its numbers to mean anything."""
+        if not scene or scene.get("error"):
+            return False
+        return (scene["frames"] >= MIN_FRAMES
+                and scene.get("span_ms", 0) >= MIN_SPAN_MS)
+
     failures = []
     for name in names:
         row = f"{name:<18}"
@@ -110,8 +124,15 @@ def main():
                 failures.append((name, m, "stall", stall))
         row = f"{name:<18}{tag:<11}" + row[18:]
         if len(have) == 2 and cells.get("sw") and cells.get("gl"):
-            sw, gl = cells["sw"]["worst_ms"], cells["gl"]["worst_ms"]
-            row += f"{(sw / gl if gl else 0):>7.2f}x"
+            # A ratio between worst frames is only a ratio if both sides
+            # actually have frames. Software route_push produces one frame in
+            # six seconds -- its "worst" is its only, and dividing by it says
+            # 1.22x about a scene the GPU wins by two orders of magnitude.
+            if any(sound(cells[m]) is False for m in ("sw", "gl")):
+                row += f"{'n/a':>8}"
+            else:
+                sw, gl = cells["sw"]["worst_ms"], cells["gl"]["worst_ms"]
+                row += f"{(sw / gl if gl else 0):>7.2f}x"
         print(row)
 
     if len(have) == 2:
@@ -134,12 +155,16 @@ def main():
             if name not in b:
                 continue
             was, now = b[name]["worst_ms"], s["worst_ms"]
-            if was > 0 and now > was * (1 + MARGIN):
+            # The half-millisecond is not slack, it is the rounding: worst-frame
+            # is stored to two decimals, so 83.33 + 16.67 lands just under a
+            # reported 100.0 and a single-vsync step reads as a regression.
+            allowed = max(was * (1 + MARGIN), was + VSYNC_MS + 0.5)
+            if was > 0 and now > allowed:
                 regressions.append((m, name, was, now))
 
     if regressions:
         print(f"\n{RED}regressions against the baseline "
-              f"(worst-frame, >{int(MARGIN * 100)}%){OFF}")
+              f"(worst-frame, >{int(MARGIN * 100)}% and >1 vsync){OFF}")
         for m, name, was, now in regressions:
             print(f"  {m:<3} {name:<18} {fmt(was)}ms -> {fmt(now)}ms "
                   f"({(now / was - 1) * 100:+.0f}%)")
