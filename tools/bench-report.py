@@ -84,7 +84,7 @@ def main():
     # the GPU could help a red row at all.
     head = f"{'scene':<18}{'stresses':<11}"
     for m in have:
-        head += f"{m + ' worst':>11}{m + ' stall':>11}{m + ' ui/ras':>13}"
+        head += f"{m + ' worst':>11}{m + ' stall':>11}{m + ' ui/ras':>13}{m + ' bad bld':>12}"
     if len(have) == 2:
         head += f"{'gpu':>8}"
     print(head)
@@ -97,6 +97,23 @@ def main():
         return (scene["frames"] >= MIN_FRAMES
                 and scene.get("span_ms", 0) >= MIN_SPAN_MS)
 
+    def bad_build(scene):
+        """UI-thread time in a typical bad frame, not in a typical frame.
+
+        `build_ms` is a median over every frame, and for a route scene most
+        frames are the transition coasting -- it reads 1.2 ms while the frame
+        that builds the incoming page takes 46. `build_max_ms` overcorrects: it
+        catches each scene's cold first frame, so an animated scene with a
+        0.6 ms median reports 30. The median of the five slowest frames is
+        neither. Those five cluster within a millisecond of each other on every
+        route scene measured, which is what makes it the steady number.
+        """
+        rows = scene.get("worst_frames") or []
+        if not rows:
+            return scene.get("build_max_ms", 0)
+        builds = sorted(f["build_ms"] for f in rows)
+        return builds[len(builds) // 2]
+
     failures = []
     for name in names:
         row = f"{name:<18}"
@@ -106,17 +123,18 @@ def main():
             s = scenes_of(results[m]).get(name)
             cells[m] = s
             if not s:
-                row += f"{'-':>11}{'-':>11}{'-':>13}"
+                row += f"{'-':>11}{'-':>11}{'-':>13}{'-':>12}"
                 continue
             tag = s.get("stresses_label", "")
             if s.get("error"):
-                row += f"{'threw':>11}{'-':>11}{'-':>13}"
+                row += f"{'threw':>11}{'-':>11}{'-':>13}{'-':>12}"
                 failures.append((name, m, "error", s["error"]))
                 continue
             if s["frames"] < MIN_FRAMES or s.get("span_ms", 0) < MIN_SPAN_MS:
                 row += f"{fmt(s['worst_ms']):>11}{'few':>11}"
                 thin_note = f"{s['frames']}f/{int(s.get('span_ms', 0))}ms"
                 row += f"{thin_note:>13}"
+                row += f"{fmt(bad_build(s)):>12}"
                 failures.append((name, m, "thin", s["frames"]))
                 continue
             stall = s["stall_ms"]
@@ -124,6 +142,7 @@ def main():
             row += f"{fmt(s['worst_ms']):>11}"
             row += f"{fmt(stall) + mark:>11}"
             row += f"{fmt(s['build_ms']) + '/' + fmt(s['raster_ms']):>13}"
+            row += f"{fmt(bad_build(s)):>12}"
             if stall > 0:
                 failures.append((name, m, "stall", stall))
         row = f"{name:<18}{tag:<11}" + row[18:]

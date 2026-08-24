@@ -73,6 +73,7 @@ class SceneStats {
     required this.stallFrames,
     required this.buildMs,
     required this.rasterMs,
+    required this.buildMaxMs,
     this.worstFrames = const <FrameSample>[],
   });
 
@@ -112,6 +113,15 @@ class SceneStats {
   final double buildMs;
   final double rasterMs;
 
+  /// The slowest single build in the scene.
+  ///
+  /// [buildMs] is a median, and a median is the wrong statistic for a route
+  /// scene: most of its frames are the transition coasting, so the median
+  /// reads 1.2 ms while the frame that actually builds the incoming page takes
+  /// 46. This is that frame. It is also far steadier than [worstMs], which is
+  /// quantised to a vsync and moves a whole step on noise.
+  final double buildMaxMs;
+
   /// The slowest few frames, split by phase, slowest first.
   ///
   /// Kept because the aggregate above hides exactly the frames worth looking
@@ -130,6 +140,7 @@ class SceneStats {
         'stall_ms': _r(stallMs),
         'stall_frames': stallFrames,
         'build_ms': _r(buildMs),
+        'build_max_ms': _r(buildMaxMs),
         'raster_ms': _r(rasterMs),
         'worst_frames': worstFrames.map((f) => f.toJson()).toList(),
       };
@@ -196,6 +207,7 @@ class FrameRecorder {
         stallFrames: 0,
         buildMs: 0,
         rasterMs: 0,
+        buildMaxMs: 0,
       );
     }
 
@@ -263,6 +275,7 @@ class FrameRecorder {
         stallFrames: 0,
         buildMs: 0,
         rasterMs: 0,
+        buildMaxMs: 0,
       );
     }
 
@@ -310,6 +323,7 @@ class FrameRecorder {
       stallMs: longestStall,
       stallFrames: longestStallFrames,
       buildMs: _percentile(builds, 0.50),
+      buildMaxMs: builds.isEmpty ? 0 : builds.last,
       rasterMs: _percentile(rasters, 0.50),
       worstFrames: worst.take(_kWorstKept).toList(),
     );

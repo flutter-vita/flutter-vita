@@ -314,6 +314,31 @@ final List<RouteScene> routeScenes = <RouteScene>[
       body: _wrapped(text: true),
     ),
   ),
+  // The same GridView as route_boxes with its three per-child wrappers turned
+  // off. SliverChildListDelegate gives every child a RepaintBoundary, an
+  // IndexedSemantics and an AutomaticKeepAlive by default; a Wrap gives it
+  // none of those and costs 20 us a box where the grid costs 670.
+  RouteScene(
+    name: 'route_grid_bare',
+    stresses: Stresses.fill,
+    page: (context) => Scaffold(
+      appBar: AppBar(title: const Text('grid bare')),
+      body: GridView.count(
+        physics: const NeverScrollableScrollPhysics(),
+        crossAxisCount: 8,
+        addRepaintBoundaries: false,
+        addAutomaticKeepAlives: false,
+        addSemanticIndexes: false,
+        children: List<Widget>.generate(48, (i) {
+          final h = ((i * 37 + 270) % 360) / 360.0;
+          return Container(
+            margin: const EdgeInsets.all(2),
+            color: HSVColor.fromAHSV(1, h * 360, 0.55, 0.75).toColor(),
+          );
+        }),
+      ),
+    ),
+  ),
   RouteScene(
     name: 'route_boxes12',
     stresses: Stresses.fill,

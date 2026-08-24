@@ -197,43 +197,56 @@ orders of magnitude. The report now prints `n/a` for the ratio when either side
 fails decision 5's soundness floor, rather than a number that reads as a
 measurement.
 
-## What the route scenes found: a Text costs 850 us
+## What the route scenes found: a Text costs 950 us
 
-Eight pushes of the same transition onto pages that differ by one thing each,
-GL, worst frame and the UI-thread time in it:
+Eleven pushes of the same transition onto pages that differ by one thing each,
+GL. The column that matters is **bad build** — the UI-thread time in a typical
+slow frame, taken as the median of the five slowest. `build_ms` is a median
+over *every* frame and reads 1.2 ms on a route scene, because most of its
+frames are the transition coasting; the frame that builds the incoming page is
+the one being measured here.
 
-| pushed page | worst frame | build | 60 fps? |
-|---|---|---|---|
-| `route_bare` — empty | 50.0 | 1.6 | **yes** |
-| `route_wrap` — 48 boxes, no Scrollable | **16.7** | 1.0 | **yes** |
-| `route_text_one` — one Text, 48 glyphs | **16.7** | 1.0 | **yes** |
-| `route_boxes12` — 12 boxes in a GridView | 50.0 | 1.6 | yes |
-| `route_boxes` — 48 boxes in a GridView | 133.3 | 26.9 | no |
-| `route_text_same` — 48 identical Text | 150.0 | 40.6 | no |
-| `route_text_uniq` — 48 unique Text | 150.0 | 41.7 | no |
-| `route_push` — 48 boxes + 48 Text | 150.0 | 46.1 | no |
-| `route_hero` — hero flight | 150.0 | 46–116 | no |
+| pushed page | bad build | worst frame |
+|---|---|---|
+| `route_text_one` — one Text, 48 glyphs | **1.0** | 133.3 |
+| `route_wrap` — 48 boxes, no Scrollable | **1.2** | 33.3 |
+| `route_boxes12` — 12 boxes in a GridView | **1.2** | 50.0 |
+| `route_bare` — empty | 1.7 | 83.3 |
+| `route_grid_bare` — 48 boxes, GridView, wrappers off | 7.1 | 133.3 |
+| `route_boxes` — 48 boxes in a GridView | 12.7 | 133.3 |
+| `route_text_uniq` — 48 unique Text | **46.9** | 150.0 |
+| `route_text_same` — 48 identical Text | 55.1 | 150.0 |
+| `route_hero` — hero flight | 61.4 | 150.0 |
+| `route_push` — 48 boxes + 48 Text | **65.8** | 150.0 |
+| `list_churn` — for comparison | 134.2 | 316.7 |
 
-Raster is 7 ms on every one of those frames. **The renderer is not involved in
-any of this**, which is the first thing the table settles: after the GPU
-default, a transition's remaining cost is entirely UI-thread.
+Raster is under 8 ms on all of them. **The renderer is not involved**, which is
+the first thing the table settles: after the GPU became the default, a
+transition's remaining cost is entirely UI-thread.
 
-The second is that **it is not the number of widgets**. `route_wrap` builds 48
-boxes and holds 60 fps on every one of 305 frames. Nor is it the transition
-machinery: `route_bare` holds it too.
+The rest of it decomposes, and the parts add up:
 
-The third is the finding. **48 `Text` widgets cost ~41 ms; one `Text` holding
-the same 48 glyphs costs 1 ms.** So the cost is per-paragraph and has nothing to
-do with how much text there is. Identical strings cost the same as unique ones
-(40.6 vs 41.7), so it is not shaping cache misses either. It is a flat
-**~850 us to build and lay out a `ui.Paragraph`, whatever is in it** — and it is
-paid on every repeat, not once: the spikes land at frames 5, 43, 81, 119 and
-267 of 291, one per push.
+| what | cost | per item |
+|---|---|---|
+| the transition itself | 1.2 ms | — |
+| 48 boxes, no Scrollable | ~0 | ~0 |
+| a GridView's sliver machinery | 5.9 ms | — |
+| its per-child RepaintBoundary, semantics and keep-alive | 5.6 ms | 117 us |
+| **48 `Text` widgets** | **45.7 ms** | **950 us** |
 
-For scale, a `Container` in the same scene costs about 20 us — a `Text` is
-**42x** a `Container`.
+`route_push` is 65.8 and those parts sum to about 59, with the remainder in the
+`Center` wrapping each glyph. **Text is 69% of what a route push costs.**
 
-### Where the 850 us goes, measured
+Three controls make the text number hard to argue with. One `Text` holding the
+same 48 glyphs costs 1.0 ms, so it is not the amount of text. Forty-eight
+*identical* strings cost the same as forty-eight unique ones, so it is not
+shaping cache misses. And the spikes land at frames 5, 43, 81, 119 and 267 of
+291 — one per push, every push — so it is not a warm-up.
+
+For scale, a `Container` in `route_wrap` costs about 25 us. A `Text` is
+**38x** a `Container`.
+
+### Where the 950 us goes, measured
 
 [patches/flutter-engine/0010](../../patches/flutter-engine/0010-paragraph-timing.patch)
 times the three phases of a `ui.Paragraph` and the embedder prints them:
@@ -249,13 +262,13 @@ that makes paragraphs — `route_text_same` 251 us, `route_text_one` 267 us,
 scene making 48 paragraphs and one making 1 is the same finding from the other
 side: `route_text_one` is fast because it makes fewer, not cheaper, paragraphs.
 
-And **the engine is only about a third of it**. 48 paragraphs at 260 us is
-12.5 ms of a 41 ms frame. The other ~28 ms is the Dart side of `TextPainter` —
+And **the engine is only about a quarter of it**. 48 paragraphs at 260 us is
+12.5 ms of the 45.7 ms that 48 `Text` widgets cost. The other ~33 ms is the Dart side of `TextPainter` —
 encoding a `ui.ParagraphStyle` and a `ui.TextStyle` into typed lists, building
 the `RenderParagraph` — which this instrument does not see.
 
 So the honest verdict is narrower than "a defect": there is no hot spot to fix.
-Text costs about 850 us per widget, spread roughly 70/30 between framework and
+Text costs about 950 us per widget, spread roughly 70/30 between framework and
 engine and spread evenly *within* the engine. The remedy is architectural —
 fewer paragraphs on a screen — until someone profiles the Dart side.
 

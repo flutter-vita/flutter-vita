@@ -51,6 +51,7 @@ class SceneResult {
           stallMs: 0,
           stallFrames: 0,
           buildMs: 0,
+          buildMaxMs: 0,
           rasterMs: 0,
         );
 
