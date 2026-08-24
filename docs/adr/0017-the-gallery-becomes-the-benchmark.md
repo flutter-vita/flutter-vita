@@ -197,6 +197,49 @@ orders of magnitude. The report now prints `n/a` for the ratio when either side
 fails decision 5's soundness floor, rather than a number that reads as a
 measurement.
 
+## What the route scenes found: a Text costs 850 us
+
+Eight pushes of the same transition onto pages that differ by one thing each,
+GL, worst frame and the UI-thread time in it:
+
+| pushed page | worst frame | build | 60 fps? |
+|---|---|---|---|
+| `route_bare` — empty | 50.0 | 1.6 | **yes** |
+| `route_wrap` — 48 boxes, no Scrollable | **16.7** | 1.0 | **yes** |
+| `route_text_one` — one Text, 48 glyphs | **16.7** | 1.0 | **yes** |
+| `route_boxes12` — 12 boxes in a GridView | 50.0 | 1.6 | yes |
+| `route_boxes` — 48 boxes in a GridView | 133.3 | 26.9 | no |
+| `route_text_same` — 48 identical Text | 150.0 | 40.6 | no |
+| `route_text_uniq` — 48 unique Text | 150.0 | 41.7 | no |
+| `route_push` — 48 boxes + 48 Text | 150.0 | 46.1 | no |
+| `route_hero` — hero flight | 150.0 | 46–116 | no |
+
+Raster is 7 ms on every one of those frames. **The renderer is not involved in
+any of this**, which is the first thing the table settles: after the GPU
+default, a transition's remaining cost is entirely UI-thread.
+
+The second is that **it is not the number of widgets**. `route_wrap` builds 48
+boxes and holds 60 fps on every one of 305 frames. Nor is it the transition
+machinery: `route_bare` holds it too.
+
+The third is the finding. **48 `Text` widgets cost ~41 ms; one `Text` holding
+the same 48 glyphs costs 1 ms.** So the cost is per-paragraph and has nothing to
+do with how much text there is. Identical strings cost the same as unique ones
+(40.6 vs 41.7), so it is not shaping cache misses either. It is a flat
+**~850 us to build and lay out a `ui.Paragraph`, whatever is in it** — and it is
+paid on every repeat, not once: the spikes land at frames 5, 43, 81, 119 and
+267 of 291, one per push.
+
+For scale, a `Container` in the same scene costs about 20 us. A `Text` being
+**42x** a `Container` is not what this ratio looks like anywhere else, which is
+why this reads as a defect rather than as a slow CPU. Whether it is font
+resolution, shaper setup or paragraph construction is not yet known — the port
+has no profiler, and separating them needs engine instrumentation.
+
+The `GridView` step is a smaller second finding: 48 cells in a `GridView` cost
+26.9 ms where the same 48 in a `Wrap` cost 1.0 ms. 12 cells in a `GridView` are
+free, so unlike the text cost this one does scale, just very steeply.
+
 ## Revisit trigger
 
 - **A scene goes red and nobody can act on it.** Then decision 4 or 5 is not

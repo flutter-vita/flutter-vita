@@ -178,6 +178,11 @@ class BenchRunner {
       // first run on hardware did.
       for (final scene in animatedScenes) {
         onProgress?.call(scene.name);
+        // Into the engine log, not just the on-screen label. A run that stops
+        // finishing tells the host only that it stopped -- on 2026-08-24 that
+        // left no way to say which of fifteen scenes was the one hanging, and
+        // the whole cost of finding out was a rebuild.
+        print('bench: scene ${scene.name}');
         try {
           await runAnimated(scene);
         } catch (e, st) {
@@ -189,6 +194,7 @@ class BenchRunner {
       }
       for (final scene in routeScenes) {
         onProgress?.call(scene.name);
+        print('bench: scene ${scene.name}');
         if (!context.mounted) break;
         try {
           await runRoute(scene, context);

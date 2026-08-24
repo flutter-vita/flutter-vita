@@ -18,15 +18,18 @@ import 'scene.dart';
 /// Deliberately not a solid rectangle: a single colour composites at a cost
 /// unrelated to anything real, and every scene would then measure the same
 /// fill. Fifty-odd tiles with text is closer to what a screen actually is.
-/// 48 coloured cells, optionally with a numeral in each.
+/// Coloured cells, optionally with a numeral in each.
 ///
 /// [text] exists so `route_boxes` and `route_push` differ by exactly one
-/// thing: whether 48 glyph runs have to be laid out.
-Widget _content({double seed = 0, bool text = true}) {
+/// thing: whether 48 glyph runs have to be laid out. [cells] exists so
+/// `route_boxes12` and `route_boxes` differ by exactly one thing: how many
+/// there are. A cost that is four times larger for four times the cells is a
+/// per-widget cost and nothing to chase; one that barely moves is overhead.
+Widget _content({double seed = 0, bool text = true, int cells = 48}) {
   return GridView.count(
     physics: const NeverScrollableScrollPhysics(),
     crossAxisCount: 8,
-    children: List<Widget>.generate(48, (i) {
+    children: List<Widget>.generate(cells, (i) {
       final h = ((i * 37 + seed * 90) % 360) / 360.0;
       return Container(
         margin: const EdgeInsets.all(2),
@@ -220,6 +223,35 @@ final List<AnimatedScene> animatedScenes = <AnimatedScene>[
   ),
 ];
 
+/// The same cells as [_content], without a Scrollable anywhere.
+///
+/// A Wrap inside a Column lays out 48 fixed-size boxes with no Viewport, no
+/// SliverGrid and no ScrollPosition, which is the difference this exists to
+/// price.
+Widget _wrapped({bool text = true, bool sameText = false, int cells = 48}) {
+  return Column(
+    children: <Widget>[
+      Wrap(
+        children: List<Widget>.generate(cells, (i) {
+          final h = ((i * 37 + 180) % 360) / 360.0;
+          return Container(
+            width: 116,
+            height: 62,
+            margin: const EdgeInsets.all(2),
+            color: HSVColor.fromAHSV(1, h * 360, 0.55, 0.75).toColor(),
+            child: text
+                ? Center(
+                    child: Text(sameText ? '8' : '$i',
+                        style: const TextStyle(fontSize: 12)),
+                  )
+                : null,
+          );
+        }),
+      ),
+    ],
+  );
+}
+
 final List<RouteScene> routeScenes = <RouteScene>[
   // Three pushes of increasing weight, which is the point of having three.
   //
@@ -235,6 +267,59 @@ final List<RouteScene> routeScenes = <RouteScene>[
     page: (context) => Scaffold(
       appBar: AppBar(title: const Text('bare')),
       body: const ColoredBox(color: Color(0xFF204060)),
+    ),
+  ),
+  // No Scrollable. Same 48 coloured boxes as route_boxes, laid out by a Wrap
+  // inside a plain Column, so the only difference from route_boxes is the
+  // GridView -- which is a Scrollable, a Viewport and a SliverGrid, and which
+  // costs the same whether it holds 12 cells or 48.
+  RouteScene(
+    name: 'route_wrap',
+    stresses: Stresses.fill,
+    page: (context) => Scaffold(
+      appBar: AppBar(title: const Text('wrap')),
+      body: _wrapped(text: false),
+    ),
+  ),
+  // Same 48 glyph runs as route_push, but every one of them is the same
+  // string. If a repeated glyph run is materially cheaper than a unique one,
+  // the cost is shaping and cache misses rather than painting.
+  RouteScene(
+    name: 'route_text_same',
+    stresses: Stresses.text,
+    page: (context) => Scaffold(
+      appBar: AppBar(title: const Text('same')),
+      body: _wrapped(text: true, sameText: true),
+    ),
+  ),
+  // The same 48 glyphs as route_text_uniq, in ONE Text instead of 48. If this
+  // is cheap, the cost is per-paragraph -- font resolution, TextPainter setup,
+  // a ui.Paragraph built and laid out -- and not per-glyph.
+  RouteScene(
+    name: 'route_text_one',
+    stresses: Stresses.text,
+    page: (context) => Scaffold(
+      appBar: AppBar(title: const Text('one')),
+      body: Center(
+        child: Text('0123456789012345678901234567890123456789012345678',
+            style: const TextStyle(fontSize: 12)),
+      ),
+    ),
+  ),
+  RouteScene(
+    name: 'route_text_uniq',
+    stresses: Stresses.text,
+    page: (context) => Scaffold(
+      appBar: AppBar(title: const Text('uniq')),
+      body: _wrapped(text: true),
+    ),
+  ),
+  RouteScene(
+    name: 'route_boxes12',
+    stresses: Stresses.fill,
+    page: (context) => Scaffold(
+      appBar: AppBar(title: const Text('boxes12')),
+      body: _content(seed: 4, text: false, cells: 12),
     ),
   ),
   RouteScene(
