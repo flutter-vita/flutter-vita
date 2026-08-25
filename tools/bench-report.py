@@ -108,7 +108,12 @@ def main():
         neither. Those five cluster within a millisecond of each other on every
         route scene measured, which is what makes it the steady number.
         """
-        rows = scene.get("worst_frames") or []
+        # Ranked by build, not by period. Ranking by period made this wander
+        # on any scene whose builds sit near the vsync grid -- route_boxes read
+        # 11.6 and 29.4 on one binary -- because the five worst periods there
+        # need not be the five heaviest builds.
+        rows = (scene.get("heaviest_builds")
+                or scene.get("worst_frames") or [])
         if not rows:
             return scene.get("build_max_ms", 0)
         builds = sorted(f["build_ms"] for f in rows)

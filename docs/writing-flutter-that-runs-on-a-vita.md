@@ -13,8 +13,7 @@ The frame budget is **16.67 ms**. The console is a 444 MHz Cortex-A9.
 **A `Text` widget costs about 1 ms.** Not a line of text, not a glyph — the
 widget. The cost is building and laying out a `ui.Paragraph`, and that is
 dominated by fixed per-paragraph work rather than by how much text is in it: a
-`Text` holding one character and a `Text` holding forty-eight cost the same
-1.2 ms.
+`Text` holding one character and a `Text` holding forty-eight cost the same.
 
 Not *completely* flat, though. The engine's own paragraph counter reports
 ~260 us for the short single-line strings the route scenes use and ~580 us
@@ -27,8 +26,8 @@ misses two frames doing it, before it has drawn anything.
 
 | scene | what it builds | UI-thread time |
 |---|---|---|
-| `route_text_uniq` | 48 `Text` widgets | **45.5 ms** |
-| `route_text_one` | 1 `Text`, same 48 glyphs | **1.2 ms** |
+| `route_text_uniq` | 48 `Text` widgets | **46.7 ms** |
+| `route_wrap` | the same 48 boxes without the text | 10.0 ms |
 
 ### The fix: one `RichText`, many `TextSpan`s
 
@@ -37,10 +36,11 @@ nearly free. The same 48 numbers on screen:
 
 | scene | | UI-thread time |
 |---|---|---|
-| `route_text_uniq` | 48 `Text` widgets | 45.5 ms |
-| `route_spans` | 1 `RichText`, 48 `TextSpan`s | **1.2 ms** |
+| `route_text_uniq` | 48 `Text` widgets | 46.7 ms |
+| `route_spans` | 1 `RichText`, 48 `TextSpan`s | **4.8 ms** |
 
-**38x, for the same pixels.** This is the single largest thing you can do.
+**Roughly 10x, for the same pixels**, and it takes the screen from missing two
+frames to fitting inside one. This is the single largest thing you can do.
 
 It is not always possible — spans cannot be laid out independently, so a grid
 of labels stays a grid of `Text`s. But a row of label-and-value pairs, a
@@ -52,8 +52,9 @@ spans, and most codebases write them as separate widgets out of habit.
 - **Shortening the strings.** 48 one-character `Text`s cost the same as 48
   long ones — see the caveat above for wrapping text, which is about 2x a
   short label and still not proportional to its length.
-- **Reusing the same string.** `route_text_same` (48 identical strings) costs
-  45.1 ms against `route_text_uniq`'s 45.5. There is no content cache to hit.
+- **Reusing the same string.** 48 identical strings cost
+  the same as 48 unique ones — measured before that control was retired. There
+  is no content cache to hit.
 - **A simpler `TextStyle`** — mostly. A style whose values all match the
   defaults costs ~400 us instead of ~750, but `DefaultTextStyle` in any
   Material app sets a colour and a family, so you are on the expensive side
@@ -65,11 +66,16 @@ spans, and most codebases write them as separate widgets out of habit.
 `SliverChildListDelegate` wraps every child in a `RepaintBoundary`, an
 `IndexedSemantics` and an `AutomaticKeepAlive`. For 48 cells:
 
-| scene | | UI-thread time |
-|---|---|---|
-| `route_wrap` | 48 boxes in a `Wrap`, no Scrollable | **1.2 ms** |
-| `route_grid_bare` | 48 boxes, `GridView`, three wrappers off | 5.8 ms |
-| `route_boxes` | 48 boxes, `GridView`, stock | 11.6 ms |
+| scene | | UI-thread time | per cell |
+|---|---|---|---|
+| `route_wrap` | 48 boxes in a `Wrap`, no Scrollable | 10.0 ms | ~208 us |
+| `route_grid_bare` | ~32 visible cells, three wrappers off | **6.0 ms** | ~187 us |
+| `route_boxes` | ~32 visible cells, stock | 12.6 ms | ~394 us |
+
+A `Wrap` builds all 48; a `GridView` builds only what fits on screen, which is
+why it can come out cheaper than the `Wrap` despite the extra machinery. Per
+cell the picture is consistent: **a box costs ~200 us, and the three wrappers
+cost another ~200 us on top of it.**
 
 ```dart
 GridView.count(
@@ -80,7 +86,7 @@ GridView.count(
 )
 ```
 
-**Halves the build, and raster did not move** — 1.0 ms either way in this
+**Halves the build, and raster did not move** — around 1 ms either way in this
 scene.
 
 Read that caveat carefully, though: this scene does not scroll and repaints
@@ -98,11 +104,15 @@ A pushed route builds on the first frame of its animation, so the whole page's
 build lands inside the transition. That is why a transition stutters even
 though the transition itself is free:
 
-| scene | | worst frame |
-|---|---|---|
-| `route_bare` | pushes an empty page | **66.7 ms, no stall** |
-| `route_wrap` | pushes 48 boxes | **16.7 ms, no stall** |
-| `route_push` | pushes 48 boxes + 48 `Text`s | 150 ms, stalls |
+| scene | | build | result |
+|---|---|---|---|
+| `route_bare` | pushes an empty page | 4.2 ms | **no stall** |
+| `route_wrap` | pushes 48 boxes | 10.0 ms | **no stall** |
+| `route_spans` | pushes 48 spans in one `RichText` | 4.8 ms | **no stall** |
+| `route_push` | pushes 48 boxes + 48 `Text`s | 77.7 ms | stalls |
+
+Ten milliseconds of build fits inside a frame and nobody sees it. Forty-seven
+does not.
 
 The transition machinery costs nothing. What stutters is whatever you pushed.
 
@@ -124,6 +134,27 @@ building.
   constantly; section 1 explains it entirely.
 - **Text input** — the IME cannot composite over vitaGL, so an app that needs
   a keyboard needs `software.on` for now (ADR-0014).
+
+## Two of these numbers moved on 2026-08-25, and why
+
+An earlier version of this page said spans were **38x** cheaper than `Text`
+widgets and that 48 boxes in a `Wrap` cost 1.2 ms. Both came from a statistic
+that ranked a scene's frames by **period** — how late the frame was — and took
+the build times of the worst five.
+
+That is blind to any build that fits inside a frame. A 10 ms build makes no
+long period at all, so period-ranking could never find it and reported the
+scene's idle frames instead. Ranking by build time found them: `route_wrap` is
+10.0 ms and not 1.2, and `route_spans` is 4.8 and not 1.2.
+
+The advice does not change — spans are still the largest single win available —
+but it is 10x and not 38x, and a screen that "costs nothing" may simply have
+been costing less than one frame.
+
+**`route_boxes` and `route_push` are still not steady** (12.6 and 30.8 on one
+binary; 52.3 and 77.7). Treat the `GridView` numbers in section 2 as an
+order of magnitude. The text numbers repeat to within a millisecond across
+every run.
 
 ## Where these numbers come from, and where they stop
 

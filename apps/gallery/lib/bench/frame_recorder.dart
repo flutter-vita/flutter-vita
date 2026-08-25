@@ -75,6 +75,7 @@ class SceneStats {
     required this.rasterMs,
     required this.buildMaxMs,
     this.worstFrames = const <FrameSample>[],
+    this.heaviestBuilds = const <FrameSample>[],
   });
 
   /// How many frames the window covered. A scene with very few frames is not
@@ -122,6 +123,16 @@ class SceneStats {
   /// quantised to a vsync and moves a whole step on noise.
   final double buildMaxMs;
 
+  /// The few frames with the largest *build*, largest first.
+  ///
+  /// Distinct from [worstFrames], which ranks by period. The two coincide when
+  /// a scene's heavy frames dominate -- route_text_uniq's 46 ms builds are the
+  /// worst periods too -- and diverge when they do not: at 12 ms a build is
+  /// close enough to vsync quantisation that the five worst periods need not
+  /// be the five heaviest builds at all, and a statistic taken over them
+  /// wanders. route_boxes read 11.6 and 29.4 on one binary that way.
+  final List<FrameSample> heaviestBuilds;
+
   /// The slowest few frames, split by phase, slowest first.
   ///
   /// Kept because the aggregate above hides exactly the frames worth looking
@@ -143,6 +154,8 @@ class SceneStats {
         'build_max_ms': _r(buildMaxMs),
         'raster_ms': _r(rasterMs),
         'worst_frames': worstFrames.map((f) => f.toJson()).toList(),
+        'heaviest_builds':
+            heaviestBuilds.map((f) => f.toJson()).toList(),
       };
 
   static double _r(double v) => (v * 100).roundToDouble() / 100;
@@ -313,6 +326,8 @@ class FrameRecorder {
 
     final worst = List<FrameSample>.from(samples)
       ..sort((a, b) => b.periodMs.compareTo(a.periodMs));
+    final heaviest = List<FrameSample>.from(samples)
+      ..sort((a, b) => b.buildMs.compareTo(a.buildMs));
 
     return SceneStats(
       frames: periods.length,
@@ -326,6 +341,7 @@ class FrameRecorder {
       buildMaxMs: builds.isEmpty ? 0 : builds.last,
       rasterMs: _percentile(rasters, 0.50),
       worstFrames: worst.take(_kWorstKept).toList(),
+      heaviestBuilds: heaviest.take(_kWorstKept).toList(),
     );
   }
 

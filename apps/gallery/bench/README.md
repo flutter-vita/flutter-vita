@@ -32,12 +32,16 @@ ratio between the renderers. Do not compare a fresh GL run against this file.
 Worth knowing before reading a single run as a result. Across six consecutive
 runs of the same binary:
 
-- **The text pair does not move.** `route_text_uniq` sits at 45–47 ms and
-  `route_spans` at 1.2. That 38x gap is the most reproducible thing in the
+- **The text pair does not move.** `route_text_uniq` sits at 46–47 ms and
+  `route_spans` at 4.8. That ~10x gap is the most reproducible thing in the
   suite.
-- **The grid and wrap scenes move a lot.** `route_boxes` has read 11.6 and
-  29.4 on the same build; `route_wrap` has read 1.2 and 6.1. Treat a single
-  reading of those as an order of magnitude, not a number.
+- **`route_boxes` and `route_push` still move a lot.** 12.6 and 30.8 on one
+  binary; 52.3 and 77.7. Treat a single reading of those as an order of
+  magnitude, not a number. Unexplained.
+- **`bad bld` ranks by build time, not by frame period.** Ranking by period was
+  blind to any build that fits inside a frame — a 10 ms build produces no long
+  period — so it reported idle frames for `route_wrap` and `route_spans` and
+  understated both by 8x. Changed 2026-08-25.
 
 Which is why the gate compares worst-frame with a 10%-and-one-vsync margin
 rather than comparing `bad bld` directly. It is the coarser statistic and the
