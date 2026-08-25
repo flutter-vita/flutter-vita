@@ -168,8 +168,9 @@ class SceneStats {
 /// at scene start would miss frames belonging to the scene, and one removed at
 /// scene end would drop the last few. Slicing an always-on buffer by index has
 /// neither problem.
-/// How many slow frames a scene reports individually. Five covers "one bad
-/// frame per repeat" without turning the result file into a trace.
+/// How many slow frames a scene reports individually, when the caller does not
+/// say. Five covers "one bad frame per repeat" for a short scene without
+/// turning the result file into a trace.
 const int _kWorstKept = 5;
 
 class FrameRecorder {
@@ -200,15 +201,24 @@ class FrameRecorder {
   /// idle and fast, so leaving them in would quietly soften every percentile;
   /// dropping exactly as many as were forced is deterministic, because an
   /// idle frame does not itself drop.
-  SceneStats take(int from, {int dropTrailing = 0}) {
+  /// [keep] is how many heavy frames to record individually, and the caller
+  /// should pass the scene's repeat count.
+  ///
+  /// The number matters because the report takes a median over them. A route
+  /// scene pushes eight times, so eight samples make that median "the typical
+  /// push"; taking five instead meant that a scene throwing three outliers --
+  /// and most scenes throw one or two, at roughly twice the cluster -- had its
+  /// median land among the outliers. That is what made route_boxes read 12.6
+  /// and 30.8 on one binary.
+  SceneStats take(int from, {int dropTrailing = 0, int keep = _kWorstKept}) {
     final end = math.max(from, _all.length - dropTrailing);
     final window = _all.sublist(math.min(from, end), end);
-    return _reduce(window);
+    return _reduce(window, keep);
   }
 
   void clear() => _all.clear();
 
-  static SceneStats _reduce(List<FrameTiming> window) {
+  static SceneStats _reduce(List<FrameTiming> window, int keep) {
     if (window.length < 2) {
       return const SceneStats(
         frames: 0,
@@ -340,8 +350,8 @@ class FrameRecorder {
       buildMs: _percentile(builds, 0.50),
       buildMaxMs: builds.isEmpty ? 0 : builds.last,
       rasterMs: _percentile(rasters, 0.50),
-      worstFrames: worst.take(_kWorstKept).toList(),
-      heaviestBuilds: heaviest.take(_kWorstKept).toList(),
+      worstFrames: worst.take(keep).toList(),
+      heaviestBuilds: heaviest.take(keep).toList(),
     );
   }
 

@@ -192,6 +192,10 @@ def main():
                           f"{f['gap_ms']:>8.1f}{f['build_ms']:>8.1f}"
                           f"{f['wait_ms']:>8.1f}{f['raster_ms']:>8.1f}"
                           f"{rest:>13.1f}")
+                builds = [f["build_ms"] for f in (s_.get("heaviest_builds") or [])]
+                if builds:
+                    print(f"  heaviest builds: "
+                          + "  ".join(f"{b:.1f}" for b in builds))
         print(f"\n{DIM}phases are of the frame that ENDED the period; "
               f"unaccounted is the period minus them, which is mostly the "
               f"previous frame still finishing{OFF}")

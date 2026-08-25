@@ -123,7 +123,7 @@ class BenchRunner {
     results.add(SceneResult(
       scene.name,
       scene.stresses.label,
-      recorder.take(mark, dropTrailing: _flushFrames),
+      recorder.take(mark, dropTrailing: _flushFrames, keep: scene.repeats),
     ));
 
     setStage(null);
@@ -166,7 +166,7 @@ class BenchRunner {
     results.add(SceneResult(
       scene.name,
       scene.stresses.label,
-      recorder.take(mark, dropTrailing: _flushFrames),
+      recorder.take(mark, dropTrailing: _flushFrames, keep: scene.repeats),
     ));
   }
 

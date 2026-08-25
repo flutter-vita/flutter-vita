@@ -35,9 +35,21 @@ runs of the same binary:
 - **The text pair does not move.** `route_text_uniq` sits at 46–47 ms and
   `route_spans` at 4.8. That ~10x gap is the most reproducible thing in the
   suite.
-- **`route_boxes` and `route_push` still move a lot.** 12.6 and 30.8 on one
-  binary; 52.3 and 77.7. Treat a single reading of those as an order of
-  magnitude, not a number. Unexplained.
+- **Some route scenes are bimodal, and no single number describes them.**
+  `route_wrap`'s eight pushes on one run: **27.2 27.0 26.7 | 16.5 14.8 14.6
+  14.5 14.4**. Three cost 27 ms and five cost 14.5, so a median lands between
+  the modes and reports neither. The heavy frames sit at 144, 223 and 300 of
+  300 — spaced about two repeats apart.
+
+  The leading explanation is **Dart GC landing on a build frame**: the cost
+  scales with how much a scene allocates. `route_push` builds the most and
+  throws the largest outliers (110.6 and 85.7 over a tight cluster at 51);
+  `route_grid_bare` builds the fewest and is flat at 5.8. **This is a
+  hypothesis — nothing has measured a collection.** The port has no VM service.
+
+  So read `bad bld` as a summary and use `--frames <scene>` when it matters;
+  that prints the whole heavy-build distribution, which is where bimodality is
+  visible and a median is not.
 - **`bad bld` ranks by build time, not by frame period.** Ranking by period was
   blind to any build that fits inside a frame — a 10 ms build produces no long
   period — so it reported idle frames for `route_wrap` and `route_spans` and
