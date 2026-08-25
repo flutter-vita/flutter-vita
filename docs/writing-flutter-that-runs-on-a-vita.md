@@ -11,9 +11,16 @@ The frame budget is **16.67 ms**. The console is a 444 MHz Cortex-A9.
 ## 1. Count your `Text` widgets. That is your frame time.
 
 **A `Text` widget costs about 1 ms.** Not a line of text, not a glyph — the
-widget. A single-character `Text` and a fifty-character one cost the same,
-because the cost is building and laying out a `ui.Paragraph` and that is nearly
-flat in content.
+widget. The cost is building and laying out a `ui.Paragraph`, and that is
+dominated by fixed per-paragraph work rather than by how much text is in it: a
+`Text` holding one character and a `Text` holding forty-eight cost the same
+1.2 ms.
+
+Not *completely* flat, though. The engine's own paragraph counter reports
+~260 us for the short single-line strings the route scenes use and ~580 us
+during `list_churn`, whose tiles carry a subtitle long enough to wrap. So
+wrapping, multi-line text is roughly twice a short label — still far closer to
+flat than to proportional, and still the wrong axis to optimise along.
 
 So a screen with forty pieces of text on it costs about 40 ms to build, and
 misses two frames doing it, before it has drawn anything.
@@ -43,7 +50,8 @@ spans, and most codebases write them as separate widgets out of habit.
 ### What does not help
 
 - **Shortening the strings.** 48 one-character `Text`s cost the same as 48
-  long ones.
+  long ones — see the caveat above for wrapping text, which is about 2x a
+  short label and still not proportional to its length.
 - **Reusing the same string.** `route_text_same` (48 identical strings) costs
   45.1 ms against `route_text_uniq`'s 45.5. There is no content cache to hit.
 - **A simpler `TextStyle`** — mostly. A style whose values all match the
@@ -116,3 +124,23 @@ building.
   constantly; section 1 explains it entirely.
 - **Text input** — the IME cannot composite over vitaGL, so an app that needs
   a keyboard needs `software.on` for now (ADR-0014).
+
+## Where these numbers come from, and where they stop
+
+Every figure above is from the gallery's benchmark scenes, which are synthetic
+by design (ADR-0017 decision 1): they isolate one cost each, which is what
+makes them attributable and also what makes them unrepresentative.
+
+**The corpus check on a real app is still outstanding.** `keklist` — 242 `Text`
+call sites, "long lists" its axis in the corpus — was deployed on 2026-08-25
+and holds **60 fps under GL**, but on a main screen whose notes list is empty.
+It never exercised the cost. Its startup windows report 1852–2607 us per
+paragraph against the gallery's 260, and those are **not** quotable as a
+contradiction: a startup window includes first-use font resolution and asset
+loading, and the same run's later window reads 362 us.
+
+So: the mitigations in sections 1 and 2 are measured and real, the per-widget
+millisecond is measured on short strings and reasonable, and none of it has yet
+been confirmed on a text-dense screen of a production app. Confirming it needs
+app state the dev server cannot create — the `tap` command can navigate, but
+not populate a journal.
