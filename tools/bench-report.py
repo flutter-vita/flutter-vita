@@ -194,6 +194,8 @@ def main():
 
     # ---- the gate --------------------------------------------------------
     regressions = []
+    ungated = []
+    vanished = []
     for m in have:
         base = load(os.path.join(args.baseline, f"{m}.json"))
         if not base:
@@ -201,6 +203,20 @@ def main():
                   f"run with --baseline to write one{OFF}")
             continue
         b = scenes_of(base)
+        # A scene the baseline has never seen used to be skipped in silence,
+        # which is the same shape of bug as the cold shader cache: a green
+        # report that is not measuring what its reader thinks it is. Six scenes
+        # added on 2026-08-24 went ungraded for a day that way, including the
+        # two carrying the whole text finding.
+        for name in scenes_of(results[m]):
+            if name not in b:
+                ungated.append((m, name))
+        # And the other direction, which is a quieter loss: a scene that was
+        # deleted or renamed keeps its baseline row forever and nothing says
+        # the ratchet stopped covering it.
+        for name in b:
+            if name not in scenes_of(results[m]):
+                vanished.append((m, name))
         for name, s in scenes_of(results[m]).items():
             if name not in b:
                 continue
@@ -218,6 +234,18 @@ def main():
         for m, name, was, now in regressions:
             print(f"  {m:<3} {name:<18} {fmt(was)}ms -> {fmt(now)}ms "
                   f"({(now / was - 1) * 100:+.0f}%)")
+
+    if ungated:
+        print(f"\n{DIM}not graded — no baseline for these scenes; "
+              f"run with --baseline to start covering them{OFF}")
+        for m, name in ungated:
+            print(f"  {m:<3} {name}")
+
+    if vanished:
+        print(f"\n{DIM}baseline has scenes this run did not produce — "
+              f"deleted, renamed, or filtered out{OFF}")
+        for m, name in vanished:
+            print(f"  {m:<3} {name}")
 
     thin = [(n, m, v) for n, m, k, v in failures if k == "thin"]
     if thin:
