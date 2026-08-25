@@ -8,7 +8,7 @@ single-vsync step as a regression.
 
 | file | scenes | taken | tracks the current build? |
 |---|---|---|---|
-| `gl.json` | 20 | 2026-08-25 | **yes** |
+| `gl.json` | 18 | 2026-08-25 | **yes** |
 | `sw.json` | 14 | 2026-08-24 | **no — frozen, see below** |
 
 ## sw.json is frozen on purpose
@@ -26,6 +26,22 @@ same build to mean anything.
 
 Re-take it — both sides, in one sitting — before making any new claim about the
 ratio between the renderers. Do not compare a fresh GL run against this file.
+
+## Which numbers are steady, and which are not
+
+Worth knowing before reading a single run as a result. Across six consecutive
+runs of the same binary:
+
+- **The text pair does not move.** `route_text_uniq` sits at 45–47 ms and
+  `route_spans` at 1.2. That 38x gap is the most reproducible thing in the
+  suite.
+- **The grid and wrap scenes move a lot.** `route_boxes` has read 11.6 and
+  29.4 on the same build; `route_wrap` has read 1.2 and 6.1. Treat a single
+  reading of those as an order of magnitude, not a number.
+
+Which is why the gate compares worst-frame with a 10%-and-one-vsync margin
+rather than comparing `bad bld` directly. It is the coarser statistic and the
+steadier one.
 
 ## Adding a scene
 

@@ -1,8 +1,13 @@
 ==> gallery.vpk
     app is up — handing off to the loader
     loader up, no tap needed
-==> staging eboot.bin (13912055 bytes)
+==> staging eboot.bin (13910117 bytes)
 ==> installing
 ==> data files
+    eboot2.bin (42846 B)
+    flutter_assets/NOTICES.Z (103490 B)
+    flutter_assets/FontManifest.json (82 B)
+    flutter_assets/AssetManifest.bin (2 B)
+    sce_sys/param2.sfo (912 B)
 ==> launching
     up on 1339 after 3s

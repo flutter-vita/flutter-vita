@@ -21,15 +21,12 @@ import 'scene.dart';
 /// Coloured cells, optionally with a numeral in each.
 ///
 /// [text] exists so `route_boxes` and `route_push` differ by exactly one
-/// thing: whether 48 glyph runs have to be laid out. [cells] exists so
-/// `route_boxes12` and `route_boxes` differ by exactly one thing: how many
-/// there are. A cost that is four times larger for four times the cells is a
-/// per-widget cost and nothing to chase; one that barely moves is overhead.
-Widget _content({double seed = 0, bool text = true, int cells = 48}) {
+/// thing: whether 48 glyph runs have to be laid out.
+Widget _content({double seed = 0, bool text = true}) {
   return GridView.count(
     physics: const NeverScrollableScrollPhysics(),
     crossAxisCount: 8,
-    children: List<Widget>.generate(cells, (i) {
+    children: List<Widget>.generate(48, (i) {
       final h = ((i * 37 + seed * 90) % 360) / 360.0;
       return Container(
         margin: const EdgeInsets.all(2),
@@ -228,11 +225,11 @@ final List<AnimatedScene> animatedScenes = <AnimatedScene>[
 /// A Wrap inside a Column lays out 48 fixed-size boxes with no Viewport, no
 /// SliverGrid and no ScrollPosition, which is the difference this exists to
 /// price.
-Widget _wrapped({bool text = true, bool sameText = false, int cells = 48}) {
+Widget _wrapped({bool text = true}) {
   return Column(
     children: <Widget>[
       Wrap(
-        children: List<Widget>.generate(cells, (i) {
+        children: List<Widget>.generate(48, (i) {
           final h = ((i * 37 + 180) % 360) / 360.0;
           return Container(
             width: 116,
@@ -241,7 +238,7 @@ Widget _wrapped({bool text = true, bool sameText = false, int cells = 48}) {
             color: HSVColor.fromAHSV(1, h * 360, 0.55, 0.75).toColor(),
             child: text
                 ? Center(
-                    child: Text(sameText ? '8' : '$i',
+                    child: Text('$i',
                         style: const TextStyle(fontSize: 12)),
                   )
                 : null,
@@ -281,37 +278,13 @@ final List<RouteScene> routeScenes = <RouteScene>[
       body: _wrapped(text: false),
     ),
   ),
-  // Same 48 glyph runs as route_push, but every one of them is the same
-  // string. If a repeated glyph run is materially cheaper than a unique one,
-  // the cost is shaping and cache misses rather than painting.
-  RouteScene(
-    name: 'route_text_same',
-    stresses: Stresses.text,
-    page: (context) => Scaffold(
-      appBar: AppBar(title: const Text('same')),
-      body: _wrapped(text: true, sameText: true),
-    ),
-  ),
-  // The same 48 glyphs as route_text_uniq, in ONE Text instead of 48. If this
-  // is cheap, the cost is per-paragraph -- font resolution, TextPainter setup,
-  // a ui.Paragraph built and laid out -- and not per-glyph.
-  RouteScene(
-    name: 'route_text_one',
-    stresses: Stresses.text,
-    page: (context) => Scaffold(
-      appBar: AppBar(title: const Text('one')),
-      body: Center(
-        child: Text('0123456789012345678901234567890123456789012345678',
-            style: const TextStyle(fontSize: 12)),
-      ),
-    ),
-  ),
   // The same 48 numbers as route_text_uniq, as 48 TextSpans inside ONE
   // RichText instead of 48 Text widgets. One paragraph, 48 styled runs.
   //
-  // If the cost is per-paragraph this collapses to route_text_one's 1 ms and
-  // "merge Texts into spans" is a real answer for an app. If it is per-run it
-  // stays near 46 ms and merging buys nothing.
+  // The pair that carries the whole finding, and the reason both stay in the
+  // suite: 1.2 ms here against route_text_uniq's 45.5 for the same 48 numbers
+  // on screen. If that gap ever closes, the advice in
+  // docs/writing-flutter-that-runs-on-a-vita.md is wrong.
   RouteScene(
     name: 'route_spans',
     stresses: Stresses.text,
@@ -361,14 +334,6 @@ final List<RouteScene> routeScenes = <RouteScene>[
           );
         }),
       ),
-    ),
-  ),
-  RouteScene(
-    name: 'route_boxes12',
-    stresses: Stresses.fill,
-    page: (context) => Scaffold(
-      appBar: AppBar(title: const Text('boxes12')),
-      body: _content(seed: 4, text: false, cells: 12),
     ),
   ),
   RouteScene(
