@@ -86,18 +86,56 @@ late, it is not `message_loop_vita.cc` and it is not vsync -- it is the thread
 that decides a deadline has arrived, which is dart:io's event handler
 (`eventhandler_vita.cc`, `poll()` over `sceNetEpoll`).
 
-## This is a port bug, not a localsend bug
+## This is a port bug, not a localsend bug — and it is fixed
 
-Any Flutter app that animates or polls with `Timer` or `Future.delayed` is
-capped at 5 fps on this console today. `AnimationController` is not affected --
+Any Flutter app that animates or polls with `Timer` or `Future.delayed` was
+capped at 5 fps on this console. `AnimationController` is not affected --
 it rides vsync -- which is why the gallery holds 60 fps on scenes that look far
 heavier than a rotating ring.
 
-The same subsystem fails harder when asked for real sockets. A loopback TCP
-round-trip probe gets through bind, connect and accept and then stops: the first
-byte never comes back, and the 30 s timeout wrapped around the probe never fires
-either, because that timeout is a timer and the thread that would deliver it is
-the one that is stuck. See `apps/gallery/lib/bench/socket_probe.dart`.
+The same subsystem failed harder when asked for real sockets. A loopback TCP
+round-trip probe got through bind, connect and accept and then stopped: the
+first byte never came back, and the 30 s timeout wrapped around the probe never
+fired either, because that timeout is a timer and the thread that would deliver
+it was the one that was stuck. See `apps/gallery/lib/bench/socket_probe.dart`;
+whether the fix below also fixes that is untested.
+
+### The cause
+
+[spikes/t1-timers](../../spikes/t1-timers/README.md) measured the primitives
+directly. Every timeout on this console is exact -- `sceKernelDelayThread`,
+`poll()` with and without a socket in the array, and `sceNetEpollWait` all
+honour 33 ms to within a tenth of a millisecond, and the epoll instance
+`poll()` builds and tears down on every call costs nothing measurable.
+
+What is late is **readiness**. A byte written to a socketpair reaches a waiting
+reader ~197 ms after the wait began, wherever in that window the write lands,
+and it is the same number whether the reader is in `poll()`, in a blocking
+`recv()`, in `sceNetRecv()` on a raw sceNet socket, or in `sceNetEpollWait()`.
+It is the loopback interface, serviced on a ~200 ms tick; WiFi sockets are
+prompt, which is why this project's own dev server always felt fine.
+
+dart:io's event handler learned "arm a timer at T" by reading a **loopback
+socketpair**. Every timer registration therefore paid one tick, the loop
+self-synchronised to it, and `Future.delayed(33 ms)` became 200 ms.
+
+### The fix
+
+`eventhandler_vita.cc` now keeps a mutex-guarded queue of interrupt messages and
+signals an event flag -- measured at 0.03 ms cross-thread, the same primitive
+`message_loop_vita.cc` already wakes the UI thread on sixty times a second. With
+no socket registered the handler waits on that flag with the exact deadline;
+`poll()` owns the wait only when there are real sockets, sliced at 8 ms so the
+queue is still noticed promptly.
+
+| | before | after |
+|---|---|---|
+| `Future.delayed(1 ms)` | 199.4 ms | 2.4 ms |
+| `Future.delayed(33 ms)` | 200.0 ms | **34.2 ms** |
+| localsend Receive | 5.00 fps | **~30 fps** |
+
+The residual ~1.2 ms is the round trip through the Dart port and the UI message
+loop.
 
 ## The number that still does not fit
 
@@ -125,7 +163,8 @@ localsend specifically was never going to be fixed by a renderer, and that
 anyone reading "4.87 fps, raster 97%" in ADR-0014 should now read it as
 "raster was 97% of a frame that was 191 ms of waiting".
 
-It also does not say the timer grid is the only thing wrong with this screen.
-It says the timer grid sets the frame rate, exactly, and that nothing else can
-be measured on this app until it is fixed -- a 5 Hz ceiling hides every cost
-below 200 ms.
+It also does not say the timer grid was the only thing wrong with this screen.
+It says the timer grid set the frame rate, exactly, and that nothing else could
+be measured on this app until it was fixed -- a 5 Hz ceiling hides every cost
+below 200 ms. At 30 fps the screen is worth measuring again, and the 6.9 ms
+paragraph is the first thing to look at.

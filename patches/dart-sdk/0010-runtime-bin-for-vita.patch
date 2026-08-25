@@ -312,10 +312,10 @@ index 7da269ca..21368db6 100644
  #endif
 diff --git a/runtime/bin/eventhandler_vita.cc b/runtime/bin/eventhandler_vita.cc
 new file mode 100644
-index 00000000..796b2d3c
+index 00000000..29aaa1d7
 --- /dev/null
 +++ b/runtime/bin/eventhandler_vita.cc
-@@ -0,0 +1,422 @@
+@@ -0,0 +1,479 @@
 +// Copyright (c) 2026, the Dart project authors.  Please see the AUTHORS file
 +// for details. All rights reserved. Use of this source code is governed by a
 +// BSD-style license that can be found in the LICENSE file.
@@ -330,6 +330,8 @@ index 00000000..796b2d3c
 +#include <fcntl.h>       // NOLINT
 +#include <netinet/in.h>  // NOLINT
 +#include <poll.h>        // NOLINT
++#include <psp2/kernel/error.h>      // NOLINT
++#include <psp2/kernel/threadmgr.h>  // NOLINT
 +#include <stdio.h>       // NOLINT
 +#include <string.h>      // NOLINT
 +#include <sys/socket.h>  // NOLINT
@@ -362,6 +364,27 @@ index 00000000..796b2d3c
 +namespace dart {
 +namespace bin {
 +
++// The one bit of the event flag this handler uses. An event flag carries 32;
++// only "something is queued" is needed.
++static constexpr unsigned int kWakeBit = 1u;
++
++// Negative means "wait until something happens".
++static constexpr int64_t kWaitForever = -1;
++
++// How long the wait is allowed to run before the interrupt queue is checked
++// again, when there are sockets registered and poll() therefore owns the wait.
++//
++// poll() cannot wait on an event flag, so with even one socket open the queue
++// can only be noticed by coming back to look. Eight milliseconds is half a
++// frame: short enough that a timer armed while a socket is open is no worse
++// off than one armed by a widget, and cheap enough to ignore -- a poll() that
++// times out with nothing ready costs the epoll create and destroy measured at
++// under 0.05 ms in spikes/t1-timers.
++//
++// It does nothing to socket latency, which is the platform's ~200 ms tick
++// either way.
++static constexpr int64_t kInterruptSliceUs = 8 * 1000;
++
 +intptr_t DescriptorInfo::GetPollEvents() {
 +  // POLLERR and POLLHUP are reported whether or not they are requested, so
 +  // asking for them explicitly would be redundant -- and POLLERR is not even a
@@ -381,19 +404,14 @@ index 00000000..796b2d3c
 +      poll_fds_(nullptr),
 +      poll_fds_capacity_(0),
 +      poll_fds_length_(0) {
-+  // A socket pair, not a pipe. pipe() does exist on this platform and is a real
-+  // implementation, but it is built on sceKernelCreateMsgPipe and a
-+  // message-pipe descriptor is not a socket -- poll() is sceNetEpoll
-+  // underneath, and would reject it.
-+  //
-+  // socketpair() works because VitaSDK implements it as a loopback TCP pair:
-+  // socket/bind/listen/connect/accept on 127.0.0.1, AF_INET. Both ends are
-+  // therefore ordinary sockets that poll() is happy to wait on.
-+  if (socketpair(AF_INET, SOCK_STREAM, 0, interrupt_fds_) != 0) {
-+    FATAL("Interrupt socket pair creation failed: %s", strerror(errno));
-+  }
-+  if (!FDUtils::SetNonBlocking(interrupt_fds_[0])) {
-+    FATAL("Failed to set interrupt socket non blocking");
++  // An event flag and a queue in memory, where every other POSIX backend has a
++  // pipe or a socketpair. This is not a stylistic difference: a loopback socket
++  // on this console delivers on a ~200 ms tick, and using one here made every
++  // Dart timer in every app fire at 5 Hz. See the note in eventhandler_vita.h.
++  event_flag_ = sceKernelCreateEventFlag("dart_io_eventhandler", 0, 0, nullptr);
++  if (event_flag_ < 0) {
++    FATAL("sceKernelCreateEventFlag failed: 0x%08X",
++          static_cast<unsigned int>(event_flag_));
 +  }
 +  shutdown_ = false;
 +}
@@ -406,8 +424,10 @@ index 00000000..796b2d3c
 +
 +EventHandlerImplementation::~EventHandlerImplementation() {
 +  socket_map_.Clear(DeleteDescriptorInfo);
-+  close(interrupt_fds_[0]);
-+  close(interrupt_fds_[1]);
++  if (event_flag_ >= 0) {
++    sceKernelDeleteEventFlag(event_flag_);
++    event_flag_ = -1;
++  }
 +  ::free(poll_fds_);
 +}
 +
@@ -442,34 +462,30 @@ index 00000000..796b2d3c
 +  msg.data = data;
 +
 +  // The Linux backend relies on a pipe write of less than PIPE_BUF being
-+  // atomic, so it needs no lock. A TCP socket makes no such promise: two
-+  // concurrent senders could interleave and the reader would see a torn
-+  // message. The messages are tiny and this is not a hot path, so the whole
-+  // send is done in one loop and callers are expected to be serialised by
-+  // Dart's own event-handler port -- if that ever stops being true, this is
-+  // where a mutex belongs.
-+  const char* buffer = reinterpret_cast<const char*>(&msg);
-+  intptr_t remaining = kInterruptMessageSize;
-+  while (remaining > 0) {
-+    intptr_t written =
-+        VITA_RETRY_EINTR(send(interrupt_fds_[1], buffer, remaining, 0));
-+    if (written < 0) {
-+      FATAL("Interrupt message failure: %s", strerror(errno));
-+    }
-+    buffer += written;
-+    remaining -= written;
++  // atomic, so it needs no lock. A queue in memory needs one, and gets one:
++  // this is called from whichever thread ran the Dart code, and the handler
++  // thread drains it.
++  {
++    MutexLocker locker(&queue_mutex_);
++    queue_.Add(msg);
 +  }
++  sceKernelSetEventFlag(event_flag_, kWakeBit);
 +}
 +
-+void EventHandlerImplementation::HandleInterruptFd() {
-+  const intptr_t kMaxMessages = kInterruptMessageSize;
-+  InterruptMessage msg[kMaxMessages];
-+  ssize_t bytes = VITA_RETRY_EINTR(
-+      recv(interrupt_fds_[0], msg, kMaxMessages * kInterruptMessageSize, 0));
-+  for (ssize_t i = 0; i < bytes / kInterruptMessageSize; i++) {
++void EventHandlerImplementation::HandleInterruptQueue() {
++  // Swapped out under the lock rather than processed under it: handling a
++  // message can call back into code that sends another one, and holding the
++  // mutex across that would deadlock.
++  MallocGrowableArray<InterruptMessage> msg;
++  {
++    MutexLocker locker(&queue_mutex_);
++    msg.AddArray(queue_);
++    queue_.Clear();
++  }
++  for (intptr_t i = 0; i < msg.length(); i++) {
 +    if (msg[i].id == kTimerId) {
 +      // No timerfd to re-arm. The deadline is read straight out of
-+      // timeout_queue_ when poll()'s timeout is computed, so updating the
++      // timeout_queue_ when the wait's timeout is computed, so updating the
 +      // queue is the whole job.
 +      timeout_queue_.UpdateTimeout(msg[i].dart_port, msg[i].data);
 +    } else if (msg[i].id == kShutdownId) {
@@ -546,7 +562,7 @@ index 00000000..796b2d3c
 +  // handed the whole array on each call, so there is nothing to keep in sync:
 +  // the array is rebuilt from the masks each time round, and a mask change
 +  // needs no bookkeeping at all.
-+  intptr_t needed = 1;  // slot 0 is always the interrupt socket
++  intptr_t needed = 0;  // sockets only -- the interrupt is not a descriptor
 +  for (SimpleHashMap::Entry* entry = socket_map_.Start(); entry != nullptr;
 +       entry = socket_map_.Next(entry)) {
 +    DescriptorInfo* di = reinterpret_cast<DescriptorInfo*>(entry->value);
@@ -569,11 +585,7 @@ index 00000000..796b2d3c
 +    poll_fds_capacity_ = capacity;
 +  }
 +
-+  poll_fds_[0].fd = interrupt_fds_[0];
-+  poll_fds_[0].events = POLLIN;
-+  poll_fds_[0].revents = 0;
-+
-+  intptr_t n = 1;
++  intptr_t n = 0;
 +  for (SimpleHashMap::Entry* entry = socket_map_.Start(); entry != nullptr;
 +       entry = socket_map_.Next(entry)) {
 +    DescriptorInfo* di = reinterpret_cast<DescriptorInfo*>(entry->value);
@@ -624,13 +636,7 @@ index 00000000..796b2d3c
 +}
 +
 +void EventHandlerImplementation::HandleEvents() {
-+  bool interrupt_seen = false;
-+
-+  if ((poll_fds_[0].revents & POLLIN) != 0) {
-+    interrupt_seen = true;
-+  }
-+
-+  for (intptr_t i = 1; i < poll_fds_length_; i++) {
++  for (intptr_t i = 0; i < poll_fds_length_; i++) {
 +    if (poll_fds_[i].revents == 0) {
 +      continue;
 +    }
@@ -654,11 +660,31 @@ index 00000000..796b2d3c
 +      DartUtils::PostInt32(port, event_mask);
 +    }
 +  }
++}
 +
-+  if (interrupt_seen) {
-+    // After the socket events, so that a socket is not closed before the events
-+    // already collected for it have been delivered.
-+    HandleInterruptFd();
++void EventHandlerImplementation::WaitOnEventFlag(int64_t timeout_us) {
++  SceUInt storage = 0;
++  SceUInt* timeout = nullptr;  // nullptr means wait indefinitely.
++  if (timeout_us >= 0) {
++    // SceUInt is 32-bit, so a deadline more than ~71 minutes out would
++    // overflow. Cap it and wake early instead: the loop recomputes the deadline
++    // and waits again, so a spurious wakeup costs one cheap iteration where an
++    // overflowed timeout would cost a missed one.
++    constexpr int64_t kMaxTimeoutUs = 0x7FFFFFFF;
++    storage = static_cast<SceUInt>(
++        timeout_us > kMaxTimeoutUs ? kMaxTimeoutUs : timeout_us);
++    timeout = &storage;
++  }
++  unsigned int out_bits = 0;
++  const int result = sceKernelWaitEventFlag(event_flag_, kWakeBit,
++                                            SCE_EVENT_WAITOR, &out_bits,
++                                            timeout);
++  // A timeout is the ordinary case -- it means a deadline arrived -- so it is
++  // not an error.
++  if (result < 0 &&
++      static_cast<unsigned int>(result) != SCE_KERNEL_ERROR_WAIT_TIMEOUT) {
++    Syslog::PrintErr("dart:io: sceKernelWaitEventFlag failed: 0x%08X\n",
++                     static_cast<unsigned int>(result));
 +  }
 +}
 +
@@ -668,42 +694,73 @@ index 00000000..796b2d3c
 +  ASSERT(handler_impl != nullptr);
 +
 +  while (!handler_impl->shutdown_) {
++    // Clear before draining the queue, not after. If a WakeupHandler lands in
++    // the window between the two, the bit it sets survives into the wait below
++    // and returns from it immediately -- which is the correct outcome, because
++    // that message has not been seen yet. Clearing afterwards would swallow the
++    // wakeup and the handler would sleep through its own work.
++    sceKernelClearEventFlag(handler_impl->event_flag_, ~kWakeBit);
++    handler_impl->HandleInterruptQueue();
++    if (handler_impl->shutdown_) {
++      break;
++    }
++
++    // After the queue, because a message in it may have registered or closed a
++    // socket, or changed a mask.
 +    handler_impl->BuildPollArray();
 +
 +    // timerfd's replacement. The queue holds absolute times in milliseconds on
-+    // the same clock as GetCurrentTimeMillis, so the wait is the difference --
-+    // clamped at zero, because a deadline already in the past must not become a
-+    // negative timeout, which poll() reads as "wait for ever".
-+    int timeout = -1;
++    // the same clock as GetCurrentMonotonicMillis, so the wait is the
++    // difference -- clamped at zero, because a deadline already in the past
++    // must not become a negative timeout, which both waits read as "for ever".
++    int64_t timeout_us = kWaitForever;
 +    if (handler_impl->timeout_queue_.HasTimeout()) {
-+      int64_t millis = handler_impl->timeout_queue_.CurrentTimeout() -
-+                       TimerUtils::GetCurrentMonotonicMillis();
-+      timeout = (millis < 0) ? 0 : static_cast<int>(millis);
++      const int64_t millis = handler_impl->timeout_queue_.CurrentTimeout() -
++                             TimerUtils::GetCurrentMonotonicMillis();
++      timeout_us = (millis < 0) ? 0 : millis * 1000;
 +    }
 +
-+    intptr_t result = VITA_RETRY_EINTR(
-+        poll(handler_impl->poll_fds_,
-+             static_cast<unsigned int>(handler_impl->poll_fds_length_),
-+             timeout));
-+
-+    if (result < 0) {
-+      Syslog::PrintErr("dart:io: poll failed: %s\n", strerror(errno));
-+      continue;
-+    }
-+
-+    if (result == 0) {
-+      // Timed out: fire every deadline that has come due. More than one can
-+      // expire in a single wait, so this drains rather than firing once.
-+      while (handler_impl->timeout_queue_.HasTimeout() &&
-+             handler_impl->timeout_queue_.CurrentTimeout() <=
-+                 TimerUtils::GetCurrentMonotonicMillis()) {
-+        DartUtils::PostNull(handler_impl->timeout_queue_.CurrentPort());
-+        handler_impl->timeout_queue_.RemoveCurrent();
++    if (handler_impl->poll_fds_length_ == 0) {
++      // The common case, and the one that matters: an app with no sockets open
++      // waits on the event flag alone, which is both exact and interruptible.
++      // This is what puts Future.delayed(33 ms) back at 33 ms.
++      //
++      // A deadline already in the past skips the wait outright rather than
++      // asking for a zero timeout: nothing here needs sceKernelWaitEventFlag to
++      // have an opinion about that case, and the expired-timer drain below is
++      // the next thing that runs either way.
++      if (timeout_us != 0) {
++        handler_impl->WaitOnEventFlag(timeout_us);
 +      }
-+      continue;
++    } else {
++      // With sockets registered, poll() owns the wait and cannot be woken by
++      // the event flag, so the wait is sliced and the queue re-checked. See
++      // kInterruptSliceUs.
++      int64_t slice_us = kInterruptSliceUs;
++      if (timeout_us >= 0 && timeout_us < slice_us) {
++        slice_us = timeout_us;
++      }
++      // Rounded up: a sub-millisecond slice must not become a busy loop.
++      const int slice_ms = static_cast<int>((slice_us + 999) / 1000);
++      const intptr_t result = VITA_RETRY_EINTR(
++          poll(handler_impl->poll_fds_,
++               static_cast<unsigned int>(handler_impl->poll_fds_length_),
++               slice_ms));
++      if (result < 0) {
++        Syslog::PrintErr("dart:io: poll failed: %s\n", strerror(errno));
++      } else if (result > 0) {
++        handler_impl->HandleEvents();
++      }
 +    }
 +
-+    handler_impl->HandleEvents();
++    // Fire every deadline that has come due, however the wait ended. More than
++    // one can expire in a single wait, so this drains rather than firing once.
++    while (handler_impl->timeout_queue_.HasTimeout() &&
++           handler_impl->timeout_queue_.CurrentTimeout() <=
++               TimerUtils::GetCurrentMonotonicMillis()) {
++      DartUtils::PostNull(handler_impl->timeout_queue_.CurrentPort());
++      handler_impl->timeout_queue_.RemoveCurrent();
++    }
 +  }
 +  DEBUG_ASSERT(ReferenceCounted<Socket>::instances() == 0);
 +  handler->NotifyShutdownDone();
@@ -740,10 +797,10 @@ index 00000000..796b2d3c
 +#endif  // defined(DART_HOST_OS_VITA)
 diff --git a/runtime/bin/eventhandler_vita.h b/runtime/bin/eventhandler_vita.h
 new file mode 100644
-index 00000000..8dfce668
+index 00000000..ff3cf2ba
 --- /dev/null
 +++ b/runtime/bin/eventhandler_vita.h
-@@ -0,0 +1,132 @@
+@@ -0,0 +1,164 @@
 +// Copyright (c) 2026, the Dart project authors.  Please see the AUTHORS file
 +// for details. All rights reserved. Use of this source code is governed by a
 +// BSD-style license that can be found in the LICENSE file.
@@ -757,10 +814,13 @@ index 00000000..8dfce668
 +
 +#include <errno.h>
 +#include <poll.h>
++#include <psp2/kernel/threadmgr.h>
 +#include <sys/socket.h>
 +#include <unistd.h>
 +
++#include "platform/growable_array.h"
 +#include "platform/hashmap.h"
++#include "platform/synchronization.h"
 +
 +namespace dart {
 +namespace bin {
@@ -781,11 +841,29 @@ index 00000000..8dfce668
 +//                    not a socket -- sceNetEpoll would reject it. Unusable as
 +//                    the wakeup channel even though it works.
 +//
-+//                    socketpair() is the answer, and it works for a reason
-+//                    worth knowing: VitaSDK implements it as a loopback TCP
-+//                    pair -- socket/bind/listen/connect/accept on 127.0.0.1,
-+//                    AF_INET, not AF_UNIX. Both ends are therefore ordinary
-+//                    sockets that poll() can wait on.
++//                    socketpair() looked like the answer, and it is what the
++//                    first version used: VitaSDK implements it as a loopback
++//                    TCP pair -- socket/bind/listen/connect/accept on
++//                    127.0.0.1, AF_INET, not AF_UNIX -- so both ends are
++//                    ordinary sockets poll() will wait on. It works, and it
++//                    made every Dart timer on this port fire at 5 Hz.
++//
++//                    **Loopback delivery on this console runs on a ~200 ms
++//                    tick.** Measured six ways in spikes/t1-timers: a byte
++//                    written to a socketpair reaches a waiting reader ~197 ms
++//                    after the wait began, wherever in that window the write
++//                    lands, and it makes no difference whether the reader is in
++//                    poll(), in a blocking recv(), in sceNetRecv() on a raw
++//                    sceNet socket, or in sceNetEpollWait(). It is not poll and
++//                    it is not epoll; it is the loopback interface. Timeouts,
++//                    by contrast, are exact to a tenth of a millisecond in all
++//                    four.
++//
++//                    So the wakeup channel is an **event flag** and a
++//                    mutex-guarded queue instead. The same measurement puts a
++//                    cross-thread sceKernelSetEventFlag at 0.03 ms, which is
++//                    the primitive message_loop_vita.cc already wakes the UI
++//                    thread on sixty times a second.
 +//
 +//   timerfd       -> absent, and not needed. TimeoutQueue already knows the
 +//                    next deadline; it becomes poll()'s timeout argument.
@@ -853,7 +931,12 @@ index 00000000..8dfce668
 +  void HandleEvents();
 +  static void Poll(uword args);
 +  void WakeupHandler(intptr_t id, Dart_Port dart_port, int64_t data);
-+  void HandleInterruptFd();
++  // Drains queue_ and acts on every message in it.
++  void HandleInterruptQueue();
++  // Blocks on event_flag_ for at most timeout_us, or indefinitely if it is
++  // negative. Only used when no socket is registered -- poll() cannot wait on
++  // an event flag, so when there are sockets the wait is sliced instead.
++  void WaitOnEventFlag(int64_t timeout_us);
 +  void SetPort(intptr_t fd, Dart_Port dart_port, intptr_t mask);
 +  intptr_t GetPollEvents(intptr_t events, DescriptorInfo* di);
 +  static void* GetHashmapKeyFromFd(intptr_t fd);
@@ -862,9 +945,15 @@ index 00000000..8dfce668
 +  SimpleHashMap socket_map_;
 +  TimeoutQueue timeout_queue_;
 +  bool shutdown_;
-+  int interrupt_fds_[2];
 +
-+  // Rebuilt on every wait. Entry 0 is always interrupt_fds_[0].
++  // The wakeup channel, in place of the socketpair every other POSIX backend
++  // uses. See the note above.
++  SceUID event_flag_;
++  dart::Mutex queue_mutex_;
++  MallocGrowableArray<InterruptMessage> queue_;
++
++  // Rebuilt on every wait, and it holds sockets only -- there is no interrupt
++  // descriptor to reserve a slot for any more.
 +  struct pollfd* poll_fds_;
 +  intptr_t poll_fds_capacity_;
 +  intptr_t poll_fds_length_;
