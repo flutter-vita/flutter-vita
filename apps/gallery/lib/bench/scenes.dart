@@ -306,6 +306,30 @@ final List<RouteScene> routeScenes = <RouteScene>[
       ),
     ),
   ),
+  // The same 48 numbers as route_text_uniq, as 48 TextSpans inside ONE
+  // RichText instead of 48 Text widgets. One paragraph, 48 styled runs.
+  //
+  // If the cost is per-paragraph this collapses to route_text_one's 1 ms and
+  // "merge Texts into spans" is a real answer for an app. If it is per-run it
+  // stays near 46 ms and merging buys nothing.
+  RouteScene(
+    name: 'route_spans',
+    stresses: Stresses.text,
+    page: (context) => Scaffold(
+      appBar: AppBar(title: const Text('spans')),
+      body: Center(
+        child: RichText(
+          text: TextSpan(
+            style: const TextStyle(fontSize: 12, color: Color(0xFF000000)),
+            children: List<TextSpan>.generate(
+              48,
+              (i) => TextSpan(text: '$i '),
+            ),
+          ),
+        ),
+      ),
+    ),
+  ),
   RouteScene(
     name: 'route_text_uniq',
     stresses: Stresses.text,
