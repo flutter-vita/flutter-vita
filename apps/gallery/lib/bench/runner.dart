@@ -16,6 +16,9 @@ import 'package:flutter/scheduler.dart';
 import 'frame_recorder.dart';
 import 'scene.dart';
 import 'text_probe.dart';
+// ignore: unused_import
+import 'socket_probe.dart';
+import 'timer_probe.dart';
 import 'scenes.dart';
 
 const String kDataDir = 'ux0:data/flutter-vita';
@@ -178,6 +181,16 @@ class BenchRunner {
     // this wants cold-ish. See text_probe.dart.
     final probe = probeText();
     print('bench: $probe');
+    print('bench: ${await probeTimers()}');
+    print('bench: ${await probeTimers(pumpFrames: true)}');
+    // Not called. probeSockets() wedges the isolate: bind, connect and accept
+    // all succeed, the first byte never comes back, and the 30 s timeout
+    // guarding it never fires either -- because that timeout is a timer, and
+    // the thread that would deliver it is the one that is stuck. Every scene
+    // after it is lost. Left in the tree because it is the measurement the
+    // event-handler fix has to pass; run it deliberately, not as part of a
+    // benchmark. See socket_probe.dart.
+    // print('bench: ${await probeSockets()}');
     try {
       // Each scene is isolated. An unattended run that hangs because one
       // scene threw reports nothing at all, which is strictly worse than
