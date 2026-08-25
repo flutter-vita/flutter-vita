@@ -94,6 +94,23 @@ class BenchRunner {
   /// FrameRecorder.take.
   static const int _flushFrames = 5;
 
+  /// Quiet wall-clock time before a scene is measured.
+  ///
+  /// Not politeness. Until 2026-08-25 every Dart timer on this port fired on a
+  /// 200 ms grid, which meant the two probes above spent ~25 seconds mostly
+  /// idle before the first scene and the route scenes settled for ~600 ms
+  /// rather than the 450 they asked for. Fixing the timers took that away, and
+  /// two scenes moved: opacity_fade 83 -> 200 ms and route_boxes 33 -> 133,
+  /// both reproducing three runs running, both with the UI thread at 1.2 ms
+  /// and the raster thread at 1.1 -- a pause with nothing running, which is
+  /// what a collection looks like from here.
+  ///
+  /// So the recovery the benchmark used to get by accident is now asked for on
+  /// purpose. A scene measured immediately after another one is measuring the
+  /// previous scene's garbage.
+  static Future<void> _quiet() =>
+      Future<void>.delayed(const Duration(milliseconds: 500));
+
   Future<void> _flush() async {
     for (var i = 0; i < _flushFrames; i++) {
       await SchedulerBinding.instance.endOfFrame;
@@ -203,6 +220,7 @@ class BenchRunner {
         // left no way to say which of fifteen scenes was the one hanging, and
         // the whole cost of finding out was a rebuild.
         print('bench: scene ${scene.name}');
+        await _quiet();
         try {
           await runAnimated(scene);
         } catch (e, st) {
@@ -215,6 +233,7 @@ class BenchRunner {
       for (final scene in routeScenes) {
         onProgress?.call(scene.name);
         print('bench: scene ${scene.name}');
+        await _quiet();
         if (!context.mounted) break;
         try {
           await runRoute(scene, context);
