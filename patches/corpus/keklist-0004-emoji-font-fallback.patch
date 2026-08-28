@@ -1,0 +1,122 @@
+Emoji: bundle NotoColorEmoji and name it as a fallback family.
+
+Every emoji in keklist rendered as .notdef on the Vita. The cause is not
+keklist's font choice -- it declares no fonts at all -- but the port's font
+situation, and it cannot be fixed on the port side alone:
+
+  * app0:/fonts holds exactly one file, Roboto-Regular.ttf. 896 codepoints,
+    nothing above U+FFFD, no emoji, not one codepoint >= U+1F000. That is the
+    entire system font pool, so every app on this port renders emoji as tofu.
+
+  * SkFontMgr_Custom::onMatchFamilyStyleCharacter returns nullptr
+    (skia/src/ports/SkFontMgr_custom.cpp). That is the hook Skia calls to find
+    a font for a codepoint the current family lacks, so there is NO automatic
+    per-character fallback on this port. Installing an emoji font into
+    app0:/fonts would therefore fix nothing by itself -- the family has to be
+    named by the application.
+
+So the fix is app-side by necessity: bundle the font and name it in
+fontFamilyFallback. NotoColorEmoji.ttf is copied from the engine checkout,
+which already ships it beside the Roboto the port uses:
+
+  cp third_party/flutter/engine/src/flutter/txt/third_party/fonts/NotoColorEmoji.ttf \
+     apps/corpus/keklist/assets/fonts/
+
+It is 4.7 MB and takes the .vpk from 18 MB to 22 MB.
+
+Colour works. The font is CBDT/CBLC -- PNG bitmaps, no glyf outlines -- and the
+engine's FreeType is built with FT_CONFIG_OPTION_USE_PNG,
+TT_CONFIG_OPTION_EMBEDDED_BITMAPS and TT_CONFIG_OPTION_COLOR_LAYERS, so the
+emoji picker renders in full colour with skin-tone variants on hardware.
+
+mind_widget names the family directly rather than relying on the fallback: it
+draws nothing but the emoji, and the commented-out line doing exactly this was
+already there. Note that the empty-state emoji still looks grey -- that is
+MindCollectionEmptyStateWidget's own ColorFilter.matrix greyscale, by design,
+not a rendering failure.
+
+diff --git a/lib/domain/constants.dart b/lib/domain/constants.dart
+index 8436200..0000dc7 100644
+--- a/lib/domain/constants.dart
++++ b/lib/domain/constants.dart
+@@ -5,7 +5,14 @@ import 'package:intl/intl.dart';
+ import 'package:keklist/domain/repositories/tabs/models/tabs_settings.dart';
+ 
+ final class Themes {
++  // fontFamilyFallback carries emoji on the Vita port, where nothing else can:
++  // see the note in pubspec.yaml. Harmless everywhere else -- the platform font
++  // stack answers first on Android and iOS, so this is only ever consulted when
++  // the primary family has no glyph.
++  static const List<String> _emojiFallback = <String>['NotoColorEmoji'];
++
+   static final ThemeData light = ThemeData(
++    fontFamilyFallback: _emojiFallback,
+     scaffoldBackgroundColor: Colors.white,
+     colorScheme: const ColorScheme.light(
+       primary: Colors.black,
+@@ -30,6 +37,7 @@ final class Themes {
+   );
+ 
+   static final ThemeData dark = ThemeData(
++    fontFamilyFallback: _emojiFallback,
+     scaffoldBackgroundColor: Colors.black,
+     colorScheme: const ColorScheme.dark(
+       primary: Colors.white,
+diff --git a/lib/presentation/core/widgets/mind_widget.dart b/lib/presentation/core/widgets/mind_widget.dart
+index 23cd3b6..f99b4ba 100644
+--- a/lib/presentation/core/widgets/mind_widget.dart
++++ b/lib/presentation/core/widgets/mind_widget.dart
+@@ -83,7 +83,7 @@ final class MindWidget extends StatelessWidget {
+               grayedOut: !isHighlighted,
+               child: Text(item,
+                   style: TextStyle(
+-                    // fontFamily: 'NotoColorEmoji',
++                    fontFamily: 'NotoColorEmoji',
+                     fontSize: fontSize,
+                   )),
+             ),
+diff --git a/pubspec.yaml b/pubspec.yaml
+index b444137..9a71b5d 100644
+--- a/pubspec.yaml
++++ b/pubspec.yaml
+@@ -47,6 +47,8 @@ dependencies:
+   share_plus: ^12.0.2
+   syncfusion_flutter_charts: ^33.2.13
+   url_launcher: ^6.1.9
++  url_launcher_vita:
++    path: ../../../packages/url_launcher_vita
+   uuid: ^4.2.1
+   video_player: ^2.10.1
+   webview_flutter: ^4.1.0
+@@ -76,6 +78,12 @@ dependencies:
+   file_selector: ^1.1.0
+   crypto: ^3.0.7
+   shared_preferences: ^2.5.5
++  # ADR-0009: non-endorsed vita implementations, listed beside the plugins they
++  # implement. This is the whole edit an app author makes.
++  path_provider_vita:
++    path: ../../../packages/path_provider_vita
++  shared_preferences_vita:
++    path: ../../../packages/shared_preferences_vita
+   native_liquid_glass: ^0.2.10
+ dev_dependencies:
+   flutter_lints: ^6.0.0
+@@ -89,6 +97,18 @@ dev_dependencies:
+ flutter:
+   generate: true
+   uses-material-design: true
++  # Emoji, for the Vita port.
++  #
++  # The port's system font pool is one file -- Roboto-Regular.ttf, 896
++  # codepoints, nothing above U+FFFD -- and its font manager
++  # (SkFontMgr_Custom) returns nullptr from onMatchFamilyStyleCharacter, so
++  # there is no automatic per-character fallback to find an emoji font even if
++  # one were installed. The family has to be named, which means it has to be
++  # bundled here and referenced from Themes.
++  fonts:
++    - family: NotoColorEmoji
++      fonts:
++        - asset: assets/fonts/NotoColorEmoji.ttf
+   assets:
+     - dotenv
+     # - assets/auth_icons/

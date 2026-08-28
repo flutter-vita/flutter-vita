@@ -25,6 +25,7 @@ before the measurement.
 |---|---|---|
 | Front touch | **works** | M3, on hardware |
 | Rendering, text, assets | **works** | M3 |
+| Emoji, font fallback | **app must bundle it** | `app0:/fonts` holds one file (Roboto, 896 codepoints) and `SkFontMgr_Custom` has no character fallback, so emoji are tofu unless the app bundles a font *and names it* — see below. Colour emoji do render: CBDT decodes, verified in keklist 2026-08-28 |
 | `dart:io` File / Directory | **works** | [audited on hardware](phase-5-capability-audit.md) — read, stat, mkdir, write, append, list, rename, delete |
 | `dart:io` Socket / HttpClient | **works** | audited — DNS, TCP, and `HTTP 200` from the open internet |
 | TLS / HTTPS | **works** | [Phase 7](phase-7-tls.md) — real handshake, verified chain, `HTTPS 200` on hardware |
@@ -38,6 +39,43 @@ before the measurement.
 | Gamepad, sticks, rear touch | **designed, not built** | [ADR-0010](adr/0010-input-layering-and-psvita-api.md) |
 | **Bluetooth** | **blocked** | see below |
 | Motion, camera, mic, GPS | **not started** | headers exist |
+
+### Fonts: one family, and no automatic fallback
+
+Two facts that compound, found on 2026-08-28 when every emoji in keklist came
+out as `.notdef`:
+
+**The system font pool is one file.** `package-engine.sh` ships
+`Roboto-Regular.ttf` into `app0:/fonts` and nothing else. It carries 896
+codepoints, tops out at U+FFFD, and has no codepoint at or above U+1F000 — good
+for Latin, Greek and Cyrillic, and empty of emoji, CJK and everything else.
+
+**There is no per-character fallback to rescue it.**
+`SkFontMgr_Custom::onMatchFamilyStyleCharacter` returns `nullptr`, and that is
+the hook Skia calls when the current family has no glyph for a codepoint. On
+Android or a desktop the platform font manager answers it and the user never
+learns the primary font was incomplete. Here nothing answers, so the missing
+glyph is final.
+
+The consequence is worth stating plainly, because it looks like an app bug:
+**dropping more fonts into `app0:/fonts` does not fix missing glyphs.** It makes
+them available *by name*, which is a different thing. An application that wants
+a codepoint Roboto lacks must bundle a font that has it and name that family —
+`fontFamilyFallback` in `ThemeData`, or `fontFamily` on the specific style.
+
+[keklist](../patches/corpus/keklist-0004-emoji-font-fallback.patch) is the
+worked example: `NotoColorEmoji.ttf` (4.7 MB, already in the engine checkout
+beside Roboto) declared in `pubspec.yaml` and named in both themes, which takes
+its `.vpk` from 18 MB to 22 MB. Colour survives the trip — the font is
+CBDT/CBLC, PNG bitmaps with no outlines, and the engine's FreeType is built with
+`FT_CONFIG_OPTION_USE_PNG`, `TT_CONFIG_OPTION_EMBEDDED_BITMAPS` and
+`TT_CONFIG_OPTION_COLOR_LAYERS`, so the emoji picker renders in full colour with
+skin-tone variants on hardware.
+
+Implementing `onMatchFamilyStyleCharacter` over the `app0:/fonts` directory
+would make this automatic for every app, at the cost of shipping the fallback
+fonts with the engine rather than the application. Not done, and the reason to
+consider it is that every app hits this, not just the ones using emoji.
 
 ### Bluetooth is blocked, and not by effort
 
