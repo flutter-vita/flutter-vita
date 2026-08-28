@@ -3,13 +3,27 @@
 Against the checkout in `third_party/vitaGL` at `73dd57a`, built with
 
 ```bash
-make HAVE_SHADER_CACHE=1 TEXTURES_SPEEDHACK=1 -j8
+make HAVE_SHADER_CACHE=1 TEXTURES_SPEEDHACK=1 NO_SPLASHSCREEN=1 -j8
 ```
 
-**Both flags matter and neither is the default.** Without `HAVE_SHADER_CACHE`
+**All three flags matter and none is the default.** Without `HAVE_SHADER_CACHE`
 — which is how the VitaSDK package is built — every shader recompiles on every
 launch at 200–400 ms apiece. `TEXTURES_SPEEDHACK` is the subject of its own
 section below.
+
+`NO_SPLASHSCREEN` defines `SKIP_SPLASHSCREEN`, which stops `vglInit` calling
+`invoke_splashscreen()`. Without it every launch of every app on the GPU path
+spends about two seconds showing vitaGL's rotating logo, and it is not a
+cosmetic two seconds: the swap that ends it signals the splash thread and then
+waits on a semaphore with a **NULL timeout**, so the calling thread blocks
+until the animation finishes. The thread exits only when its fade-out alpha
+reaches zero — `SPLASH_FADE_SEC` (1.0 s) of fade-in, which ignores the stop
+request, then a second of fade-out at 1.0 alpha per second.
+
+It became visible on every app rather than only on opt-in GL runs when the
+renderer default flipped on 2026-08-24. The only other thing the define changes
+is `vglGetCaveBuffer`, which returns NULL and a size of 0 with the splash
+compiled out; nothing in this port calls it.
 
 Same working agreement as the other series: **never edit the vendored tree
 without producing a patch file.** `third_party/` is gitignored and disposable;

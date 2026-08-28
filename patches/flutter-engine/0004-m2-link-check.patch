@@ -240,10 +240,10 @@ index 00000000..a5e0625d
 +}  // extern "C"
 diff --git a/engine/src/flutter/shell/platform/embedder/vita_embedder.cc b/engine/src/flutter/shell/platform/embedder/vita_embedder.cc
 new file mode 100644
-index 00000000..f7044286
+index 00000000..0e817372
 --- /dev/null
 +++ b/engine/src/flutter/shell/platform/embedder/vita_embedder.cc
-@@ -0,0 +1,2836 @@
+@@ -0,0 +1,2988 @@
 +// Copyright (c) 2026, the Flutter Authors. All rights reserved.
 +// Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
@@ -296,6 +296,7 @@ index 00000000..f7044286
 +#include <vitaGL.h>
 +#include <psp2/gxm.h>
 +#include <psp2/ime_dialog.h>
++#include <psp2/libime.h>
 +#include <psp2/kernel/threadmgr.h>
 +#include <psp2/sysmodule.h>
 +#include <psp2/system_param.h>
@@ -617,7 +618,8 @@ index 00000000..f7044286
 +//
 +// Distinct from g_touch_down_us above, which the present path zeroes once it
 +// has logged a latency. This one is the record of *whether a person asked for
-+// anything recently*, and OpenImeDialog is gated on it -- see there.
++// anything recently*. It gated OpenImeDialog until libime replaced the modal
++// dialog and the gate stopped being needed; the touch time is still recorded.
 +uint64_t g_last_touch_us = 0;
 +
 +void InitTouch() {
@@ -855,18 +857,57 @@ index 00000000..f7044286
 +  return sceDisplaySetFrameBuf(&fb, SCE_DISPLAY_SETBUF_NEXTFRAME) >= 0;
 +}
 +
++// Text input runs on **libime**, not sceImeDialog.
++//
++// They are different libraries with similar names and opposite behaviour.
++// sceImeDialog is a modal common dialog: it takes the whole screen, the app
++// stops, and control comes back when the user is done -- which is why this
++// port could not use it under GL at all, and why an autofocused field used to
++// cover the display before the app had drawn anything worth looking at.
++//
++// libime -- sceImeOpen / sceImeUpdate / sceImeClose -- is the overlay panel
++// the console's own browser and messages app use. The system renders a
++// keyboard over the bottom of the screen, the app keeps rendering underneath
++// at full rate, and text arrives through a callback carrying a caret index and
++// a preedit range. spikes/k1-libime proved it composites over vitaGL:
++// sceImeOpen returned 0, the spike's own GL output kept animating at 60 fps
++// behind it, and SCE_IME_EVENT_OPEN reported rect y=297 h=247 on a 544-pixel
++// screen.
++//
++// That rect is the other half of it. It is exactly
++// physical_view_inset_bottom, so Scaffold resizes and a scrollable lifts the
++// focused field above the keyboard the way it does on a phone -- no guessing
++// at a height that varies by language and by whether the assistance bar is up.
 +struct ImeState {
-+  bool open = false;         // the dialog is up and must be pumped
++  bool open = false;         // libime is up and must be pumped every frame
 +  int client_id = -1;        // from TextInput.setClient
-+  bool multiline = false;    // inputType TextInputType.multiline
++  bool multiline = false;    // inputType TextInputType.multiline, as asked for
++  bool multiline_active = false;  // ...and as libime actually opened. Not the
++                                  // same thing: see OpenIme.
 +  bool obscured = false;     // obscureText -- a password field
++  char type_name[48] = {0};    // inputType.name from setClient
++  char action_name[48] = {0};  // inputAction from setClient
 +  char pending[1024] = {0};  // editing state seeded before show
-+  SceWChar16 input[SCE_IME_DIALOG_MAX_TEXT_LENGTH + 1] = {0};
-+  SceWChar16 initial[SCE_IME_DIALOG_MAX_TEXT_LENGTH + 1] = {0};
-+  SceWChar16* title = nullptr;
++
++  // libime edits this in place and the handler reads it. Sized as the header
++  // requires: preedit and committed text share the buffer.
++  SceWChar16 text[SCE_IME_MAX_PREEDIT_LENGTH + SCE_IME_MAX_TEXT_LENGTH + 1] = {0};
++  SceWChar16 initial[SCE_IME_MAX_TEXT_LENGTH + 1] = {0};
++  // libime owns this for as long as it is open, so it is static, not stack.
++  SceUInt32 work[SCE_IME_WORK_BUFFER_SIZE / sizeof(SceInt32)] = {0};
++
++  // The keyboard's own report of how much of the screen it covers, in display
++  // pixels, and whether the framework has been told about the current value.
++  double inset_bottom = 0.0;
++  bool metrics_dirty = false;
++
 +  bool gxm_ready = false;   // surfaces mapped; without them the driver kills us
 +};
 +ImeState g_ime;
++
++// Set once, when the raster resolution is decided. Read by SendWindowMetrics,
++// which is no longer a one-shot at startup.
++double g_surface_scale = 1.0;
 +
 +// The GXM side of showing a common dialog, and nothing more.
 +//
@@ -943,6 +984,32 @@ index 00000000..f7044286
 +// exactly describable that way -- no GXM rendering happens here. GXM does have
 +// to be *initialised* though, which is a separate discovery recorded in
 +// InitIme.
++// Metrics, resent whenever the keyboard changes how much of the screen is left.
++//
++// This used to be one call at startup, which was enough while the only
++// keyboard was a full-screen modal: there was never a partially covered window
++// to describe. libime gives us one, and viewInsets is how the framework hears
++// about it -- Scaffold subtracts it, and a scrollable uses it to bring the
++// focused field above the keyboard. Without this the keyboard simply covers
++// the field being typed into and nothing moves out of the way.
++void SendWindowMetrics(FlutterEngine engine) {
++  if (engine == nullptr) return;
++  FlutterWindowMetricsEvent metrics = {};
++  metrics.struct_size = sizeof(FlutterWindowMetricsEvent);
++  metrics.width = static_cast<size_t>(kWidth * g_surface_scale);
++  metrics.height = static_cast<size_t>(kHeight * g_surface_scale);
++  metrics.pixel_ratio = g_surface_scale;
++  // libime reports the rect in display pixels. The framework wants physical
++  // pixels of *this surface*, which is the same number unless we are rastering
++  // at half resolution -- in which case the surface is half the size and so is
++  // the part of it the keyboard hides.
++  metrics.physical_view_inset_bottom = g_ime.inset_bottom * g_surface_scale;
++  // Same display the notify at startup described, so the framework can
++  // associate the window with it rather than guessing.
++  metrics.display_id = 0;
++  FlutterEngineSendWindowMetricsEvent(engine, &metrics);
++}
++
 +void UpdateCommonDialog() {
 +  if (!g_ime.open) return;
 +  SceCommonDialogUpdateParam update = {};
@@ -1452,11 +1519,16 @@ index 00000000..f7044286
 +  // So the main loop owns the framebuffer while a dialog is open, compositing
 +  // over whatever frame was last copied. The app content freezes underneath,
 +  // which is what a modal keyboard means anyway.
-+  if (g_ime.open) {
-+    // The dialog is drawing into the display buffer, so whatever partial
-+    // rectangle this frame changed is about to be painted over. The next frame
-+    // that does reach the blit has to copy the whole surface, and can: the
-+    // surface is retained and still holds a complete frame.
++  if (g_ime.open && !g_gl_enabled) {
++    // The overlay draws into the display buffer on this path, so whatever
++    // partial rectangle this frame changed is about to be painted over. The
++    // next frame that does reach the blit has to copy the whole surface, and
++    // can: the surface is retained and still holds a complete frame.
++    //
++    // Under GL this does not apply and the app keeps presenting normally --
++    // vitaGL composites the keyboard into its own back buffer at swap time,
++    // which is the whole reason an overlay keyboard is worth having. Freezing
++    // there would give back exactly what libime was chosen for.
 +    g_display_stale = true;
 +    return true;
 +  }
@@ -1633,11 +1705,15 @@ index 00000000..f7044286
 +       reinterpret_cast<const char*>(glGetString(GL_RENDERER)),
 +       static_cast<int>(up));
 +
-+  // End the splash screen. vitaGL draws its logo from a thread of its own and
-+  // stops on the first swap; without this it rotates over the first frames the
-+  // engine produces.
-+  vglSwapBuffers(GL_FALSE);
-+  vglSwapBuffers(GL_FALSE);
++  // There used to be two vglSwapBuffers(GL_FALSE) here, to end vitaGL's boot
++  // splashscreen before the engine drew anything. The library is now built
++  // with NO_SPLASHSCREEN=1, so there is no splashscreen to end.
++  //
++  // Ending it was never free. The swap path signals the splash thread and then
++  // waits on a semaphore with no timeout, and the thread only exits once its
++  // fade-out alpha reaches zero -- SPLASH_FADE_SEC in, one second of fade back
++  // out, about two seconds of rotating logo on every launch of every app once
++  // GL became the default renderer. See patches/vitagl/README.md.
 +  return true;
 +}
 +
@@ -1854,7 +1930,11 @@ index 00000000..f7044286
 +  // for any frame that fits inside 16.6 ms and stops discriminating there. The
 +  // raster figure above is what to read when it does.
 +  const uint64_t swap_start = sceKernelGetSystemTimeWide();
-+  vglSwapBuffers(GL_FALSE);
++  // GL_TRUE is `has_commondialog` in vitaGL's swap: it is what makes vitaGL
++  // run sceCommonDialogUpdate against its own back buffer, which is how the
++  // libime keyboard reaches the screen over GL content. Only while one is
++  // open -- it is a per-frame cost with nothing to show for it otherwise.
++  vglSwapBuffers(g_ime.open ? GL_TRUE : GL_FALSE);
 +  g_gl_present_end_us = sceKernelGetSystemTimeWide();
 +  g_win_blit_us += g_gl_present_end_us - swap_start;
 +  g_gl_in_frame.store(false, std::memory_order_release);
@@ -2293,7 +2373,7 @@ index 00000000..f7044286
 +  // sceGxmInitialize is once per process, and a second call returns
 +  // SCE_GXM_ERROR_ALREADY_INITIALIZED -- so the software path's bespoke
 +  // "minimal GXM pipeline whose only job is to own the framebuffer" is exactly
-+  // what vitaGL is, and better. The note under OpenImeDialog calls that the
++  // what vitaGL is, and better. The note under OpenIme calls that the
 +  // real remaining Phase 8 work; the GL path supplies it as a side effect, and
 +  // the common-dialog surfaces still need pointing at vitaGL's back buffer
 +  // rather than at g_display.base before the IME can actually be turned on.
@@ -2341,95 +2421,237 @@ index 00000000..f7044286
 +//
 +// SCE_IME_DIALOG_MAX_TEXT_LENGTH is 2048 and the buffers are sized for it, so
 +// nothing here can overrun regardless of what the framework sends.
-+void OpenImeDialog() {
-+  if (g_ime.open) return;
++void CloseIme(bool user_dismissed = false);
 +
-+  // Off by default, because it takes the whole console down.
-+  //
-+  // sceImeDialogInit succeeds and then the GPU driver kills the process --
-+  // psp2core-*-GPUCRASH.psp2dmp, in which **no thread has a crash stop
-+  // reason**, so there is no faulting instruction and nothing to symbolicate.
-+  // The driver rejected the work out of band rather than the CPU faulting.
-+  //
-+  // The cause is that sceGxmInitialize is not the setup a common dialog needs.
-+  // Every project that composites one -- SDL's vitagxm backend, vita2d,
-+  // vitaGL -- is a full GXM renderer with a context, a colour surface mapped
-+  // as GXM memory, a depth surface and a sync object. We hand it a CDRAM block
-+  // we memcpy into and a struct with the right fields filled in, and the
-+  // fields are not the requirement.
-+  //
-+  // So text input needs a minimal GXM pipeline whose only job is to own the
-+  // framebuffer. That is the real remaining work in Phase 8; everything above
-+  // this line -- the channel, the JSON, the five methods, the two replies -- is
-+  // measured and works.
-+  //
-+  // Flip it on for that work with a `1` in the file below; anything else, or
-+  // its absence, leaves TextInput.show as a no-op and a TextField simply takes
-+  // no input.
-+  {
-+    const SceUID fd =
-+        sceIoOpen("ux0:data/flutter-vita/ime.on", SCE_O_RDONLY, 0777);
-+    char c = '0';
-+    if (fd >= 0) {
-+      sceIoRead(fd, &c, 1);
-+      sceIoClose(fd);
++// Everything libime tells us, translated into the two messages the framework
++// understands.
++//
++// Called from inside sceImeUpdate, on the main loop's thread, so nothing here
++// crosses threads -- and for the same reason it must stay cheap.
++void ImeEventHandler(void* arg, const SceImeEventData* e) {
++  (void)arg;
++  switch (e->id) {
++    case SCE_IME_EVENT_OPEN:
++    case SCE_IME_EVENT_CHANGE_SIZE:
++      // Believe the keyboard about its own size rather than hardcoding one: it
++      // differs by language and by whether the assistance bar is up, and it
++      // changes while open.
++      g_ime.inset_bottom = static_cast<double>(e->param.rect.height);
++      g_ime.metrics_dirty = true;
++      VLog("flutter-vita: IME %s rect %ux%u at %u,%u\n",
++           e->id == SCE_IME_EVENT_OPEN ? "open" : "resized",
++           (unsigned)e->param.rect.width, (unsigned)e->param.rect.height,
++           (unsigned)e->param.rect.x, (unsigned)e->param.rect.y);
++      break;
++
++    case SCE_IME_EVENT_UPDATE_TEXT: {
++      if (g_ime.client_id < 0) break;
++      char text[1024] = {0};
++      Utf16ToUtf8(g_ime.text, text, sizeof text);
++      std::snprintf(g_ime.pending, sizeof g_ime.pending, "%s", text);
++
++      char escaped[2048];
++      JsonEscape(text, escaped, sizeof escaped);
++
++      // The indices arrive in UTF-16 code units and Dart strings are UTF-16,
++      // so they pass through unchanged. Recomputing them against the UTF-8 we
++      // just built would be wrong for anything outside ASCII.
++      const int caret = static_cast<int>(e->param.text.caretIndex);
++      const int preedit_len = static_cast<int>(e->param.text.preeditLength);
++      const int composing_base =
++          preedit_len > 0 ? static_cast<int>(e->param.text.preeditIndex) : -1;
++      const int composing_extent =
++          preedit_len > 0 ? composing_base + preedit_len : -1;
++
++      char json[2600];
++      std::snprintf(json, sizeof json,
++                    "{\"method\":\"TextInputClient.updateEditingState\","
++                    "\"args\":[%d,{\"text\":\"%s\",\"selectionBase\":%d,"
++                    "\"selectionExtent\":%d,\"selectionAffinity\":"
++                    "\"TextAffinity.downstream\",\"selectionIsDirectional\":"
++                    "false,\"composingBase\":%d,\"composingExtent\":%d}]}",
++                    g_ime.client_id, escaped, caret, caret, composing_base,
++                    composing_extent);
++      SendTextInputMethod(json);
++      break;
 +    }
-+    if (c != '1') {
-+      VLog("flutter-vita: IME disabled (set ux0:data/flutter-vita/ime.on)\n");
-+      return;
++
++    case SCE_IME_EVENT_PRESS_ENTER: {
++      if (g_ime.client_id < 0) break;
++      // In a real multiline session Enter inserts a line break, which libime
++      // has already done and reported through UPDATE_TEXT; sending `done` as
++      // well would unfocus the field mid-paragraph. Otherwise Enter means
++      // finished.
++      //
++      // multiline_active, not multiline: this console's libime refuses
++      // MULTILINE outright, so a multiline field opens a single-line keyboard
++      // and its Enter is the only way the user can commit. Testing what was
++      // *asked for* here would swallow that and leave no way out of the field
++      // but the close button.
++      if (g_ime.multiline_active) break;
++      char json[256];
++      std::snprintf(json, sizeof json,
++                    "{\"method\":\"TextInputClient.performAction\","
++                    "\"args\":[%d,\"TextInputAction.done\"]}",
++                    g_ime.client_id);
++      SendTextInputMethod(json);
++      break;
 +    }
++
++    case SCE_IME_EVENT_PRESS_CLOSE:
++      // The user hit the keyboard's own close button. The framework has no way
++      // to know that, and without being told it keeps the field focused with
++      // no keyboard under it -- and then never asks for one again, because as
++      // far as it is concerned the connection is still open.
++      CloseIme(/*user_dismissed=*/true);
++      break;
++
++    default:
++      break;
 +  }
-+  if (!g_ime.gxm_ready) {
-+    VLog("flutter-vita: IME unavailable, GXM surfaces were not created\n");
-+    return;
-+  }
-+
-+  Utf8ToUtf16(g_ime.pending, g_ime.initial, SCE_IME_DIALOG_MAX_TEXT_LENGTH);
-+  g_ime.input[0] = 0;
-+
-+  // The title is **required**. Leaving it null returns 0x80102005,
-+  // SCE_IME_DIALOG_ERROR_INVALID_TITLE, which is easy to read as "one of my
-+  // parameters is wrong" and hard to guess is the one field that looks
-+  // optional. Flutter sends nothing usable for it -- setClient's configuration
-+  // carries an inputType and an inputAction, not a label -- so this is a
-+  // constant until the `psvita` package gives an app a way to set one.
-+  static SceWChar16 title[32];
-+  Utf8ToUtf16("Enter text", title, 32);
-+  g_ime.title = title;
-+
-+  SceImeDialogParam param;
-+  sceImeDialogParamInit(&param);
-+  param.supportedLanguages = 0;   // 0 with languagesForced false: system choice
-+  param.languagesForced = SCE_FALSE;
-+  param.type = SCE_IME_TYPE_BASIC_LATIN;
-+  param.option = g_ime.multiline ? SCE_IME_OPTION_MULTILINE : 0;
-+  param.dialogMode = SCE_IME_DIALOG_DIALOG_MODE_DEFAULT;
-+  // WITH_CLEAR is not valid on a multiline box -- sceImeDialogInit answers
-+  // 0x80102004, SCE_IME_DIALOG_ERROR_INVALID_TEXT_BOX_MODE -- which is
-+  // reasonable, since a clear button belongs to a one-line field. Multiline
-+  // gets the plain box.
-+  param.textBoxMode = g_ime.obscured  ? SCE_IME_DIALOG_TEXTBOX_MODE_PASSWORD
-+                      : g_ime.multiline ? SCE_IME_DIALOG_TEXTBOX_MODE_DEFAULT
-+                                        : SCE_IME_DIALOG_TEXTBOX_MODE_WITH_CLEAR;
-+  param.title = g_ime.title;
-+  param.maxTextLength = SCE_IME_DIALOG_MAX_TEXT_LENGTH;
-+  param.initialText = g_ime.initial;
-+  param.inputTextBuffer = g_ime.input;
-+
-+  const int r = sceImeDialogInit(&param);
-+  if (r < 0) {
-+    VLog("flutter-vita: sceImeDialogInit 0x%08X\n", (unsigned)r);
-+    return;
-+  }
-+  g_ime.open = true;
-+  VLog("flutter-vita: IME open (client %d)\n", g_ime.client_id);
 +}
 +
-+void CloseImeDialog() {
++// Flutter's keyboard type, in the four shapes this console has for it.
++//
++// The names are the framework's own, straight out of setClient. Anything not
++// listed gets the default keyboard, which is the right answer for
++// TextInputType.text, .name, .streetAddress and anything added later.
++SceUInt32 ImeTypeFor(const char* name, bool obscured) {
++  // A password field first, whatever it claims to be: prediction over a
++  // password is a bad idea, and BASIC_LATIN is the keyboard without it.
++  if (obscured) return SCE_IME_TYPE_BASIC_LATIN;
++  if (name == nullptr) return SCE_IME_TYPE_DEFAULT;
++  if (std::strcmp(name, "TextInputType.emailAddress") == 0)
++    return SCE_IME_TYPE_MAIL;
++  if (std::strcmp(name, "TextInputType.url") == 0) return SCE_IME_TYPE_URL;
++  if (std::strcmp(name, "TextInputType.number") == 0)
++    return SCE_IME_TYPE_NUMBER;
++  // Phone and datetime need the punctuation a bare number pad does not have --
++  // +, *, # and separators -- which is what EXTENDED_NUMBER is for.
++  if (std::strcmp(name, "TextInputType.phone") == 0 ||
++      std::strcmp(name, "TextInputType.datetime") == 0)
++    return SCE_IME_TYPE_EXTENDED_NUMBER;
++  if (std::strcmp(name, "TextInputType.visiblePassword") == 0)
++    return SCE_IME_TYPE_BASIC_LATIN;
++  return SCE_IME_TYPE_DEFAULT;
++}
++
++// What the Enter key should say. The console offers three labels and a
++// default; Flutter has a dozen actions, so the ones without a match keep the
++// plain key rather than being forced into an approximation.
++SceUChar8 ImeEnterLabelFor(const char* action) {
++  if (action == nullptr) return SCE_IME_ENTER_LABEL_DEFAULT;
++  if (std::strcmp(action, "TextInputAction.search") == 0)
++    return SCE_IME_ENTER_LABEL_SEARCH;
++  if (std::strcmp(action, "TextInputAction.send") == 0)
++    return SCE_IME_ENTER_LABEL_SEND;
++  if (std::strcmp(action, "TextInputAction.go") == 0)
++    return SCE_IME_ENTER_LABEL_GO;
++  return SCE_IME_ENTER_LABEL_DEFAULT;
++}
++
++void OpenIme() {
++  if (g_ime.open) return;
++
++  // Seed it with what the field already holds, so editing an existing value
++  // does not start from empty.
++  Utf8ToUtf16(g_ime.pending, g_ime.initial, SCE_IME_MAX_TEXT_LENGTH);
++  std::memcpy(g_ime.text, g_ime.initial, sizeof g_ime.initial);
++
++  SceImeParam param;
++  sceImeParamInit(&param);
++  // Zero means "whatever the console is set to", which is the right default:
++  // this port has no business overriding the language its owner picked. If the
++  // firmware rejects it the retry below falls back to English.
++  param.supportedLanguages = 0;
++  param.languagesForced = SCE_FALSE;
++  param.type = ImeTypeFor(g_ime.type_name, g_ime.obscured);
++  param.enterLabel = ImeEnterLabelFor(g_ime.action_name);
++  param.inputTextBuffer = g_ime.text;
++  param.maxTextLength = SCE_IME_MAX_TEXT_LENGTH;
++  param.handler = ImeEventHandler;
++  param.filter = nullptr;
++  param.initialText = g_ime.initial;
++  param.arg = nullptr;
++  param.work = g_ime.work;
++
++  // libime validates each field separately, and on rejection it names the
++  // *kind* of field it disliked rather than just failing. That makes a
++  // rejection actionable: drop the refinement it objected to and ask again,
++  // rather than giving up and leaving the person with no keyboard.
++  //
++  // Measured on a PCH-2000, 2026-08-28: **this console's libime rejects
++  // MULTILINE outright.** Both MULTILINE|NO_ASSISTANCE and MULTILINE alone
++  // came back SCE_IME_ERROR_INVALID_OPTION and only 0 opened. So a multiline
++  // field gets a single-line keyboard, and whether that happened is recorded
++  // in multiline_active -- the field being multiline and the keyboard being
++  // multiline are different facts, and the Enter handling reads the second.
++  //
++  // NO_ASSISTANCE goes before MULTILINE because it is the more expendable of
++  // the two: it only suppresses the prediction bar.
++  param.option = (g_ime.multiline ? SCE_IME_OPTION_MULTILINE : 0) |
++                 SCE_IME_OPTION_NO_ASSISTANCE;
++
++  SceInt32 r = -1;
++  for (int attempt = 0; attempt < 6; attempt++) {
++    r = sceImeOpen(&param);
++    if (r >= 0) break;
++    const unsigned err = static_cast<unsigned>(r);
++    VLog("flutter-vita: sceImeOpen 0x%08X (type %u option 0x%X enter %u)\n",
++         err, (unsigned)param.type, (unsigned)param.option,
++         (unsigned)param.enterLabel);
++    if (err == SCE_IME_ERROR_INVALID_OPTION && param.option != 0) {
++      if ((param.option & SCE_IME_OPTION_NO_ASSISTANCE) != 0) {
++        param.option &= ~static_cast<SceUInt32>(SCE_IME_OPTION_NO_ASSISTANCE);
++      } else {
++        param.option = 0;
++      }
++    } else if (err == SCE_IME_ERROR_INVALID_ENTER_LABEL &&
++               param.enterLabel != SCE_IME_ENTER_LABEL_DEFAULT) {
++      param.enterLabel = SCE_IME_ENTER_LABEL_DEFAULT;
++    } else if (err == SCE_IME_ERROR_INVALID_TYPE &&
++               param.type != SCE_IME_TYPE_DEFAULT) {
++      param.type = SCE_IME_TYPE_DEFAULT;
++    } else if (err == SCE_IME_ERROR_INVALID_SUPPORTED_LANGUAGES &&
++               param.supportedLanguages != SCE_IME_LANGUAGE_ENGLISH) {
++      param.supportedLanguages = SCE_IME_LANGUAGE_ENGLISH;
++    } else {
++      // Nothing left to give up, or a failure that degrading cannot fix.
++      break;
++    }
++  }
++  if (r < 0) {
++    return;
++  }
++  g_ime.multiline_active = (param.option & SCE_IME_OPTION_MULTILINE) != 0;
++  g_ime.open = true;
++  VLog("flutter-vita: IME open (client %d, %s, type %u option 0x%X enter %u%s)\n",
++       g_ime.client_id, g_ime.type_name[0] != '\0' ? g_ime.type_name : "?",
++       (unsigned)param.type, (unsigned)param.option, (unsigned)param.enterLabel,
++       (g_ime.multiline && !g_ime.multiline_active) ? ", multiline refused"
++                                                    : "");
++}
++
++void CloseIme(bool user_dismissed) {
 +  if (!g_ime.open) return;
-+  sceImeDialogAbort();
-+  sceImeDialogTerm();
++  sceImeClose();
 +  g_ime.open = false;
++  // Give the screen back, or the framework keeps laying out around a keyboard
++  // that is no longer there.
++  g_ime.inset_bottom = 0.0;
++  g_ime.metrics_dirty = true;
++  VLog("flutter-vita: IME closed%s\n", user_dismissed ? " by the user" : "");
++
++  // Only when the user closed it. If the framework asked us to hide, echoing a
++  // close back at it would be reporting its own request as news.
++  if (user_dismissed && g_ime.client_id >= 0) {
++    char json[192];
++    std::snprintf(json, sizeof json,
++                  "{\"method\":\"TextInputClient.onConnectionClosed\","
++                  "\"args\":[%d]}",
++                  g_ime.client_id);
++    SendTextInputMethod(json);
++  }
 +}
 +
 +// |FlutterProjectArgs::log_message_callback|
@@ -2541,10 +2763,21 @@ index 00000000..f7044286
 +        while (a < body + len && (*a == '[' || *a == ' ')) a++;
 +        g_ime.client_id = std::atoi(a);
 +      }
++      // The first "name" in this payload is inputType's -- the configuration
++      // puts inputType before anything else that carries one.
 +      const char* name = JsonFindValue(body, len, "name");
++      g_ime.type_name[0] = '\0';
++      if (name != nullptr) {
++        JsonUnescape(name, body + len, g_ime.type_name, sizeof g_ime.type_name);
++      }
 +      g_ime.multiline =
-+          name != nullptr && std::strncmp(name, "\"TextInputType.multiline\"",
-+                                          25) == 0;
++          std::strcmp(g_ime.type_name, "TextInputType.multiline") == 0;
++      const char* act = JsonFindValue(body, len, "inputAction");
++      g_ime.action_name[0] = '\0';
++      if (act != nullptr) {
++        JsonUnescape(act, body + len, g_ime.action_name,
++                     sizeof g_ime.action_name);
++      }
 +      const char* obsc = JsonFindValue(body, len, "obscureText");
 +      g_ime.obscured = obsc != nullptr && std::strncmp(obsc, "true", 4) == 0;
 +    } else if (std::strcmp(method, "TextInput.setEditingState") == 0) {
@@ -2553,35 +2786,20 @@ index 00000000..f7044286
 +        JsonUnescape(t, body + len, g_ime.pending, sizeof g_ime.pending);
 +      }
 +    } else if (std::strcmp(method, "TextInput.show") == 0) {
-+      // Only if a person asked for it.
++      // Shown whenever the framework asks, autofocus included.
 +      //
-+      // The IME here is a full-screen modal the shell draws over the app, so
-+      // "focus a field" and "cover the entire display" are the same action --
-+      // which they are on no other platform. An autofocused field therefore
-+      // takes the whole screen before the app has drawn a frame the user could
-+      // understand, and there is nothing on that screen explaining why.
-+      //
-+      // Flutter cannot help us tell the two apart: TextInput.show is identical
-+      // whether the focus came from a tap or from autofocus: true. What does
-+      // differ is that a tap leaves a fingerprint, so require one within the
-+      // last second. Startup autofocus has no touch behind it at all and is
-+      // rejected; a button that programmatically focuses a field still works,
-+      // because the person did tap something.
-+      //
-+      // A second is deliberately generous. The path from finger to this line
-+      // runs through a hit test, a focus change and a frame, and this port
-+      // renders at about twelve of those a second.
-+      const uint64_t now = sceKernelGetSystemTimeWide();
-+      if (g_last_touch_us != 0 && now - g_last_touch_us < 1000000) {
-+        OpenImeDialog();
-+      } else {
-+        // Not silent: this is the single most confusing thing the rule can do
-+        // to someone whose field did not open, and it costs one line.
-+        std::printf("flutter-vita: TextInput.show ignored, no recent touch\n");
-+      }
++      // There used to be a rule here that a show was ignored unless a finger
++      // had touched the screen within the last second. That was not caution
++      // about input, it was a workaround for the modal dialog: focusing a
++      // field and covering the whole display were the same action, so an
++      // autofocused field blanked the app before the user had seen it. An
++      // overlay keyboard takes the bottom of the screen and leaves the app
++      // visible, which is what every phone does on autofocus, so the rule has
++      // nothing left to protect.
++      OpenIme();
 +    } else if (std::strcmp(method, "TextInput.hide") == 0 ||
 +               std::strcmp(method, "TextInput.clearClient") == 0) {
-+      CloseImeDialog();
++      CloseIme();
 +      if (std::strcmp(method, "TextInput.clearClient") == 0) {
 +        g_ime.client_id = -1;
 +      }
@@ -2597,91 +2815,32 @@ index 00000000..f7044286
 +
 +// Pump the IME, from the main loop.
 +//
-+// A common dialog is composited by the shell *over the app's own surface*, so
-+// every frame it is up has to hand it the framebuffer. That is the one place
-+// software rendering (ADR-0003) meets an API written for GXM: the struct wants
-+// a colour surface, but its fields are only a pointer, a format and a stride,
-+// and the CDRAM block behind sceDisplaySetFrameBuf is exactly describable that
-+// way. No GXM rendering happens; the surface is a description of memory we
-+// already own.
++// libime does its work inside sceImeUpdate: it samples touches, redraws the
++// keyboard and calls the handler for anything that happened. So it runs every
++// frame the keyboard is up, and on one thread only.
++//
++// Compositing is split by renderer, because the two paths own the display
++// differently. Under GL, vitaGL runs sceCommonDialogUpdate inside its swap,
++// gated on the argument to vglSwapBuffers -- PresentSurface passes GL_TRUE
++// while this is open. On the software path nothing else would do it, so it
++// happens here, against the framebuffer this file allocated.
 +void PumpIme(FlutterEngine engine) {
-+  if (!g_ime.open) return;
++  if (!g_ime.open && !g_ime.metrics_dirty) return;
 +
-+  // Composited here, on the main thread, which is the thread that initialised
-+  // GXM. See the note in PresentSurface for what doing this on the raster
-+  // thread costs.
-+  UpdateCommonDialog();
-+
-+  if (sceImeDialogGetStatus() != SCE_COMMON_DIALOG_STATUS_FINISHED) return;
-+
-+  SceImeDialogResult result = {};
-+  sceImeDialogGetResult(&result);
-+  // What counts as "the user finished" depends on the shape of the field, and
-+  // getting this wrong is invisible: the dialog closes and the text silently
-+  // does not apply.
-+  //
-+  // A single-line dialog has two exits -- the enter key confirms, the close
-+  // button cancels -- so ENTER is the only confirmation.
-+  //
-+  // A multiline dialog has one. Its enter key inserts a line break, which is
-+  // the whole point of multiline and not something to work around, so **close
-+  // is the confirm**. Treating CLOSE as cancel there means there is no way at
-+  // all to commit what was typed.
-+  //
-+  // ABORTED is ours: it is what sceImeDialogAbort produces when the framework
-+  // sends TextInput.hide, and it must never apply anything.
-+  const bool aborted = result.result == SCE_COMMON_DIALOG_RESULT_ABORTED;
-+  const bool confirmed =
-+      !aborted && (result.button == SCE_IME_DIALOG_BUTTON_ENTER ||
-+                   (g_ime.multiline &&
-+                    result.button == SCE_IME_DIALOG_BUTTON_CLOSE));
-+
-+  char text[1024] = {0};
-+  if (confirmed) {
-+    Utf16ToUtf8(g_ime.input, text, sizeof text);
-+    std::snprintf(g_ime.pending, sizeof g_ime.pending, "%s", text);
-+  } else {
-+    // Cancelled: report the state unchanged rather than an empty field, or a
-+    // cancelled dialog would silently erase what the user already had.
-+    std::snprintf(text, sizeof text, "%s", g_ime.pending);
++  if (g_ime.open) {
++    if (!g_gl_enabled) {
++      UpdateCommonDialog();
++    }
++    sceImeUpdate();
 +  }
 +
-+  sceImeDialogTerm();
-+  g_ime.open = false;
-+  VLog("flutter-vita: IME %s (button %d result %d), %u chars\n",
-+       confirmed ? "confirmed" : "cancelled", (int)result.button,
-+       (int)result.result, (unsigned)std::strlen(text));
-+
-+  if (g_ime.client_id < 0) return;
-+
-+  char escaped[2048];
-+  JsonEscape(text, escaped, sizeof escaped);
-+  const int caret = (int)std::strlen(text);
-+
-+  char json[2600];
-+  std::snprintf(json, sizeof json,
-+                "{\"method\":\"TextInputClient.updateEditingState\",\"args\":"
-+                "[%d,{\"text\":\"%s\",\"selectionBase\":%d,"
-+                "\"selectionExtent\":%d,\"selectionAffinity\":"
-+                "\"TextAffinity.downstream\",\"selectionIsDirectional\":false,"
-+                "\"composingBase\":-1,\"composingExtent\":-1}]}",
-+                g_ime.client_id, escaped, caret, caret);
-+  SendTextInputMethod(json);
-+
-+  // `done` for every field, including multiline.
-+  //
-+  // The tempting alternative is `newline` for a multiline field, mirroring what
-+  // its Enter key does on a soft keyboard. It is wrong here: `newline` does not
-+  // unfocus, and with a modal editor an unfocused-less field means the next
-+  // frame asks for the keyboard again and the dialog reopens the instant it
-+  // closes. A dialog that has been dismissed means editing finished, whatever
-+  // shape the field is.
-+  std::snprintf(json, sizeof json,
-+                "{\"method\":\"TextInputClient.performAction\",\"args\":"
-+                "[%d,\"TextInputAction.done\"]}",
-+                g_ime.client_id);
-+  SendTextInputMethod(json);
-+  (void)engine;
++  // After the update, not before: the handler runs inside it, so an OPEN or
++  // CHANGE_SIZE that arrives there reaches the framework this frame rather
++  // than the next one.
++  if (g_ime.metrics_dirty) {
++    g_ime.metrics_dirty = false;
++    SendWindowMetrics(engine);
++  }
 +}
 +
 +int main(int argc, char** argv) {
@@ -2969,15 +3128,8 @@ index 00000000..f7044286
 +         static_cast<int>(kHeight * surface_scale), kWidth, kHeight);
 +  }
 +
-+  FlutterWindowMetricsEvent metrics = {};
-+  metrics.struct_size = sizeof(FlutterWindowMetricsEvent);
-+  metrics.width = static_cast<size_t>(kWidth * surface_scale);
-+  metrics.height = static_cast<size_t>(kHeight * surface_scale);
-+  metrics.pixel_ratio = surface_scale;
-+  // Same display the notify above described, so the framework can associate the
-+  // window with it rather than guessing.
-+  metrics.display_id = 0;
-+  FlutterEngineSendWindowMetricsEvent(engine, &metrics);
++  g_surface_scale = surface_scale;
++  SendWindowMetrics(engine);
 +
 +  InitTouch();
 +  InitIme();

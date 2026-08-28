@@ -595,7 +595,10 @@ deliberately in exchange for those numbers, and the escape hatch is one `put`
 away rather than a rebuild. Two callers still want the CPU path and get it: the
 loader forces it through a strong `flutter_vita_force_software` symbol
 ([ADR-0016](0016-the-loader-becomes-a-flutter-app.md) decision 7), and anything
-needing text input wants it until the common dialog can composite over vitaGL.
+needing text input wanted it until the common dialog could composite over
+vitaGL. The second caller went away on 2026-08-28: text input now runs on
+libime's inline keyboard, which does not use the common dialog at all. See
+[the IME finding below](#the-system-ime-is-unusable-under-gl-and-fine-without-it).
 
 #### The first thing the new default did was wedge the console
 
@@ -798,10 +801,10 @@ the thing it was trying to save.
 
 - **No partial repaint.** `populate_existing_damage` is null, so every frame is
   a full repaint. ADR-0007 is a software-path property today.
-- **No IME.** vitaGL owns GXM, so the common dialog's surfaces need pointing at
-  its back buffer rather than at the CDRAM block. This is closer than it was:
-  the note in `OpenImeDialog` says text input needs "a minimal GXM pipeline
-  whose only job is to own the framebuffer", and vitaGL is exactly that.
+- ~~**No IME.**~~ **Closed 2026-08-28.** The gap was real for the common
+  dialog and the fix was to stop needing it: libime's inline keyboard
+  composites after `sceDisplaySetFrameBuf` and never touches GXM, so it works
+  on both backends unchanged. See the IME finding below.
 - **No debug HUD.** It paints into a CPU framebuffer that no longer exists.
 - **No resource context.** `make_resource_current` is null, so texture uploads
   are synchronous on the raster thread and the engine says so once at startup.
@@ -950,9 +953,38 @@ the common dialog has somewhere to composite. Under GL, vitaGL owns GXM and
 the display, and the dialog has nothing it can draw into -- it takes the
 screen and the app never gets it back.
 
-So text input and the GPU are currently exclusive. That is a second cost on
-the GL path beyond the crash behaviour above, and it lands on exactly the
-apps most likely to want the GPU.
+So text input and the GPU were exclusive for six days -- a second cost on the
+GL path beyond the crash behaviour above, landing on exactly the apps most
+likely to want the GPU.
+
+### Resolved 2026-08-28, by not using the common dialog
+
+The conclusion above is correct about `sceImeDialog` and wrong about text
+input, because it assumed the modal dialog was the only system keyboard. It is
+not. `SceIme` (`psp2/libime.h`) is a second, older interface: an **inline**
+keyboard the shell composites into the lower part of the panel *after*
+`sceDisplaySetFrameBuf`, leaving the application's frame alone. It never asks
+for a GXM surface, so the question of who owns the display does not arise --
+it works identically on both backends, and the embedder needed no `g_gl_enabled`
+branch for it.
+
+Three things this costs, none of them fatal:
+
+- **It composites outside the captured framebuffer.** `sceDisplayGetFrameBuf`
+  returns what the app drew, so `shot` never contains the keyboard. Verifying
+  it on hardware means reading the event log, not looking at a capture.
+- **This console rejects `SCE_IME_OPTION_MULTILINE`** outright
+  (`0x80100715 = SCE_IME_ERROR_INVALID_OPTION`). `OpenIme` degrades option by
+  option until `sceImeOpen` succeeds and records what it actually got, so a
+  multiline field opens as single-line and `PRESS_ENTER` stays wired to
+  `performAction` rather than inserting a newline.
+- **`vglSwapBuffers` needs its `has_commondialog` argument set** while the
+  keyboard is up, which keeps vitaGL's common-dialog path alive. That is why
+  `vglInitExtended` is used -- its CDIALOG budget computes to 0 and
+  `vgl_has_cdlg_support` stays TRUE.
+
+The GXM surface setup at `sceImeDialogInit` is now dead code on both paths and
+should be retired.
 
 The frozen build also produced a smaller lesson worth keeping. It reported
 `match=vitaGL` while `gl.on` contained `0`, which looked like the opt-in

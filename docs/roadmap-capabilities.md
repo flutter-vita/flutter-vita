@@ -33,7 +33,7 @@ before the measurement.
 | Dart `print` | **works** | goes through the engine log, not `dart:io` |
 | Dart stdout / stderr | **partly** | construction works — Vita reports `kPipe`, since `fstat` on fds 0/1/2 fails — but the write itself still fails: `writeFrom failed (OS Error: Bad file number, errno = 9)`, surfacing asynchronously as an unhandled exception rather than at the call. Needs fd 1/2 routed to the log |
 | `Process` | **refused, correctly** | `process_vita.cc` — no fork, no exec, documented as an implementation not a placeholder |
-| Text input / IME | **works** | Phase 8 — system keyboard over `flutter/textinput`, typed text arriving back in the framework. Single line, multiline and obscured, on hardware |
+| Text input / IME | **works** | Phase 8 — libime's inline keyboard over `flutter/textinput`, on both backends, with `physical_view_inset_bottom` reported so layouts move. Typed text, caret and composing range arrive back in the framework. Single line and obscured; multiline degrades to single-line, this console refuses it |
 | Audio | **not started** | `sceAudioOut` exists |
 | Gamepad, sticks, rear touch | **designed, not built** | [ADR-0010](adr/0010-input-layering-and-psvita-api.md) |
 | **Bluetooth** | **blocked** | see below |
@@ -127,11 +127,17 @@ given `sceIoDopen` semantics, and case sensitivity. The engine needed
   them get away with.
 - `connectivity_plus_vita`, if the survey still justifies it afterwards.
 
-## Phase 8 — Text input — **DONE 2026-08-16**
+## Phase 8 — Text input — **DONE 2026-08-16, rebuilt on libime 2026-08-28**
 
 The system keyboard opens on a `TextField`, seeded with the field's current
 value, and what you type arrives back in the framework. Single line, multiline
-and obscured, measured on hardware in [apps/gallery](../apps/gallery).
+and obscured, measured on hardware in [apps/gallery](../apps/gallery) and in
+[apps/keklist](../apps/keklist).
+
+It shipped on `sceImeDialog`, a modal common dialog, and moved to **libime**'s
+inline keyboard on 2026-08-28 because the dialog cannot composite over vitaGL.
+Everything below the next two headings describes the dialog era; the section
+that replaces it is [The interaction model, and why](#the-interaction-model-and-why).
 
 Two things had to exist first, and neither was on the plan.
 
@@ -140,7 +146,8 @@ it, so with no runner the engine queues messages nobody drains and an
 `invokeMethod` simply times out. This blocks *every* channel, not just text
 input, and the embedder had it filed as an ADR-0004 performance concern.
 
-**Three pieces of GXM setup, and no GXM rendering.** A common dialog is drawn by
+**Three pieces of GXM setup, and no GXM rendering.** *(Dialog era. libime needs
+none of this, and the setup is now dead code awaiting removal.)* A common dialog is drawn by
 the shell into the application's own frame, and it will only do that into a
 surface GXM manages: the framebuffer mapped with `sceGxmMapMemory`, a
 depth/stencil surface the descriptor requires even though nothing tests depth,
@@ -160,25 +167,37 @@ Six deploys, six specific error codes, each naming its own cause:
 
 ### The interaction model, and why
 
-Modal, and that is the platform rather than a shortcut: `sceIme`'s inline mode
-wants a GXM render loop, and there is no keyboard a Flutter app could draw for
-itself. So every tap opens a full-screen editor pre-filled with the field's
-current value — which is how the PS5 and the Switch do text entry too.
+Inline, on the bottom third of the panel, with the app still visible and still
+running above it — the shape every mobile platform uses. The claim this
+document made until 2026-08-28, that the modal dialog "is the platform rather
+than a shortcut" because inline mode "wants a GXM render loop", was wrong:
+`SceIme` composites *after* `sceDisplaySetFrameBuf`, owns no surface, and works
+under vitaGL and the software rasteriser alike.
 
-Consequences worth knowing before they are reported as bugs:
+What that buys, and what it still costs:
 
-- **The caret position is lost.** `sceImeDialog` takes an initial string, not a
-  selection, so tapping mid-text still opens with the caret at the end.
-- **Confirmation depends on the shape of the field.** A single-line dialog has
-  two exits, enter confirms and close cancels. A multiline dialog has one: its
-  enter key inserts a line break, so **close is the confirm**. Treating close as
-  cancel there leaves no way to commit what was typed, and the failure is
-  silent — the dialog closes and the text does not apply.
-- **Every field reports `TextInputAction.done`**, including multiline.
-  `newline` does not unfocus, so the field would re-request the keyboard and the
-  dialog would reopen the instant it closed.
-- **A cancelled dialog restores the previous text** rather than emptying the
-  field.
+- **The app keeps rendering and keeps its frame.** Flutter is told how much of
+  the view the keyboard covers through `physical_view_inset_bottom`, taken from
+  the `SceImeRect` in the `OPEN` and `CHANGE_SIZE` events, so `Scaffold` and
+  `MediaQuery.viewInsets` scroll the focused field into view by themselves.
+- **The caret survives.** `UPDATE_TEXT` carries `caretIndex`, `preeditIndex`
+  and `preeditLength` in UTF-16 code units, which is what
+  `TextInputClient.updateEditingState` wants, so selection and the composing
+  range round-trip instead of collapsing to the end.
+- **`TextInputType` and `TextInputAction` map onto the panel.** `emailAddress`,
+  `url`, `number` and `phone` pick a `SCE_IME_TYPE_*`, `obscured` forces
+  `BASIC_LATIN`, and `search`/`send`/`go` set the enter key's label.
+- **This console refuses multiline.** `SCE_IME_OPTION_MULTILINE` returns
+  `0x80100715` (`INVALID_OPTION`). `OpenIme` drops rejected options one at a
+  time and retries, then records what it actually opened with, so a multiline
+  field becomes single-line and its enter key fires `performAction` instead of
+  inserting a newline. Without that record, enter in a `maxLines: null` field
+  would do nothing at all.
+- **The keyboard is invisible to `shot`.** `sceDisplayGetFrameBuf` returns the
+  app's own frame, and the shell composites over it downstream. Confirming the
+  keyboard is up means reading the `IME open rect …` log line.
+- **Dismissal is distinguishable.** `PRESS_CLOSE` sends `onConnectionClosed`;
+  a programmatic `TextInput.hide` does not.
 
 ### Still open
 
