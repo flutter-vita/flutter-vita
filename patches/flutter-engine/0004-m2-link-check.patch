@@ -240,10 +240,10 @@ index 00000000..a5e0625d
 +}  // extern "C"
 diff --git a/engine/src/flutter/shell/platform/embedder/vita_embedder.cc b/engine/src/flutter/shell/platform/embedder/vita_embedder.cc
 new file mode 100644
-index 00000000..0e817372
+index 00000000..b78f2abc
 --- /dev/null
 +++ b/engine/src/flutter/shell/platform/embedder/vita_embedder.cc
-@@ -0,0 +1,2988 @@
+@@ -0,0 +1,3000 @@
 +// Copyright (c) 2026, the Flutter Authors. All rights reserved.
 +// Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
@@ -295,7 +295,6 @@ index 00000000..0e817372
 +// path below exists to do without.
 +#include <vitaGL.h>
 +#include <psp2/gxm.h>
-+#include <psp2/ime_dialog.h>
 +#include <psp2/libime.h>
 +#include <psp2/kernel/threadmgr.h>
 +#include <psp2/sysmodule.h>
@@ -911,13 +910,20 @@ index 00000000..0e817372
 +
 +// The GXM side of showing a common dialog, and nothing more.
 +//
++// Written for sceImeDialog, and **still required after libime replaced it** --
++// on the software path only. libime reaches the screen through
++// sceCommonDialogUpdate, which takes the surfaces below; under GL vitaGL calls
++// it inside vglSwapBuffers instead and none of this runs. So this is not
++// dialog-era leftovers awaiting deletion, whatever the commit that introduced
++// libime claimed: delete it and the software path loses its keyboard.
++//
 +// The shell draws the keyboard into the *application's* frame, and it will
 +// only do that into a surface GXM manages. Filling
 +// SceCommonDialogRenderTargetInfo with the right width, height, stride and
 +// format over a raw CDRAM pointer is not enough: with GXM merely initialised
-+// and the depth surface and sync object left null, sceImeDialogInit succeeds
-+// and the driver then kills the process out of band -- a GPUCRASH dump in
-+// which no thread has a crash stop reason.
++// and the depth surface and sync object left null, the call succeeds and the
++// driver then kills the process out of band -- a GPUCRASH dump in which no
++// thread has a crash stop reason.
 +//
 +// So three things are created here, and still nothing is rendered with the
 +// GPU. Skia keeps drawing every pixel on the CPU exactly as before; this is
@@ -1516,9 +1522,16 @@ index 00000000..0e817372
 +  // sceCommonDialogUpdate has to be called from the thread that owns the GXM
 +  // context.
 +  //
-+  // So the main loop owns the framebuffer while a dialog is open, compositing
-+  // over whatever frame was last copied. The app content freezes underneath,
-+  // which is what a modal keyboard means anyway.
++  // So the main loop owns the framebuffer while the keyboard is open,
++  // compositing over whatever frame was last copied. The app content freezes
++  // underneath.
++  //
++  // That was the right trade for a modal dialog and is the wrong one for an
++  // inline keyboard: libime covers the bottom third and the app above it
++  // should keep animating, as it does under GL. Fixing it is not a one-liner
++  // -- the thread that owns the GXM context is the main loop, not the raster
++  // thread that runs this copy -- so the software path keeps the freeze and
++  // the GL path does not.
 +  if (g_ime.open && !g_gl_enabled) {
 +    // The overlay draws into the display buffer on this path, so whatever
 +    // partial rectangle this frame changed is about to be painted over. The
@@ -2353,7 +2366,7 @@ index 00000000..0e817372
 +
 +  // GXM has to be initialised even though nothing here renders with it.
 +  //
-+  // Measured, not assumed: with everything else correct, sceImeDialogInit
++  // Measured, not assumed: with everything else correct, the common dialog
 +  // returns 0x80020436, SCE_COMMON_DIALOG_ERROR_GXM_IS_UNINITIALIZED. A common
 +  // dialog is composited by the shell, and the shell will not do that for a
 +  // process that has no graphics context -- ADR-0003's software raster is fine
@@ -2368,18 +2381,15 @@ index 00000000..0e817372
 +  // every other application on this console passes, and 16 MiB out of roughly
 +  // 87 MiB free is affordable; guessing again would cost another deploy to
 +  // learn the same thing.
-+  // Under GL, vitaGL has already done all of this and owns it.
++  // Under GL, vitaGL has already done all of this and owns it -- both the
++  // GXM init and the compositing, which it does inside vglSwapBuffers. So the
++  // GL path skips the whole block and still gets a keyboard; it is the
++  // software path that has to build the surfaces itself.
 +  //
 +  // sceGxmInitialize is once per process, and a second call returns
-+  // SCE_GXM_ERROR_ALREADY_INITIALIZED -- so the software path's bespoke
-+  // "minimal GXM pipeline whose only job is to own the framebuffer" is exactly
-+  // what vitaGL is, and better. The note under OpenIme calls that the
-+  // real remaining Phase 8 work; the GL path supplies it as a side effect, and
-+  // the common-dialog surfaces still need pointing at vitaGL's back buffer
-+  // rather than at g_display.base before the IME can actually be turned on.
-+  // Left off here rather than half-wired.
++  // SCE_GXM_ERROR_ALREADY_INITIALIZED.
 +  if (g_gl_enabled) {
-+    VLog("flutter-vita: GXM belongs to vitaGL; IME stays off under GL\n");
++    VLog("flutter-vita: GXM belongs to vitaGL; it composites the IME\n");
 +  } else {
 +    SceGxmInitializeParams gxm = {};
 +    gxm.flags = 0;
@@ -2417,10 +2427,9 @@ index 00000000..0e817372
 +       (int)cfg.enterButtonAssign);
 +}
 +
-+// Open the system IME.
-+//
-+// SCE_IME_DIALOG_MAX_TEXT_LENGTH is 2048 and the buffers are sized for it, so
-+// nothing here can overrun regardless of what the framework sends.
++// SCE_IME_MAX_TEXT_LENGTH is 2048 and ImeState's buffers are sized for it plus
++// the preedit, so nothing here can overrun regardless of what the framework
++// sends.
 +void CloseIme(bool user_dismissed = false);
 +
 +// Everything libime tells us, translated into the two messages the framework
@@ -2928,12 +2937,15 @@ index 00000000..0e817372
 +  // exchange for the numbers above, and the escape hatch is one `put` away
 +  // rather than a rebuild.
 +  //
-+  // Two things still want the CPU path and get it. The loader forces it
++  // One thing still wants the CPU path and gets it: the loader forces it
 +  // through the strong symbol below, because the component that recovers from
 +  // crashes is the last one permitted to cause an unrecoverable one
-+  // (ADR-0016 decision 7). And any app needing text input wants it until the
-+  // common dialog can composite over vitaGL, since under GL the IME takes the
-+  // screen and never gives it back.
++  // (ADR-0016 decision 7).
++  //
++  // Text input was the second until 2026-08-28. That was true of sceImeDialog,
++  // which took the screen under GL and never gave it back; libime composites
++  // over both paths and the reason to prefer software for a text field is
++  // gone.
 +  const bool force_software =
 +      flutter_vita_force_software != 0 ||
 +      DevSwitchOn("ux0:data/flutter-vita/software.on");

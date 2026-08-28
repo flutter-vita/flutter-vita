@@ -983,8 +983,22 @@ Three things this costs, none of them fatal:
   `vglInitExtended` is used -- its CDIALOG budget computes to 0 and
   `vgl_has_cdlg_support` stays TRUE.
 
-The GXM surface setup at `sceImeDialogInit` is now dead code on both paths and
-should be retired.
+`sceImeDialog` itself is now unreferenced. Its **GXM surface setup is not**,
+and the claim in the commit that introduced libime -- that both were dead on
+both paths -- was wrong. libime reaches the screen through
+`sceCommonDialogUpdate`, which takes the mapped framebuffer, the depth surface
+and the sync object; under GL vitaGL makes that call inside `vglSwapBuffers`,
+and on the software path this embedder makes it itself. Delete the surfaces and
+the software path loses its keyboard.
+
+One piece of dialog-era behaviour does survive and is now wrong: on the
+software path the main loop holds the last frame while the keyboard is up, so
+the app freezes underneath. That was correct for a modal that owned the whole
+screen and is not correct for a panel covering the bottom third. It stays for
+now because the fix is not local -- `sceCommonDialogUpdate` must run on the
+thread that owns the GXM context, which is the main loop, while the frame copy
+runs on the raster thread. Under GL the app keeps animating, because vitaGL
+composites inside the swap on the correct thread already.
 
 The frozen build also produced a smaller lesson worth keeping. It reported
 `match=vitaGL` while `gl.on` contained `0`, which looked like the opt-in

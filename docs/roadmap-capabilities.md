@@ -146,8 +146,9 @@ it, so with no runner the engine queues messages nobody drains and an
 `invokeMethod` simply times out. This blocks *every* channel, not just text
 input, and the embedder had it filed as an ADR-0004 performance concern.
 
-**Three pieces of GXM setup, and no GXM rendering.** *(Dialog era. libime needs
-none of this, and the setup is now dead code awaiting removal.)* A common dialog is drawn by
+**Three pieces of GXM setup, and no GXM rendering.** *(Written for the dialog,
+still required by libime on the software path — that is the route
+`sceCommonDialogUpdate` takes. Under GL vitaGL does it instead.)* A common dialog is drawn by
 the shell into the application's own frame, and it will only do that into a
 surface GXM manages: the framebuffer mapped with `sceGxmMapMemory`, a
 depth/stencil surface the descriptor requires even though nothing tests depth,
