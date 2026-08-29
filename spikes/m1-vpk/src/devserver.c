@@ -32,10 +32,16 @@ static const void* (*g_read_framebuffer)(unsigned int*, char*, unsigned int) =
     NULL;
 
 static void (*g_tap)(int, int) = NULL;
+static void (*g_swipe)(int, int, int, int, int) = NULL;
 static void (*g_overlay)(int) = NULL;
 
 void dev_server_set_tap_handler(void (*tap)(int x, int y)) {
   g_tap = tap;
+}
+
+void dev_server_set_swipe_handler(void (*swipe)(int x0, int y0,
+                                                int x1, int y1, int steps)) {
+  g_swipe = swipe;
 }
 
 void dev_server_set_overlay_handler(void (*overlay)(int on)) {
@@ -456,6 +462,23 @@ static int serve(int sock, const char* log_path, const char* eboot_path) {
         g_tap(x, y);
         char m[64];
         snprintf(m, sizeof m, "OK tap %d %d\n", x, y);
+        send_str(sock, m);
+      }
+    } else if (strncmp(line, "swipe ", 6) == 0) {
+      // steps is optional; 12 spans a fifth of a second at 60 Hz, which reads
+      // as a deliberate drag rather than a flick.
+      int x0 = 0, y0 = 0, x1 = 0, y1 = 0, steps = 12;
+      const int got = sscanf(line + 6, "%d %d %d %d %d", &x0, &y0, &x1, &y1, &steps);
+      if (got < 4) {
+        send_str(sock, "ERR swipe <x0> <y0> <x1> <y1> [steps]\n");
+      } else if (g_swipe == NULL) {
+        send_str(sock, "ERR no swipe handler\n");
+      } else {
+        if (steps < 2) steps = 2;
+        if (steps > 120) steps = 120;
+        g_swipe(x0, y0, x1, y1, steps);
+        char m[96];
+        snprintf(m, sizeof m, "OK swipe %d %d -> %d %d in %d\n", x0, y0, x1, y1, steps);
         send_str(sock, m);
       }
     } else if (strncmp(line, "overlay ", 8) == 0) {

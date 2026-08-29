@@ -253,6 +253,11 @@ set(VPK_FILES
   # asset key, and offering MaterialIcons as a fallback for body text renders
   # paragraphs in icons.
   FILE "${ENGINE_DIR}/data/Roboto-Regular.ttf" fonts/Roboto-Regular.ttf
+  # Emoji. Everything in app0:/fonts is a fallback candidate for every
+  # codepoint (see platform_vita.cc), which is how an unmodified app gets emoji
+  # without naming a Vita-specific family. Monochrome and 1.9 MB; the colour
+  # font was tried and is documented in assets/fonts/README.md.
+  FILE "${ENGINE_DIR}/data/NotoEmoji-Regular.ttf" fonts/NotoEmoji-Regular.ttf
 )
 if(NOT NO_SUPERVISOR)
   list(APPEND VPK_FILES

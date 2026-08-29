@@ -240,10 +240,10 @@ index 00000000..a5e0625d
 +}  // extern "C"
 diff --git a/engine/src/flutter/shell/platform/embedder/vita_embedder.cc b/engine/src/flutter/shell/platform/embedder/vita_embedder.cc
 new file mode 100644
-index 00000000..b78f2abc
+index 00000000..8e0eaf00
 --- /dev/null
 +++ b/engine/src/flutter/shell/platform/embedder/vita_embedder.cc
-@@ -0,0 +1,3000 @@
+@@ -0,0 +1,3098 @@
 +// Copyright (c) 2026, the Flutter Authors. All rights reserved.
 +// Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
@@ -294,6 +294,7 @@ index 00000000..b78f2abc
 +// module the homebrew community already depends on, and which the software
 +// path below exists to do without.
 +#include <vitaGL.h>
++
 +#include <psp2/gxm.h>
 +#include <psp2/libime.h>
 +#include <psp2/kernel/threadmgr.h>
@@ -330,6 +331,9 @@ index 00000000..b78f2abc
 +                                    char* describe,
 +                                    unsigned int describe_size));
 +extern "C" void dev_server_set_tap_handler(void (*tap)(int x, int y));
++extern "C" void dev_server_set_swipe_handler(void (*swipe)(int x0, int y0,
++                                                           int x1, int y1,
++                                                           int steps));
 +extern "C" void dev_server_set_overlay_handler(void (*overlay)(int on));
 +
 +// Whether a build wants the debug HUD.
@@ -349,6 +353,29 @@ index 00000000..b78f2abc
 +// exactly that: a switch it has to read is a switch that can be missing on the
 +// one device where that matters most.
 +extern "C" __attribute__((weak)) int flutter_vita_force_software = 0;
++
++// The loader and the app must not share a log file.
++//
++// Both are this embedder, so both used to open ux0:data/flutter-vita/m3.log and
++// truncate it. The loader starts *after* a crash, which is exactly when the
++// app's last lines matter -- so the recovery tool destroyed the evidence of the
++// thing it was recovering from, every single time. Measured on 2026-08-28
++// chasing a crash in keklist's emoji grid: the log pulled from the console
++// after the crash was the loader's own boot, and the crash itself was gone.
++//
++// The loader already identifies itself at link time (ADR-0016 decision 7), so
++// no new mechanism is needed -- the same strong symbol picks the path.
++//
++// It is the *app* that moves, not the loader, and that is not arbitrary. The
++// loader links a blessed engine (ADR-0016 decision 2), so it only picks up a
++// change here when someone deliberately re-blesses; an app rebuilds every
++// deploy. Moving the loader would mean no crash could be read until a re-bless
++// dragged the engine under development into the one component that must never
++// break. Moving the app works against the loader already on the console.
++static const char* LogPath() {
++  return flutter_vita_force_software != 0 ? "ux0:data/flutter-vita/m3.log"
++                                          : "ux0:data/flutter-vita/app.log";
++}
 +
 +// vitaGL's failed-allocation counter, defined in its gpu_utils.c.
 +//
@@ -473,8 +500,7 @@ index 00000000..b78f2abc
 +}
 +
 +int DevServerThread(SceSize /* args */, void* /* argp */) {
-+  dev_server_run(DevServerLog, "ux0:data/flutter-vita/m3.log",
-+                 "ux0:app/FVTA00002/eboot.bin");
++  dev_server_run(DevServerLog, LogPath(), "ux0:app/FVTA00002/eboot.bin");
 +  // Asked to exit, or the socket never came up. Either way the engine keeps
 +  // going; losing the dev channel is not a reason to take the app down.
 +  return sceKernelExitDeleteThread(0);
@@ -728,6 +754,74 @@ index 00000000..b78f2abc
 +  g_injected_tap_pending = true;
 +}
 +
++// A drag, spread over frames, because a fling is a thing with a velocity.
++//
++// `tap` sends down and up in one pass, which cannot scroll anything. This
++// holds a start, an end and a step count, and emits one kMove per main-loop
++// pass -- so a 12-step swipe takes 12 frames and Flutter's velocity tracker
++// sees move timestamps ~16.6 ms apart, which is what a finger looks like.
++// Delivering the same moves in one pass produces a zero-duration gesture the
++// recogniser throws away.
++//
++// One drag at a time, and a new one replaces whatever was in flight. Unguarded
++// for the same reason InjectTap is: one writer, one reader, and the cost of a
++// lost race is a retry.
++struct InjectedDrag {
++  volatile bool active = false;
++  volatile bool down_sent = false;
++  int x0 = 0, y0 = 0, x1 = 0, y1 = 0;
++  int steps = 0;
++  int step = 0;
++};
++InjectedDrag g_drag;
++
++void InjectSwipe(int x0, int y0, int x1, int y1, int steps) {
++  // Refuse rather than replace. Overwriting a drag that has already sent its
++  // kDown emits a second kDown with no kUp between them, and Flutter's pointer
++  // state never recovers -- the scrollable stays captured and stops producing
++  // frames. That looked exactly like an app hang on 2026-08-28 and cost an
++  // afternoon before the injector was suspected instead of the app.
++  if (g_drag.active) {
++    VLog("flutter-vita: swipe ignored, one still in flight\n");
++    return;
++  }
++  g_drag.x0 = x0;
++  g_drag.y0 = y0;
++  g_drag.x1 = x1;
++  g_drag.y1 = y1;
++  g_drag.steps = steps;
++  g_drag.step = 0;
++  g_drag.down_sent = false;
++  g_drag.active = true;
++}
++
++void DrainInjectedDrag(FlutterEngine engine) {
++  if (!g_drag.active) {
++    return;
++  }
++
++  if (!g_drag.down_sent) {
++    g_drag.down_sent = true;
++    SendPointer(engine, kDown, g_drag.x0, g_drag.y0);
++    return;  // the down gets a frame of its own, as a finger's would
++  }
++
++  g_drag.step++;
++  const double t = static_cast<double>(g_drag.step) / g_drag.steps;
++  const double x = g_drag.x0 + (g_drag.x1 - g_drag.x0) * t;
++  const double y = g_drag.y0 + (g_drag.y1 - g_drag.y0) * t;
++
++  if (g_drag.step >= g_drag.steps) {
++    SendPointer(engine, kMove, x, y);
++    SendPointer(engine, kUp, x, y);
++    g_drag.active = false;
++    VLog("flutter-vita: injected swipe %d,%d -> %d,%d\n", g_drag.x0, g_drag.y0,
++         g_drag.x1, g_drag.y1);
++    return;
++  }
++  SendPointer(engine, kMove, x, y);
++}
++
 +void DrainInjectedTaps(FlutterEngine engine) {
 +  if (!g_injected_tap_pending) {
 +    return;
@@ -817,6 +911,7 @@ index 00000000..b78f2abc
 +void StartDevServer() {
 +  dev_server_set_framebuffer_source(ReadFramebuffer);
 +  dev_server_set_tap_handler(InjectTap);
++  dev_server_set_swipe_handler(InjectSwipe);
 +  dev_server_set_overlay_handler(SetOverlay);
 +  // 64 KiB of stack because the server's `put` path holds a 32 KiB buffer.
 +  const SceUID thread = sceKernelCreateThread(
@@ -2034,8 +2129,9 @@ index 00000000..b78f2abc
 +// m3 shipped without a log channel, which is why the first crash had to be
 +// read out of registers. printf on this platform goes to the debug UART, and
 +// nothing here has one. Point both streams at a file on ux0: instead, before
-+// anything else runs, so `dev.sh get ux0:data/flutter-vita/m3.log` works even
-+// after a crash -- the loader is up by then and serves the file.
++// anything else runs, so `dev.sh get ux0:data/flutter-vita/app.log` works even
++// after a crash -- the loader is up by then and serves the file, and since
++// 2026-08-28 it no longer truncates that path on the way in (see LogPath).
 +//
 +// Unbuffered, not line buffered, and that is a deliberate downgrade.
 +//
@@ -2051,7 +2147,7 @@ index 00000000..b78f2abc
 +// last line is the entire point of having one. Revisit only once the boot is
 +// quiet enough that logging volume matters.
 +static void OpenLog() {
-+  static const char* const kPath = "ux0:data/flutter-vita/m3.log";
++  const char* const kPath = LogPath();
 +  sceIoMkdir("ux0:data/flutter-vita", 0777);
 +
 +  // Truncate once, then hold an append handle. Append matters because the
@@ -3045,6 +3141,7 @@ index 00000000..b78f2abc
 +  args.isolate_snapshot_data = _kDartIsolateSnapshotData;
 +  args.isolate_snapshot_instructions = _kDartIsolateSnapshotInstructions;
 +
++
 +  FlutterEngine engine = nullptr;
 +  FlutterEngineResult result =
 +      FlutterEngineRun(FLUTTER_ENGINE_VERSION, &config, &args, nullptr, &engine);
@@ -3189,6 +3286,7 @@ index 00000000..b78f2abc
 +    g_loop_task_us += sceKernelGetSystemTimeWide() - task_start;
 +    PumpTouch(engine);
 +    DrainInjectedTaps(engine);
++    DrainInjectedDrag(engine);
 +
 +    // Is the platform thread keeping up with the panel, and is it doing the
 +    // engine's work or its own? A loop period well over 16.6 ms means this

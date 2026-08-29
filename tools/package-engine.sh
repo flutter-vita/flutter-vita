@@ -171,6 +171,18 @@ mkdir -p "$STAGE/src"
 cp "$ROOT/spikes/m1-vpk/src/devserver.c" "$ROOT/spikes/m1-vpk/src/devserver.h" "$STAGE/src/"
 cp "$ENGINE_SRC/flutter/third_party/icu/flutter/icudtl.dat" "$STAGE/data/"
 cp "$ENGINE_SRC/flutter/txt/third_party/fonts/Roboto-Regular.ttf" "$STAGE/data/"
+# Emoji, as a system font rather than an app asset.
+#
+# Roboto covers 896 codepoints and stops at U+FFFD, so every emoji in every app
+# was tofu until platform_vita.cc learned to answer
+# onMatchFamilyStyleCharacter. That hook can only find what app0:/fonts holds,
+# and an app cannot be asked to supply it: third-party apps run here unmodified.
+#
+# Not the NotoColorEmoji.ttf sitting next to Roboto in the engine checkout. That
+# one is a May 2017 build covering Unicode 9, so everything newer rendered as a
+# rectangle, and its CBDT bitmaps cost 4550 us per emoji paragraph against 424
+# us for text. assets/fonts/README.md has the measurements.
+cp "$ROOT/assets/fonts/NotoEmoji-Regular.ttf" "$STAGE/data/"
 
 # gen_snapshot runs on the *build* machine, so it is tagged by host rather than
 # shipped with the target artifacts. A Linux user needs their own.

@@ -55,6 +55,22 @@ void dev_server_set_framebuffer_source(
 // whichever thread owns the engine rather than dispatching it directly.
 void dev_server_set_tap_handler(void (*tap)(int x, int y));
 
+// Register a handler for `swipe <x0> <y0> <x1> <y1> [steps]`, in display pixels.
+//
+// Scrolling could not be driven from the host at all before this: `tap` sends a
+// down and an up in the same pass, and no amount of those scrolls a list. That
+// left the heaviest thing an app does -- flinging a long list -- testable only
+// by hand, which is why a reported "sometimes it sticks while scrolling" had
+// nowhere to start.
+//
+// `steps` is the number of move events, and the handler is expected to spread
+// them over consecutive frames rather than emitting them all at once. That is
+// what makes the gesture a fling: Flutter's velocity tracker reads the
+// timestamps on the moves, so a drag delivered in a single pass has infinite
+// velocity and is discarded as a fluke.
+void dev_server_set_swipe_handler(void (*swipe)(int x0, int y0,
+                                                int x1, int y1, int steps));
+
 // Register a handler for `overlay on|off`.
 //
 // The debug HUD is drawn over the app, so a screenshot taken for anything but
