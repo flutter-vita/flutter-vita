@@ -966,7 +966,7 @@ index 00000000..ff3cf2ba
 +
 +#endif  // RUNTIME_BIN_EVENTHANDLER_VITA_H_
 diff --git a/runtime/bin/fdutils_linux.cc b/runtime/bin/fdutils_linux.cc
-index 84fe559d..61db137e 100644
+index 84fe559d..50007817 100644
 --- a/runtime/bin/fdutils_linux.cc
 +++ b/runtime/bin/fdutils_linux.cc
 @@ -3,13 +3,17 @@
@@ -988,7 +988,7 @@ index 84fe559d..61db137e 100644
  #include <unistd.h>     // NOLINT
  
  #include "platform/signal_blocker.h"
-@@ -56,6 +60,19 @@ bool FDUtils::IsBlocking(intptr_t fd, bool* is_blocking) {
+@@ -56,6 +60,20 @@ bool FDUtils::IsBlocking(intptr_t fd, bool* is_blocking) {
  }
  
  intptr_t FDUtils::AvailableBytes(intptr_t fd) {
@@ -1001,14 +1001,15 @@ index 84fe559d..61db137e 100644
 +  // Nothing on a normal path asks it anything.
 +  //
 +  // Do not confuse it with SocketBase::Available, which dart:io does lean on
-+  // constantly and which reaches for FIONREAD separately in
-+  // socket_base_posix.cc. That one still needs a real answer.
++  // constantly. That one has its own Vita branch in socket_base_posix.cc, built
++  // on MSG_PEEK. Routing it here instead is what made every socket read on this
++  // port one byte long; see the comment on VitaAvailableBytes.
 +  return -1;
 +#else
    int available;  // ioctl for FIONREAD expects an 'int*' argument.
    int result = NO_RETRY_EXPECTED(ioctl(fd, FIONREAD, &available));
    if (result < 0) {
-@@ -63,6 +80,7 @@ intptr_t FDUtils::AvailableBytes(intptr_t fd) {
+@@ -63,6 +81,7 @@ intptr_t FDUtils::AvailableBytes(intptr_t fd) {
    }
    ASSERT(available >= 0);
    return static_cast<intptr_t>(available);
@@ -1887,7 +1888,7 @@ index 24f8e067..ded4e258 100644
  }  // namespace dart
  
 diff --git a/runtime/bin/socket_base_posix.cc b/runtime/bin/socket_base_posix.cc
-index 629c307d..0e860a9b 100644
+index 629c307d..c9077d6c 100644
 --- a/runtime/bin/socket_base_posix.cc
 +++ b/runtime/bin/socket_base_posix.cc
 @@ -4,11 +4,14 @@
@@ -1928,7 +1929,90 @@ index 629c307d..0e860a9b 100644
  
  namespace dart {
  namespace bin {
-@@ -91,16 +104,46 @@ intptr_t SocketBase::RecvFrom(intptr_t fd,
+@@ -56,8 +69,82 @@ bool SocketBase::IsBindError(intptr_t error_number) {
+          error_number == EINVAL;
+ }
+ 
++#if defined(DART_HOST_OS_VITA)
++
++// How much one peek will report, and so the largest read dart:io will issue on
++// this platform. The peek copies whatever it reports, so this is also the size
++// of the extra copy each read costs.
++static constexpr intptr_t kVitaPeekChunk = 64 * 1024;
++
++// Scratch for the peek. Nothing ever reads it: the answer is recv's return
++// value, and the bytes are read again for real a moment later. Two isolates
++// peeking at once scribble over each other's copy of data neither will look
++// at, which is why this is one shared buffer rather than a lock or a buffer
++// per thread.
++static uint8_t vita_peek_buffer[kVitaPeekChunk];
++
++// FIONREAD's replacement, and the reason this function needs a Vita branch.
++//
++// VitaSDK has no ioctl, so FDUtils::AvailableBytes returns -1 here, and
++// Socket_Available turns a negative into **1** -- "assume a byte is there, let
++// the read surface the real error". That is a fair fallback for AvailableBytes,
++// which only debug logging calls. It is ruinous for this one.
++//
++// _NativeSocket.read(null) -- the path every dart:io socket stream takes, and
++// the one HttpServer takes -- is:
++//
++//     do {
++//       list = _nativeRead(available);
++//       if (list == null) break;
++//       builder.add(list);
++//       available = _nativeAvailable();
++//     } while (available > 0);
++//
++// With available pinned at 1 that reads a 5 MB HTTP body **one byte per
++// syscall**, each byte costing a second syscall to re-check, two native
++// transitions and a heap-allocated one-element Uint8List. Measured on hardware:
++// 78 KB/s receiving, against 852 KB/s pushing the same file over the same Wi-Fi
++// to the same memory card from C with an ordinary recv(). It also holds the
++// main isolate inside that loop for the length of the transfer, which is where
++// the 6 FPS UI and the 120-second jank frame came from.
++//
++// So peek instead. recv with MSG_PEEK reports what is queued without consuming
++// it, and SocketBase::AvailableDatagram below already depends on that flag
++// reaching sceNetRecv on this platform, so the path is one this port has been
++// using all along.
++//
++// Zero covers both "nothing queued" and "peer sent FIN": each is a true answer
++// to how many bytes can be read now, and the close arrives as its own event.
++// Getting the zero right matters beyond the read loop -- _NativeSocket
++// .stopRead() is `available == 0`, so a count that never fell to zero would
++// re-issue the read event for ever.
++//
++// A non-socket descriptor fails with ENOTSOCK and takes the -1 path, leaving
++// stdin exactly where it was.
++static intptr_t VitaAvailableBytes(intptr_t fd) {
++  const ssize_t peeked =
++      TEMP_FAILURE_RETRY(recv(fd, vita_peek_buffer, kVitaPeekChunk, MSG_PEEK));
++  if (peeked >= 0) {
++    return static_cast<intptr_t>(peeked);
++  }
++  ASSERT(EAGAIN == EWOULDBLOCK);
++  if (errno == EWOULDBLOCK) {
++    return 0;
++  }
++  // Report the error as -1 so Socket_Available keeps its existing behaviour and
++  // claims a byte is waiting, letting the next read turn it into a
++  // SocketException where dart:io can attach a message to it.
++  return -1;
++}
++
++#endif  // defined(DART_HOST_OS_VITA)
++
+ intptr_t SocketBase::Available(intptr_t fd) {
++#if defined(DART_HOST_OS_VITA)
++  return VitaAvailableBytes(fd);
++#else
+   return FDUtils::AvailableBytes(fd);
++#endif
+ }
+ 
+ intptr_t SocketBase::Read(intptr_t fd,
+@@ -91,16 +178,46 @@ intptr_t SocketBase::RecvFrom(intptr_t fd,
    return read_bytes;
  }
  
@@ -1975,7 +2059,7 @@ index 629c307d..0e860a9b 100644
  intptr_t SocketBase::ReceiveMessage(intptr_t fd,
                                      void* buffer,
                                      int64_t* p_buffer_num_bytes,
-@@ -177,6 +220,8 @@ intptr_t SocketBase::ReceiveMessage(intptr_t fd,
+@@ -177,6 +294,8 @@ intptr_t SocketBase::ReceiveMessage(intptr_t fd,
    return num_messages;
  }
  
@@ -1984,7 +2068,7 @@ index 629c307d..0e860a9b 100644
  bool SocketBase::AvailableDatagram(intptr_t fd,
                                     void* buffer,
                                     intptr_t num_bytes) {
-@@ -210,6 +255,21 @@ intptr_t SocketBase::SendTo(intptr_t fd,
+@@ -210,6 +329,21 @@ intptr_t SocketBase::SendTo(intptr_t fd,
    return written_bytes;
  }
  
@@ -2006,7 +2090,7 @@ index 629c307d..0e860a9b 100644
  intptr_t SocketBase::SendMessage(intptr_t fd,
                                   void* buffer,
                                   size_t num_bytes,
-@@ -271,6 +331,8 @@ intptr_t SocketBase::SendMessage(intptr_t fd,
+@@ -271,6 +405,8 @@ intptr_t SocketBase::SendMessage(intptr_t fd,
    return written_bytes;
  }
  
@@ -2015,7 +2099,7 @@ index 629c307d..0e860a9b 100644
  bool SocketBase::GetSocketName(intptr_t fd, RawAddr* raw) {
    ASSERT(fd >= 0);
    ASSERT(raw != nullptr);
-@@ -328,6 +390,83 @@ bool SocketBase::ParseAddress(int type, const char* address, RawAddr* addr) {
+@@ -328,6 +464,83 @@ bool SocketBase::ParseAddress(int type, const char* address, RawAddr* addr) {
    return (result == 1);
  }
  
@@ -2099,7 +2183,7 @@ index 629c307d..0e860a9b 100644
  static bool ShouldIncludeIfaAddrs(struct ifaddrs* ifa, int lookup_family) {
    if (ifa->ifa_addr == nullptr) {
      // OpenVPN's virtual device tun0.
-@@ -377,6 +516,8 @@ AddressList<InterfaceSocketAddress>* SocketBase::ListInterfaces(
+@@ -377,6 +590,8 @@ AddressList<InterfaceSocketAddress>* SocketBase::ListInterfaces(
    return addresses;
  }
  
