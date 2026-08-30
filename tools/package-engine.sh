@@ -184,6 +184,27 @@ cp "$ENGINE_SRC/flutter/txt/third_party/fonts/Roboto-Regular.ttf" "$STAGE/data/"
 # us for text. assets/fonts/README.md has the measurements.
 cp "$ROOT/assets/fonts/NotoEmoji-Regular.ttf" "$STAGE/data/"
 
+# The platform dill, built from *our* Dart SDK rather than stock Flutter's.
+#
+# Until now build-vita-app.sh compiled every app against the Flutter cache's
+# flutter_patched_sdk_product, so the Dart half of dart:io came from upstream
+# while the native half came from this port. That worked only for as long as
+# the two agreed. It stopped the moment dart:io needed a new native
+# (SecureSocket_ProcessAllBuffersSync): the Dart side declaring it lives in our
+# tree, and nothing the app compiled against had ever seen it.
+#
+# Shipping ours removes the split. The app and the engine now come from one
+# Dart SDK, which is what the pinned revision in DEPS was always claiming.
+if [ -f "$ENGINE_OUT/flutter_patched_sdk/platform_strong.dill" ]; then
+  mkdir -p "$STAGE/flutter_patched_sdk"
+  cp "$ENGINE_OUT/flutter_patched_sdk/platform_strong.dill" \
+     "$ENGINE_OUT/flutter_patched_sdk/vm_outline_strong.dill" \
+     "$STAGE/flutter_patched_sdk/"
+else
+  echo "!! no flutter_patched_sdk in the build; apps will fall back to the" >&2
+  echo "   Flutter cache's, which does not know this port's dart:io natives" >&2
+fi
+
 # gen_snapshot runs on the *build* machine, so it is tagged by host rather than
 # shipped with the target artifacts. A Linux user needs their own.
 HOST="$(uname -s | tr '[:upper:]' '[:lower:]')-$(uname -m)"

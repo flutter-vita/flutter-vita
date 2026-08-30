@@ -92,7 +92,18 @@ export PATH="$VITASDK/bin:$PATH"
 
 OUT_DIR="${OUT_DIR:-$APP_DIR/build/vita}"
 SDK="$FLUTTER_DIR/bin/cache/dart-sdk"
+# Prefer the engine artifact's own platform dill over the Flutter cache's.
+#
+# They are not interchangeable. The cache's is stock Flutter's, and its dart:io
+# does not declare the natives this port adds, so an app compiled against it
+# fails to resolve them at snapshot time. The engine ships its own precisely so
+# the Dart and native halves of dart:io come from the same tree; see
+# package-engine.sh. The cache stays as the fallback for an older artifact that
+# predates this.
 PATCHED_SDK="$FLUTTER_DIR/bin/cache/artifacts/engine/common/flutter_patched_sdk_product"
+if [ -f "$ENGINE_DIR/flutter_patched_sdk/platform_strong.dill" ]; then
+  PATCHED_SDK="$ENGINE_DIR/flutter_patched_sdk"
+fi
 
 # ---------------------------------------------------------------- vita: block
 #

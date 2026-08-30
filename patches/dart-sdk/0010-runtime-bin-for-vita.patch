@@ -312,10 +312,10 @@ index 7da269ca..21368db6 100644
  #endif
 diff --git a/runtime/bin/eventhandler_vita.cc b/runtime/bin/eventhandler_vita.cc
 new file mode 100644
-index 00000000..29aaa1d7
+index 00000000..2c6ecc3c
 --- /dev/null
 +++ b/runtime/bin/eventhandler_vita.cc
-@@ -0,0 +1,479 @@
+@@ -0,0 +1,495 @@
 +// Copyright (c) 2026, the Dart project authors.  Please see the AUTHORS file
 +// for details. All rights reserved. Use of this source code is governed by a
 +// BSD-style license that can be found in the LICENSE file.
@@ -375,11 +375,27 @@ index 00000000..29aaa1d7
 +// again, when there are sockets registered and poll() therefore owns the wait.
 +//
 +// poll() cannot wait on an event flag, so with even one socket open the queue
-+// can only be noticed by coming back to look. Eight milliseconds is half a
-+// frame: short enough that a timer armed while a socket is open is no worse
-+// off than one armed by a widget, and cheap enough to ignore -- a poll() that
-+// times out with nothing ready costs the epoll create and destroy measured at
-+// under 0.05 ms in spikes/t1-timers.
++// can only be noticed by coming back to look. This slice is therefore the
++// latency of *everything that arrives by queue* -- every timer, and every
++// async gap in Dart that a timer implements -- for as long as an app holds a
++// socket.
++//
++// Eight milliseconds, which is half a frame, and cheap to come back from -- a
++// poll() that times out with nothing ready is an epoll create and destroy
++// measured at under 0.05 ms in spikes/t1-timers.
++//
++// An earlier version of this comment claimed a timer armed while a socket is
++// open is no worse off than one armed by a widget. That was never measured and
++// it is false: 200 sequential Timer(Duration.zero) round trips cost **517 us
++// each with no socket open and 3731 us each with one**, seven times worse, and
++// it is paid by every networked app.
++//
++// The slice is **not** the cause, which was tested rather than assumed.
++// Dropping it to 1 ms moved that number to 3691 us -- nothing. In hindsight it
++// could not have been: a zero-duration timer leaves timeout_us at 0, so the
++// slice never applies to the case being measured. Whatever the seven-fold cost
++// is, it is elsewhere, and it is unfound. Do not "fix" it here again without a
++// measurement that implicates this constant.
 +//
 +// It does nothing to socket latency, which is the platform's ~200 ms tick
 +// either way.

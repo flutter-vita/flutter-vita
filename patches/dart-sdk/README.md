@@ -21,6 +21,8 @@ disposable; these patches are the real artifact.
 
 | 0010 | [runtime-bin-for-vita](0010-runtime-bin-for-vita.patch) | `dart:io`'s native layer, plus dropping `-latomic`. **New in Phase 2** — the engine's embedder depends on `runtime/bin` unconditionally, which Phase 1 excluded |
 
+| 0011 | [ssl-filter-on-the-isolate](0011-ssl-filter-on-the-isolate.patch) | Runs the TLS record layer on the calling isolate instead of dispatching it to the IO service. **Affects the platform dill** — `sdk/lib/io/secure_socket.dart` is in it, so rebuild `flutter_patched_sdk`, not just the runtime. One filter cycle is 427 µs of work against a 20 ms round trip to carry it; HTTPS went 130 → 237 KB/s. Adds one native, so an app must compile against *this* tree's platform dill: see `package-engine.sh` |
+
 > **Two trees now hold this series.** `third_party/sdk` is Phase 1's standalone
 > checkout, still used by `spikes/m1-vpk`; `third_party/flutter/engine/src/flutter/third_party/dart`
 > is the engine's, at the same pinned commit. They must stay byte-identical, and
