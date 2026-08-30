@@ -271,6 +271,117 @@ List<Probe> buildProbes() => [
     c.close();
     return 'HTTP ${res.statusCode}';
   }),
+  // -- IOService round-trip latency.
+  //
+  // Every TLS filter cycle is an `_IOService._dispatch(sslProcessFilter, ...)`:
+  // a message to the IO service's native port, handled off the isolate, and
+  // awaited back. 1 MB of HTTPS is roughly 128 of those, and it takes 7.9 s,
+  // which puts about 62 ms on each one. Plain HTTP does not use IOService at
+  // all, which is why it runs 9x faster over the same socket.
+  //
+  // So the question is no longer about TLS. It is how long one IOService round
+  // trip costs on this port. Any async dart:io filesystem call is the same
+  // mechanism with none of the crypto, so it can be timed on its own -- and the
+  // sync sibling next to it does the identical work on the calling thread,
+  // which separates the round trip from the syscall underneath it.
+  Probe('async', 'File.lengthSync x200', () async {
+    final file = File('$_dataDir/rtt.bin')..writeAsBytesSync(const [1, 2, 3]);
+    final sw = Stopwatch()..start();
+    for (int i = 0; i < 200; i++) {
+      file.lengthSync();
+    }
+    sw.stop();
+    file.deleteSync();
+    return '${sw.elapsedMilliseconds} ms total, '
+        '${(sw.elapsedMicroseconds / 200).toStringAsFixed(0)} us each';
+  }, timeout: const Duration(seconds: 120)),
+  Probe('async', 'File.length x200 (IOService)', () async {
+    final file = File('$_dataDir/rtt.bin')..writeAsBytesSync(const [1, 2, 3]);
+    final sw = Stopwatch()..start();
+    for (int i = 0; i < 200; i++) {
+      await file.length();
+    }
+    sw.stop();
+    file.deleteSync();
+    return '${sw.elapsedMilliseconds} ms total, '
+        '${(sw.elapsedMicroseconds / 200).toStringAsFixed(0)} us each';
+  }, timeout: const Duration(seconds: 120)),
+
+  Probe('async', 'File.length x200 concurrent', () async {
+    // The same 200 dispatches with all of them in flight at once.
+    //
+    // This is the discriminator the sequential pair cannot give. If the 5.8 ms
+    // is latency -- a wait, with everything idle through it -- then overlapping
+    // them collapses the total to roughly one round trip. If it is work, the
+    // total stays put and something is burning 5.8 ms of CPU per dispatch.
+    //
+    // It matters because it decides what a fix would even look like. TLS is
+    // sequential by construction: the record layer cannot start the next cycle
+    // until this one is decrypted, so it can never overlap its way out of a
+    // latency problem, and pipelining is not available to it.
+    final file = File('$_dataDir/rtt.bin')..writeAsBytesSync(const [1, 2, 3]);
+    final sw = Stopwatch()..start();
+    await Future.wait<int>(<Future<int>>[
+      for (int i = 0; i < 200; i++) file.length(),
+    ]);
+    sw.stop();
+    file.deleteSync();
+    return '${sw.elapsedMilliseconds} ms total, '
+        '${(sw.elapsedMicroseconds / 200).toStringAsFixed(0)} us each';
+  }, timeout: const Duration(seconds: 120)),
+  Probe('async', 'Timer(0) x200', () async {
+    // A timer is the other way a native thread wakes this isolate: the event
+    // handler posts to the isolate's port, exactly as the IO service does, but
+    // without the VM thread pool in between. If this is fast and the IOService
+    // pair is slow, the cost is the pool rather than the wake.
+    final sw = Stopwatch()..start();
+    for (int i = 0; i < 200; i++) {
+      final completer = Completer<void>();
+      Timer(Duration.zero, completer.complete);
+      await completer.future;
+    }
+    sw.stop();
+    return '${sw.elapsedMilliseconds} ms total, '
+        '${(sw.elapsedMicroseconds / 200).toStringAsFixed(0)} us each';
+  }, timeout: const Duration(seconds: 120)),
+  Probe('async', 'Timer(0) x200 with a socket open', () async {
+    // The same timers, with one socket registered with the event handler.
+    //
+    // eventhandler_vita.h is explicit that this changes the wait: with no
+    // sockets it blocks on an event flag, which a timer message interrupts at
+    // once, but with sockets it blocks in poll(), which the event flag cannot
+    // break into, so the queue is only re-checked once per kInterruptSliceUs
+    // (8 ms). If that is real then every event-loop yield during a transfer
+    // costs a slice, which would explain why moving the TLS filter onto the
+    // isolate bought 1.8x rather than the 10x the round trip it removed was
+    // worth.
+    final socket = await Socket.connect(_benchHost, 5302,
+        timeout: const Duration(seconds: 10));
+    try {
+      final sw = Stopwatch()..start();
+      for (int i = 0; i < 200; i++) {
+        final completer = Completer<void>();
+        Timer(Duration.zero, completer.complete);
+        await completer.future;
+      }
+      sw.stop();
+      return '${sw.elapsedMilliseconds} ms total, '
+          '${(sw.elapsedMicroseconds / 200).toStringAsFixed(0)} us each';
+    } finally {
+      socket.destroy();
+    }
+  }, timeout: const Duration(seconds: 120)),
+  Probe('async', 'microtask x200', () async {
+    // Pure in-isolate baseline. Whatever this costs is not the platform's fault.
+    final sw = Stopwatch()..start();
+    for (int i = 0; i < 200; i++) {
+      await Future<void>.microtask(() {});
+    }
+    sw.stop();
+    return '${sw.elapsedMilliseconds} ms total, '
+        '${(sw.elapsedMicroseconds / 200).toStringAsFixed(0)} us each';
+  }, timeout: const Duration(seconds: 120)),
+
   // -- Throughput, layer by layer.
   //
   // localsend receives a 5 MB file over HTTPS in 62 seconds: 84 KB/s, against

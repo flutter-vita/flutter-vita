@@ -27,7 +27,14 @@ add_executable(${PROJECT_NAME}
   ${VITA_SAMPLES_COMMON}/debugScreen.c
 )
 
+# -Wl,-u,pthread_cancel for the same reason the engine needs it: gcc decides a
+# program is threaded by taking pthread_cancel's address, which is a weak
+# reference that pulls no archive member, and without it the pthread objects are
+# never linked in. See docs/phase-2-workplan.md.
+target_link_options(${PROJECT_NAME} PRIVATE -Wl,-u,pthread_cancel)
+
 target_link_libraries(${PROJECT_NAME}
+  pthread
   SceDisplay_stub
   SceCtrl_stub
   SceIofilemgr_stub

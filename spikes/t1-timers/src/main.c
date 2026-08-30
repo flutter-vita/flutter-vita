@@ -76,6 +76,7 @@
 #include <psp2/sysmodule.h>
 
 #include <poll.h>
+#include <pthread.h>
 #include <stdarg.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -397,6 +398,123 @@ static void flag_readiness(const char* label, int delay_ms) {
   g_flag = -1;
 }
 
+// --- J/K: what a cross-thread round trip costs -------------------------------
+//
+// Dart's thread pool -- and so every _IOService._dispatch, which is how dart:io
+// runs an async file call *and* every TLS filter cycle -- parks its workers on
+// a pthread condition variable, because runtime/platform/synchronization.h maps
+// MutexImpl and ConditionVariableImpl straight onto pthread_mutex_t and
+// pthread_cond_t. That was the obvious mapping and nobody had priced it here.
+//
+// It is worth pricing because this console has already surprised us twice on
+// exactly this axis: loopback delivery runs on a ~200 ms tick (see E and H
+// above) while an event flag lands in 0.03 ms (I). If the condvar sits nearer
+// the first number than the second, then every async dart:io call on this port
+// is paying it twice -- once to wake the worker, once to wake the isolate.
+//
+// Measured on hardware: an `await file.length()` costs 5823 us where the same
+// call made synchronously costs 780 us, and 1 MB of HTTPS takes 7.9 s against
+// plain HTTP's 0.6 s over the same socket. Both are round-trip bound, and this
+// is the round trip.
+//
+// A ping-pong rather than a one-shot, because the one-shot measures thread
+// startup along with the wake, and it is the steady-state cost that is being
+// paid hundreds of times per megabyte.
+
+#define PP_ITERS 200
+
+static pthread_mutex_t g_pp_mutex = PTHREAD_MUTEX_INITIALIZER;
+static pthread_cond_t g_pp_cond_main = PTHREAD_COND_INITIALIZER;
+static pthread_cond_t g_pp_cond_work = PTHREAD_COND_INITIALIZER;
+static int g_pp_turn;  // 0 = main runs next, 1 = worker runs next
+
+static void* pp_worker(void* arg) {
+  (void)arg;
+  for (int i = 0; i < PP_ITERS; i++) {
+    pthread_mutex_lock(&g_pp_mutex);
+    while (g_pp_turn != 1) {
+      pthread_cond_wait(&g_pp_cond_work, &g_pp_mutex);
+    }
+    g_pp_turn = 0;
+    pthread_cond_signal(&g_pp_cond_main);
+    pthread_mutex_unlock(&g_pp_mutex);
+  }
+  return NULL;
+}
+
+static void condvar_pingpong(void) {
+  g_pp_turn = 0;
+  pthread_t th;
+  if (pthread_create(&th, NULL, pp_worker, NULL) != 0) {
+    lg("J condvar     pthread_create failed\n");
+    return;
+  }
+  const int64_t t0 = now_us();
+  for (int i = 0; i < PP_ITERS; i++) {
+    pthread_mutex_lock(&g_pp_mutex);
+    g_pp_turn = 1;
+    pthread_cond_signal(&g_pp_cond_work);
+    while (g_pp_turn != 0) {
+      pthread_cond_wait(&g_pp_cond_main, &g_pp_mutex);
+    }
+    pthread_mutex_unlock(&g_pp_mutex);
+  }
+  const int64_t dt = now_us() - t0;
+  pthread_join(th, NULL);
+  lg("J condvar     %d round trips in %lld us = %lld us each\n", PP_ITERS,
+     (long long)dt, (long long)(dt / PP_ITERS));
+}
+
+static SceUID g_pp_flag_main = -1;
+static SceUID g_pp_flag_work = -1;
+
+static int pp_flag_worker(SceSize args, void* argp) {
+  (void)args;
+  (void)argp;
+  for (int i = 0; i < PP_ITERS; i++) {
+    unsigned int out = 0;
+    SceUInt timeout = 5 * 1000 * 1000;
+    sceKernelWaitEventFlag(g_pp_flag_work, FLAG_BIT,
+                           SCE_EVENT_WAITOR | SCE_EVENT_WAITCLEAR, &out,
+                           &timeout);
+    sceKernelSetEventFlag(g_pp_flag_main, FLAG_BIT);
+  }
+  return 0;
+}
+
+static void flag_pingpong(void) {
+  g_pp_flag_main = sceKernelCreateEventFlag("t1-pp-main", 0, 0, NULL);
+  g_pp_flag_work = sceKernelCreateEventFlag("t1-pp-work", 0, 0, NULL);
+  if (g_pp_flag_main < 0 || g_pp_flag_work < 0) {
+    lg("K flag        create failed\n");
+    return;
+  }
+  const SceUID th = sceKernelCreateThread("t1-pp-flag", pp_flag_worker, 0x40,
+                                          0x4000, 0, 0, NULL);
+  if (th < 0) {
+    lg("K flag        thread 0x%08X\n", (unsigned)th);
+    return;
+  }
+  sceKernelStartThread(th, 0, NULL);
+  const int64_t t0 = now_us();
+  for (int i = 0; i < PP_ITERS; i++) {
+    sceKernelSetEventFlag(g_pp_flag_work, FLAG_BIT);
+    unsigned int out = 0;
+    SceUInt timeout = 5 * 1000 * 1000;
+    sceKernelWaitEventFlag(g_pp_flag_main, FLAG_BIT,
+                           SCE_EVENT_WAITOR | SCE_EVENT_WAITCLEAR, &out,
+                           &timeout);
+  }
+  const int64_t dt = now_us() - t0;
+  lg("K flag        %d round trips in %lld us = %lld us each\n", PP_ITERS,
+     (long long)dt, (long long)(dt / PP_ITERS));
+  sceKernelWaitThreadEnd(th, NULL, NULL);
+  sceKernelDeleteThread(th);
+  sceKernelDeleteEventFlag(g_pp_flag_main);
+  sceKernelDeleteEventFlag(g_pp_flag_work);
+  g_pp_flag_main = g_pp_flag_work = -1;
+}
+
 // --- handoff -----------------------------------------------------------------
 
 static void handoff(void) {
@@ -511,6 +629,10 @@ int main(void) {
     lg("no sceNet pair -- H skipped\n");
   }
   flag_readiness("I flag w=100", 100);
+
+  lg("\ncross-thread round trip, %d iterations\n\n", PP_ITERS);
+  condvar_pingpong();
+  flag_pingpong();
 
   lg("\ndone\n");
   handoff();
