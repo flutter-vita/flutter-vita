@@ -1,0 +1,73 @@
+diff --git a/sdk/lib/_internal/vm/bin/socket_patch.dart b/sdk/lib/_internal/vm/bin/socket_patch.dart
+index 31fa8fb34..e81c924c1 100644
+--- a/sdk/lib/_internal/vm/bin/socket_patch.dart
++++ b/sdk/lib/_internal/vm/bin/socket_patch.dart
+@@ -539,7 +539,27 @@ base class _NativeSocket extends _NativeSocketNativeWrapper
+   void Function()? destroyedEventHandler;
+ 
+   RawReceivePort? eventPort;
+-  bool flagsSent = false;
++  // The last event mask sent to the event handler, or -1 for none.
++  //
++  // This used to be `bool flagsSent`: the mask went out once, on the first
++  // setListening, and it always claimed both readEvent and writeEvent whatever
++  // setListening had been asked for. The read/write arguments only set the
++  // Dart-side booleans below, which discard events after they have already
++  // crossed from the event handler.
++  //
++  // Every other POSIX backend survives that because it is edge-triggered --
++  // eventhandler_linux.cc registers EPOLLET -- so an unwanted POLLOUT fires
++  // once and stays quiet. This port polls, and poll() is level-triggered: an
++  // idle connected TCP socket is writable on every trip round the loop, for
++  // ever. Measured on hardware: **2255 write events in two seconds** on one
++  // socket nobody was writing to, each one a message to the root isolate and a
++  // task on Flutter's UI thread. It cost a zero-duration timer 744 us against
++  // 215 us with nothing open, and 43418 us with eight sockets.
++  //
++  // So the mask now follows what this socket actually wants, and is re-sent
++  // whenever that changes. That is the same edge-triggered behaviour, built
++  // where the intent already lives instead of in one backend.
++  int lastSentFlags = -1;
+ 
+   // The type flags for this socket.
+   final int typeFlags;
+@@ -1670,6 +1690,10 @@ base class _NativeSocket extends _NativeSocketNativeWrapper
+       if (isClosing) return;
+       if (!sendWriteEvents) return;
+       sendWriteEvents = false;
++      // The write event is one-shot, and this is the moment it stops being
++      // wanted. Saying so is what keeps a level-triggered poll() from
++      // reporting the same idle socket writable for ever.
++      updateEventMask();
+       var handler = writeEventHandler;
+       if (handler == null) return;
+       handler();
+@@ -1801,13 +1825,21 @@ base class _NativeSocket extends _NativeSocketNativeWrapper
+     sendWriteEvents = write;
+     if (read) issueReadEvent();
+     if (write) issueWriteEvent();
+-    if (!flagsSent && !isClosing) {
+-      flagsSent = true;
+-      int flags = 1 << setEventMaskCommand;
+-      if (!isClosedRead) flags |= 1 << readEvent;
+-      if (!isClosedWrite) flags |= 1 << writeEvent;
+-      _sendToEventHandler(flags);
+-    }
++    updateEventMask();
++  }
++
++  /// Tells the event handler which events this socket still wants.
++  ///
++  /// Sent only when the answer changes, so a socket waiting for nothing is
++  /// polled for nothing. See lastSentFlags.
++  void updateEventMask() {
++    if (isClosing || isClosed) return;
++    int flags = 1 << setEventMaskCommand;
++    if (sendReadEvents && !isClosedRead) flags |= 1 << readEvent;
++    if (sendWriteEvents && !isClosedWrite) flags |= 1 << writeEvent;
++    if (flags == lastSentFlags) return;
++    lastSentFlags = flags;
++    _sendToEventHandler(flags);
+   }
+ 
+   Future close() {

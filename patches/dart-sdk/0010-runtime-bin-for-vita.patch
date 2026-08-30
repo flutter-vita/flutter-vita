@@ -312,10 +312,10 @@ index 7da269ca..21368db6 100644
  #endif
 diff --git a/runtime/bin/eventhandler_vita.cc b/runtime/bin/eventhandler_vita.cc
 new file mode 100644
-index 00000000..2c6ecc3c
+index 000000000..29c9a170b
 --- /dev/null
 +++ b/runtime/bin/eventhandler_vita.cc
-@@ -0,0 +1,495 @@
+@@ -0,0 +1,498 @@
 +// Copyright (c) 2026, the Dart project authors.  Please see the AUTHORS file
 +// for details. All rights reserved. Use of this source code is governed by a
 +// BSD-style license that can be found in the LICENSE file.
@@ -384,18 +384,21 @@ index 00000000..2c6ecc3c
 +// poll() that times out with nothing ready is an epoll create and destroy
 +// measured at under 0.05 ms in spikes/t1-timers.
 +//
-+// An earlier version of this comment claimed a timer armed while a socket is
-+// open is no worse off than one armed by a widget. That was never measured and
-+// it is false: 200 sequential Timer(Duration.zero) round trips cost **517 us
-+// each with no socket open and 3731 us each with one**, seven times worse, and
-+// it is paid by every networked app.
++// This constant was blamed, twice, for something it never did. A timer armed
++// while a socket was open cost 3731 us against 517 us with nothing open, and
++// the slice was the obvious suspect both times. It is not: dropping it to 1 ms
++// moved the number by 1%, and a zero-duration timer leaves timeout_us at 0, so
++// the slice never applied to the case being measured in the first place.
 +//
-+// The slice is **not** the cause, which was tested rather than assumed.
-+// Dropping it to 1 ms moved that number to 3691 us -- nothing. In hindsight it
-+// could not have been: a zero-duration timer leaves timeout_us at 0, so the
-+// slice never applies to the case being measured. Whatever the seven-fold cost
-+// is, it is elsewhere, and it is unfound. Do not "fix" it here again without a
-+// measurement that implicates this constant.
++// The real cause was in socket_patch.dart. setListening sent its event mask
++// once and always asked for POLLOUT, which is harmless on an edge-triggered
++// backend and a storm on a level-triggered one: 2255 write events in two
++// seconds on an idle socket, each one a message to the root isolate. With the
++// mask following what the socket actually wants, a Timer(Duration.zero) costs
++// the same 200 us with eight sockets open as with none.
++//
++// So: do not "fix" this constant without a measurement that implicates it.
++// Two have now failed to.
 +//
 +// It does nothing to socket latency, which is the platform's ~200 ms tick
 +// either way.
