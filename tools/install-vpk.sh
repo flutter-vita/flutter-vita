@@ -15,7 +15,11 @@ set -euo pipefail
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
 VPK=""
-HOST="${VITA_HOST:-192.168.0.32}"
+# flutter-vita.local, not an address. The dev server answers mDNS for that name
+# (see the mDNS section of devserver.c), so this survives the console coming
+# back on a different lease -- which it does, often. VITA_HOST still overrides
+# it, and an IP is still the right answer when the name will not resolve.
+HOST="${VITA_HOST:-flutter-vita.local}"
 LOADER_PORT=1341
 TITLE_ID="FVTA00002"
 LAUNCH=1

@@ -15,7 +15,11 @@
 # spike, not an exception to plan around.
 set -uo pipefail
 HERE="$(cd "$(dirname "$0")" && pwd)"
-HOST="${VITA_HOST:-192.168.0.32}"
+# flutter-vita.local, not an address. The dev server answers mDNS for that name
+# (see the mDNS section of devserver.c), so this survives the console coming
+# back on a different lease -- which it does, often. VITA_HOST still overrides
+# it, and an IP is still the right answer when the name will not resolve.
+HOST="${VITA_HOST:-flutter-vita.local}"
 LDR=1341
 VPK="${1:?usage: run-spike.sh <vpk> <report-path>}"
 REPORT="${2:?usage: run-spike.sh <vpk> <report-path>}"

@@ -580,6 +580,217 @@ static int supervisor_enabled(void) {
   return n == 1 && c == '1';
 }
 
+// --- mDNS ---------------------------------------------------------------
+//
+// Answers `flutter-vita.local` so nothing has to know the console's address.
+//
+// This exists because the address is not stable. The Vita drops Wi-Fi and
+// comes back on whatever DHCP gives it, and every tool here takes an IP:
+// deploy.sh, the probe scripts, `nc <ip> 1339`. Every session so far has begun
+// by finding out what the number is today, and twice in one afternoon it cost
+// a round of "it stopped answering" before anyone thought to check.
+//
+// Multicast DNS is the answer the desktop already has. macOS resolves .local
+// natively through Bonjour and Windows has had a responder since 10, so the
+// host side needs nothing installed: `VITA_HOST=flutter-vita.local` works in
+// every script at once. It is also known to work on this console, because
+// localsend's discovery is multicast UDP and phones find the Vita with it.
+//
+// Scope, deliberately: A records for one name. No service enumeration, no
+// PTR/SRV/TXT, no probing for name conflicts, no goodbye packets. A responder
+// that advertised _flutter-vita._tcp would be answering questions nobody here
+// asks. If two consoles ever run this at once they will both claim the name
+// and the answer will be whichever replies first; that is a real limitation of
+// skipping conflict detection, and one console is the case this serves.
+//
+// It does not fix Wi-Fi dropping. When the console falls off the network the
+// name stops resolving with it. What it removes is having to ask what the
+// address is, not having to reconnect.
+#define MDNS_PORT 5353
+#define MDNS_GROUP "224.0.0.251"
+#define MDNS_NAME "flutter-vita"
+#define MDNS_TTL 120
+
+static int g_mdns_sock = -1;
+
+// Writes `\7flutter-vita\5local\0` -- DNS wire format, each label prefixed by
+// its length. Returns bytes written.
+static int mdns_write_name(unsigned char* out) {
+  const int n = (int)strlen(MDNS_NAME);
+  int at = 0;
+  out[at++] = (unsigned char)n;
+  memcpy(out + at, MDNS_NAME, (size_t)n);
+  at += n;
+  out[at++] = 5;
+  memcpy(out + at, "local", 5);
+  at += 5;
+  out[at++] = 0;
+  return at;
+}
+
+// True if the question at `q` names us. `len` bounds the whole packet so a
+// malformed or hostile label length cannot walk off the end.
+static int mdns_name_matches(const unsigned char* pkt, int len, int at,
+                             int* end_out) {
+  const char* want[2] = {MDNS_NAME, "local"};
+  const int want_n[2] = {(int)sizeof(MDNS_NAME) - 1, 5};
+  for (int part = 0; part < 2; part++) {
+    if (at >= len) return 0;
+    const int n = pkt[at++];
+    // Compression pointers are legal in a question in theory and never appear
+    // in practice; refusing them keeps this loop obviously terminating.
+    if (n == 0 || (n & 0xC0) != 0 || at + n > len) return 0;
+    if (n != want_n[part]) return 0;
+    for (int i = 0; i < n; i++) {
+      unsigned char a = pkt[at + i];
+      unsigned char b = (unsigned char)want[part][i];
+      if (a >= 'A' && a <= 'Z') a = (unsigned char)(a + 32);
+      if (b >= 'A' && b <= 'Z') b = (unsigned char)(b + 32);
+      if (a != b) return 0;
+    }
+    at += n;
+  }
+  if (at >= len || pkt[at] != 0) return 0;
+  *end_out = at + 1;
+  return 1;
+}
+
+// Our current address, or 0 if the console has none. Re-read every time
+// rather than cached: DHCP handing out a new one is the whole problem here.
+static unsigned int mdns_self_addr(void) {
+  SceNetCtlInfo info;
+  if (sceNetCtlInetGetInfo(SCE_NETCTL_INFO_GET_IP_ADDRESS, &info) < 0) {
+    return 0;
+  }
+  SceNetInAddr in;
+  if (sceNetInetPton(SCE_NET_AF_INET, info.ip_address, &in) != 1) {
+    return 0;
+  }
+  return in.s_addr;
+}
+
+// One A record, multicast to the group. QDCOUNT is zero and the answer carries
+// the name in full, which is what lets the reply stand alone.
+static void mdns_respond(void) {
+  const unsigned int addr = mdns_self_addr();
+  if (addr == 0 || g_mdns_sock < 0) return;
+
+  unsigned char out[128];
+  memset(out, 0, sizeof out);
+  out[2] = 0x84;  // QR=1, AA=1
+  out[7] = 1;     // ANCOUNT=1
+  int at = 12;
+  at += mdns_write_name(out + at);
+  out[at++] = 0; out[at++] = 1;        // TYPE=A
+  out[at++] = 0x80; out[at++] = 1;     // CLASS=IN, cache-flush
+  out[at++] = 0; out[at++] = 0;
+  out[at++] = (unsigned char)(MDNS_TTL >> 8);
+  out[at++] = (unsigned char)(MDNS_TTL & 0xFF);
+  out[at++] = 0; out[at++] = 4;        // RDLENGTH
+  memcpy(out + at, &addr, 4);
+  at += 4;
+
+  SceNetSockaddrIn to;
+  memset(&to, 0, sizeof to);
+  to.sin_family = SCE_NET_AF_INET;
+  to.sin_port = sceNetHtons(MDNS_PORT);
+  sceNetInetPton(SCE_NET_AF_INET, MDNS_GROUP, &to.sin_addr);
+  sceNetSendto(g_mdns_sock, out, (unsigned int)at, 0,
+               (SceNetSockaddr*)&to, sizeof to);
+}
+
+static int mdns_thread(SceSize args, void* argp) {
+  (void)args; (void)argp;
+
+  // Two unsolicited announcements a second apart, so the name resolves before
+  // anything asks rather than only after the first query times out.
+  for (int i = 0; i < 2; i++) {
+    mdns_respond();
+    sceKernelDelayThread(1000 * 1000);
+  }
+
+  unsigned char pkt[512];
+  for (;;) {
+    SceNetSockaddrIn from;
+    unsigned int fromlen = sizeof from;
+    const int n = sceNetRecvfrom(g_mdns_sock, pkt, sizeof pkt, 0,
+                                 (SceNetSockaddr*)&from, &fromlen);
+    if (n < 12) {
+      sceKernelDelayThread(100 * 1000);
+      continue;
+    }
+    // Queries only (QR=0), and at least one question.
+    if ((pkt[2] & 0x80) != 0) continue;
+    const int qdcount = (pkt[4] << 8) | pkt[5];
+    if (qdcount < 1) continue;
+
+    int at = 12;
+    for (int q = 0; q < qdcount; q++) {
+      int after = 0;
+      if (!mdns_name_matches(pkt, n, at, &after)) break;
+      if (after + 4 > n) break;
+      const int qtype = (pkt[after] << 8) | pkt[after + 1];
+      if (qtype == 1 || qtype == 255) {  // A, or ANY
+        mdns_respond();
+      }
+      break;  // one question is all anything asks us
+    }
+  }
+  return 0;
+}
+
+// Best effort throughout: a console that cannot join the group still serves
+// every tool that knows its address, so nothing here is fatal.
+static void start_mdns(void) {
+  g_mdns_sock = sceNetSocket("fvita-mdns", SCE_NET_AF_INET,
+                             SCE_NET_SOCK_DGRAM, 0);
+  if (g_mdns_sock < 0) {
+    logf_("  [dev] mdns socket failed: 0x%08X\n", (unsigned)g_mdns_sock);
+    return;
+  }
+  int one = 1;
+  sceNetSetsockopt(g_mdns_sock, SCE_NET_SOL_SOCKET, SCE_NET_SO_REUSEADDR,
+                   &one, sizeof one);
+
+  SceNetSockaddrIn addr;
+  memset(&addr, 0, sizeof addr);
+  addr.sin_family = SCE_NET_AF_INET;
+  addr.sin_addr.s_addr = sceNetHtonl(SCE_NET_INADDR_ANY);
+  addr.sin_port = sceNetHtons(MDNS_PORT);
+  if (sceNetBind(g_mdns_sock, (SceNetSockaddr*)&addr, sizeof addr) < 0) {
+    logf_("  [dev] mdns bind failed; name will not resolve\n");
+    sceNetSocketClose(g_mdns_sock);
+    g_mdns_sock = -1;
+    return;
+  }
+
+  SceNetIpMreq mreq;
+  memset(&mreq, 0, sizeof mreq);
+  sceNetInetPton(SCE_NET_AF_INET, MDNS_GROUP, &mreq.imr_multiaddr);
+  mreq.imr_interface.s_addr = sceNetHtonl(SCE_NET_INADDR_ANY);
+  if (sceNetSetsockopt(g_mdns_sock, SCE_NET_IPPROTO_IP,
+                       SCE_NET_IP_ADD_MEMBERSHIP, &mreq, sizeof mreq) < 0) {
+    logf_("  [dev] mdns could not join %s; name will not resolve\n",
+          MDNS_GROUP);
+  }
+
+  // A receive timeout rather than non-blocking: this thread has nothing to do
+  // between packets, and a blocking wait keeps it off the CPU. One second so
+  // it still notices the socket going away.
+  int usec = 1000 * 1000;
+  sceNetSetsockopt(g_mdns_sock, SCE_NET_SOL_SOCKET, SCE_NET_SO_RCVTIMEO,
+                   &usec, sizeof usec);
+
+  const SceUID th = sceKernelCreateThread("fvita-mdns", mdns_thread, 0x60,
+                                          0x2000, 0, 0, NULL);
+  if (th < 0) {
+    logf_("  [dev] mdns thread failed: 0x%08X\n", (unsigned)th);
+    return;
+  }
+  sceKernelStartThread(th, 0, NULL);
+  logf_("  [dev] %s.local\n", MDNS_NAME);
+}
+
 static void start_supervisor(void) {
   // Never for the loader. The supervisor's job is to relaunch the loader when
   // an app dies; a loader that starts one is asking to be recovered to itself,
@@ -620,6 +831,7 @@ int dev_server_run(void (*log_line)(const char* msg),
     return -1;
   }
   sceNetCtlInit();
+  start_mdns();
 
   SceNetCtlInfo info;
   if (sceNetCtlInetGetInfo(SCE_NETCTL_INFO_GET_IP_ADDRESS, &info) >= 0) {

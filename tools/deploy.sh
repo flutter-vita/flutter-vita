@@ -20,7 +20,39 @@ set -uo pipefail
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
 ROOT="$(cd "$HERE/.." && pwd)"
-HOST="${VITA_HOST:-192.168.0.32}"
+# flutter-vita.local, not an address. The dev server answers mDNS for that name
+# (see the mDNS section of devserver.c), so this survives the console coming
+# back on a different lease -- which it does, often. VITA_HOST still overrides
+# it, and an IP is still the right answer when the name will not resolve.
+HOST="${VITA_HOST:-flutter-vita.local}"
+
+# Resolve the name once, then work in addresses for the rest of the run.
+#
+# Not premature. This script hands the app off to the loader and then keeps
+# talking, and the mDNS responder lives in whichever of the two is running --
+# so the name goes dark for the seconds between the app exiting and the loader
+# answering. The first deploy after adding mDNS failed exactly there: staged
+# fine, then "install failed", because the name stopped resolving mid-run.
+#
+# Resolving once removes the window. It also means a console that drops off the
+# network mid-deploy fails with a connection error against a real address
+# rather than a name lookup, which is the more legible of the two.
+case "$HOST" in
+  *[!0-9.]*)
+    RESOLVED="$(python3 -c "import socket,sys
+try: print(socket.gethostbyname(sys.argv[1]))
+except OSError: pass" "$HOST" 2>/dev/null)"
+    if [ -n "$RESOLVED" ]; then
+      echo "    $HOST is $RESOLVED"
+      HOST="$RESOLVED"
+    else
+      echo "!! $HOST does not resolve." >&2
+      echo "   The responder runs inside the app or the loader, so nothing" >&2
+      echo "   answers while neither is up. Set VITA_HOST to an address." >&2
+      exit 1
+    fi
+    ;;
+esac
 DEV=1339
 LDR=1341
 TITLEID="FVTA00002"
