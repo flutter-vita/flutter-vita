@@ -1,8 +1,8 @@
 diff --git a/pubspec.yaml b/pubspec.yaml
-index b444137..4218ffb 100644
+index b444137..483b388 100644
 --- a/pubspec.yaml
 +++ b/pubspec.yaml
-@@ -76,6 +76,14 @@ dependencies:
+@@ -76,6 +76,16 @@ dependencies:
    file_selector: ^1.1.0
    crypto: ^3.0.7
    shared_preferences: ^2.5.5
@@ -14,6 +14,8 @@ index b444137..4218ffb 100644
 +    path: ../../../packages/shared_preferences_vita
 +  url_launcher_vita:
 +    path: ../../../packages/url_launcher_vita
++  file_picker_vita:
++    path: ../../../packages/file_picker_vita
    native_liquid_glass: ^0.2.10
  dev_dependencies:
    flutter_lints: ^6.0.0
