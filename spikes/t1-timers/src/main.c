@@ -68,6 +68,7 @@
 #include <psp2/appmgr.h>
 #include <psp2/io/fcntl.h>
 #include <psp2/io/stat.h>
+#include <psp2/kernel/cpu.h>
 #include <psp2/kernel/processmgr.h>
 #include <psp2/kernel/threadmgr.h>
 #include <psp2/net/net.h>
@@ -442,12 +443,11 @@ static void* pp_worker(void* arg) {
   return NULL;
 }
 
-static void condvar_pingpong(void) {
+static int64_t condvar_pingpong(void) {
   g_pp_turn = 0;
   pthread_t th;
   if (pthread_create(&th, NULL, pp_worker, NULL) != 0) {
-    lg("J condvar     pthread_create failed\n");
-    return;
+    return -1;
   }
   const int64_t t0 = now_us();
   for (int i = 0; i < PP_ITERS; i++) {
@@ -461,8 +461,7 @@ static void condvar_pingpong(void) {
   }
   const int64_t dt = now_us() - t0;
   pthread_join(th, NULL);
-  lg("J condvar     %d round trips in %lld us = %lld us each\n", PP_ITERS,
-     (long long)dt, (long long)(dt / PP_ITERS));
+  return dt / PP_ITERS;
 }
 
 static SceUID g_pp_flag_main = -1;
@@ -482,18 +481,16 @@ static int pp_flag_worker(SceSize args, void* argp) {
   return 0;
 }
 
-static void flag_pingpong(void) {
+static int64_t flag_pingpong(void) {
   g_pp_flag_main = sceKernelCreateEventFlag("t1-pp-main", 0, 0, NULL);
   g_pp_flag_work = sceKernelCreateEventFlag("t1-pp-work", 0, 0, NULL);
   if (g_pp_flag_main < 0 || g_pp_flag_work < 0) {
-    lg("K flag        create failed\n");
-    return;
+    return -1;
   }
   const SceUID th = sceKernelCreateThread("t1-pp-flag", pp_flag_worker, 0x40,
                                           0x4000, 0, 0, NULL);
   if (th < 0) {
-    lg("K flag        thread 0x%08X\n", (unsigned)th);
-    return;
+    return -1;
   }
   sceKernelStartThread(th, 0, NULL);
   const int64_t t0 = now_us();
@@ -506,13 +503,152 @@ static void flag_pingpong(void) {
                            &timeout);
   }
   const int64_t dt = now_us() - t0;
-  lg("K flag        %d round trips in %lld us = %lld us each\n", PP_ITERS,
-     (long long)dt, (long long)(dt / PP_ITERS));
   sceKernelWaitThreadEnd(th, NULL, NULL);
   sceKernelDeleteThread(th);
   sceKernelDeleteEventFlag(g_pp_flag_main);
   sceKernelDeleteEventFlag(g_pp_flag_work);
   g_pp_flag_main = g_pp_flag_work = -1;
+  return dt / PP_ITERS;
+}
+
+// --- L: what an idle poll() loop costs the thread beside it -------------------
+//
+// Written while a Dart app holding one socket was paying seven times as much
+// for every async gap as one holding none: 200 sequential Timer(Duration.zero)
+// round trips cost 517 us each with no socket open and 3731 us each with one.
+// The answer turned out to be a POLLOUT storm from socket_patch.dart's event
+// mask, and this section is how the platform was cleared on the way there.
+// Nothing on the timer path accounted for it. A zero-duration timer posts _ZERO_EVENT to the isolate's own
+// port and never reaches the platform, so the event handler does not deliver
+// it, and instrumenting the event handler's timer queue during the slow case
+// printed nothing at all.
+//
+// What a socket does change is what the event handler's *thread* is doing. With
+// none registered it parks on an event flag indefinitely. With one it wakes
+// every kInterruptSliceUs -- 8 ms -- rebuilds its pollfd array, calls poll(),
+// and sleeps again. So: can a neighbour thread waking on an 8 ms cadence cost
+// another thread milliseconds per wake? That is not a question about Dart and
+// does not need Dart to answer it.
+//
+// 3731 us is also close to half of 8 ms, which is the mean wait for a uniformly
+// distributed next tick. The earlier attempt to test that moved
+// kInterruptSliceUs to 1 ms, saw 3691 us, and cleared the slice. A 1% move is
+// not what cutting the slice eightfold should produce, and this session had
+// already caught one stale engine shipping under a fresh label, so the slice
+// was asked again here, in a binary small enough to be certain of. It was
+// innocent: 39 and 60 us in every case, at every slice. The cost was never on
+// this side of the port.
+//
+// Four backgrounds against the same two round trips:
+//
+//   L0  nothing            the control, and the same number J and K reported
+//   L1  a thread sleeping  any thread on a cadence, with no poll and no network
+//       on the cadence     stack anywhere near it
+//   L2  a thread in poll   the event handler, reproduced
+//   L3  L2 at other        does the cost follow the slice? Half the slice means
+//       slices             the mechanism is "wait for the next tick", and the
+//                          fix is four characters in eventhandler_vita.cc
+//
+// Both round trips, because Dart pays both: the VM thread pool parks its
+// workers on a condvar, and the message loop wakes on an event flag.
+//
+// The core mask and priority of every thread involved get printed too. Nothing
+// in this port has ever set an affinity, which means every thread inherits one
+// mask, and if that mask is a single core then a neighbour on a cadence is not
+// a neighbour at all -- it is the same CPU.
+
+static volatile int g_bg_stop;
+static volatile long g_bg_wakeups;
+static volatile int g_bg_affinity;
+static volatile int g_bg_prio;
+static int g_bg_slice_ms;
+static int g_bg_poll;  // 1 = poll() on an idle socket, 0 = sceKernelDelayThread
+static int g_bg_pair[2] = {-1, -1};
+
+static void* bg_worker(void* arg) {
+  (void)arg;
+  g_bg_affinity = sceKernelGetThreadCpuAffinityMask(sceKernelGetThreadId());
+  g_bg_prio = sceKernelGetThreadCurrentPriority();
+  while (!g_bg_stop) {
+    if (g_bg_poll) {
+      struct pollfd pfd;
+      pfd.fd = g_bg_pair[0];
+      pfd.events = POLLIN;
+      pfd.revents = 0;
+      poll(&pfd, 1, g_bg_slice_ms);
+    } else {
+      sceKernelDelayThread((SceUInt)g_bg_slice_ms * 1000);
+    }
+    g_bg_wakeups++;
+  }
+  return NULL;
+}
+
+// A pthread, not a sceKernel thread, because that is what dart:io's event
+// handler is: Thread::Start goes to thread_linux.cc, which VitaSDK maps onto
+// pthread-embedded. Priority and stack come out wherever that puts them, which
+// is the point.
+static void background_case(const char* label, int use_poll, int slice_ms) {
+  pthread_t th;
+  int running = 0;
+  g_bg_stop = 0;
+  g_bg_wakeups = 0;
+  g_bg_affinity = 0;
+  g_bg_prio = 0;
+  g_bg_poll = use_poll;
+  g_bg_slice_ms = slice_ms;
+  if (slice_ms > 0) {
+    if (pthread_create(&th, NULL, bg_worker, NULL) != 0) {
+      lg("%-14s pthread_create failed\n", label);
+      return;
+    }
+    running = 1;
+    sceKernelDelayThread(50 * 1000);  // let it settle into its cadence
+  }
+  const int64_t flag_us = flag_pingpong();
+  const int64_t cond_us = condvar_pingpong();
+  g_bg_stop = 1;
+  if (running) {
+    pthread_join(th, NULL);
+  }
+  lg("%-14s flag %6lld us   condvar %6lld us", label, (long long)flag_us,
+     (long long)cond_us);
+  if (running) {
+    // The wakeup count is the honesty check on the background thread. A poll()
+    // that returns immediately instead of waiting out its slice shows up here
+    // as a count far above the round-trip time divided by the slice, and would
+    // mean L2 measured a spin rather than a cadence.
+    lg("   %ld wakeups, core 0x%05X, prio %d", g_bg_wakeups,
+       (unsigned)g_bg_affinity, g_bg_prio);
+  }
+  lg("\n");
+}
+
+static void background_section(void) {
+  lg("\nL: a neighbour thread on a cadence, %d round trips each\n\n", PP_ITERS);
+  lg("this thread: core 0x%05X, prio %d\n\n",
+     (unsigned)sceKernelGetThreadCpuAffinityMask(sceKernelGetThreadId()),
+     sceKernelGetThreadCurrentPriority());
+
+  // Its own pair rather than g_pair, which E and G have been writing to. A
+  // leftover unread byte would make every poll() return at once and quietly
+  // turn L2 into a spin test.
+  if (socketpair(AF_INET, SOCK_STREAM, 0, g_bg_pair) < 0) {
+    g_bg_pair[0] = g_bg_pair[1] = -1;
+  }
+
+  background_case("L0 nothing", 0, 0);
+  background_case("L1 delay 8ms", 0, 8);
+  if (g_bg_pair[0] >= 0) {
+    background_case("L2 poll 8ms", 1, 8);
+    background_case("L3 poll 1ms", 1, 1);
+    background_case("L3 poll 33ms", 1, 33);
+    close(g_bg_pair[0]);
+    close(g_bg_pair[1]);
+    g_bg_pair[0] = g_bg_pair[1] = -1;
+  } else {
+    lg("no socketpair -- L2 and L3 skipped\n");
+  }
 }
 
 // --- handoff -----------------------------------------------------------------
@@ -631,8 +767,10 @@ int main(void) {
   flag_readiness("I flag w=100", 100);
 
   lg("\ncross-thread round trip, %d iterations\n\n", PP_ITERS);
-  condvar_pingpong();
-  flag_pingpong();
+  lg("J condvar     %lld us each\n", (long long)condvar_pingpong());
+  lg("K flag        %lld us each\n", (long long)flag_pingpong());
+
+  background_section();
 
   lg("\ndone\n");
   handoff();
