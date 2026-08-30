@@ -28,15 +28,18 @@ the root one: what this is, what runs today, a screenshot, and a way into
 `docs/`. Put the [capability table](roadmap-capabilities.md) near the top, since
 it answers the first question anyone asks.
 
-### 2. Three tracked paths that should not be. Minutes.
+### 2. Two tracked paths that should not be. Minutes.
 
-- `apps/conformance/.flutter-plugins-dependencies`. Generated, and its own first
-  line reads "do not edit or check into version control". It embeds
-  `/Users/<user>/.pub-cache/...`, so **it leaks a home directory.**
 - `temp_for_logs/dart.log` and `temp_for_logs/m1.log`. Stale logs.
 
-`out/bench/` was a fourth until 2026-08-29. Benchmark output sat in git, so
-every measurement left the tree dirty.
+Two others are done. `out/bench/` went on 2026-08-29: benchmark output sat in
+git, so every measurement left the tree dirty.
+`apps/conformance/.flutter-plugins-dependencies` went on 2026-08-30, along with
+a second copy that had appeared under `packages/file_picker_vita/` the same
+day. Both embedded `/Users/<user>/.pub-cache/...`, so both leaked a home
+directory. `.gitignore` now covers the name, which is what stops the third one:
+the file appears in any package directory after `flutter pub get`, and `git add`
+on that directory picks it up without comment.
 
 ### 3. No CI. Half a day.
 
