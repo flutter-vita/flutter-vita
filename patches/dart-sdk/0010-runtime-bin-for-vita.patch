@@ -2613,10 +2613,10 @@ index 00000000..f1753dab
 +#endif  // defined(DART_HOST_OS_VITA)
 diff --git a/runtime/bin/vita_compat.h b/runtime/bin/vita_compat.h
 new file mode 100644
-index 00000000..e6066a18
+index 00000000..51adb754
 --- /dev/null
 +++ b/runtime/bin/vita_compat.h
-@@ -0,0 +1,171 @@
+@@ -0,0 +1,202 @@
 +// Copyright (c) 2026, the Dart project authors.  Please see the AUTHORS file
 +// for details. All rights reserved. Use of this source code is governed by a
 +// BSD-style license that can be found in the LICENSE file.
@@ -2671,11 +2671,28 @@ index 00000000..e6066a18
 +// ------------------------------------------------------------------- dirent
 +//
 +// VitaSDK's `struct dirent` carries a SceIoStat and a name, and has no
-+// `d_type`. Rather than reach into the SceIoStat -- whose layout is a detail of
-+// a different SDK -- entries report DT_UNKNOWN, which sends the caller down a
-+// path Dart already maintains for "file systems where readdir does not
-+// determine the entry type". That path stats the entry, which is what reading
-+// d_stat would have amounted to anyway, and it is already tested.
++// `d_type`.
++//
++// This reported DT_UNKNOWN at first, on the reasoning that Dart already
++// maintains a path for "file systems where readdir does not determine the entry
++// type", that the path stats the entry, and that a stat is what reading d_stat
++// would have amounted to anyway.
++//
++// The last step of that is wrong, and `ux0:` is where it shows. Reading d_stat
++// costs nothing and cannot fail: sceIoDread already filled it in. A stat is a
++// second, separately permission-checked call, and `stat("ux0:/music")` is
++// refused with EPERM on a normal console. `DirectoryListingEntry::Next` turns
++// that refusal into kListError, and a kListError ends the whole listing -- so
++// one unreadable child made all of `ux0:` unlistable, and a file picker on this
++// port could not show the memory card at all.
++//
++// So the type comes from d_stat now. Note the mode bits are SCE's own and do
++// not match POSIX: SCE_S_IFDIR is 0010000 where S_IFDIR is 0040000, which is
++// why this uses the SCE_S_IS* macros rather than the ones in <sys/stat.h>.
++//
++// Anything neither directory, link nor regular file still reports DT_UNKNOWN
++// and still gets the stat, which is correct: the fallback is right, it just
++// should not be the only path.
 +#define DT_UNKNOWN 0
 +#define DT_FIFO 1
 +#define DT_CHR 2
@@ -2685,7 +2702,21 @@ index 00000000..e6066a18
 +#define DT_LNK 10
 +#define DT_SOCK 12
 +
-+#define DART_DIRENT_TYPE(entry) DT_UNKNOWN
++static inline int DartVitaDirentType(const struct dirent* entry) {
++  const unsigned int mode = (unsigned int)entry->d_stat.st_mode;
++  if (SCE_S_ISDIR(mode)) {
++    return DT_DIR;
++  }
++  if (SCE_S_ISLNK(mode)) {
++    return DT_LNK;
++  }
++  if (SCE_S_ISREG(mode)) {
++    return DT_REG;
++  }
++  return DT_UNKNOWN;
++}
++
++#define DART_DIRENT_TYPE(entry) DartVitaDirentType(entry)
 +
 +// -------------------------------------------------------------- retry macros
 +//
