@@ -52,4 +52,14 @@ out/artifacts/loader-engine/
 
 # Crash dumps and framebuffer captures pulled off the device.
 out/dumps/
+
+# Benchmark run output. One run per invocation of tools/bench.sh, plus the
+# deploy logs it writes on the way -- machine-specific, console-specific, and
+# regenerated every time.
+#
+# Not to be confused with the committed baseline, which lives in
+# apps/gallery/bench/ and is what the ADR-0017 gate compares against. Six of
+# these were tracked by accident until 2026-08-29, so a benchmark run showed up
+# as a dirty tree after every measurement.
+out/bench/
 loader/app/lib/build_info.dart
