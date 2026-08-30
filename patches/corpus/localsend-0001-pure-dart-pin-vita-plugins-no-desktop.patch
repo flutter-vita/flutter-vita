@@ -17,11 +17,12 @@ index 6bfb65d..9e9e111 100644
  }
  
 diff --git a/app/lib/main.dart b/app/lib/main.dart
-index 69c6824..3750579 100644
+index 69c6824..1541add 100644
 --- a/app/lib/main.dart
 +++ b/app/lib/main.dart
-@@ -1,6 +1,8 @@
+@@ -1,6 +1,9 @@
  import 'package:common/isolate.dart';
++import 'package:file_selector_vita/file_selector_vita.dart';
  import 'package:flutter/material.dart';
  import 'package:flutter_localizations/flutter_localizations.dart';
 +import 'package:path_provider_vita/path_provider_vita.dart';
@@ -29,12 +30,13 @@ index 69c6824..3750579 100644
  import 'package:localsend_app/config/init.dart';
  import 'package:localsend_app/config/init_error.dart';
  import 'package:localsend_app/config/theme.dart';
-@@ -18,6 +20,8 @@ import 'package:refena_flutter/refena_flutter.dart';
+@@ -18,6 +21,9 @@ import 'package:refena_flutter/refena_flutter.dart';
  import 'package:routerino/routerino.dart';
  
  Future<void> main(List<String> args) async {
 +  PathProviderVita.registerWith();
 +  SharedPreferencesVita.registerWith();
++  FileSelectorVita.registerWith();
    final RefenaContainer container;
    try {
      container = await preInit(args);
@@ -163,15 +165,17 @@ index 782923b..5fcde04 100644
  
  /// This platform can receive share intents
 diff --git a/app/pubspec.yaml b/app/pubspec.yaml
-index 7c956e5..72fbb30 100644
+index 7c956e5..8cd63ec 100644
 --- a/app/pubspec.yaml
 +++ b/app/pubspec.yaml
-@@ -56,6 +56,12 @@ dependencies:
+@@ -56,6 +56,14 @@ dependencies:
    share_handler: 0.0.19
    share_handler_ios: 0.0.12 # Keep iOS <14 support
    shared_preferences: 2.2.3
 +  # ADR-0009: non-endorsed vita implementations, listed beside the plugins they
 +  # implement. This is the whole edit an app author makes.
++  file_selector_vita:
++    path: ../../../../packages/file_selector_vita
 +  path_provider_vita:
 +    path: ../../../../packages/path_provider_vita
 +  shared_preferences_vita:
@@ -179,7 +183,7 @@ index 7c956e5..72fbb30 100644
    shared_preferences_platform_interface: any
    shared_storage: 0.8.1
    slang: 3.31.1
-@@ -73,17 +79,42 @@ dependencies:
+@@ -73,17 +81,42 @@ dependencies:
    yaru: 1.2.2
  
  dev_dependencies:

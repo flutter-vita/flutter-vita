@@ -1,0 +1,12 @@
+name: vita_file_browser
+description: A file browser drawn in Flutter, for a console with no file-chooser dialog.
+version: 0.1.0
+publish_to: none
+
+environment:
+  sdk: ^3.5.0
+  flutter: ">=3.44.0"
+
+dependencies:
+  flutter:
+    sdk: flutter

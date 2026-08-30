@@ -10,38 +10,19 @@ import 'package:file_picker/file_picker.dart';
 // file_picker rather than accepting any version.
 // ignore: implementation_imports
 import 'package:file_picker/src/platform/file_picker_platform_interface.dart';
-import 'package:flutter/material.dart';
+import 'package:vita_file_browser/vita_file_browser.dart';
 
-import 'src/file_browser.dart';
-import 'src/root_navigator.dart';
-import 'src/vita_paths.dart';
+export 'package:vita_file_browser/vita_file_browser.dart' show VitaPaths;
 
-export 'src/vita_paths.dart' show VitaPaths;
-
-/// The Vita implementation of [FilePickerPlatform].
+/// The Vita implementation of [FilePickerPlatform], for `file_picker` 11.x.
 ///
 /// **Non-endorsed**, per ADR-0009: `file_picker` does not know the Vita exists,
 /// so an app depends on this package alongside it and calls
 /// `FilePickerVita.registerWith()`.
 ///
-/// ## Why this one draws its own UI
-///
-/// The other Vita plugins in this repository forward to a system API:
-/// `url_launcher_vita` calls `sceAppUtilLaunchWebBrowser`, and that is the
-/// whole plugin. There is no such call here. The console's file manager is a
-/// separate application, and nothing in the SDK opens a file chooser modally
-/// and returns a path.
-///
-/// So this pushes a route onto the app's own Navigator and lets the user
-/// browse. Two consequences the caller should know about, because neither is
-/// true of any other platform:
-///
-///   * The picker is inside the application. It uses the app's theme, the app
-///     keeps rendering underneath it, and `lockParentWindow` means nothing.
-///
-///   * There must be a Navigator to push onto. Every Flutter app that has run
-///     `runApp` with a `MaterialApp` or `CupertinoApp` has one; a call made
-///     before the first frame does not, and returns null rather than throwing.
+/// The UI lives in `vita_file_browser`, which this shares with
+/// `file_selector_vita`. See that package for why the console draws its own
+/// picker at all, and why the browser is not in here.
 ///
 /// ## What is not supported, and why
 ///
@@ -62,34 +43,6 @@ class FilePickerVita extends FilePickerPlatform {
     FilePickerPlatform.instance = FilePickerVita();
   }
 
-  /// Pushes the browser and waits. Null when there is no Navigator or the user
-  /// backed out.
-  Future<List<String>?> _browse({
-    required FileBrowserMode mode,
-    String? title,
-    List<String>? allowedExtensions,
-    bool allowMultiple = false,
-    String? saveFileName,
-    String? initialDirectory,
-  }) async {
-    final NavigatorState? navigator = findRootNavigator();
-    if (navigator == null) {
-      return null;
-    }
-    return navigator.push<List<String>>(
-      MaterialPageRoute<List<String>>(
-        builder: (context) => FileBrowserPage(
-          mode: mode,
-          title: title,
-          allowedExtensions: allowedExtensions,
-          allowMultiple: allowMultiple,
-          saveFileName: saveFileName,
-          initialDirectory: initialDirectory,
-        ),
-      ),
-    );
-  }
-
   @override
   Future<FilePickerResult?> pickFiles({
     String? dialogTitle,
@@ -105,7 +58,7 @@ class FilePickerVita extends FilePickerPlatform {
     bool readSequential = false,
     bool cancelUploadOnWindowBlur = true,
   }) async {
-    final List<String>? picked = await _browse(
+    final List<String>? picked = await browseForPaths(
       mode: FileBrowserMode.openFile,
       title: dialogTitle ?? 'Choose a file',
       allowedExtensions: _extensionsFor(type, allowedExtensions),
@@ -146,7 +99,7 @@ class FilePickerVita extends FilePickerPlatform {
     bool lockParentWindow = false,
     String? initialDirectory,
   }) async {
-    final List<String>? picked = await _browse(
+    final List<String>? picked = await browseForPaths(
       mode: FileBrowserMode.pickDirectory,
       title: dialogTitle ?? 'Choose a folder',
       initialDirectory: initialDirectory,
@@ -168,7 +121,7 @@ class FilePickerVita extends FilePickerPlatform {
     // name here would mean the on-screen keyboard over a file list on a 544 px
     // screen, and every caller in the corpus already generates a name.
     final String name = fileName ?? 'untitled';
-    final List<String>? picked = await _browse(
+    final List<String>? picked = await browseForPaths(
       mode: FileBrowserMode.saveInDirectory,
       title: dialogTitle ?? 'Choose where to save',
       saveFileName: name,
@@ -178,7 +131,7 @@ class FilePickerVita extends FilePickerPlatform {
       return null;
     }
 
-    final String target = _unusedPath(picked.single, name);
+    final String target = VitaPaths.unusedPath(picked.single, name);
     if (bytes != null) {
       // Matching the desktop implementations, which write the bytes and return
       // the path. A caller that passes bytes expects the file to exist.
@@ -193,27 +146,6 @@ class FilePickerVita extends FilePickerPlatform {
 
   @override
   Future<bool?> clearTemporaryFiles() async => true;
-
-  /// Never overwrite. The picker chose a directory, not a file, so the user
-  /// was never shown the thing they would be destroying.
-  static String _unusedPath(String directory, String name) {
-    String candidate = VitaPaths.join(directory, name);
-    if (!File(candidate).existsSync()) {
-      return candidate;
-    }
-    final String extension = VitaPaths.extensionOf(name);
-    final String stem = extension.isEmpty
-        ? name
-        : name.substring(0, name.length - extension.length - 1);
-    for (int n = 2; n < 1000; n++) {
-      final String suffixed = extension.isEmpty ? '$stem ($n)' : '$stem ($n).$extension';
-      candidate = VitaPaths.join(directory, suffixed);
-      if (!File(candidate).existsSync()) {
-        return candidate;
-      }
-    }
-    return candidate;
-  }
 
   static Uint8List? _readOrNull(File file) {
     try {

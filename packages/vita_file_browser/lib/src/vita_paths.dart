@@ -108,6 +108,29 @@ abstract final class VitaPaths {
     return colon >= 0 ? path.substring(colon + 1) : path;
   }
 
+  /// [name] inside [directory], suffixed until it names nothing that exists.
+  ///
+  /// Never overwrite. The picker chose a directory, not a file, so the user was
+  /// never shown the thing they would be destroying.
+  static String unusedPath(String directory, String name) {
+    String candidate = join(directory, name);
+    if (!File(candidate).existsSync()) {
+      return candidate;
+    }
+    final String extension = extensionOf(name);
+    final String stem = extension.isEmpty
+        ? name
+        : name.substring(0, name.length - extension.length - 1);
+    for (int n = 2; n < 1000; n++) {
+      final String suffixed = extension.isEmpty ? '$stem ($n)' : '$stem ($n).$extension';
+      candidate = join(directory, suffixed);
+      if (!File(candidate).existsSync()) {
+        return candidate;
+      }
+    }
+    return candidate;
+  }
+
   /// Lowercase extension without the dot, or an empty string.
   static String extensionOf(String name) {
     final int dot = name.lastIndexOf('.');

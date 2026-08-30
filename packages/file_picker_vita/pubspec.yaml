@@ -11,3 +11,5 @@ dependencies:
   flutter:
     sdk: flutter
   file_picker: ^11.0.2
+  vita_file_browser:
+    path: ../vita_file_browser
