@@ -7,10 +7,18 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 /// One thing we want to know about this port, and what happened when we asked.
 class Probe {
-  Probe(this.group, this.name, this.run);
+  Probe(this.group, this.name, this.run, {this.timeout = const Duration(seconds: 25)});
 
   final String group;
   final String name;
+
+  /// How long the harness gives this probe before calling it hung.
+  ///
+  /// 25 seconds suits a probe that either answers at once or is broken. It is
+  /// the wrong ceiling for one that is deliberately moving megabytes, where a
+  /// timeout reports "slower than 25 seconds" and hides the number that is the
+  /// entire point of running it.
+  final Duration timeout;
 
   /// Returns a short human-readable detail on success. Throwing is a failure;
   /// returning is a pass. A probe that wants to report "correctly refused"
@@ -47,6 +55,38 @@ void _mark(String s) {
   } on Object {
     // Best effort, exactly like the journal it writes to.
   }
+}
+
+/// The machine running tools/benchserver.py. See the throughput probes.
+const _benchHost = '192.168.0.30';
+
+/// Bytes and elapsed time as a rate, in the one format every throughput probe
+/// reports so the numbers can be read down the column.
+String _rate(int bytes, Stopwatch sw) {
+  final ms = sw.elapsedMilliseconds;
+  final kbs = ms == 0 ? 0 : (bytes / 1024) * 1000 / ms;
+  return '$bytes B in $ms ms = ${kbs.toStringAsFixed(0)} KB/s';
+}
+
+/// Reads a URL to the end and reports what arrived and how long it took.
+///
+/// The self-signed bench certificate is accepted for this host only. That is
+/// the whole point of the probe -- it measures BoringSSL's throughput, not the
+/// trust store -- and narrowing it to the bench host keeps the exception from
+/// applying to anything else the app does.
+Future<(int, Stopwatch)> _drain(String url) async {
+  final client = HttpClient()
+    ..connectionTimeout = const Duration(seconds: 10)
+    ..badCertificateCallback = (cert, host, port) => host == _benchHost;
+  final sw = Stopwatch()..start();
+  final response = await (await client.getUrl(Uri.parse(url))).close();
+  int bytes = 0;
+  await for (final chunk in response) {
+    bytes += chunk.length;
+  }
+  sw.stop();
+  client.close();
+  return (bytes, sw);
 }
 
 /// Ordered safest-first, deliberately.
@@ -231,6 +271,99 @@ List<Probe> buildProbes() => [
     c.close();
     return 'HTTP ${res.statusCode}';
   }),
+  // -- Throughput, layer by layer.
+  //
+  // localsend receives a 5 MB file over HTTPS in 62 seconds: 84 KB/s, against
+  // 852 KB/s pushing the same file over the same Wi-Fi to the same memory card
+  // from C. Every explanation offered for that gap so far has been a guess that
+  // did not survive being built, so these probes move the same bytes through
+  // one more layer each and let the cost land in whichever gap opens up.
+  //
+  // The first run answered most of it: plain HTTP reads 5 MB at 2377 KB/s and
+  // writes it to the card at 544 KB/s, so sockets, the HTTP parser and the
+  // filesystem are all fine. HTTPS did not finish inside the old 25-second
+  // ceiling. These probes are the follow-up, and they split TLS in two:
+  //
+  //   handshake   asymmetric crypto and certificate parsing, paid once
+  //   1MB vs 4MB  if both take the same time it is the handshake; if the time
+  //               scales with the bytes it is the record layer
+  //
+  // The bench server is benchserver.py on a machine on the same network.
+  Probe('throughput', 'raw TCP 4MB', () async {
+    // Counts to the expected length rather than waiting for the stream to end.
+    // The first version awaited the close and hung: the peer does close, and
+    // this port did not deliver the event. That is worth its own probe and is
+    // not what this one is measuring.
+    final sw = Stopwatch()..start();
+    final socket = await Socket.connect(_benchHost, 5301,
+        timeout: const Duration(seconds: 10));
+    int bytes = 0;
+    await for (final chunk in socket) {
+      bytes += chunk.length;
+      if (bytes >= 4 * 1024 * 1024) break;
+    }
+    sw.stop();
+    socket.destroy();
+    return _rate(bytes, sw);
+  }, timeout: const Duration(seconds: 180)),
+  Probe('throughput', 'TLS handshake x3', () async {
+    // No payload at all, so this is the asymmetric half on its own. Three
+    // handshakes because the first also builds the certificate store.
+    final times = <int>[];
+    for (int i = 0; i < 3; i++) {
+      final sw = Stopwatch()..start();
+      final socket = await SecureSocket.connect(_benchHost, 5303,
+          onBadCertificate: (_) => true,
+          timeout: const Duration(seconds: 30));
+      sw.stop();
+      times.add(sw.elapsedMilliseconds);
+      socket.destroy();
+    }
+    return '${times.join(" / ")} ms';
+  }, timeout: const Duration(seconds: 180)),
+  Probe('throughput', 'HTTP 1MB', () async {
+    final (bytes, sw) = await _drain('http://$_benchHost:5302/blob/1048576');
+    return _rate(bytes, sw);
+  }, timeout: const Duration(seconds: 180)),
+  Probe('throughput', 'HTTPS 1MB', () async {
+    final (bytes, sw) = await _drain('https://$_benchHost:5303/blob/1048576');
+    return _rate(bytes, sw);
+  }, timeout: const Duration(seconds: 180)),
+  Probe('throughput', 'HTTPS 4MB', () async {
+    final (bytes, sw) = await _drain('https://$_benchHost:5303/blob/4194304');
+    return _rate(bytes, sw);
+  }, timeout: const Duration(seconds: 300)),
+  Probe('throughput', 'file write 4MB', () async {
+    final chunk = Uint8List(64 * 1024);
+    final file = File('$_dataDir/bench.bin');
+    final sw = Stopwatch()..start();
+    final sink = file.openWrite();
+    for (int i = 0; i < 64; i++) {
+      sink.add(chunk);
+    }
+    await sink.close();
+    sw.stop();
+    final bytes = file.lengthSync();
+    file.deleteSync();
+    return _rate(bytes, sw);
+  }, timeout: const Duration(seconds: 180)),
+  Probe('throughput', 'HTTP 4MB to file', () async {
+    final file = File('$_dataDir/bench.bin');
+    final client = HttpClient()..connectionTimeout = const Duration(seconds: 10);
+    final sw = Stopwatch()..start();
+    final response = await (await client
+            .getUrl(Uri.parse('http://$_benchHost:5302/blob/4194304')))
+        .close();
+    final sink = file.openWrite();
+    await response.forEach(sink.add);
+    await sink.close();
+    sw.stop();
+    client.close();
+    final bytes = file.lengthSync();
+    file.deleteSync();
+    return _rate(bytes, sw);
+  }, timeout: const Duration(seconds: 180)),
+
   // -- The two blessed plugins. Not a test of the packages so much as of the
   //    claim in ADR-0009 that they are shallow: if the filesystem works, these
   //    should be constants and a mkdir, and anything else here is a surprise.

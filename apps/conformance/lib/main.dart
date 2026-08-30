@@ -107,7 +107,7 @@ class _ProbeRunnerState extends State<ProbeRunner>
         // timeout it sets internally.
         result.detail = await result.probe
             .run()
-            .timeout(const Duration(seconds: 25));
+            .timeout(result.probe.timeout);
         result.outcome = Outcome.pass;
       } on Object catch (e) {
         result.outcome = Outcome.fail;
