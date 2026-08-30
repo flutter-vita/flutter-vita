@@ -1,0 +1,368 @@
+Release polish: replace modal_bottom_sheet, unclip the settings cards, hide the
+mic button.
+
+Three unrelated defects found while getting keklist to a state worth showing.
+Two of them are app choices that a phone forgives and this console does not.
+
+1. modal_bottom_sheet does not work here, in three ways at once.
+
+keklist opens fourteen sheets through `modal_bottom_sheet: ^3.0.0-pre`, via
+`showBarModalBottomSheet` and `showCupertinoModalBottomSheet`. On hardware all
+three of its failures show up together: the sheet paints as a black rectangle,
+taps inside it never reach the content, and no gesture closes it, so the sources
+sheet and the emoji picker were both dead ends. Flutter's own
+`showModalBottomSheet` is fine in the same build -- the paywall and the password
+prompt use it and always worked -- so this is the package, not sheets.
+
+The package positions its sheet with a layout delegate driven by the route
+animation and puts a drag-to-dismiss `Listener` above the content. Both exist to
+give a phone a pull-down gesture. Neither is wanted here: the Vita has no bezel
+worth pulling from, and on a 960x544 landscape screen a sheet covering the
+bottom half leaves 272 px for content.
+
+So `lib/presentation/core/widgets/vita_sheet.dart` reimplements both entry
+points as a pushed route with an app bar and a close button. The names and the
+`context` / `builder` signature match the package, so all fourteen call sites
+keep their shape and thirteen of them change by one import line. The fourteenth
+is `_showWhatsNew`, which renders a `WebPageScreen` that already brings its own
+`Scaffold` and close button, so it pushes directly instead of stacking a second
+app bar.
+
+The `Scaffold` in the shim is load-bearing rather than decoration. These bodies
+were written to sit inside a container the package supplied: `MindPickerScreen`
+returns a bare `Column`, so on a route of its own it has nothing painting
+behind it.
+
+The dependency stays in pubspec.yaml, unused. Nothing in lib/ imports it.
+
+2. Settings cards flickered while the list scrolled.
+
+`SettingsSectionCard` rounded its corners with a `ClipRRect`, which at the
+default `Clip.antiAlias` is an offscreen layer per card per frame. `Material`
+already knows how to fill a rounded shape and does it with one `drawPath` and
+no layer, so the radius now comes from the shape and the clip is gone. Four
+frames sampled mid-scroll hold 74 to 81 percent card fill with no collapse,
+against 60 FPS.
+
+The cost is that a tile's ink splash is no longer clipped at the card's corners.
+
+3. The mic button was live and could not record.
+
+`record: ^7.0.0` has no Vita implementation and the port has no microphone
+support to write one against, so the plugin is never registered. The button in
+the comment bar still appeared, still opened the recorder sheet, and the sheet
+then failed inside `record`.
+
+`AudioCapture` asks once at startup and the button is gated on the answer. It
+defaults to no: an unregistered channel raises `MissingPluginException` and is
+caught, but a channel with nothing on the other end can also never reply, and
+starting from false means that hides the button rather than hanging the screen
+that asked. RevenueCat's own `MissingPluginException` in the log confirms this
+port takes the first path.
+
+Verified on hardware at 192.168.0.32, GL backend, 60 FPS: sources and the
+actions menu open as pages and close from the app bar, an emoji tapped in the
+picker selects and pops back to the creator, settings scrolls without dropping
+a card background, and the comment bar has no mic button.
+
+diff --git a/lib/presentation/core/platform/audio_capture.dart b/lib/presentation/core/platform/audio_capture.dart
+new file mode 100644
+index 0000000..6bb1135
+--- /dev/null
++++ b/lib/presentation/core/platform/audio_capture.dart
+@@ -0,0 +1,42 @@
++import 'package:record/record.dart';
++
++/// Whether this build can capture audio, asked once and remembered.
++///
++/// `record: ^7.0.0` ships implementations for Android, iOS, macOS, Windows,
++/// Linux and web. There is no Vita one, and the port has no microphone support
++/// to write one against, so the plugin is simply not registered and the first
++/// method call comes back unimplemented.
++///
++/// Without this the mic button in the comment bar looks live: tapping it opens
++/// the recorder sheet, which then fails inside `record` and leaves the user
++/// with a sheet that cannot record. Hiding the button says the same thing
++/// honestly and costs one call at startup.
++///
++/// The default is "no". An unregistered channel raises `MissingPluginException`
++/// and is caught below, but a platform channel with nothing on the other end
++/// can also never reply, in which case the await here never returns. Starting
++/// from `false` and only ever flipping to `true` on a real answer means a hang
++/// hides the button rather than hanging the screen that asked.
++abstract final class AudioCapture {
++  static bool _supported = false;
++  static bool _probed = false;
++
++  /// Cached answer. False until [probe] has come back positive.
++  static bool get isSupported => _supported;
++
++  static Future<bool> probe() async {
++    if (_probed) {
++      return _supported;
++    }
++    _probed = true;
++    try {
++      final AudioRecorder recorder = AudioRecorder();
++      await recorder.hasPermission();
++      await recorder.dispose();
++      _supported = true;
++    } catch (_) {
++      _supported = false;
++    }
++    return _supported;
++  }
++}
+diff --git a/lib/presentation/core/widgets/settings/settings_section.dart b/lib/presentation/core/widgets/settings/settings_section.dart
+index a55e39e..128f14d 100644
+--- a/lib/presentation/core/widgets/settings/settings_section.dart
++++ b/lib/presentation/core/widgets/settings/settings_section.dart
+@@ -54,14 +54,20 @@ final class SettingsSectionCard extends StatelessWidget {
+   Widget build(BuildContext context) {
+     return Padding(
+       padding: const EdgeInsets.symmetric(horizontal: 16.0),
+-      child: ClipRRect(
++      // No ClipRRect. It rounded the corners by clipping, which is an
++      // antialiased clip and therefore an offscreen layer per card per frame;
++      // on the Vita the cards then flickered while the list scrolled. Material
++      // already knows how to fill a rounded shape, and does it with one
++      // drawPath and no layer, so the radius comes from the shape instead of
++      // from a clip. The cost is that a tile's ink splash is no longer clipped
++      // at the card's corners.
++      child: Material(
++        color: Theme.of(context).colorScheme.surfaceContainerHighest,
+         borderRadius: BorderRadius.circular(12.0),
+-        child: Material(
+-          color: Theme.of(context).colorScheme.surfaceContainerHighest,
+-          child: ListTileTheme(
+-            data: const ListTileThemeData(contentPadding: EdgeInsets.only(left: 16.0, right: 8.0)),
+-            child: Column(children: _withDividers(context, children)),
+-          ),
++        clipBehavior: Clip.none,
++        child: ListTileTheme(
++          data: const ListTileThemeData(contentPadding: EdgeInsets.only(left: 16.0, right: 8.0)),
++          child: Column(children: _withDividers(context, children)),
+         ),
+       ),
+     );
+diff --git a/lib/presentation/core/widgets/vita_sheet.dart b/lib/presentation/core/widgets/vita_sheet.dart
+new file mode 100644
+index 0000000..4f21fee
+--- /dev/null
++++ b/lib/presentation/core/widgets/vita_sheet.dart
+@@ -0,0 +1,55 @@
++import 'package:flutter/material.dart';
++
++/// Drop-in replacements for `modal_bottom_sheet`, which does not work here.
++///
++/// keklist reached for `modal_bottom_sheet: ^3.0.0-pre` in fourteen places.
++/// On the Vita all three of its symptoms show up together: the sheet paints as
++/// a black rectangle, taps inside it never reach the content, and no gesture
++/// closes it. Flutter's own `showModalBottomSheet` is fine in the same build,
++/// which is how the paywall and the password prompt still work.
++///
++/// The package positions its sheet with a layout delegate driven by the route
++/// animation and puts a drag-to-dismiss `Listener` above the content. Both of
++/// those are the parts that fail, and both exist to give a phone the pull-down
++/// gesture. The Vita has no touch bezel worth pulling from and a 960x544
++/// landscape screen where a sheet covering the bottom half leaves 272 px of
++/// content, so the gesture buys nothing and a page costs nothing.
++///
++/// So these push a route instead. The names and the `context` / `builder`
++/// signature match the package so the call sites keep their shape and the diff
++/// stays readable; only the imports changed.
++///
++/// The `Scaffold` is load-bearing rather than decoration. Sheet bodies here
++/// were written to sit inside a container the package supplied:
++/// `MindPickerScreen` returns a bare `Column`, so on a route of its own it has
++/// nothing painting behind it. The `AppBar` carries the close button that the
++/// pull-down gesture used to be.
++Future<T?> showBarModalBottomSheet<T>({
++  required BuildContext context,
++  required WidgetBuilder builder,
++}) {
++  return _pushSheet<T>(context, builder);
++}
++
++Future<T?> showCupertinoModalBottomSheet<T>({
++  required BuildContext context,
++  required WidgetBuilder builder,
++}) {
++  return _pushSheet<T>(context, builder);
++}
++
++Future<T?> _pushSheet<T>(BuildContext context, WidgetBuilder builder) {
++  return Navigator.of(context).push<T>(
++    MaterialPageRoute<T>(
++      builder: (context) => Scaffold(
++        appBar: AppBar(
++          // 544 px of height, and the body wants all of it. The default 56 is
++          // a phone number.
++          toolbarHeight: 44.0,
++          leading: const CloseButton(),
++        ),
++        body: builder(context),
++      ),
++    ),
++  );
++}
+diff --git a/lib/presentation/screens/digest/mind_universal_list_screen.dart b/lib/presentation/screens/digest/mind_universal_list_screen.dart
+index f85d99b..7af34a6 100644
+--- a/lib/presentation/screens/digest/mind_universal_list_screen.dart
++++ b/lib/presentation/screens/digest/mind_universal_list_screen.dart
+@@ -2,7 +2,7 @@ import 'package:adaptive_dialog/adaptive_dialog.dart';
+ import 'package:calendar_date_picker2/calendar_date_picker2.dart';
+ import 'package:collection/collection.dart';
+ import 'package:flutter/material.dart' hide DateUtils;
+-import 'package:modal_bottom_sheet/modal_bottom_sheet.dart';
++import 'package:keklist/presentation/core/widgets/vita_sheet.dart';
+ import 'package:swipeable_page_route/swipeable_page_route.dart';
+ import 'package:translator/translator.dart';
+ import 'package:keklist/domain/constants.dart';
+diff --git a/lib/presentation/screens/emotions/emotion_editor_sheet.dart b/lib/presentation/screens/emotions/emotion_editor_sheet.dart
+index cf4fcc0..118874a 100644
+--- a/lib/presentation/screens/emotions/emotion_editor_sheet.dart
++++ b/lib/presentation/screens/emotions/emotion_editor_sheet.dart
+@@ -6,7 +6,7 @@ import 'package:keklist/presentation/core/helpers/bloc_utils.dart';
+ import 'package:keklist/presentation/core/screen/kek_screen_state.dart';
+ import 'package:keklist/presentation/core/widgets/kek_bottom_sheet.dart';
+ import 'package:keklist/presentation/screens/mind_picker/mind_picker_screen.dart';
+-import 'package:modal_bottom_sheet/modal_bottom_sheet.dart';
++import 'package:keklist/presentation/core/widgets/vita_sheet.dart';
+ 
+ /// Small nested bottom sheet to create or rename a single [Emotion] (emoji +
+ /// title). Dispatches to [EmotionBloc] and pops on save. Replaces the old
+diff --git a/lib/presentation/screens/mind_collection/mind_collection_screen.dart b/lib/presentation/screens/mind_collection/mind_collection_screen.dart
+index aa2ea30..4d0566f 100644
+--- a/lib/presentation/screens/mind_collection/mind_collection_screen.dart
++++ b/lib/presentation/screens/mind_collection/mind_collection_screen.dart
+@@ -39,7 +39,7 @@ import 'package:keklist/presentation/screens/mind_picker/mind_picker_screen.dart
+ import 'package:keklist/presentation/screens/mind_day_collection/mind_day_collection_screen.dart';
+ import 'package:keklist/domain/services/entities/mind.dart';
+ import 'package:flutter/material.dart' hide DateUtils;
+-import 'package:modal_bottom_sheet/modal_bottom_sheet.dart';
++import 'package:keklist/presentation/core/widgets/vita_sheet.dart';
+ import 'package:scrollable_positioned_list/scrollable_positioned_list.dart';
+ import 'package:keklist/presentation/core/widgets/bool_widget.dart';
+ import 'package:scrollview_observer/scrollview_observer.dart';
+@@ -221,14 +221,15 @@ final class _MindCollectionScreenState extends KekWidgetState<MindCollectionScre
+   }
+ 
+   Future<void> _showWhatsNew() {
+-    return showCupertinoModalBottomSheet(
+-      context: context,
+-      builder: (builder) {
+-        return WebPageScreen(
++    // Not via vita_sheet.dart: WebPageScreen is already a full screen with its
++    // own Scaffold and close button, so the shim would stack a second AppBar.
++    return Navigator.of(context).push(
++      MaterialPageRoute(
++        builder: (context) => WebPageScreen(
+           title: 'Whats new?',
+           initialUri: Uri.parse(KeklistConstants.whatsNewURL),
+-        );
+-      },
++        ),
++      ),
+     );
+   }
+ 
+diff --git a/lib/presentation/screens/mind_creator/mind_creator_screen.dart b/lib/presentation/screens/mind_creator/mind_creator_screen.dart
+index e0d7985..923225e 100644
+--- a/lib/presentation/screens/mind_creator/mind_creator_screen.dart
++++ b/lib/presentation/screens/mind_creator/mind_creator_screen.dart
+@@ -7,7 +7,7 @@ import 'package:keklist/presentation/core/helpers/bloc_utils.dart';
+ import 'package:keklist/presentation/core/screen/kek_screen_state.dart';
+ import 'package:keklist/presentation/core/extensions/localization_extensions.dart';
+ import 'package:keklist/presentation/screens/mind_picker/mind_picker_screen.dart';
+-import 'package:modal_bottom_sheet/modal_bottom_sheet.dart';
++import 'package:keklist/presentation/core/widgets/vita_sheet.dart';
+ 
+ final class MindCreatorScreen extends StatefulWidget {
+   final Function(String text, String emoji) onDone;
+diff --git a/lib/presentation/screens/mind_day_collection/mind_day_collection_screen.dart b/lib/presentation/screens/mind_day_collection/mind_day_collection_screen.dart
+index b79597e..fc59215 100644
+--- a/lib/presentation/screens/mind_day_collection/mind_day_collection_screen.dart
++++ b/lib/presentation/screens/mind_day_collection/mind_day_collection_screen.dart
+@@ -18,7 +18,7 @@ import 'package:keklist/presentation/core/extensions/localization_extensions.dar
+ import 'package:keklist/presentation/screens/mind_creator/mind_creator_screen.dart';
+ import 'package:keklist/presentation/screens/date_gallery/date_gallery_screen.dart';
+ import 'package:local_auth/local_auth.dart';
+-import 'package:modal_bottom_sheet/modal_bottom_sheet.dart';
++import 'package:keklist/presentation/core/widgets/vita_sheet.dart';
+ import 'package:keklist/presentation/screens/mind_day_collection/widgets/day_minds_card/day_minds_card.dart';
+ import 'package:keklist/presentation/screens/digest/mind_universal_list_screen.dart';
+ import 'package:keklist/presentation/blocs/mind_bloc/mind_bloc.dart';
+diff --git a/lib/presentation/screens/mind_info/mind_info_screen.dart b/lib/presentation/screens/mind_info/mind_info_screen.dart
+index fbac680..516be1d 100644
+--- a/lib/presentation/screens/mind_info/mind_info_screen.dart
++++ b/lib/presentation/screens/mind_info/mind_info_screen.dart
+@@ -16,7 +16,8 @@ import 'package:keklist/presentation/core/widgets/sensitive_widget.dart';
+ import 'package:keklist/presentation/screens/actions/action_model.dart';
+ import 'package:keklist/presentation/screens/actions/actions_screen.dart';
+ import 'package:keklist/presentation/screens/mind_one_emoji_collection/mind_one_emoji_collection.dart';
+-import 'package:modal_bottom_sheet/modal_bottom_sheet.dart';
++import 'package:keklist/presentation/core/platform/audio_capture.dart';
++import 'package:keklist/presentation/core/widgets/vita_sheet.dart';
+ import 'package:keklist/presentation/screens/mind_day_collection/widgets/messaged_list/mind_message_widget.dart';
+ import 'package:keklist/presentation/blocs/mind_bloc/mind_bloc.dart';
+ import 'package:keklist/presentation/core/helpers/bloc_utils.dart';
+@@ -45,7 +46,7 @@ final class _MindInfoScreenState extends KekWidgetState<MindInfoScreen> {
+   DebugMenuDataState? _debugMenuState;
+   bool _creatorPanelHasFocus = false;
+   Mind? _editableMind;
+-  bool _isAudioRecordButtonVisible = true;
++  bool _isAudioRecordButtonVisible = false;
+   late String _selectedEmoji = _rootMind.emoji;
+   final ScrollController _scrollController = ScrollController();
+ 
+@@ -62,9 +63,16 @@ final class _MindInfoScreenState extends KekWidgetState<MindInfoScreen> {
+   void initState() {
+     super.initState();
+ 
+-    _isAudioRecordButtonVisible = _createMindEditingController.text.trim().isEmpty;
++    _isAudioRecordButtonVisible = _shouldShowAudioRecordButton;
+     _createMindEditingController.addListener(_onCreateMindTextChanged);
+ 
++    // The answer decides whether the mic button exists at all, and on a
++    // platform with no `record` implementation it may never arrive. Nothing
++    // here waits on it; the button appears if and when it comes back yes.
++    AudioCapture.probe().then((_) {
++      if (mounted) setState(() => _isAudioRecordButtonVisible = _shouldShowAudioRecordButton);
++    });
++
+     WidgetsBinding.instance.addPostFrameCallback((_) async {
+       _mindCreatorFocusNode.addListener(() {
+         if (_creatorPanelHasFocus == _mindCreatorFocusNode.hasFocus) {
+@@ -246,12 +254,15 @@ final class _MindInfoScreenState extends KekWidgetState<MindInfoScreen> {
+     );
+   }
+ 
++  /// Empty comment field, and a platform that can actually record.
++  bool get _shouldShowAudioRecordButton =>
++      AudioCapture.isSupported && _createMindEditingController.text.trim().isEmpty;
++
+   void _onCreateMindTextChanged() {
+-    final bool shouldShowAudioRecordButton = _createMindEditingController.text.trim().isEmpty;
+-    if (_isAudioRecordButtonVisible == shouldShowAudioRecordButton) {
++    if (_isAudioRecordButtonVisible == _shouldShowAudioRecordButton) {
+       return;
+     }
+-    setState(() => _isAudioRecordButtonVisible = shouldShowAudioRecordButton);
++    setState(() => _isAudioRecordButtonVisible = _shouldShowAudioRecordButton);
+   }
+ 
+   void _handleCommentDone(CreateMindData data) {
+diff --git a/lib/presentation/screens/mind_one_emoji_collection/mind_one_emoji_collection.dart b/lib/presentation/screens/mind_one_emoji_collection/mind_one_emoji_collection.dart
+index cf41f28..e72369f 100644
+--- a/lib/presentation/screens/mind_one_emoji_collection/mind_one_emoji_collection.dart
++++ b/lib/presentation/screens/mind_one_emoji_collection/mind_one_emoji_collection.dart
+@@ -13,7 +13,7 @@ import 'package:keklist/presentation/core/helpers/mind_utils.dart';
+ import 'package:keklist/presentation/core/helpers/date_utils.dart';
+ import 'package:keklist/presentation/screens/mind_info/mind_info_screen.dart';
+ import 'package:keklist/domain/services/entities/mind.dart';
+-import 'package:modal_bottom_sheet/modal_bottom_sheet.dart';
++import 'package:keklist/presentation/core/widgets/vita_sheet.dart';
+ 
+ final class MindOneEmojiCollectionScreen extends StatefulWidget {
+   final String emoji;
