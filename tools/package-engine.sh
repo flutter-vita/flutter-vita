@@ -54,7 +54,11 @@ if [ "${SKIP_FRESHNESS:-0}" != "1" ]; then
   # This phony target is the embedder plus everything it links, which is
   # precisely the set of objects the archive below scrapes up.
   SHIP_TARGET="phony/flutter/shell/platform/embedder/vita_embedder"
-  PENDING="$( (cd "$ENGINE_SRC" && ninja -C out/vita_release -n "$SHIP_TARGET" 2>/dev/null | grep -c '^\[') || echo 0)"
+  # depot_tools on PATH for the check too, not just for the build it tells you
+  # to run. Without it `ninja -n` cannot resolve the host toolchain's generator
+  # rules and reports 3096 pending steps on a tree it has just declared up to
+  # date, which turns this guard into a wall.
+  PENDING="$( (cd "$ENGINE_SRC" && PATH="$HOME/depot_tools:$PATH" ninja -C out/vita_release -n "$SHIP_TARGET" 2>/dev/null | grep -c '^\[') || echo 0)"
   if [ "${PENDING:-0}" -gt 0 ]; then
     echo "!! $PENDING build steps are still pending in $ENGINE_OUT" >&2
     echo "   Packaging now would archive stale objects, and stale objects link" >&2

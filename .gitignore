@@ -68,3 +68,7 @@ loader/app/lib/build_info.dart
 # in. It embeds absolute paths into ~/.pub-cache, so tracking one publishes a
 # home directory. See docs/open-sourcing.md.
 .flutter-plugins-dependencies
+
+# Generated on first run by tools/benchserver.py, thirty days, one host.
+tools/bench.crt
+tools/bench.key
