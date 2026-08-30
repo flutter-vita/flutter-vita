@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:io';
+import 'dart:isolate';
 
 import 'package:flutter/services.dart';
 import 'package:path_provider/path_provider.dart';
@@ -87,6 +88,71 @@ Future<(int, Stopwatch)> _drain(String url) async {
   sw.stop();
   client.close();
   return (bytes, sw);
+}
+
+/// A distribution rather than a mean, because a mean hides the shape.
+///
+/// 3731 us per zero-duration timer could have been 200 timers each costing
+/// 3.7 ms, or 196 costing 200 us and four stalling for most of a second. Those
+/// were different bugs with different fixes, and every measurement before this
+/// one was a total divided by 200, which cannot tell them apart. It turned out
+/// to be the first. The count over 20 ms is still here because this console has
+/// a known ~100-200 ms network tick (t1-timers sections E, G and H), and four
+/// of those would smear a mean exactly as far.
+String _dist(List<int> us) {
+  final sorted = List<int>.of(us)..sort();
+  final sum = sorted.fold<int>(0, (a, b) => a + b);
+  var slow = 0;
+  for (final v in sorted) {
+    if (v > 20000) slow++;
+  }
+  return 'mean ${(sum / sorted.length).round()} '
+      'p50 ${sorted[sorted.length ~/ 2]} '
+      'p90 ${sorted[(sorted.length * 9) ~/ 10]} '
+      'max ${sorted.last} us, $slow over 20 ms';
+}
+
+/// One zero-duration timer at a time, timed individually.
+Future<String> _timerDist(int n) async {
+  final sw = Stopwatch()..start();
+  final us = <int>[];
+  for (var i = 0; i < n; i++) {
+    final t0 = sw.elapsedMicroseconds;
+    final completer = Completer<void>();
+    Timer(Duration.zero, completer.complete);
+    await completer.future;
+    us.add(sw.elapsedMicroseconds - t0);
+  }
+  return _dist(us);
+}
+
+/// The in-isolate control for _timerDist: a microtask never reaches a port, a
+/// thread or the platform, so whatever it costs is the isolate's own doing.
+Future<String> _microtaskDist(int n) async {
+  final sw = Stopwatch()..start();
+  final us = <int>[];
+  for (var i = 0; i < n; i++) {
+    final t0 = sw.elapsedMicroseconds;
+    await Future<void>.microtask(() {});
+    us.add(sw.elapsedMicroseconds - t0);
+  }
+  return _dist(us);
+}
+
+/// The same shape as _timerDist for a timer that really does reach the
+/// platform. A zero-duration timer never leaves the isolate; a 1 ms one is
+/// registered with the event handler and delivered from its thread, so the two
+/// together say whether a cost attaches to port round trips in general or to
+/// the platform timer path in particular.
+Future<String> _delayedDist(int n) async {
+  final sw = Stopwatch()..start();
+  final us = <int>[];
+  for (var i = 0; i < n; i++) {
+    final t0 = sw.elapsedMicroseconds;
+    await Future<void>.delayed(const Duration(milliseconds: 1));
+    us.add(sw.elapsedMicroseconds - t0);
+  }
+  return _dist(us);
 }
 
 /// Ordered safest-first, deliberately.
@@ -329,52 +395,195 @@ List<Probe> buildProbes() => [
     return '${sw.elapsedMilliseconds} ms total, '
         '${(sw.elapsedMicroseconds / 200).toStringAsFixed(0)} us each';
   }, timeout: const Duration(seconds: 120)),
-  Probe('async', 'Timer(0) x200', () async {
-    // A timer is the other way a native thread wakes this isolate: the event
-    // handler posts to the isolate's port, exactly as the IO service does, but
-    // without the VM thread pool in between. If this is fast and the IOService
-    // pair is slow, the cost is the pool rather than the wake.
-    final sw = Stopwatch()..start();
-    for (int i = 0; i < 200; i++) {
-      final completer = Completer<void>();
-      Timer(Duration.zero, completer.complete);
-      await completer.future;
+  // -- Waking this isolate, and what a socket had to do with it.
+  //
+  // A zero-duration Dart timer used to cost the root isolate 215 us with
+  // nothing open, 744 us with one TCP connection, and 43418 us with eight. That
+  // was the ceiling on TLS and the source of the jank during a transfer, and
+  // five explanations were wrong before these probes found the right one.
+  //
+  // The cause was setListening in socket_patch.dart: it sent the event mask to
+  // the event handler once and always asked for both readEvent and writeEvent,
+  // whatever its own arguments said. Every other POSIX backend is
+  // edge-triggered, so an unwanted POLLOUT fires once; this port polls, poll()
+  // is level-triggered, and an idle connected socket is writable every time
+  // round. The event handler was posting 2255 write events per second per
+  // socket to the root isolate, and each one cost a task on Flutter's UI
+  // thread. A spawned isolate, which drains its port queue in one go, barely
+  // noticed -- which is what pointed at the delivery path.
+  //
+  // These stay because they are the regression test. Each is the same 200
+  // timers with one thing different, and the interesting property is now that
+  // they are all the same number:
+  //
+  //   none          the baseline
+  //   TCP open      one established connection
+  //   TCP closed    the socket gone, the event handler thread it started still
+  //                 running
+  //   reads off     connected with Mask() == 0, so the fd is not polled at all.
+  //                 Before the fix this was the *slowest* case, because turning
+  //                 the Dart flags off never reached the event handler.
+  //   UDP bound     a registered fd with no peer, which was always fast: it is
+  //                 never listened to, so no mask was ever sent for it.
+  //
+  // Reported as a distribution, not a mean, because a mean cannot tell 200
+  // slow timers from four stalls. This one was 200 slow timers.
+  Probe('async', 'Timer(0) x200', () async => _timerDist(200),
+      timeout: const Duration(seconds: 120)),
+  Probe('async', 'Timer(0) x200, TCP open', () async {
+    final socket = await Socket.connect(_benchHost, 5302,
+        timeout: const Duration(seconds: 10));
+    try {
+      return await _timerDist(200);
+    } finally {
+      socket.destroy();
     }
-    sw.stop();
-    return '${sw.elapsedMilliseconds} ms total, '
-        '${(sw.elapsedMicroseconds / 200).toStringAsFixed(0)} us each';
   }, timeout: const Duration(seconds: 120)),
-  Probe('async', 'Timer(0) x200 with a socket open', () async {
-    // The same timers, with one socket open.
+  Probe('async', 'Timer(0) x200, TCP closed', () async {
+    final socket = await Socket.connect(_benchHost, 5302,
+        timeout: const Duration(seconds: 10));
+    socket.destroy();
+    // A turn for the close to reach the event handler and leave the poll array.
+    await Future<void>.delayed(const Duration(milliseconds: 50));
+    return _timerDist(200);
+  }, timeout: const Duration(seconds: 120)),
+  Probe('async', 'Timer(0) x200, reads off', () async {
+    final raw = await RawSocket.connect(_benchHost, 5302,
+        timeout: const Duration(seconds: 10));
+    final sub = raw.listen((_) {});
+    raw.readEventsEnabled = false;
+    raw.writeEventsEnabled = false;
+    await Future<void>.delayed(const Duration(milliseconds: 50));
+    try {
+      return await _timerDist(200);
+    } finally {
+      await sub.cancel();
+      raw.close();
+    }
+  }, timeout: const Duration(seconds: 120)),
+  Probe('async', 'Timer(0) x200, UDP bound', () async {
+    final udp = await RawDatagramSocket.bind(InternetAddress.anyIPv4, 0);
+    try {
+      return await _timerDist(200);
+    } finally {
+      udp.close();
+    }
+  }, timeout: const Duration(seconds: 120)),
+  Probe('async', 'Timer(0) x200, counting events', () async {
+    // Does an idle socket deliver anything Dart can see?
     //
-    // 517 us each with no socket and 3731 us with one. Seven times worse, on a
-    // port where a networked app holds a socket for its whole life, and it is
-    // what limits TLS now that the filter yields once per cycle.
+    // It does not, and that was the misleading part: this reports one write
+    // event and then nothing, because the write event is one-shot in Dart and
+    // every later one is discarded before it reaches a listener. The event
+    // handler was posting 1100 of them a second the whole time. The count is
+    // kept because "write 1" is the correct answer and a regression would show
+    // up here as a listener seeing the storm.
+    final raw = await RawSocket.connect(_benchHost, 5302,
+        timeout: const Duration(seconds: 10));
+    var read = 0, write = 0, closed = 0, other = 0;
+    final sub = raw.listen((event) {
+      switch (event) {
+        case RawSocketEvent.read:
+          read++;
+        case RawSocketEvent.write:
+          write++;
+        case RawSocketEvent.readClosed:
+        case RawSocketEvent.closed:
+          closed++;
+        default:
+          other++;
+      }
+    });
+    try {
+      final dist = await _timerDist(200);
+      return '$dist | read $read write $write closed $closed other $other';
+    } finally {
+      await sub.cancel();
+      raw.close();
+    }
+  }, timeout: const Duration(seconds: 120)),
+  Probe('async', 'Timer(0) x200, loopback TCP', () async {
+    // The same connected TCP socket with the Mac, the radio and the access
+    // point taken out of it. If this is slow, nothing outside the console is
+    // involved and the cause is in the net stack or above it.
+    final server = await ServerSocket.bind(InternetAddress.loopbackIPv4, 0);
+    final client = await Socket.connect(server.address, server.port,
+        timeout: const Duration(seconds: 10));
+    final accepted = await server.first;
+    try {
+      return await _timerDist(200);
+    } finally {
+      client.destroy();
+      accepted.destroy();
+      await server.close();
+    }
+  }, timeout: const Duration(seconds: 120)),
+  Probe('async', 'Future.delayed(1ms) x200', () async => _delayedDist(200),
+      timeout: const Duration(seconds: 120)),
+  Probe('async', 'Future.delayed(1ms) x200, TCP open', () async {
+    final socket = await Socket.connect(_benchHost, 5302,
+        timeout: const Duration(seconds: 10));
+    try {
+      return await _delayedDist(200);
+    } finally {
+      socket.destroy();
+    }
+  }, timeout: const Duration(seconds: 120)),
+  Probe('async', 'Timer(0) x200 again', () async => _timerDist(200),
+      timeout: const Duration(seconds: 120)),
+  Probe('async', 'Timer(0) x200, 4 TCP open', () async {
+    // Does the penalty scale with the number of connections?
     //
-    // What it is *not*, both checked: the event handler's poll wait, and the
-    // event handler at all. dart:isolate posts _ZERO_EVENT to the isolate's own
-    // port for a zero-duration timer rather than asking the platform -- see the
-    // note on getEventHandlerSendData in sdk/lib/vita/vita.dart -- so no part of
-    // eventhandler_vita.cc is on this path. Instrumenting its timer queue
-    // produced no output at all, and moving kInterruptSliceUs from 8 ms to 1
-    // moved the number to 3691.
-    //
-    // So this measures delivering a port message to the root isolate, and it
-    // agrees with the other measurement of the same thing: Dart_PostCObject
-    // timed 3234 us inside IOServiceCallback, also with a socket open. Why a
-    // registered socket triples the cost of waking this isolate is unfound.
-    // Note that a socket is also the first thing that starts the event handler
-    // thread, so "socket open" and "that thread running" are not yet
-    // distinguished.
+    // It did, and steeply: 744 us at one connection, 16941 at four, 43418 at
+    // eight. That is what said the cost was per socket per wake rather than a
+    // mode the console entered, and it is why the search went looking for
+    // something being posted once per socket. All three now sit at ~200 us.
+    final sockets = <Socket>[];
+    for (var i = 0; i < 4; i++) {
+      sockets.add(await Socket.connect(_benchHost, 5302,
+          timeout: const Duration(seconds: 10)));
+    }
+    try {
+      return await _timerDist(200);
+    } finally {
+      for (final s in sockets) {
+        s.destroy();
+      }
+    }
+  }, timeout: const Duration(seconds: 120)),
+  Probe('async', 'Timer(0) x200, 8 TCP open', () async {
+    final sockets = <Socket>[];
+    for (var i = 0; i < 8; i++) {
+      sockets.add(await Socket.connect(_benchHost, 5302,
+          timeout: const Duration(seconds: 10)));
+    }
+    try {
+      return await _timerDist(200);
+    } finally {
+      for (final s in sockets) {
+        s.destroy();
+      }
+    }
+  }, timeout: const Duration(seconds: 120)),
+  Probe('async', 'Timer(0) x200 at once, TCP open', () async {
+    // The same 200 timers with all of them armed before any is awaited, which
+    // asks whether the cost is charged per message or per trip round the
+    // message loop. Batched, 200 messages can be drained in one turn. If the
+    // total collapses, the loop is the unit and TLS -- which cannot batch,
+    // because the record layer is sequential -- is stuck with it. If the total
+    // holds, every message is paying separately.
     final socket = await Socket.connect(_benchHost, 5302,
         timeout: const Duration(seconds: 10));
     try {
       final sw = Stopwatch()..start();
-      for (int i = 0; i < 200; i++) {
-        final completer = Completer<void>();
-        Timer(Duration.zero, completer.complete);
-        await completer.future;
-      }
+      await Future.wait<void>(<Future<void>>[
+        for (var i = 0; i < 200; i++)
+          () {
+            final c = Completer<void>();
+            Timer(Duration.zero, c.complete);
+            return c.future;
+          }(),
+      ]);
       sw.stop();
       return '${sw.elapsedMilliseconds} ms total, '
           '${(sw.elapsedMicroseconds / 200).toStringAsFixed(0)} us each';
@@ -382,15 +591,20 @@ List<Probe> buildProbes() => [
       socket.destroy();
     }
   }, timeout: const Duration(seconds: 120)),
-  Probe('async', 'microtask x200', () async {
-    // Pure in-isolate baseline. Whatever this costs is not the platform's fault.
-    final sw = Stopwatch()..start();
-    for (int i = 0; i < 200; i++) {
-      await Future<void>.microtask(() {});
+  Probe('async', 'microtask x200', () async => _microtaskDist(200),
+      timeout: const Duration(seconds: 120)),
+  Probe('async', 'microtask x200, TCP open', () async {
+    // The control that decides how wide the question is. A microtask is drained
+    // inside the current turn and never reaches a port, so if this slows down
+    // with a socket open then the isolate's own thread is being held up and the
+    // timer path is a bystander.
+    final socket = await Socket.connect(_benchHost, 5302,
+        timeout: const Duration(seconds: 10));
+    try {
+      return await _microtaskDist(200);
+    } finally {
+      socket.destroy();
     }
-    sw.stop();
-    return '${sw.elapsedMilliseconds} ms total, '
-        '${(sw.elapsedMicroseconds / 200).toStringAsFixed(0)} us each';
   }, timeout: const Duration(seconds: 120)),
 
   // -- Throughput, layer by layer.
@@ -687,4 +901,47 @@ List<Probe> buildProbes() => [
     await ch.invokeMethod<void>('TextInput.clearClient');
     return 'opened, held 6s, closed';
   }),
+  // -- Which thread's message loop is this?
+  //
+  // A zero-duration timer is a message to the isolate's own port. In the root
+  // isolate that message is delivered by Flutter's UI task runner, which is
+  // fml's MessageLoopVita; in a spawned isolate it is delivered by the VM's own
+  // thread pool, with no engine anywhere near it. Same VM, same port machinery,
+  // different loop.
+  //
+  // So if a spawned isolate holding a socket pays the same 5x, the cost is in
+  // the VM or below it. If it does not, it is in the engine's message loop and
+  // there is one file to read.
+  //
+  // Last in the suite, and last for a reason: Isolate.spawn has never been run
+  // on this port. If it takes the process down, everything above it has already
+  // been reported and the journal is flushed per probe.
+  Probe('isolate', 'spawn', () async {
+    final port = ReceivePort();
+    await Isolate.spawn(_isolateTimers, [port.sendPort, false]);
+    return await port.first as String;
+  }, timeout: const Duration(seconds: 120)),
+  Probe('isolate', 'Timer(0) x200, TCP open', () async {
+    final port = ReceivePort();
+    await Isolate.spawn(_isolateTimers, [port.sendPort, true]);
+    return await port.first as String;
+  }, timeout: const Duration(seconds: 120)),
 ];
+
+/// Runs _timerDist inside a spawned isolate, optionally holding a socket.
+Future<void> _isolateTimers(List<Object?> args) async {
+  final send = args[0] as SendPort;
+  final withSocket = args[1] as bool;
+  try {
+    Socket? socket;
+    if (withSocket) {
+      socket = await Socket.connect(_benchHost, 5302,
+          timeout: const Duration(seconds: 10));
+    }
+    final result = await _timerDist(200);
+    socket?.destroy();
+    send.send(result);
+  } on Object catch (e) {
+    send.send('failed: $e');
+  }
+}

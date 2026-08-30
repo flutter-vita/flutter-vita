@@ -101,6 +101,11 @@ class _ProbeRunnerState extends State<ProbeRunner>
       // The first run left no evidence of which one killed it, and the whole
       // point of a journal is to still be there when the app is not.
       _journal('.... ${result.probe.group}/${result.probe.name}');
+      // Also to app.log, where the engine's own logging goes. The journal and
+      // app.log are separate files with no shared clock, so engine-side
+      // instrumentation cannot be attributed to a probe without a marker in
+      // the engine's own log. Cheap, and it makes app.log readable on its own.
+      print('PROBE ${result.probe.group}/${result.probe.name}');
       try {
         // A probe that hangs would stall every one after it and the run would
         // report nothing at all, so each gets its own ceiling on top of any
