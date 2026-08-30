@@ -345,16 +345,27 @@ List<Probe> buildProbes() => [
         '${(sw.elapsedMicroseconds / 200).toStringAsFixed(0)} us each';
   }, timeout: const Duration(seconds: 120)),
   Probe('async', 'Timer(0) x200 with a socket open', () async {
-    // The same timers, with one socket registered with the event handler.
+    // The same timers, with one socket open.
     //
-    // eventhandler_vita.h is explicit that this changes the wait: with no
-    // sockets it blocks on an event flag, which a timer message interrupts at
-    // once, but with sockets it blocks in poll(), which the event flag cannot
-    // break into, so the queue is only re-checked once per kInterruptSliceUs
-    // (8 ms). If that is real then every event-loop yield during a transfer
-    // costs a slice, which would explain why moving the TLS filter onto the
-    // isolate bought 1.8x rather than the 10x the round trip it removed was
-    // worth.
+    // 517 us each with no socket and 3731 us with one. Seven times worse, on a
+    // port where a networked app holds a socket for its whole life, and it is
+    // what limits TLS now that the filter yields once per cycle.
+    //
+    // What it is *not*, both checked: the event handler's poll wait, and the
+    // event handler at all. dart:isolate posts _ZERO_EVENT to the isolate's own
+    // port for a zero-duration timer rather than asking the platform -- see the
+    // note on getEventHandlerSendData in sdk/lib/vita/vita.dart -- so no part of
+    // eventhandler_vita.cc is on this path. Instrumenting its timer queue
+    // produced no output at all, and moving kInterruptSliceUs from 8 ms to 1
+    // moved the number to 3691.
+    //
+    // So this measures delivering a port message to the root isolate, and it
+    // agrees with the other measurement of the same thing: Dart_PostCObject
+    // timed 3234 us inside IOServiceCallback, also with a socket open. Why a
+    // registered socket triples the cost of waking this isolate is unfound.
+    // Note that a socket is also the first thing that starts the event handler
+    // thread, so "socket open" and "that thread running" are not yet
+    // distinguished.
     final socket = await Socket.connect(_benchHost, 5302,
         timeout: const Duration(seconds: 10));
     try {
