@@ -15,7 +15,7 @@
 // ux0:data/flutter-vita/loader.titleid, and per-command by `handoff <titleid>`
 // -- because a hardcoded slot is wrong the moment the loader is reinstalled
 // somewhere else, and every app on the card would otherwise need rebuilding.
-#define DEVSERVER_DEFAULT_LOADER "FVTA00003"
+#define DEVSERVER_DEFAULT_LOADER "FVTA00001"
 
 // Serves until `exit` arrives or START is pressed. `log_line` receives progress
 // messages and should append a newline itself.

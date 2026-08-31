@@ -14,7 +14,7 @@
 // It ships with the *app*, not with the loader, and that is forced rather than
 // chosen. Only one directory on this device is writable by anything we control
 // -- ux0:app/FVTA00002, which the loader installs into. An app cannot write its
-// own directory (`touch ux0:app/FVTA00003/x` is 0x8001000D, EACCES, even for an
+// own directory (`touch ux0:app/FVTA00001/x` is 0x8001000D, EACCES, even for an
 // UNSAFE self), and ScePromoterUtil, which could, refuses to load for us with
 // MODULEMGR_NO_LIB. So the loader cannot update itself and cannot gain an
 // eboot2.bin; the app slot is redeployed every cycle and can.

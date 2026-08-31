@@ -33,7 +33,7 @@
 #include "devserver.h"
 
 // Overridable so a loader under test can be installed beside the working one.
-// Replacing FVTA00003 in place with something unproven costs the only deploy
+// Replacing FVTA00001 in place with something unproven costs the only deploy
 // path there is.
 #ifndef LOADER_PORT
 #define LOADER_PORT 1341
@@ -42,7 +42,7 @@
 // loader cannot write its own directory anyway, but the promoter can, and
 // `delete` goes through the promoter.
 #ifndef LOADER_SELF_TITLEID
-#define LOADER_SELF_TITLEID "FVTA00003"
+#define LOADER_SELF_TITLEID "FVTA00001"
 #endif
 #ifndef LOADER_TARGET_TITLEID
 #define LOADER_TARGET_TITLEID "FVTA00002"

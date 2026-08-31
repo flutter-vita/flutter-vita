@@ -43,7 +43,7 @@
 #include "bailout.h"
 
 #ifndef VITA_LOADER_TITLEID
-#define VITA_LOADER_TITLEID "FVTA00003"
+#define VITA_LOADER_TITLEID "FVTA00001"
 #endif
 
 // Which loader to bail out to, read the same way the dev server's `handoff`

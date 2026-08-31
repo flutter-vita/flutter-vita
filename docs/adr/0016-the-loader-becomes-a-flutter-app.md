@@ -185,9 +185,36 @@ all five elements, the watcher publishes the address within a second of Wi-Fi
 associating, the log fills live, `launch <titleid>` hands the console over, and
 the whole thing is 13 MB rather than the 20 MB this ADR guessed.
 
-**Not working: `promote`.** ~~The only route by which the Flutter loader can
-reach `FVTA00003`.~~ Not needed for that, and see `spikes/promoter` for why it
-is unusable anyway. `sceSysmoduleLoadModuleInternal(SCE_SYSMODULE_INTERNAL_PROMOTER_UTIL)`
+**~~Not working: `promote`.~~ Working, 2026-08-31.** ~~The only route by which
+the Flutter loader can reach `FVTA00003`.~~
+
+> **Resolved 2026-08-31.** `promote` works, and with it the loader stopped
+> needing a slot somebody had already created by hand.
+>
+> Three things were load-bearing, each found by driving the promoter one step at
+> a time from the loader rather than five steps per power cycle:
+>
+> - **PAF must stay resident.** It is loaded before the promoter and never
+>   unloaded. Unloading it kills the console about ten seconds later, because
+>   PAF runs a thread of its own and unmapping the module under it is a data
+>   abort. Confirmed alive through fifteen minutes and four promote calls.
+> - **The staging directory is `ux0:data/pkg`.** `PromotePkg` accepts any path
+>   and never succeeds; `PromotePkgWithRif` succeeds only from there, and
+>   returns `0x8010111C` from anywhere else — the same code as a missing
+>   header, which is why it hid.
+> - **`sce_sys/package/head.bin` must exist and carry this title's content id.**
+>   `tools/make-head-bin.py` writes one. No key is involved.
+>
+> **The loader is now `FVTA00001`**, installed by the promoter rather than by
+> VitaShell, and `tools/install-vpk.sh` registers title ids that never existed.
+> Every `FVTA00003` below should be read as `FVTA00001`; the number was an
+> inheritance from whichever slot had been created by hand, and is now a choice.
+> `tools/build-loader.sh` defaults to it.
+>
+> One stale default remains and is harmless: the *blessed* engine's
+> `devserver.h` still says `FVTA00003`, and it is a pinned artifact that only
+> `bless-loader-engine.sh` refreshes. `ux0:data/flutter-vita/loader.titleid`
+> overrides it at runtime and now reads `FVTA00001`. `sceSysmoduleLoadModuleInternal(SCE_SYSMODULE_INTERNAL_PROMOTER_UTIL)`
 returns `SCE_KERNEL_ERROR_MODULEMGR_NO_LIB` (`0x8002D003`), the `WithArg`
 spelling returns the same, and the C loader fails identically.
 

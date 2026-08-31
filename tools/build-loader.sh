@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Build the loader (ADR-0016) into a .vpk.
 #
-#   ./tools/build-loader.sh                 the real loader: FVTA00003, port 1341
+#   ./tools/build-loader.sh                 the real loader: FVTA00001, port 1341
 #   ./tools/build-loader.sh --scratch       a second one: FVTA00004, port 1342
 #
 #   --title-id ID   override the slot
@@ -12,7 +12,7 @@
 # and the commands, and minus the crash supervisor. Everything here is either
 # the pin check or arguments to tools/build-vita-app.sh.
 #
-# --scratch exists because replacing FVTA00003 in place is replacing the only
+# --scratch exists because replacing FVTA00001 in place is replacing the only
 # way to install anything. A scratch loader installs beside the working one,
 # on its own port, and can be driven with `./tools/deploy.sh --loader-port 1342`.
 set -euo pipefail
@@ -22,7 +22,11 @@ ROOT="$(cd "$HERE/.." && pwd)"
 
 ENGINE="$ROOT/out/artifacts/loader-engine"
 PIN="$ROOT/loader/engine-pin.txt"
-TITLE_ID="FVTA00003"
+# FVTA00001 since 2026-08-31. It was FVTA00003 for as long as the loader had
+# to be installed by VitaShell, which meant living in whichever slot someone
+# had already created by hand. The loader registers its own title id now, so
+# the number is a choice rather than an inheritance.
+TITLE_ID="FVTA00001"
 PORT=1341
 NAME="Flutter Vita Loader"
 
