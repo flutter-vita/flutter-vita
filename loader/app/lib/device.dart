@@ -281,13 +281,25 @@ bool deleteCrash(CrashFile crash) {
   }
 }
 
-/// Every psp2dmp in ux0:data. Nothing on this console removes them, so they
-/// accumulate: there were 31 the first time this tab was opened, a few hundred
-/// megabytes of dumps of crashes that were debugged months ago.
-int clearCrashes() {
+/// Every psp2dmp in ux0:data, one at a time, yielding between each.
+///
+/// Nothing on this console removes these, so they accumulate -- there were 53
+/// the day this was written, a few hundred megabytes of dumps of crashes that
+/// were debugged weeks ago.
+///
+/// The first version was a plain loop of deleteSync. It ran on the UI thread,
+/// which on this platform is also the thread that builds frames and dispatches
+/// touches, so the panel stopped painting and stopped answering for as long as
+/// the card took to unlink fifty files -- indistinguishable from a hang, and
+/// reported as one. The await hands the event loop back after every file, so
+/// frames keep going out and `onProgress` has something to draw.
+Future<int> clearCrashes(void Function(int done, int total) onProgress) async {
+  final files = listCrashes();
   var removed = 0;
-  for (final c in listCrashes()) {
+  for (final c in files) {
     if (deleteCrash(c)) removed++;
+    onProgress(removed, files.length);
+    await Future<void>.delayed(Duration.zero);
   }
   return removed;
 }

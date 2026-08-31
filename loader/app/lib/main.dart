@@ -595,6 +595,9 @@ class _CrashesTabState extends State<_CrashesTab> {
   CoreDump? _dump;
   String _error = '';
   bool _confirmClear = false;
+  bool _clearing = false;
+  int _cleared = 0;
+  int _toClear = 0;
   String? _note;
 
   @override
@@ -629,6 +632,28 @@ class _CrashesTabState extends State<_CrashesTab> {
       _open = f;
       _dump = dump;
       _error = error;
+    });
+  }
+
+  Future<void> _clearAll() async {
+    setState(() {
+      _confirmClear = false;
+      _clearing = true;
+      _cleared = 0;
+      _toClear = _files.length;
+    });
+    final removed = await clearCrashes((done, total) {
+      if (!mounted) return;
+      setState(() {
+        _cleared = done;
+        _toClear = total;
+      });
+    });
+    if (!mounted) return;
+    setState(() {
+      _clearing = false;
+      _files = listCrashes();
+      _note = 'deleted $removed dumps';
     });
   }
 
@@ -678,18 +703,14 @@ class _CrashesTabState extends State<_CrashesTab> {
           // Two taps, like a title delete. Nothing else on this console
           // removes dumps, so this button is the only way they ever go -- and
           // a dump is evidence until someone has read it.
-          if (_confirmClear) ...[
+          if (_clearing)
+            Text('deleting $_cleared of $_toClear',
+                style: mono.copyWith(color: warn))
+          else if (_confirmClear) ...[
             Btn(
-              text: 'DELETE ALL ${_files.length}',
+              text: 'YES, DELETE ${_files.length}',
               colour: danger,
-              onTap: () {
-                final n = clearCrashes();
-                setState(() {
-                  _files = listCrashes();
-                  _confirmClear = false;
-                  _note = 'removed $n dumps';
-                });
-              },
+              onTap: _clearAll,
             ),
             const SizedBox(width: 8),
             Btn(
@@ -699,7 +720,7 @@ class _CrashesTabState extends State<_CrashesTab> {
             ),
           ] else
             Btn(
-              text: 'CLEAR CRASHES',
+              text: 'DELETE ALL',
               colour: danger,
               enabled: _files.isNotEmpty,
               onTap: () => setState(() => _confirmClear = true),
