@@ -605,6 +605,11 @@ static int hand_over(const char* titleid) {
     set_status("Waiting", NULL);
     return -1;
   }
+  // Marked so the panel can colour it. "+ " is green and "- " is red, and that
+  // is the entire convention -- the file is read as often by `get` as by the
+  // screen, so the marker has to survive being plain text.
+  note("+ opened %s", titleid);
+
   // Before the launch, not after: the engine truncates app.log on startup and
   // the launch is the last thing that happens here.
   rotate_app_log(titleid);
@@ -1286,8 +1291,17 @@ __attribute__((constructor)) static void loader_register(void) {
   // exact regression was measured on 2026-08-28 chasing keklist's emoji grid.
   // A constructor runs before main, so the file is moved into the archive
   // while it still holds the last thing the app said.
+  // Read before the rotation, which overwrites it. logs/last names whatever
+  // ran before this boot, so it is how the loader knows an app has ended --
+  // there is no notification, only the fact of being alive again.
+  char prev[24] = {0};
+  read_small(LOG_DIR "/last", prev, sizeof prev);
+
   rotate_app_log("loader");
   trim_deploy_log();
   note("---- loader %s up ----", LOADER_SELF_TITLEID);
+  if (prev[0] != '\0' && strcmp(prev, "loader") != 0) {
+    note("- left %s", prev);
+  }
   publish();
 }

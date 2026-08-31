@@ -129,7 +129,14 @@ class _LoaderAppState extends State<LoaderApp> {
   }
 
   Widget _body(LoaderState s) => switch (_tab) {
-        Tab.deploy => _DeployTab(state: s, console: _console),
+        Tab.deploy => _DeployTab(
+            state: s,
+            console: _console,
+            onClear: () {
+              clearDeployLog();
+              setState(() => _console = const []);
+            },
+          ),
         Tab.logs => _LogsTab(command: _cmd),
         Tab.crashes => _CrashesTab(command: _cmd),
         Tab.apps => _AppsTab(self: s.self, command: _cmd),
@@ -359,15 +366,31 @@ class _Footer extends StatelessWidget {
 // ---------------------------------------------------------------- deploy
 
 class _DeployTab extends StatelessWidget {
-  const _DeployTab({required this.state, required this.console});
+  const _DeployTab({
+    required this.state,
+    required this.console,
+    required this.onClear,
+  });
 
   final LoaderState state;
   final List<String> console;
+  final VoidCallback onClear;
 
   @override
   Widget build(BuildContext context) => Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
+          Row(children: [
+            Text('${console.length} lines', style: label),
+            const Spacer(),
+            Btn(
+              text: 'CLEAR LOG',
+              colour: danger,
+              enabled: console.isNotEmpty,
+              onTap: onClear,
+            ),
+          ]),
+          const SizedBox(height: 8),
           if (state.receiving) ...[
             _Progress(done: state.recvDone, total: state.recvTotal),
             const SizedBox(height: 8),
@@ -446,6 +469,14 @@ class _Console extends StatelessWidget {
 
   final List<String> lines;
 
+  /// The C side marks the two lines worth picking out of a wall of `put 1 KB`:
+  /// an app starting and an app ending. Everything else is the same grey.
+  static Color _colourOf(String line) {
+    if (line.startsWith('+ ')) return good;
+    if (line.startsWith('- ')) return danger;
+    return muted;
+  }
+
   @override
   Widget build(BuildContext context) => Panel(
         padding: 12,
@@ -455,12 +486,15 @@ class _Console extends StatelessWidget {
                 reverse: true,
                 itemCount: lines.length,
                 itemExtent: 18,
-                itemBuilder: (_, i) => Text(
-                  lines[lines.length - 1 - i],
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: mono,
-                ),
+                itemBuilder: (_, i) {
+                  final line = lines[lines.length - 1 - i];
+                  return Text(
+                    line,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: mono.copyWith(color: _colourOf(line)),
+                  );
+                },
               ),
       );
 }

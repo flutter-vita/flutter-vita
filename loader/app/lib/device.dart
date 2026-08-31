@@ -150,6 +150,20 @@ List<String> readDeployLog({int lines = 200, int window = 16 * 1024}) {
   }
 }
 
+/// Forget the deploy history. The C side holds no handle open -- it appends
+/// and closes per line -- so removing the file underneath it is safe, and the
+/// next note recreates it.
+void clearDeployLog() {
+  for (final path in [deployLogPath, '$deployLogPath.1']) {
+    try {
+      final f = File(path);
+      if (f.existsSync()) f.deleteSync();
+    } on FileSystemException {
+      // Gone, or held. Either way there is nothing useful to do about it.
+    }
+  }
+}
+
 /// One file in the log archive, or one of the two live logs.
 class LogFile {
   LogFile(this.path, this.label, this.size, {this.live = false});
