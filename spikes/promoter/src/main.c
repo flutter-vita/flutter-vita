@@ -253,28 +253,55 @@ int main(void) {
   }
 
   lg("\ndone\n");
-  if (g_log >= 0) {
-    sceIoClose(g_log);
-    g_log = -1;
-  }
+  // The log stays open through the hold. Run 6 closed it here, before the
+  // heartbeat loop, so the absence of "still here" lines on the card said
+  // nothing at all about how long the spike survived -- which was the one thing
+  // that run existed to find out.
 
-  // Hand the console back rather than leaving it on a spike that has finished.
-  char titleid[16] = "FVTA00004";
-  const SceUID fd =
-      sceIoOpen("ux0:data/flutter-vita/loader.titleid", SCE_O_RDONLY, 0777);
-  if (fd >= 0) {
-    char buf[32] = {0};
-    const int n = sceIoRead(fd, buf, sizeof buf - 1);
-    sceIoClose(fd);
-    for (int i = 0; i < n; i++) {
-      if (buf[i] == '\n' || buf[i] == '\r' || buf[i] == ' ') { buf[i] = '\0'; break; }
+  // Deliberately does NOT hand back. Read this before "fixing" it.
+  //
+  // Run 4 reached "done" and rebooted the console. The suspect was PAF being
+  // left resident, because that is the one thing VitaShell does that this did
+  // not. Run 5 unloaded both modules -- 0x00000000 from each, logged above --
+  // and rebooted anyway. So the unload was innocent and the reboot is not about
+  // what is resident when we finish.
+  //
+  // What is left is finishing at all. The handoff this used to do here is
+  // sceAppMgrLaunchAppByUri followed by sceKernelExitProcess, and spikes/t1-
+  // timers has run that exact sequence many times without ever rebooting
+  // anything. The only new variable is that PAF has been in this process.
+  //
+  // That distinction decides whether any of this is usable, because the two
+  // things that will actually call the promoter -- VitaShell, and our loader --
+  // are both long-lived. Neither exits afterwards. If sitting here forever is
+  // stable, the reboot is an artefact of a spike tidying up after itself and
+  // the loader is unaffected.
+  //
+  // So it holds instead, and somebody taps the loader. One tap to learn whether
+  // a whole capability is safe to use is a good trade.
+  lg("\nholding, not exiting. The reboot happens after this point.\n");
+  lg("Open the loader when you have read this.\n");
+  // Two minutes of heartbeat, then quiet. Long enough to prove it survived
+  // well past the point run 5 died at, short enough not to fill the card while
+  // the console sits on a screen nobody is watching.
+  for (int i = 0;; i++) {
+    if (i <= 30) {
+      lg("still here, %d s\n", i * 10);
+      // Flushed by closing and reopening: a heartbeat that is still sitting in
+      // a buffer when the console goes down is not a heartbeat.
+      if (g_log >= 0) {
+        sceIoClose(g_log);
+        g_log = sceIoOpen("ux0:data/flutter-vita/promoter.log",
+                          SCE_O_WRONLY | SCE_O_APPEND, 0777);
+      }
     }
-    if (buf[0] != '\0') snprintf(titleid, sizeof titleid, "%s", buf);
+    // "Shut down" and "crashed" look identical from the network, and this
+    // console suspends on its own after a few minutes with nobody touching it.
+    // Holding the auto-suspend timer off makes the difference legible: if it
+    // goes down now, it went down, and the heartbeat above says when.
+    sceKernelPowerTick(SCE_KERNEL_POWER_TICK_DISABLE_AUTO_SUSPEND);
+    sceKernelPowerTick(SCE_KERNEL_POWER_TICK_DISABLE_OLED_OFF);
+    sceKernelDelayThread(10 * 1000 * 1000);
   }
-  sceKernelDelayThread(2000 * 1000);
-  char uri[64];
-  snprintf(uri, sizeof uri, "psgm:play?titleid=%s", titleid);
-  sceAppMgrLaunchAppByUri(0xFFFFF, uri);
-  sceKernelExitProcess(0);
   return 0;
 }
