@@ -422,7 +422,14 @@ String humanBytes(int n) {
 ///
 ///   printf 'put 12 ux0:data/flutter-vita/panel-request.txt\ntab crashes\n' | nc ...
 ///
-/// Verbs: `tab <deploy|logs|crashes|apps>`, `select <index>`, `back`.
+/// Verbs: `tab <deploy|logs|crashes|apps>`, `select <index>`, `back`, and
+/// `action <name>` for a button.
+///
+/// `action` exists because the buttons on this panel are the parts most worth
+/// testing and the parts I cannot reach: DELETE ALL froze the console for as
+/// long as the card took to unlink fifty dumps, and the only ways to check the
+/// fix were to hand the console to someone or to run different code than the
+/// button runs. Each tab decides what its names mean.
 class PanelCommand {
   const PanelCommand(this.seq, this.verb, this.arg);
 

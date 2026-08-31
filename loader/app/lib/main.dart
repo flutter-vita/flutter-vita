@@ -666,6 +666,8 @@ class _CrashesTabState extends State<_CrashesTab> {
       setState(() => _open = null);
     } else if (c.verb == 'select' && c.index >= 0 && c.index < _files.length) {
       _openFile(_files[c.index]);
+    } else if (c.verb == 'action' && c.arg == 'deleteall' && !_clearing) {
+      _clearAll();
     }
   }
 
@@ -908,6 +910,15 @@ class _AppsTabState extends State<_AppsTab> {
       setState(() => _confirming = null);
     } else if (c.verb == 'select' && c.index >= 0 && c.index < _apps.length) {
       setState(() => _confirming = _apps[c.index].titleId);
+    } else if (c.verb == 'action' && c.arg.startsWith('forget ')) {
+      final i = int.tryParse(c.arg.substring(7)) ?? -1;
+      if (i >= 0 && i < _apps.length) {
+        forgetInstalled(_apps[i].titleId);
+        setState(() {
+          _note = 'forgot ${_apps[i].titleId}';
+          _apps = listInstalled(widget.self);
+        });
+      }
     }
   }
 
