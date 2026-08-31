@@ -70,6 +70,18 @@ class _ProbeRunnerState extends State<ProbeRunner>
       buildProbes().map(ProbeResult.new).toList();
   var _done = false;
 
+  final ScrollController _scroll = ScrollController();
+
+  /// Tall enough to read at this font, and fixed rather than fitted.
+  ///
+  /// The list used to divide the panel height by the probe count and shrink to
+  /// suit, which worked at 40 probes and stopped working at 75: rows went to
+  /// 9 px, and the columns were half the panel wide, so a name like
+  /// "Timer(0) x200, counting events" and a detail like "mean 388 p50 214 p90
+  /// 338 max 10173 us, 0 over 20 ms" were both ellipsised down to nothing. A
+  /// result you cannot read is not a result.
+  static const double _rowHeight = 15;
+
   @override
   void initState() {
     super.initState();
@@ -79,7 +91,25 @@ class _ProbeRunnerState extends State<ProbeRunner>
   @override
   void dispose() {
     _spin.dispose();
+    _scroll.dispose();
     super.dispose();
+  }
+
+  /// Keeps the probe that just ran in the middle of the panel.
+  ///
+  /// This is what replaces fitting everything on screen at once. There is no
+  /// pointer to drag with while a run is going and no keyboard to page with,
+  /// so a list that does not follow the run is a list whose interesting row is
+  /// off the bottom for the whole run. The front touchscreen does deliver
+  /// pointer events, so dragging works once it stops moving on its own.
+  ///
+  /// jumpTo, not animateTo: an animation is another timer firing on every
+  /// probe, and this app exists partly to measure what timers cost.
+  void _follow(int index) {
+    if (!_scroll.hasClients) return;
+    final viewport = _scroll.position.viewportDimension;
+    final target = (index * _rowHeight) - (viewport / 2) + (_rowHeight / 2);
+    _scroll.jumpTo(target.clamp(0.0, _scroll.position.maxScrollExtent));
   }
 
   Future<void> _runAll() async {
@@ -124,7 +154,10 @@ class _ProbeRunnerState extends State<ProbeRunner>
       // next probe's own marker -- which is not inside any probe at all. These
       // two lines say whether the frame or the gap after it is what dies.
       _journal('     paint>');
-      if (mounted) setState(() {});
+      if (mounted) {
+        setState(() {});
+        _follow(i);
+      }
       await Future<void>.delayed(const Duration(milliseconds: 16));
       _journal('     <paint');
     }
@@ -290,33 +323,24 @@ class _ProbeRunnerState extends State<ProbeRunner>
               ),
             ),
             const Divider(height: 1, color: Color(0xFF262B36)),
-            // Two columns and a computed row height, because the first run
-            // ran off the bottom of the panel with no way to scroll it: there
-            // is no pointer to drag and no keyboard to page with, so anything
-            // below the fold is simply lost. Fitting is not cosmetic here, it
-            // is whether the result is readable at all.
+            // One column that scrolls, and _follow keeps the running probe in
+            // the middle of it. The panel held every probe at once for as long
+            // as there were forty of them; there are seventy-five now, and
+            // their names and details have both grown, so fitting meant
+            // ellipsising away the measurement itself.
             Expanded(
-              child: LayoutBuilder(
-                builder: (context, box) {
-                  final perColumn = (_results.length / 2).ceil();
-                  final rowHeight =
-                      (box.maxHeight / perColumn).clamp(9.0, 16.0);
-                  return Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Expanded(
-                        child: _Column(
-                            _results.take(perColumn).toList(), rowHeight),
-                      ),
-                      const VerticalDivider(
-                          width: 1, color: Color(0xFF262B36)),
-                      Expanded(
-                        child: _Column(
-                            _results.skip(perColumn).toList(), rowHeight),
-                      ),
-                    ],
-                  );
-                },
+              child: Scrollbar(
+                controller: _scroll,
+                thumbVisibility: true,
+                child: ListView.builder(
+                  controller: _scroll,
+                  // Fixed extent so the list does not measure seventy-five
+                  // children to know how tall it is, and so _follow can work
+                  // out where a row lives by multiplying.
+                  itemExtent: _rowHeight,
+                  itemCount: _results.length,
+                  itemBuilder: (context, i) => _Row(_results[i]),
+                ),
               ),
             ),
           ],
@@ -324,20 +348,6 @@ class _ProbeRunnerState extends State<ProbeRunner>
       ),
     );
   }
-}
-
-class _Column extends StatelessWidget {
-  const _Column(this.results, this.rowHeight);
-  final List<ProbeResult> results;
-  final double rowHeight;
-
-  @override
-  Widget build(BuildContext context) => Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          for (final r in results) SizedBox(height: rowHeight, child: _Row(r)),
-        ],
-      );
 }
 
 class _Row extends StatelessWidget {
@@ -366,7 +376,7 @@ class _Row extends StatelessWidget {
                     color: Color(0xFF6B7488))),
           ),
           SizedBox(
-            width: 124,
+            width: 260,
             child: Text(result.probe.name,
                 overflow: TextOverflow.ellipsis,
                 style: const TextStyle(
