@@ -153,24 +153,67 @@ done
 # builds; re-sending them every cycle would add a transfer to every iteration
 # for nothing. The hash is recorded only after the device confirms, so a failed
 # push retries next time rather than being remembered as done.
-STAMP="$ROOT/out/.pushed/$TITLEID"
-mkdir -p "$STAMP"
+#
+# The record lives on the console, not here, and that is the whole point.
+#
+# It used to be out/.pushed/<titleid>/ on this machine, which is a cache of
+# what the host believes the device holds -- and the host is not told when that
+# stops being true. Promoting a package replaces ux0:app/<id> wholesale, and
+# after one of those the stamps still said everything was pushed. The gallery
+# deployed clean, printed "==> data files", sent nothing, and died three
+# seconds in on "Must be able to initialize the ICU context. Tried:
+# app0:/icudtl.dat" -- with the loader cheerfully reporting success, because
+# from its point of view nothing had failed.
+#
+# One `get` at the start and one `put` at the end. A wiped directory takes the
+# manifest with it, so the next deploy finds nothing recorded and pushes
+# everything, which is exactly the behaviour that was missing.
+MANIFEST="ux0:app/$TITLEID/.deploy-manifest"
+# Outside $WORK, because the file list below is a find over $WORK and these
+# two would be in it -- the first version of this pushed its own bookkeeping
+# to the console.
+HAVE="$(mktemp)"
+NEXT="$(mktemp)"
+trap 'rm -rf "$WORK" "$HAVE" "$NEXT"' EXIT
+say "$LDR" "get $MANIFEST" 60 > "$HAVE" 2>/dev/null || true
+# `get` on a missing file answers with an error line rather than nothing.
+grep -q '^ERR' "$HAVE" 2>/dev/null && : > "$HAVE"
+
 echo "==> data files"
-( cd "$WORK" && find . -type f ! -name eboot.bin \
-    \( -not -path "./sce_sys/*" -o -path "./sce_sys/param2.sfo" \) | sed 's|^\./||' ) \
-| while read -r rel; do
-    want="$(shasum -a 1 "$WORK/$rel" | cut -d' ' -f1)"
-    have=""; [ -f "$STAMP/${rel//\//_}" ] && have="$(cat "$STAMP/${rel//\//_}")"
-    [ "$want" = "$have" ] && continue
-    fsize="$(wc -c < "$WORK/$rel" | tr -d ' ')"
-    printf '    %s (%s B)\n' "$rel" "$fsize"
-    if { printf 'put %s ux0:app/%s/%s\n' "$fsize" "$TITLEID" "$rel"; cat "$WORK/$rel"; } \
-         | nc -w 180 "$HOST" "$LDR" | grep -q OK; then
-      echo "$want" > "$STAMP/${rel//\//_}"
-    else
-      echo "    !! push failed: $rel" >&2
-    fi
-  done
+: > "$NEXT"
+pushed=0
+skipped=0
+while read -r rel; do
+  want="$(shasum -a 1 "$WORK/$rel" | cut -d' ' -f1)"
+  if grep -qxF "$want $rel" "$HAVE" 2>/dev/null; then
+    printf '%s %s\n' "$want" "$rel" >> "$NEXT"
+    skipped=$((skipped + 1))
+    continue
+  fi
+  fsize="$(wc -c < "$WORK/$rel" | tr -d ' ')"
+  printf '    %s (%s B)\n' "$rel" "$fsize"
+  if { printf 'put %s ux0:app/%s/%s\n' "$fsize" "$TITLEID" "$rel"; cat "$WORK/$rel"; } \
+       | nc -w 180 "$HOST" "$LDR" | grep -q OK; then
+    printf '%s %s\n' "$want" "$rel" >> "$NEXT"
+    pushed=$((pushed + 1))
+  else
+    echo "    !! push failed: $rel" >&2
+  fi
+done <<EOF
+$( cd "$WORK" && find . -type f ! -name eboot.bin \
+    \( -not -path "./sce_sys/*" -o -path "./sce_sys/param2.sfo" \) \
+    | sed 's|^\./||' | sort )
+EOF
+printf '    %d pushed, %d already there\n' "$pushed" "$skipped"
+
+# Written last, and only naming files the device confirmed. A push that failed
+# is absent from it and is retried next run.
+msize="$(wc -c < "$NEXT" | tr -d ' ')"
+if [ "${msize:-0}" -gt 0 ]; then
+  { printf 'put %s %s\n' "$msize" "$MANIFEST"; cat "$NEXT"; } \
+    | nc -w 60 "$HOST" "$LDR" | grep -q OK \
+    || echo "    !! could not record the manifest" >&2
+fi
 
 if [ "$LAUNCH" -eq 1 ]; then
   echo "==> launching"
