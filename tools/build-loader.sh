@@ -15,6 +15,12 @@
 # --scratch exists because replacing FVTA00001 in place is replacing the only
 # way to install anything. A scratch loader installs beside the working one,
 # on its own port, and can be driven with `./tools/deploy.sh --loader-port 1342`.
+#
+# The slot no longer has to exist first. It used to mean "a title id somebody
+# created with VitaShell for this purpose", which is why FVTA00004 sat on the
+# card whether or not anything needed it. tools/install-vpk.sh registers the id
+# as part of installing, so the scratch loader is created when it is wanted and
+# deleted when it is not.
 set -euo pipefail
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
