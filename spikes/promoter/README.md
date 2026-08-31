@@ -66,14 +66,50 @@ the whole promoter sequence completes, logs `done`, and starts holding first.
 
 A delay of about ten seconds with nothing running in the foreground points at a
 thread rather than a call: something PAF started, or something the system does
-to a process that has had PAF in it. Unverified.
+to a process that has had PAF in it.
 
-Worth noting what is *different* from VitaShell here, since that is where the
-first answer came from and it may hold the second: VitaShell is a vita2d app
-with a real graphics context, and this spike draws with `debugScreen`, which
-writes the framebuffer directly. PAF initialises the display subsystem. Those
-two may not coexist. Also unverified — and each attempt costs a power cycle,
-which is why this stops here.
+## It is a thread, and it is PAF's own
+
+The console writes `psp2core-*.psp2dmp` to `ux0:data` on every fault, including
+the ones that end with the console going down, and two of these runs left one
+behind. Both say the same thing:
+
+    === THREADS ===
+        FVTA00002
+            Status: 0x8 (Waiting)
+            PC: 0x81019708 (flutter_vita_promoter@1 + 0xb708)
+        SceCommonDialogWorker
+            Status: 0x8 (Waiting)
+        ScePaf EntryCall
+            Stop reason: 0x30004 (Data abort exception)
+            Status: 0x1 (Running)
+            PC: 0xe0203306 (ScePaf@1 + 0x6)
+
+**PAF starts a thread of its own, `ScePaf EntryCall`, and that thread takes a
+data abort six bytes into the PAF module.** Our thread is asleep in the hold
+loop the whole time, which is why nothing in this spike's own code ever looked
+guilty, and why three power cycles spent adding instrumentation to it found
+nothing. The dumps were on the card the whole time.
+
+Six bytes in is a thread parked at its entry point. A thread parked at its entry
+point that faults on resume is the shape of **the module being unmapped
+underneath it**, and every run that died unmapped PAF one way or another. Runs
+5, 6 and 7 called `sceSysmoduleUnloadModuleInternalWithArg` explicitly, each
+returning `0x00000000`. Run 4 did not, and handed off instead, which unmaps
+everything by ending the process. No run in the set both kept PAF resident and
+stayed alive, so the timing fits with no second cause needed.
+
+That reframes the ten seconds. Not a watchdog, and not a delayed consequence of
+the promoter: it is how long that thread takes to be scheduled again after the
+ground has gone.
+
+What is still unexplained is why VitaShell does the same unload and survives.
+
+The difference worth suspecting is the environment PAF's thread finds when it
+resumes: VitaShell is a vita2d app with a live GXM context, and this spike draws
+with `debugScreen`, which writes the framebuffer directly and initialises no
+display subsystem at all. Unverified, and each attempt costs a power cycle,
+which is why this still stops here.
 
 ## Does any of this block the port?
 
@@ -95,11 +131,19 @@ VitaShell install per id.
 The remaining unknown is the ten seconds, not the promoter. Cheapest next
 measurements, in order:
 
-1. Load and unload PAF and **nothing else** — no promoter at all. If it still
-   dies, the promoter is entirely innocent and this is a PAF question.
-2. The same without `debugScreen` — no framebuffer writes after PAF loads.
-3. Load PAF and never unload it, holding for a minute, to see whether the unload
-   is what schedules the fault.
+1. **Load PAF and never unload it**, holding for several minutes without
+   exiting. First now rather than third: every run so far unmapped PAF and none
+   survived, so the one cell of the table nothing has filled in is the one the
+   dumps point at. If it lives, the rule is that PAF is loaded once and kept,
+   and `promote` becomes usable as it stands.
+2. Load and unload PAF with **no promoter at all**, to confirm the promoter has
+   no part in the fault.
+3. The same from a process with a real GXM context rather than `debugScreen` —
+   the one difference from VitaShell that could explain why the same unload is
+   safe there.
+
+`tools/analyse-crash.sh` read those dumps, and reading the next one is one
+command.
 
 Then the packaging, which is untouched and is its own piece of work. VitaShell
 extracts a vpk to a staging directory, builds `sce_sys/package/head.bin` from an
