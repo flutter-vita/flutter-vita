@@ -172,15 +172,66 @@ Future<String> _microtaskDist(int n) async {
 /// registered with the event handler and delivered from its thread, so the two
 /// together say whether a cost attaches to port round trips in general or to
 /// the platform timer path in particular.
-Future<String> _delayedDist(int n) async {
+Future<String> _delayedDist(int n, [Duration d = const Duration(milliseconds: 1)]) async {
   final sw = Stopwatch()..start();
   final us = <int>[];
   for (var i = 0; i < n; i++) {
     final t0 = sw.elapsedMicroseconds;
-    await Future<void>.delayed(const Duration(milliseconds: 1));
+    await Future<void>.delayed(d);
     us.add(sw.elapsedMicroseconds - t0);
   }
   return _dist(us);
+}
+
+/// A `Timer` at an arbitrary duration, with no Future.delayed around it.
+///
+/// Future.delayed allocates a Completer and a Future on top of the timer, and
+/// nothing so far separates that allocation from the wait. This does: run it at
+/// 1 ms beside _delayedDist and the difference is Future.delayed's own cost.
+Future<String> _timerAtDist(int n, Duration d) async {
+  final sw = Stopwatch()..start();
+  final us = <int>[];
+  for (var i = 0; i < n; i++) {
+    final t0 = sw.elapsedMicroseconds;
+    final completer = Completer<void>();
+    Timer(d, completer.complete);
+    await completer.future;
+    us.add(sw.elapsedMicroseconds - t0);
+  }
+  return _dist(us);
+}
+
+/// A ladder of durations, reported as `asked -> measured` pairs.
+///
+/// The one number that has resisted explanation since the POLLOUT fix is
+/// Future.delayed(1 ms) at ~2,500 us against Timer(0) at ~210 us. A single
+/// duration cannot say why. A ladder can, because the three candidate causes
+/// each have a different shape:
+///
+///   a constant offset      the wait is exact and the round trip costs what it
+///                          costs -- thread wake plus message delivery
+///   a floor                everything below some duration takes the same
+///                          time, which is a granularity
+///   proportional error     the deadline arithmetic is wrong
+///
+/// eventhandler_vita.cc computes its wait as `CurrentTimeout() -
+/// GetCurrentMonotonicMillis()`, both in **milliseconds**, so a timer armed
+/// part-way through a millisecond can be rounded up by nearly one. That
+/// predicts a constant offset of about 0.5 ms on top of the round trip, and
+/// the ladder is what can confirm or kill it.
+Future<String> _delayLadder(int n, List<int> millis) async {
+  final parts = <String>[];
+  for (final ms in millis) {
+    final sw = Stopwatch()..start();
+    var total = 0;
+    for (var i = 0; i < n; i++) {
+      final t0 = sw.elapsedMicroseconds;
+      await Future<void>.delayed(Duration(milliseconds: ms));
+      total += sw.elapsedMicroseconds - t0;
+    }
+    parts.add('${ms}ms->${(total / n).round()}');
+  }
+  return parts.join(' ');
 }
 
 /// Ordered safest-first, deliberately.
@@ -547,6 +598,19 @@ List<Probe> buildProbes() => [
     }
   }, timeout: const Duration(seconds: 120)),
   Probe('async', 'Future.delayed(1ms) x200', () async => _delayedDist(200),
+      timeout: const Duration(seconds: 120)),
+  // The three probes that can separate Future.delayed's overhead from the
+  // timer's, and both from the platform's granularity. See _delayLadder.
+  Probe('async', 'Timer(1ms) x200', () async =>
+      _timerAtDist(200, const Duration(milliseconds: 1)),
+      timeout: const Duration(seconds: 120)),
+  Probe('async', 'Timer(0) vs Timer(1ms) ladder', () async =>
+      _delayLadder(50, const [0, 1, 2, 4, 8, 16]),
+      timeout: const Duration(seconds: 180)),
+  // Future.delayed at zero, against Timer(0) above: same wrapper, no wait to
+  // pay for. Whatever separates these two is the wrapper alone.
+  Probe('async', 'Future.delayed(0) x200', () async =>
+      _delayedDist(200, Duration.zero),
       timeout: const Duration(seconds: 120)),
   Probe('async', 'Future.delayed(1ms) x200, TCP open', () async {
     final socket = await Socket.connect(_benchHost, 5302,

@@ -20,7 +20,9 @@ HERE="$(cd "$(dirname "$0")" && pwd)"
 # back on a different lease -- which it does, often. VITA_HOST still overrides
 # it, and an IP is still the right answer when the name will not resolve.
 HOST="${VITA_HOST:-flutter-vita.local}"
-LDR=1341
+# The loader's port. 1341 is the real one; a scratch loader (ADR-0016) answers
+# somewhere else, and a spike deployed through it needs to be told.
+LDR="${LOADER_PORT:-1341}"
 VPK="${1:?usage: run-spike.sh <vpk> <report-path>}"
 REPORT="${2:?usage: run-spike.sh <vpk> <report-path>}"
 DEADLINE="${SPIKE_DEADLINE:-90}"
@@ -36,7 +38,8 @@ wait_loader() {
 }
 
 echo "==> installing $(basename "$VPK")"
-VITA_HOST="$HOST" "$HERE/deploy.sh" --vpk "$VPK" --no-launch >/dev/null 2>&1 || {
+VITA_HOST="$HOST" "$HERE/deploy.sh" --vpk "$VPK" --no-launch \
+  --loader-port "$LDR" >/dev/null 2>&1 || {
   echo "!! install failed -- is the loader open?" >&2; exit 1; }
 
 echo "==> launching"

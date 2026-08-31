@@ -166,6 +166,29 @@ static int64_t wait_epoll(int ms) {
   return now_us() - t0;
 }
 
+// The primitive dart:io's event handler actually waits on when no socket is
+// open, which section A's sceKernelDelayThread is not.
+//
+// It is here because of a number the conformance app produced and could not
+// explain: Future.delayed asked for 1, 2, 4, 8 and 16 ms and got 2.46, 3.33,
+// 5.69, 9.35 and 17.39 -- a flat ~1.4 ms surcharge on every non-zero duration,
+// while a zero-duration timer costs 217 us. Flat rules out a granularity floor
+// (1 and 2 ms would land on the same number) and rules out bad deadline
+// arithmetic (the excess would grow). What is left is the wait overshooting by
+// a constant, and this is the only wait on that path.
+//
+// A bit nobody ever sets, so the wait can only end by timing out.
+static SceUID g_timeout_flag = -1;
+
+static int64_t wait_eventflag(int ms) {
+  SceUInt timeout = (SceUInt)(ms * 1000);
+  unsigned int out_bits = 0;
+  const int64_t t0 = now_us();
+  sceKernelWaitEventFlag(g_timeout_flag, 0x2, SCE_EVENT_WAITOR, &out_bits,
+                         &timeout);
+  return now_us() - t0;
+}
+
 static int64_t wait_create_destroy(int ms) {
   (void)ms;
   const int64_t t0 = now_us();
@@ -719,6 +742,12 @@ int main(void) {
     g_pair[0] = g_pair[1] = -1;
   }
 
+  g_timeout_flag = sceKernelCreateEventFlag("t1-timeout", 0, 0, NULL);
+  if (g_timeout_flag < 0) {
+    lg("sceKernelCreateEventFlag failed: 0x%08X -- M skipped\n",
+       (unsigned)g_timeout_flag);
+  }
+
   if (make_scenet_pair() < 0) {
     lg("sceNet loopback pair failed -- H cannot run\n");
   }
@@ -746,6 +775,11 @@ int main(void) {
     row("D epollwait", wait_epoll);
   }
   row("F create+del", wait_create_destroy);
+  if (g_timeout_flag >= 0) {
+    row("M waitflag", wait_eventflag);
+  } else {
+    lg("event flag creation failed -- M skipped\n");
+  }
 
   lg("\nlatency from the write to the wait returning, 5 samples, ms\n\n");
   if (g_pair[0] >= 0) {
