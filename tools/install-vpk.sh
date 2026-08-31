@@ -133,13 +133,11 @@ else
   "$HERE/make-head-bin.py" "$TITLE_ID" -o "$WORK/sce_sys/package/head.bin" \
     | sed 's/^/    /'
 
-  # Not cleared first, and that is a known gap rather than an oversight: the
-  # promoter reads the whole staging directory, so a file left by a previous
-  # install of something else is a file in this package. The loader serves no
-  # recursive delete and its minimal-mode allowlist does not pass `rm`, so
-  # clearing it needs a loader change. Until then the listing below is the
-  # check -- if it shows anything the vpk did not put there, clear ux0:data/pkg
-  # from an app before promoting.
+  # Cleared first. The promoter reads the whole staging directory, so a file
+  # left by a previous install of something else becomes part of this package.
+  # `rmtree` is confined to ux0:data on the loader side; see cmd_rmtree.
+  say "$PORT" "rmtree $STAGE" 120 | sed 's/^/    /'
+
   echo "==> staging into $STAGE"
   ( cd "$WORK" && find . -type f | sed 's|^\./||' | sort ) \
     | while read -r rel; do put "$WORK/$rel" "$STAGE/$rel"; done

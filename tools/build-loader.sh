@@ -92,4 +92,5 @@ exec "$HERE/build-vita-app.sh" "$ROOT/loader/app" \
   --extra-source "$ROOT/loader/src/loader_dev.c" \
   --no-supervisor \
   --define "LOADER_PORT=$PORT" \
+  --define "LOADER_SELF_TITLEID=\"$TITLE_ID\"" \
   --define "LOADER_TARGET_TITLEID=\"FVTA00002\""

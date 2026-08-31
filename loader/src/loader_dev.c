@@ -38,6 +38,12 @@
 #ifndef LOADER_PORT
 #define LOADER_PORT 1341
 #endif
+// Which slot this loader occupies. Used only to refuse to delete itself; the
+// loader cannot write its own directory anyway, but the promoter can, and
+// `delete` goes through the promoter.
+#ifndef LOADER_SELF_TITLEID
+#define LOADER_SELF_TITLEID "FVTA00003"
+#endif
 #ifndef LOADER_TARGET_TITLEID
 #define LOADER_TARGET_TITLEID "FVTA00002"
 #endif
@@ -573,6 +579,87 @@ static void cmd_exist(int sock, const char* titleid) {
   dev_server_send(sock, m);
 }
 
+// Recursively empty a directory, and only ever under ux0:data.
+//
+// install-vpk.sh stages an extracted package into ux0:data/pkg and the promoter
+// reads whatever is in there, so a file left by a previous install of something
+// else becomes part of the next package. Clearing it needed a command and there
+// was not one.
+//
+// The prefix check is not decoration. This is a recursive delete on an
+// unauthenticated socket that anything on the network can open, and the loader
+// runs as an UNSAFE self, so `rmtree ux0:app` would be honoured. Confined to
+// ux0:data, the worst it can do is cost a redeploy.
+#define RMTREE_ROOT "ux0:data/"
+
+static int rmtree(const char* path, int depth, int* removed) {
+  // Depth is bounded rather than trusted. A directory loop is not supposed to
+  // be possible on this filesystem, and an unbounded recursion here would take
+  // the stack out rather than return an error.
+  if (depth > 8) return -1;
+  const SceUID d = sceIoDopen(path);
+  if (d < 0) return d;
+  SceIoDirent e;
+  memset(&e, 0, sizeof e);
+  while (sceIoDread(d, &e) > 0) {
+    if (strcmp(e.d_name, ".") == 0 || strcmp(e.d_name, "..") == 0) {
+      memset(&e, 0, sizeof e);
+      continue;
+    }
+    char child[256];
+    snprintf(child, sizeof child, "%s/%s", path, e.d_name);
+    if (SCE_S_ISDIR(e.d_stat.st_mode)) {
+      rmtree(child, depth + 1, removed);
+      sceIoRmdir(child);
+    } else if (sceIoRemove(child) >= 0) {
+      (*removed)++;
+    }
+    memset(&e, 0, sizeof e);
+  }
+  sceIoDclose(d);
+  return 0;
+}
+
+static void cmd_rmtree(int sock, const char* path) {
+  char m[256];
+  if (strncmp(path, RMTREE_ROOT, sizeof RMTREE_ROOT - 1) != 0) {
+    snprintf(m, sizeof m, "ERR rmtree is confined to %s\n", RMTREE_ROOT);
+    dev_server_send(sock, m);
+    return;
+  }
+  // Rejected rather than treated as the root: `rmtree ux0:data/` with a
+  // trailing slash and nothing after it passes the prefix test above.
+  if (path[sizeof RMTREE_ROOT - 1] == '\0') {
+    dev_server_send(sock, "ERR rmtree needs a directory under " RMTREE_ROOT "\n");
+    return;
+  }
+  int removed = 0;
+  const int r = rmtree(path, 0, &removed);
+  sceIoRmdir(path);
+  // A path that was not there is the ordinary case for a caller clearing a
+  // staging directory before using it, so it is not an error.
+  snprintf(m, sizeof m, "OK rmtree %s (%d files, dopen 0x%08X)\n", path,
+           removed, (unsigned)r);
+  note("rmtree %s: %d files", path, removed);
+  dev_server_send(sock, m);
+}
+
+// Unregister a title. The other half of promote, and the only way to take a
+// title id back once it has been handed out.
+static void cmd_delete(int sock, const char* titleid) {
+  char m[224];
+  if (strcmp(titleid, LOADER_SELF_TITLEID) == 0) {
+    dev_server_send(sock, "ERR refusing to delete the loader\n");
+    return;
+  }
+  if (!promoter_up(sock)) return;
+  const int r = scePromoterUtilityDeletePkg(titleid);
+  snprintf(m, sizeof m, "%s delete %s 0x%08X\n", r >= 0 ? "OK" : "ERR",
+           titleid, (unsigned)r);
+  note("delete %s 0x%08X", titleid, (unsigned)r);
+  dev_server_send(sock, m);
+}
+
 // Kept when almost everything else was dropped, because it has repeatedly
 // answered "is this path writable" without a rebuild -- twice in the session
 // that produced ADR-0016 alone.
@@ -674,6 +761,14 @@ static int handle(int sock, const char* line, int* stop) {
   }
   if (strncmp(line, "exist ", 6) == 0) {
     cmd_exist(sock, line + 6);
+    return 1;
+  }
+  if (strncmp(line, "rmtree ", 7) == 0) {
+    cmd_rmtree(sock, line + 7);
+    return 1;
+  }
+  if (strncmp(line, "delete ", 7) == 0) {
+    cmd_delete(sock, line + 7);
     return 1;
   }
   if (strncmp(line, "paf ", 4) == 0) {
