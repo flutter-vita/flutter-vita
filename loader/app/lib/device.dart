@@ -17,6 +17,7 @@ import 'dart:typed_data';
 const dataDir = 'ux0:data/flutter-vita';
 const statePath = '$dataDir/loader-state.txt';
 const requestPath = '$dataDir/loader-request.txt';
+const panelRequestPath = '$dataDir/panel-request.txt';
 const logDir = '$dataDir/logs';
 const appLogPath = '$dataDir/app.log';
 const loaderLogPath = '$dataDir/m3.log';
@@ -195,15 +196,19 @@ class CrashFile {
   /// wrong but it is monotonic enough to sort by.
   final int stamp;
 
-  /// `psp2core-<time>-<rest>.psp2dmp`; the rest names the process.
+  /// When it happened, by this console's clock.
+  ///
+  /// The rest of the filename is `<pid>-eboot.bin`, which names every dump on
+  /// the card identically and was what this row showed first. The clock can be
+  /// wrong -- it is whatever the console was last set to -- but a wrong date
+  /// still distinguishes one crash from another, and a repeated hex address
+  /// does not.
   String get subject {
-    final parts = name.split('-');
-    if (parts.length < 3) return name;
-    var rest = parts.sublist(2).join('-');
-    if (rest.endsWith('.psp2dmp')) {
-      rest = rest.substring(0, rest.length - 8);
-    }
-    return rest;
+    if (stamp <= 0) return name;
+    final t = DateTime.fromMillisecondsSinceEpoch(stamp * 1000);
+    String two(int v) => v.toString().padLeft(2, '0');
+    return '${t.year}-${two(t.month)}-${two(t.day)}  '
+        '${two(t.hour)}:${two(t.minute)}:${two(t.second)}';
   }
 
   Uint8List readBytes() => File(path).readAsBytesSync();
@@ -235,6 +240,17 @@ bool deleteCrash(CrashFile crash) {
   } on FileSystemException {
     return false;
   }
+}
+
+/// Every psp2dmp in ux0:data. Nothing on this console removes them, so they
+/// accumulate: there were 31 the first time this tab was opened, a few hundred
+/// megabytes of dumps of crashes that were debugged months ago.
+int clearCrashes() {
+  var removed = 0;
+  for (final c in listCrashes()) {
+    if (deleteCrash(c)) removed++;
+  }
+  return removed;
 }
 
 /// A title this loader installed, and how much of ux0:data it is holding.
@@ -299,4 +315,47 @@ String humanBytes(int n) {
   if (n < 1024) return '$n B';
   if (n < 1024 * 1024) return '${(n / 1024).toStringAsFixed(0)} KB';
   return '${(n / (1024 * 1024)).toStringAsFixed(1)} MB';
+}
+
+
+/// A command for the panel itself, read and consumed on the poll tick.
+///
+/// The panel is a screen you press, and the one thing that cannot press it is
+/// the machine building it. `tap` exists in the dev server but not in minimal
+/// mode, and minimal mode's allowlist is compiled into the blessed engine
+/// (ADR-0016 decision 2), so reaching the CRASHES tab from the host would mean
+/// re-blessing an engine to debug a layout.
+///
+/// This is the same trick as loader-request.txt pointed at the other half:
+/// `put` one line onto the card, the panel picks it up within 500 ms and
+/// removes it. Shipped rather than kept behind a debug flag, because the
+/// person who needs to see this screen is usually not holding the console.
+///
+///   printf 'put 12 ux0:data/flutter-vita/panel-request.txt\ntab crashes\n' | nc ...
+///
+/// Verbs: `tab <deploy|logs|crashes|apps>`, `select <index>`, `back`.
+class PanelCommand {
+  const PanelCommand(this.seq, this.verb, this.arg);
+
+  final int seq;
+  final String verb;
+  final String arg;
+
+  int get index => int.tryParse(arg) ?? -1;
+}
+
+PanelCommand? readPanelRequest(int seq) {
+  try {
+    final file = File(panelRequestPath);
+    if (!file.existsSync()) return null;
+    final text = file.readAsStringSync().trim();
+    file.deleteSync();
+    if (text.isEmpty) return null;
+    final space = text.indexOf(' ');
+    if (space < 0) return PanelCommand(seq, text, '');
+    return PanelCommand(
+        seq, text.substring(0, space), text.substring(space + 1).trim());
+  } on FileSystemException {
+    return null;
+  }
 }

@@ -42,6 +42,8 @@ class LoaderApp extends StatefulWidget {
 class _LoaderAppState extends State<LoaderApp> {
   LoaderState _state = const LoaderState();
   Tab _tab = Tab.deploy;
+  PanelCommand? _cmd;
+  int _cmdSeq = 0;
   Timer? _timer;
 
   @override
@@ -62,6 +64,22 @@ class _LoaderAppState extends State<LoaderApp> {
   }
 
   void _poll() {
+    final cmd = readPanelRequest(_cmdSeq + 1);
+    if (cmd != null) {
+      _cmdSeq = cmd.seq;
+      setState(() {
+        if (cmd.verb == 'tab') {
+          _tab = Tab.values.firstWhere((t) => t.name == cmd.arg,
+              orElse: () => _tab);
+          // A tab switch is handled here and not forwarded: the tab widget
+          // being asked for may not be built yet.
+          _cmd = null;
+        } else {
+          _cmd = cmd;
+        }
+      });
+    }
+
     final next = LoaderState.read();
     if (next == null) return;
     // The sequence number exists so an unchanged file costs one comparison
@@ -96,9 +114,9 @@ class _LoaderAppState extends State<LoaderApp> {
 
   Widget _body(LoaderState s) => switch (_tab) {
         Tab.deploy => _DeployTab(state: s),
-        Tab.logs => const _LogsTab(),
-        Tab.crashes => const _CrashesTab(),
-        Tab.apps => _AppsTab(self: s.self),
+        Tab.logs => _LogsTab(command: _cmd),
+        Tab.crashes => _CrashesTab(command: _cmd),
+        Tab.apps => _AppsTab(self: s.self, command: _cmd),
       };
 }
 
@@ -361,7 +379,9 @@ class _Console extends StatelessWidget {
 // ------------------------------------------------------------------ logs
 
 class _LogsTab extends StatefulWidget {
-  const _LogsTab();
+  const _LogsTab({required this.command});
+
+  final PanelCommand? command;
 
   @override
   State<_LogsTab> createState() => _LogsTabState();
@@ -391,6 +411,18 @@ class _LogsTabState extends State<_LogsTab> {
         _open = f;
         _text = f.read();
       });
+
+  @override
+  void didUpdateWidget(_LogsTab old) {
+    super.didUpdateWidget(old);
+    final c = widget.command;
+    if (c == null || c.seq == old.command?.seq) return;
+    if (c.verb == 'back') {
+      setState(() => _open = null);
+    } else if (c.verb == 'select' && c.index >= 0 && c.index < _files.length) {
+      _openFile(_files[c.index]);
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -460,7 +492,9 @@ class _LogsTabState extends State<_LogsTab> {
 // --------------------------------------------------------------- crashes
 
 class _CrashesTab extends StatefulWidget {
-  const _CrashesTab();
+  const _CrashesTab({required this.command});
+
+  final PanelCommand? command;
 
   @override
   State<_CrashesTab> createState() => _CrashesTabState();
@@ -471,6 +505,8 @@ class _CrashesTabState extends State<_CrashesTab> {
   CrashFile? _open;
   CoreDump? _dump;
   String _error = '';
+  bool _confirmClear = false;
+  String? _note;
 
   @override
   void initState() {
@@ -482,6 +518,7 @@ class _CrashesTabState extends State<_CrashesTab> {
         _files = listCrashes();
         _open = null;
         _dump = null;
+        _confirmClear = false;
       });
 
   void _openFile(CrashFile f) {
@@ -504,6 +541,18 @@ class _CrashesTabState extends State<_CrashesTab> {
       _dump = dump;
       _error = error;
     });
+  }
+
+  @override
+  void didUpdateWidget(_CrashesTab old) {
+    super.didUpdateWidget(old);
+    final c = widget.command;
+    if (c == null || c.seq == old.command?.seq) return;
+    if (c.verb == 'back') {
+      setState(() => _open = null);
+    } else if (c.verb == 'select' && c.index >= 0 && c.index < _files.length) {
+      _openFile(_files[c.index]);
+    }
   }
 
   @override
@@ -531,9 +580,41 @@ class _CrashesTabState extends State<_CrashesTab> {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         Row(children: [
-          Text('${_files.length} dumps in ux0:data', style: label),
-          const Spacer(),
+          Expanded(
+            child: Text(_note ?? '${_files.length} dumps in ux0:data',
+                maxLines: 1, overflow: TextOverflow.ellipsis, style: label),
+          ),
           Btn(text: 'REFRESH', onTap: _refresh, colour: muted),
+          const SizedBox(width: 8),
+          // Two taps, like a title delete. Nothing else on this console
+          // removes dumps, so this button is the only way they ever go -- and
+          // a dump is evidence until someone has read it.
+          if (_confirmClear) ...[
+            Btn(
+              text: 'DELETE ALL ${_files.length}',
+              colour: danger,
+              onTap: () {
+                final n = clearCrashes();
+                setState(() {
+                  _files = listCrashes();
+                  _confirmClear = false;
+                  _note = 'removed $n dumps';
+                });
+              },
+            ),
+            const SizedBox(width: 8),
+            Btn(
+              text: 'CANCEL',
+              colour: muted,
+              onTap: () => setState(() => _confirmClear = false),
+            ),
+          ] else
+            Btn(
+              text: 'CLEAR ALL',
+              colour: danger,
+              enabled: _files.isNotEmpty,
+              onTap: () => setState(() => _confirmClear = true),
+            ),
         ]),
         const SizedBox(height: 8),
         Expanded(
@@ -683,9 +764,10 @@ class _ThreadRow extends StatelessWidget {
 // ------------------------------------------------------------------ apps
 
 class _AppsTab extends StatefulWidget {
-  const _AppsTab({required this.self});
+  const _AppsTab({required this.self, required this.command});
 
   final String self;
+  final PanelCommand? command;
 
   @override
   State<_AppsTab> createState() => _AppsTabState();
@@ -708,6 +790,18 @@ class _AppsTabState extends State<_AppsTab> {
       });
 
   @override
+  void didUpdateWidget(_AppsTab old) {
+    super.didUpdateWidget(old);
+    final c = widget.command;
+    if (c == null || c.seq == old.command?.seq) return;
+    if (c.verb == 'back') {
+      setState(() => _confirming = null);
+    } else if (c.verb == 'select' && c.index >= 0 && c.index < _apps.length) {
+      setState(() => _confirming = _apps[c.index].titleId);
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -726,7 +820,7 @@ class _AppsTabState extends State<_AppsTab> {
                 ? const Empty('nothing installed from here yet')
                 : ListView.builder(
                     itemCount: _apps.length,
-                    itemExtent: 46,
+                    itemExtent: 54,
                     itemBuilder: (_, i) => _AppRow(
                       app: _apps[i],
                       confirming: _confirming == _apps[i].titleId,

@@ -161,7 +161,10 @@ else
   # whether it worked or not. They are the whole diagnostic: 0x8010111C is a
   # missing or misplaced header, 0x80871004 a bad digest, 0x80870005 a header
   # signed for a different title.
-  RESULT="$(say "$PORT" "promoterif $STAGE" 600 || true)"
+  # The title id is passed even though the promoter reads it out of head.bin:
+  # it is what the loader writes into its installed.txt, and the APPS tab lists
+  # that. Without it the registry only ever held the loader's own id.
+  RESULT="$(say "$PORT" "promoterif $STAGE $TITLE_ID" 600 || true)"
   printf '    %s\n' "$RESULT"
   case "$RESULT" in
     OK*) ;;

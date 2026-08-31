@@ -51,6 +51,8 @@
 #define DATA_DIR "ux0:data/flutter-vita"
 #define STAGED DATA_DIR "/staged-eboot.bin"
 #define STATE_PATH DATA_DIR "/loader-state.txt"
+// The panel reads this one and removes it; see readPanelRequest in device.dart.
+#define PANEL_REQUEST_PATH DATA_DIR "/panel-request.txt"
 #define STATE_TMP DATA_DIR "/loader-state.tmp"
 
 // The engine's debug HUD -- frame rate, damage, blit cost, free memory -- is
@@ -191,6 +193,10 @@ static void mkdirs(void) {
 // server's own `put`: the built-in cannot report progress, and "Receiving,
 // 4.2 of 11.8 MB" is most of what the status line is for. A 12 MB eboot over
 // this console's Wi-Fi takes long enough to look like a hang.
+//
+// A NULL `what` receives silently: no log line, no status, no progress. That
+// is for the panel's command file, which is nine bytes and arrives whenever
+// someone is driving the screen from the host.
 static int receive_to(int sock, const char* dest, int size, const char* what) {
   mkdirs();
   char tmp[288];
@@ -199,8 +205,10 @@ static int receive_to(int sock, const char* dest, int size, const char* what) {
   const SceUID fd =
       sceIoOpen(tmp, SCE_O_WRONLY | SCE_O_CREAT | SCE_O_TRUNC, 0777);
   if (fd < 0) {
-    note("%s: cannot open (0x%08X)", what, (unsigned)fd);
-    set_status("Waiting", NULL);
+    if (what != NULL) {
+      note("%s: cannot open (0x%08X)", what, (unsigned)fd);
+      set_status("Waiting", NULL);
+    }
     dev_server_send(sock, "ERR open\n");
     return -1;
   }
@@ -213,7 +221,7 @@ static int receive_to(int sock, const char* dest, int size, const char* what) {
     if (got <= 0) {
       sceIoClose(fd);
       sceIoRemove(tmp);
-      note("%s: short by %d of %d", what, remaining, size);
+      if (what != NULL) note("%s: short by %d of %d", what, remaining, size);
       set_status("Waiting", NULL);
       dev_server_send(sock, "ERR short\n");
       return -1;
@@ -221,7 +229,7 @@ static int receive_to(int sock, const char* dest, int size, const char* what) {
     if (sceIoWrite(fd, buf, got) != got) {
       sceIoClose(fd);
       sceIoRemove(tmp);
-      note("%s: write failed", what);
+      if (what != NULL) note("%s: write failed", what);
       set_status("Waiting", NULL);
       dev_server_send(sock, "ERR write\n");
       return -1;
@@ -231,7 +239,7 @@ static int receive_to(int sock, const char* dest, int size, const char* what) {
     // Every half megabyte, not every chunk: each report rewrites the state
     // file, and 12 MB in 32 KB chunks is 384 rewrites of a file on a memory
     // card in the middle of a transfer.
-    if (since_report >= 512 * 1024) {
+    if (what != NULL && since_report >= 512 * 1024) {
       since_report = 0;
       g_recv_done = size - remaining;
       g_recv_total = size;
@@ -242,15 +250,15 @@ static int receive_to(int sock, const char* dest, int size, const char* what) {
   sceIoRemove(dest);  // sceIoRename will not overwrite
   const int rr = sceIoRename(tmp, dest);
   if (rr < 0) {
-    note("%s: rename failed 0x%08X", what, (unsigned)rr);
+    if (what != NULL) note("%s: rename failed 0x%08X", what, (unsigned)rr);
     set_status("Waiting", NULL);
     dev_server_send(sock, "ERR rename\n");
     return -1;
   }
-  note_size(what, size);
+  if (what != NULL) note_size(what, size);
   g_recv_done = 0;
   g_recv_total = 0;
-  set_status("Waiting", NULL);
+  if (what != NULL) set_status("Waiting", NULL);
   dev_server_send(sock, "OK\n");
   return 0;
 }
@@ -953,6 +961,13 @@ static int handle(int sock, const char* line, int* stop) {
       *p = '\0';
       sceIoMkdir(dest, 0777);
       *p = '/';
+    }
+    // The panel's own command file is written by tools/panel.sh several times
+    // a minute and is nine bytes. Logging it turns the DEPLOY console into a
+    // list of `put 9 B`, which is the one thing that screen is for.
+    if (strcmp(dest, PANEL_REQUEST_PATH) == 0) {
+      receive_to(sock, dest, size, NULL);
+      return 1;
     }
     set_status("Receiving", "%s", space + 1);
     receive_to(sock, dest, size, "put");
