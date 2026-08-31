@@ -22,6 +22,32 @@ MARGIN = 0.10
 # smaller than the measurement's own resolution is not a change.
 VSYNC_MS = 1000.0 / 60.0
 
+# Worst-frame alone is not enough to grade a scene on, and the route scenes are
+# why. Every one of them runs at a clean 60 fps -- median 16.67 ms, p95 16.67 ms
+# -- with a single outlier frame of exactly 133.33 ms, eight vsyncs, somewhere in
+# the window. Whether that outlier lands inside the sample or outside it is what
+# worst-frame reports, so the same scene grades 33.3 one run and 133.3 the next
+# with nothing changed.
+#
+# On 2026-08-31 that produced three wrong answers in one report: route_spans and
+# route_boxes were flagged as +300% regressions, route_wrap silently "improved"
+# 8x by the same mechanism, and blur_backdrop -- whose raster mean went 8.0 ms to
+# 41.5 ms and whose stall doubled to 2.1 s -- passed, because its worst frame
+# happened to come in at 100 ms against a baseline of 133 ms.
+#
+# So two more metrics are graded, chosen because they are means or totals over
+# the whole window rather than a single frame, and cannot flip on where one
+# outlier fell:
+#
+#   raster_ms  the rasteriser's mean. What a renderer change moves.
+#   stall_ms   total time below 30 fps. What a person actually feels.
+#
+# Wider margins than worst-frame's and an absolute floor on each, because a mean
+# that moves from 0.5 ms to 0.7 ms is not news.
+MEAN_MARGIN = 0.25
+RASTER_FLOOR_MS = 1.0
+STALL_FLOOR_MS = 100.0
+
 # A scene has been sampled adequately when it ran long enough, not when it
 # produced many frames. The first run on hardware graded route_hero "pass" off
 # three frames -- worse than reporting nothing, because a green row is read as
@@ -229,20 +255,45 @@ def main():
         for name, s in scenes_of(results[m]).items():
             if name not in b:
                 continue
+            # A scene the run could not sample properly is not a scene that got
+            # slower, and grading one produces the loudest numbers in the report
+            # off the fewest frames. sw blur_backdrop managed four frames in
+            # 1933 ms on 2026-08-31 and its raster mean, over those four, read as
+            # +492%. The table already refuses to print a number for these; the
+            # gate has to refuse to grade them for the same reason.
+            #
+            # Both sides, because a baseline written from a thin window is just
+            # as untrustworthy as a thin result measured against it.
+            if not sound(s) or not sound(b[name]):
+                continue
             was, now = b[name]["worst_ms"], s["worst_ms"]
             # The half-millisecond is not slack, it is the rounding: worst-frame
             # is stored to two decimals, so 83.33 + 16.67 lands just under a
             # reported 100.0 and a single-vsync step reads as a regression.
             allowed = max(was * (1 + MARGIN), was + VSYNC_MS + 0.5)
             if was > 0 and now > allowed:
-                regressions.append((m, name, was, now))
+                regressions.append((m, name, "worst", was, now))
+            # See MEAN_MARGIN. These two carry the weight worst-frame cannot.
+            for key, label, floor in (("raster_ms", "raster", RASTER_FLOOR_MS),
+                                      ("stall_ms", "stall", STALL_FLOOR_MS)):
+                was_m, now_m = b[name].get(key), s.get(key)
+                if was_m is None or now_m is None:
+                    continue
+                if now_m > max(was_m * (1 + MEAN_MARGIN), was_m + floor):
+                    regressions.append((m, name, label, was_m, now_m))
 
     if regressions:
-        print(f"\n{RED}regressions against the baseline "
-              f"(worst-frame, >{int(MARGIN * 100)}% and >1 vsync){OFF}")
-        for m, name, was, now in regressions:
-            print(f"  {m:<3} {name:<18} {fmt(was)}ms -> {fmt(now)}ms "
-                  f"({(now / was - 1) * 100:+.0f}%)")
+        print(f"\n{RED}regressions against the baseline{OFF}")
+        print(f"{DIM}worst-frame >{int(MARGIN * 100)}% and >1 vsync; "
+              f"raster and stall >{int(MEAN_MARGIN * 100)}% and "
+              f">{RASTER_FLOOR_MS:g}ms / >{STALL_FLOOR_MS:g}ms{OFF}")
+        for m, name, metric, was, now in regressions:
+            pct = f"{(now / was - 1) * 100:+.0f}%" if was > 0 else "new"
+            print(f"  {m:<3} {name:<18} {metric:<6} {fmt(was)}ms -> "
+                  f"{fmt(now)}ms ({pct})")
+        print(f"{DIM}a worst-frame move on a route_* scene is usually the "
+              f"outlier landing inside the window rather than outside it; "
+              f"raster and stall are the ones to believe{OFF}")
 
     if ungated:
         print(f"\n{DIM}not graded — no baseline for these scenes; "

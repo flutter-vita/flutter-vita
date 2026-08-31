@@ -1,0 +1,1853 @@
+{
+  "schema": 1,
+  "software_on_requested": false,
+  "dart_version": "3.12.2",
+  "scenes": [
+    {
+      "name": "fill_lerp",
+      "stresses_label": "fill",
+      "frames": 207,
+      "span_ms": 3450.0,
+      "worst_ms": 16.67,
+      "p95_ms": 16.67,
+      "median_ms": 16.67,
+      "stall_ms": 0.0,
+      "stall_frames": 0,
+      "build_ms": 0.54,
+      "build_max_ms": 5.43,
+      "raster_ms": 0.51,
+      "worst_frames": [
+        {
+          "i": 105,
+          "period_ms": 16.67,
+          "gap_ms": 0.15,
+          "build_ms": 0.56,
+          "wait_ms": 0.14,
+          "raster_ms": 0.64
+        },
+        {
+          "i": 207,
+          "period_ms": 16.67,
+          "gap_ms": 0.3,
+          "build_ms": 0.57,
+          "wait_ms": 0.16,
+          "raster_ms": 0.47
+        },
+        {
+          "i": 3,
+          "period_ms": 16.67,
+          "gap_ms": 0.18,
+          "build_ms": 0.29,
+          "wait_ms": 0.14,
+          "raster_ms": 13.72
+        }
+      ],
+      "heaviest_builds": [
+        {
+          "i": 24,
+          "period_ms": 16.67,
+          "gap_ms": 0.15,
+          "build_ms": 5.43,
+          "wait_ms": 0.12,
+          "raster_ms": 9.06
+        },
+        {
+          "i": 29,
+          "period_ms": 16.67,
+          "gap_ms": 0.23,
+          "build_ms": 0.67,
+          "wait_ms": 0.13,
+          "raster_ms": 0.52
+        },
+        {
+          "i": 77,
+          "period_ms": 16.67,
+          "gap_ms": 0.3,
+          "build_ms": 0.66,
+          "wait_ms": 0.11,
+          "raster_ms": 0.58
+        }
+      ],
+      "passed": true
+    },
+    {
+      "name": "opacity_fade",
+      "stresses_label": "opacity",
+      "frames": 110,
+      "span_ms": 2216.67,
+      "worst_ms": 66.67,
+      "p95_ms": 33.33,
+      "median_ms": 16.67,
+      "stall_ms": 0.0,
+      "stall_frames": 0,
+      "build_ms": 8.62,
+      "build_max_ms": 186.33,
+      "raster_ms": 1.57,
+      "worst_frames": [
+        {
+          "i": 7,
+          "period_ms": 66.67,
+          "gap_ms": 0.19,
+          "build_ms": 0.49,
+          "wait_ms": 1.98,
+          "raster_ms": 0.58
+        },
+        {
+          "i": 31,
+          "period_ms": 66.67,
+          "gap_ms": 0.17,
+          "build_ms": 9.06,
+          "wait_ms": 0.13,
+          "raster_ms": 6.2
+        },
+        {
+          "i": 12,
+          "period_ms": 50.0,
+          "gap_ms": 0.16,
+          "build_ms": 9.47,
+          "wait_ms": 0.13,
+          "raster_ms": 1.74
+        }
+      ],
+      "heaviest_builds": [
+        {
+          "i": 4,
+          "period_ms": 16.67,
+          "gap_ms": 0.32,
+          "build_ms": 186.33,
+          "wait_ms": 0.18,
+          "raster_ms": 8.69
+        },
+        {
+          "i": 30,
+          "period_ms": 16.67,
+          "gap_ms": 0.15,
+          "build_ms": 51.15,
+          "wait_ms": 0.17,
+          "raster_ms": 6.51
+        },
+        {
+          "i": 11,
+          "period_ms": 16.67,
+          "gap_ms": 0.16,
+          "build_ms": 39.6,
+          "wait_ms": 0.17,
+          "raster_ms": 2.22
+        }
+      ],
+      "passed": true
+    },
+    {
+      "name": "save_layer_tint",
+      "stresses_label": "saveLayer",
+      "frames": 114,
+      "span_ms": 2416.67,
+      "worst_ms": 66.67,
+      "p95_ms": 33.33,
+      "median_ms": 16.67,
+      "stall_ms": 116.67,
+      "stall_frames": 2,
+      "build_ms": 8.89,
+      "build_max_ms": 62.38,
+      "raster_ms": 1.73,
+      "worst_frames": [
+        {
+          "i": 3,
+          "period_ms": 66.67,
+          "gap_ms": 0.19,
+          "build_ms": 0.99,
+          "wait_ms": 1.89,
+          "raster_ms": 6.64
+        },
+        {
+          "i": 9,
+          "period_ms": 66.67,
+          "gap_ms": 0.2,
+          "build_ms": 9.43,
+          "wait_ms": 0.12,
+          "raster_ms": 1.86
+        },
+        {
+          "i": 104,
+          "period_ms": 66.67,
+          "gap_ms": 0.2,
+          "build_ms": 9.78,
+          "wait_ms": 0.14,
+          "raster_ms": 2.69
+        }
+      ],
+      "heaviest_builds": [
+        {
+          "i": 8,
+          "period_ms": 16.67,
+          "gap_ms": 0.15,
+          "build_ms": 62.38,
+          "wait_ms": 0.16,
+          "raster_ms": 6.54
+        },
+        {
+          "i": 103,
+          "period_ms": 33.33,
+          "gap_ms": 0.29,
+          "build_ms": 51.05,
+          "wait_ms": 0.19,
+          "raster_ms": 7.0
+        },
+        {
+          "i": 88,
+          "period_ms": 16.67,
+          "gap_ms": 0.16,
+          "build_ms": 50.07,
+          "wait_ms": 0.12,
+          "raster_ms": 2.12
+        }
+      ],
+      "passed": false
+    },
+    {
+      "name": "clip_rrect",
+      "stresses_label": "clip",
+      "frames": 144,
+      "span_ms": 2983.33,
+      "worst_ms": 83.33,
+      "p95_ms": 33.33,
+      "median_ms": 16.67,
+      "stall_ms": 166.67,
+      "stall_frames": 2,
+      "build_ms": 9.0,
+      "build_max_ms": 53.86,
+      "raster_ms": 7.21,
+      "worst_frames": [
+        {
+          "i": 94,
+          "period_ms": 83.33,
+          "gap_ms": 7.51,
+          "build_ms": 10.58,
+          "wait_ms": 2.47,
+          "raster_ms": 7.86
+        },
+        {
+          "i": 95,
+          "period_ms": 83.33,
+          "gap_ms": 0.32,
+          "build_ms": 9.99,
+          "wait_ms": 0.15,
+          "raster_ms": 12.33
+        },
+        {
+          "i": 1,
+          "period_ms": 66.67,
+          "gap_ms": 0.2,
+          "build_ms": 0.65,
+          "wait_ms": 5.98,
+          "raster_ms": 7.16
+        }
+      ],
+      "heaviest_builds": [
+        {
+          "i": 91,
+          "period_ms": 16.67,
+          "gap_ms": 0.16,
+          "build_ms": 53.86,
+          "wait_ms": 0.16,
+          "raster_ms": 11.65
+        },
+        {
+          "i": 4,
+          "period_ms": 16.67,
+          "gap_ms": 0.21,
+          "build_ms": 19.97,
+          "wait_ms": 0.13,
+          "raster_ms": 7.82
+        },
+        {
+          "i": 104,
+          "period_ms": 16.67,
+          "gap_ms": 0.2,
+          "build_ms": 19.77,
+          "wait_ms": 0.15,
+          "raster_ms": 7.21
+        }
+      ],
+      "passed": false
+    },
+    {
+      "name": "transform_rotate",
+      "stresses_label": "transform",
+      "frames": 115,
+      "span_ms": 2516.67,
+      "worst_ms": 83.33,
+      "p95_ms": 33.33,
+      "median_ms": 16.67,
+      "stall_ms": 166.67,
+      "stall_frames": 3,
+      "build_ms": 9.14,
+      "build_max_ms": 68.9,
+      "raster_ms": 8.31,
+      "worst_frames": [
+        {
+          "i": 115,
+          "period_ms": 83.33,
+          "gap_ms": 0.18,
+          "build_ms": 9.26,
+          "wait_ms": 0.15,
+          "raster_ms": 7.85
+        },
+        {
+          "i": 20,
+          "period_ms": 83.33,
+          "gap_ms": 0.25,
+          "build_ms": 9.6,
+          "wait_ms": 1.33,
+          "raster_ms": 12.67
+        },
+        {
+          "i": 13,
+          "period_ms": 66.67,
+          "gap_ms": 0.22,
+          "build_ms": 0.56,
+          "wait_ms": 24.79,
+          "raster_ms": 7.22
+        }
+      ],
+      "heaviest_builds": [
+        {
+          "i": 114,
+          "period_ms": 16.67,
+          "gap_ms": 0.19,
+          "build_ms": 68.9,
+          "wait_ms": 0.15,
+          "raster_ms": 11.86
+        },
+        {
+          "i": 19,
+          "period_ms": 66.67,
+          "gap_ms": 15.93,
+          "build_ms": 56.26,
+          "wait_ms": 0.17,
+          "raster_ms": 21.92
+        },
+        {
+          "i": 10,
+          "period_ms": 16.67,
+          "gap_ms": 0.29,
+          "build_ms": 38.64,
+          "wait_ms": 0.16,
+          "raster_ms": 10.35
+        }
+      ],
+      "passed": false
+    },
+    {
+      "name": "transform_scale",
+      "stresses_label": "transform",
+      "frames": 117,
+      "span_ms": 2450.0,
+      "worst_ms": 100.0,
+      "p95_ms": 33.33,
+      "median_ms": 16.67,
+      "stall_ms": 0.0,
+      "stall_frames": 0,
+      "build_ms": 9.36,
+      "build_max_ms": 83.6,
+      "raster_ms": 8.23,
+      "worst_frames": [
+        {
+          "i": 101,
+          "period_ms": 100.0,
+          "gap_ms": 0.17,
+          "build_ms": 9.82,
+          "wait_ms": 0.12,
+          "raster_ms": 8.97
+        },
+        {
+          "i": 96,
+          "period_ms": 83.33,
+          "gap_ms": 0.42,
+          "build_ms": 10.88,
+          "wait_ms": 0.23,
+          "raster_ms": 9.12
+        },
+        {
+          "i": 2,
+          "period_ms": 66.67,
+          "gap_ms": 0.19,
+          "build_ms": 0.58,
+          "wait_ms": 1.73,
+          "raster_ms": 8.14
+        }
+      ],
+      "heaviest_builds": [
+        {
+          "i": 100,
+          "period_ms": 16.67,
+          "gap_ms": 0.42,
+          "build_ms": 83.6,
+          "wait_ms": 0.17,
+          "raster_ms": 12.57
+        },
+        {
+          "i": 95,
+          "period_ms": 16.67,
+          "gap_ms": 0.26,
+          "build_ms": 78.4,
+          "wait_ms": 0.17,
+          "raster_ms": 14.05
+        },
+        {
+          "i": 40,
+          "period_ms": 16.67,
+          "gap_ms": 0.2,
+          "build_ms": 21.33,
+          "wait_ms": 0.15,
+          "raster_ms": 8.16
+        }
+      ],
+      "passed": true
+    },
+    {
+      "name": "image_scale",
+      "stresses_label": "imageScale",
+      "frames": 177,
+      "span_ms": 2950.0,
+      "worst_ms": 16.67,
+      "p95_ms": 16.67,
+      "median_ms": 16.67,
+      "stall_ms": 0.0,
+      "stall_frames": 0,
+      "build_ms": 0.59,
+      "build_max_ms": 12.56,
+      "raster_ms": 0.71,
+      "worst_frames": [
+        {
+          "i": 148,
+          "period_ms": 16.67,
+          "gap_ms": 0.17,
+          "build_ms": 0.61,
+          "wait_ms": 0.15,
+          "raster_ms": 0.64
+        },
+        {
+          "i": 2,
+          "period_ms": 16.67,
+          "gap_ms": 0.2,
+          "build_ms": 0.39,
+          "wait_ms": 0.13,
+          "raster_ms": 0.75
+        },
+        {
+          "i": 4,
+          "period_ms": 16.67,
+          "gap_ms": 0.16,
+          "build_ms": 0.66,
+          "wait_ms": 0.1,
+          "raster_ms": 0.79
+        }
+      ],
+      "heaviest_builds": [
+        {
+          "i": 99,
+          "period_ms": 16.67,
+          "gap_ms": 0.16,
+          "build_ms": 12.56,
+          "wait_ms": 0.14,
+          "raster_ms": 0.97
+        },
+        {
+          "i": 149,
+          "period_ms": 16.67,
+          "gap_ms": 6.69,
+          "build_ms": 0.88,
+          "wait_ms": 0.16,
+          "raster_ms": 1.29
+        },
+        {
+          "i": 3,
+          "period_ms": 16.67,
+          "gap_ms": 0.19,
+          "build_ms": 0.74,
+          "wait_ms": 0.12,
+          "raster_ms": 1.08
+        }
+      ],
+      "passed": true
+    },
+    {
+      "name": "blur_backdrop",
+      "stresses_label": "saveLayer",
+      "frames": 57,
+      "span_ms": 2500.0,
+      "worst_ms": 100.0,
+      "p95_ms": 83.33,
+      "median_ms": 50.0,
+      "stall_ms": 2100.0,
+      "stall_frames": 42,
+      "build_ms": 10.86,
+      "build_max_ms": 77.21,
+      "raster_ms": 41.47,
+      "worst_frames": [
+        {
+          "i": 15,
+          "period_ms": 100.0,
+          "gap_ms": 0.24,
+          "build_ms": 77.21,
+          "wait_ms": 0.21,
+          "raster_ms": 101.4
+        },
+        {
+          "i": 17,
+          "period_ms": 100.0,
+          "gap_ms": 0.27,
+          "build_ms": 10.97,
+          "wait_ms": 57.0,
+          "raster_ms": 74.93
+        },
+        {
+          "i": 18,
+          "period_ms": 83.33,
+          "gap_ms": 0.27,
+          "build_ms": 11.07,
+          "wait_ms": 48.68,
+          "raster_ms": 38.04
+        }
+      ],
+      "heaviest_builds": [
+        {
+          "i": 15,
+          "period_ms": 100.0,
+          "gap_ms": 0.24,
+          "build_ms": 77.21,
+          "wait_ms": 0.21,
+          "raster_ms": 101.4
+        },
+        {
+          "i": 57,
+          "period_ms": 16.67,
+          "gap_ms": 0.2,
+          "build_ms": 51.57,
+          "wait_ms": 14.53,
+          "raster_ms": 73.72
+        },
+        {
+          "i": 10,
+          "period_ms": 16.67,
+          "gap_ms": 0.31,
+          "build_ms": 48.01,
+          "wait_ms": 0.15,
+          "raster_ms": 7.72
+        }
+      ],
+      "passed": false
+    },
+    {
+      "name": "text_slide",
+      "stresses_label": "text",
+      "frames": 156,
+      "span_ms": 3016.67,
+      "worst_ms": 83.33,
+      "p95_ms": 33.33,
+      "median_ms": 16.67,
+      "stall_ms": 0.0,
+      "stall_frames": 0,
+      "build_ms": 4.84,
+      "build_max_ms": 70.94,
+      "raster_ms": 2.18,
+      "worst_frames": [
+        {
+          "i": 1,
+          "period_ms": 83.33,
+          "gap_ms": 0.23,
+          "build_ms": 0.28,
+          "wait_ms": 5.17,
+          "raster_ms": 1.97
+        },
+        {
+          "i": 32,
+          "period_ms": 66.67,
+          "gap_ms": 0.54,
+          "build_ms": 5.74,
+          "wait_ms": 5.34,
+          "raster_ms": 5.34
+        },
+        {
+          "i": 34,
+          "period_ms": 66.67,
+          "gap_ms": 0.25,
+          "build_ms": 5.52,
+          "wait_ms": 0.16,
+          "raster_ms": 2.64
+        }
+      ],
+      "heaviest_builds": [
+        {
+          "i": 31,
+          "period_ms": 16.67,
+          "gap_ms": 0.17,
+          "build_ms": 63.58,
+          "wait_ms": 0.48,
+          "raster_ms": 13.87
+        },
+        {
+          "i": 33,
+          "period_ms": 16.67,
+          "gap_ms": 0.63,
+          "build_ms": 54.13,
+          "wait_ms": 0.19,
+          "raster_ms": 4.68
+        },
+        {
+          "i": 116,
+          "period_ms": 16.67,
+          "gap_ms": 0.28,
+          "build_ms": 46.17,
+          "wait_ms": 0.15,
+          "raster_ms": 4.21
+        }
+      ],
+      "passed": true
+    },
+    {
+      "name": "list_churn",
+      "stresses_label": "listChurn",
+      "frames": 31,
+      "span_ms": 3033.33,
+      "worst_ms": 283.33,
+      "p95_ms": 216.67,
+      "median_ms": 116.67,
+      "stall_ms": 2666.67,
+      "stall_frames": 19,
+      "build_ms": 92.48,
+      "build_max_ms": 254.87,
+      "raster_ms": 8.68,
+      "worst_frames": [
+        {
+          "i": 17,
+          "period_ms": 283.33,
+          "gap_ms": 0.22,
+          "build_ms": 118.7,
+          "wait_ms": 0.16,
+          "raster_ms": 10.64
+        },
+        {
+          "i": 28,
+          "period_ms": 216.67,
+          "gap_ms": 0.17,
+          "build_ms": 114.89,
+          "wait_ms": 0.15,
+          "raster_ms": 9.85
+        },
+        {
+          "i": 23,
+          "period_ms": 183.33,
+          "gap_ms": 0.17,
+          "build_ms": 111.92,
+          "wait_ms": 0.16,
+          "raster_ms": 9.5
+        }
+      ],
+      "heaviest_builds": [
+        {
+          "i": 16,
+          "period_ms": 150.0,
+          "gap_ms": 0.17,
+          "build_ms": 254.87,
+          "wait_ms": 0.16,
+          "raster_ms": 9.44
+        },
+        {
+          "i": 27,
+          "period_ms": 150.0,
+          "gap_ms": 0.17,
+          "build_ms": 184.36,
+          "wait_ms": 0.16,
+          "raster_ms": 10.06
+        },
+        {
+          "i": 22,
+          "period_ms": 150.0,
+          "gap_ms": 0.44,
+          "build_ms": 157.62,
+          "wait_ms": 0.17,
+          "raster_ms": 8.57
+        }
+      ],
+      "passed": false
+    },
+    {
+      "name": "route_bare",
+      "stresses_label": "fill",
+      "frames": 299,
+      "span_ms": 5166.66,
+      "worst_ms": 133.33,
+      "p95_ms": 16.67,
+      "median_ms": 16.67,
+      "stall_ms": 0.0,
+      "stall_frames": 0,
+      "build_ms": 1.08,
+      "build_max_ms": 14.28,
+      "raster_ms": 0.93,
+      "worst_frames": [
+        {
+          "i": 186,
+          "period_ms": 133.33,
+          "gap_ms": 0.16,
+          "build_ms": 4.18,
+          "wait_ms": 4.6,
+          "raster_ms": 39.25
+        },
+        {
+          "i": 12,
+          "period_ms": 50.0,
+          "gap_ms": 0.3,
+          "build_ms": 1.19,
+          "wait_ms": 0.13,
+          "raster_ms": 0.96
+        },
+        {
+          "i": 188,
+          "period_ms": 33.33,
+          "gap_ms": 0.26,
+          "build_ms": 2.34,
+          "wait_ms": 6.12,
+          "raster_ms": 1.66
+        },
+        {
+          "i": 85,
+          "period_ms": 33.33,
+          "gap_ms": 0.17,
+          "build_ms": 2.01,
+          "wait_ms": 0.16,
+          "raster_ms": 3.85
+        },
+        {
+          "i": 158,
+          "period_ms": 16.67,
+          "gap_ms": 0.26,
+          "build_ms": 0.87,
+          "wait_ms": 0.13,
+          "raster_ms": 0.96
+        },
+        {
+          "i": 6,
+          "period_ms": 16.67,
+          "gap_ms": 0.19,
+          "build_ms": 0.88,
+          "wait_ms": 0.13,
+          "raster_ms": 0.62
+        },
+        {
+          "i": 8,
+          "period_ms": 16.67,
+          "gap_ms": 0.16,
+          "build_ms": 1.94,
+          "wait_ms": 0.12,
+          "raster_ms": 3.11
+        },
+        {
+          "i": 10,
+          "period_ms": 16.67,
+          "gap_ms": 0.19,
+          "build_ms": 3.26,
+          "wait_ms": 8.86,
+          "raster_ms": 10.01
+        }
+      ],
+      "heaviest_builds": [
+        {
+          "i": 103,
+          "period_ms": 16.67,
+          "gap_ms": 0.16,
+          "build_ms": 14.28,
+          "wait_ms": 0.15,
+          "raster_ms": 1.08
+        },
+        {
+          "i": 82,
+          "period_ms": 16.67,
+          "gap_ms": 0.15,
+          "build_ms": 13.63,
+          "wait_ms": 0.12,
+          "raster_ms": 0.86
+        },
+        {
+          "i": 186,
+          "period_ms": 133.33,
+          "gap_ms": 0.16,
+          "build_ms": 4.18,
+          "wait_ms": 4.6,
+          "raster_ms": 39.25
+        },
+        {
+          "i": 167,
+          "period_ms": 16.67,
+          "gap_ms": 0.19,
+          "build_ms": 4.16,
+          "wait_ms": 7.4,
+          "raster_ms": 11.84
+        },
+        {
+          "i": 246,
+          "period_ms": 16.67,
+          "gap_ms": 0.2,
+          "build_ms": 3.69,
+          "wait_ms": 6.56,
+          "raster_ms": 9.2
+        },
+        {
+          "i": 147,
+          "period_ms": 16.67,
+          "gap_ms": 0.24,
+          "build_ms": 3.58,
+          "wait_ms": 4.47,
+          "raster_ms": 6.76
+        },
+        {
+          "i": 286,
+          "period_ms": 16.67,
+          "gap_ms": 0.17,
+          "build_ms": 3.51,
+          "wait_ms": 6.6,
+          "raster_ms": 8.98
+        },
+        {
+          "i": 127,
+          "period_ms": 16.67,
+          "gap_ms": 0.16,
+          "build_ms": 3.43,
+          "wait_ms": 6.67,
+          "raster_ms": 9.88
+        }
+      ],
+      "passed": true
+    },
+    {
+      "name": "route_wrap",
+      "stresses_label": "fill",
+      "frames": 305,
+      "span_ms": 5083.33,
+      "worst_ms": 16.67,
+      "p95_ms": 16.67,
+      "median_ms": 16.67,
+      "stall_ms": 0.0,
+      "stall_frames": 0,
+      "build_ms": 1.14,
+      "build_max_ms": 12.5,
+      "raster_ms": 1.36,
+      "worst_frames": [
+        {
+          "i": 161,
+          "period_ms": 16.67,
+          "gap_ms": 0.18,
+          "build_ms": 1.11,
+          "wait_ms": 0.13,
+          "raster_ms": 0.96
+        },
+        {
+          "i": 2,
+          "period_ms": 16.67,
+          "gap_ms": 0.15,
+          "build_ms": 1.05,
+          "wait_ms": 0.15,
+          "raster_ms": 0.83
+        },
+        {
+          "i": 3,
+          "period_ms": 16.67,
+          "gap_ms": 0.16,
+          "build_ms": 1.04,
+          "wait_ms": 0.13,
+          "raster_ms": 1.0
+        },
+        {
+          "i": 5,
+          "period_ms": 16.67,
+          "gap_ms": 0.22,
+          "build_ms": 1.15,
+          "wait_ms": 0.16,
+          "raster_ms": 2.6
+        },
+        {
+          "i": 6,
+          "period_ms": 16.67,
+          "gap_ms": 0.18,
+          "build_ms": 1.6,
+          "wait_ms": 0.12,
+          "raster_ms": 2.14
+        },
+        {
+          "i": 8,
+          "period_ms": 16.67,
+          "gap_ms": 0.18,
+          "build_ms": 1.99,
+          "wait_ms": 5.71,
+          "raster_ms": 5.2
+        },
+        {
+          "i": 10,
+          "period_ms": 16.67,
+          "gap_ms": 0.2,
+          "build_ms": 1.44,
+          "wait_ms": 0.13,
+          "raster_ms": 1.1
+        },
+        {
+          "i": 11,
+          "period_ms": 16.67,
+          "gap_ms": 0.31,
+          "build_ms": 1.33,
+          "wait_ms": 0.12,
+          "raster_ms": 1.12
+        }
+      ],
+      "heaviest_builds": [
+        {
+          "i": 286,
+          "period_ms": 16.67,
+          "gap_ms": 0.15,
+          "build_ms": 10.09,
+          "wait_ms": 0.14,
+          "raster_ms": 2.41
+        },
+        {
+          "i": 246,
+          "period_ms": 16.67,
+          "gap_ms": 0.16,
+          "build_ms": 9.83,
+          "wait_ms": 0.13,
+          "raster_ms": 2.38
+        },
+        {
+          "i": 206,
+          "period_ms": 16.67,
+          "gap_ms": 0.21,
+          "build_ms": 9.82,
+          "wait_ms": 0.14,
+          "raster_ms": 2.37
+        },
+        {
+          "i": 126,
+          "period_ms": 16.67,
+          "gap_ms": 0.23,
+          "build_ms": 9.36,
+          "wait_ms": 0.16,
+          "raster_ms": 2.39
+        },
+        {
+          "i": 166,
+          "period_ms": 16.67,
+          "gap_ms": 0.16,
+          "build_ms": 9.32,
+          "wait_ms": 0.13,
+          "raster_ms": 2.4
+        },
+        {
+          "i": 228,
+          "period_ms": 16.67,
+          "gap_ms": 0.29,
+          "build_ms": 6.16,
+          "wait_ms": 7.1,
+          "raster_ms": 12.52
+        },
+        {
+          "i": 108,
+          "period_ms": 16.67,
+          "gap_ms": 0.2,
+          "build_ms": 5.72,
+          "wait_ms": 7.17,
+          "raster_ms": 12.36
+        },
+        {
+          "i": 68,
+          "period_ms": 16.67,
+          "gap_ms": 0.17,
+          "build_ms": 5.71,
+          "wait_ms": 6.93,
+          "raster_ms": 11.83
+        }
+      ],
+      "passed": true
+    },
+    {
+      "name": "route_spans",
+      "stresses_label": "text",
+      "frames": 302,
+      "span_ms": 5200.0,
+      "worst_ms": 133.33,
+      "p95_ms": 16.67,
+      "median_ms": 16.67,
+      "stall_ms": 200.0,
+      "stall_frames": 2,
+      "build_ms": 1.1,
+      "build_max_ms": 55.08,
+      "raster_ms": 5.55,
+      "worst_frames": [
+        {
+          "i": 260,
+          "period_ms": 133.33,
+          "gap_ms": 0.21,
+          "build_ms": 55.08,
+          "wait_ms": 0.14,
+          "raster_ms": 11.89
+        },
+        {
+          "i": 261,
+          "period_ms": 66.67,
+          "gap_ms": 0.85,
+          "build_ms": 2.68,
+          "wait_ms": 4.8,
+          "raster_ms": 6.6
+        },
+        {
+          "i": 106,
+          "period_ms": 16.67,
+          "gap_ms": 0.17,
+          "build_ms": 1.06,
+          "wait_ms": 0.11,
+          "raster_ms": 7.01
+        },
+        {
+          "i": 4,
+          "period_ms": 16.67,
+          "gap_ms": 0.29,
+          "build_ms": 1.62,
+          "wait_ms": 0.14,
+          "raster_ms": 4.17
+        },
+        {
+          "i": 313,
+          "period_ms": 16.67,
+          "gap_ms": 0.15,
+          "build_ms": 0.9,
+          "wait_ms": 0.16,
+          "raster_ms": 0.71
+        },
+        {
+          "i": 6,
+          "period_ms": 16.67,
+          "gap_ms": 0.19,
+          "build_ms": 1.3,
+          "wait_ms": 0.11,
+          "raster_ms": 4.48
+        },
+        {
+          "i": 7,
+          "period_ms": 16.67,
+          "gap_ms": 0.18,
+          "build_ms": 1.18,
+          "wait_ms": 0.1,
+          "raster_ms": 4.61
+        },
+        {
+          "i": 311,
+          "period_ms": 16.67,
+          "gap_ms": 0.16,
+          "build_ms": 0.94,
+          "wait_ms": 0.16,
+          "raster_ms": 0.77
+        }
+      ],
+      "heaviest_builds": [
+        {
+          "i": 260,
+          "period_ms": 133.33,
+          "gap_ms": 0.21,
+          "build_ms": 55.08,
+          "wait_ms": 0.14,
+          "raster_ms": 11.89
+        },
+        {
+          "i": 201,
+          "period_ms": 16.67,
+          "gap_ms": 0.21,
+          "build_ms": 4.4,
+          "wait_ms": 7.26,
+          "raster_ms": 11.8
+        },
+        {
+          "i": 41,
+          "period_ms": 16.67,
+          "gap_ms": 0.24,
+          "build_ms": 4.29,
+          "wait_ms": 7.65,
+          "raster_ms": 11.43
+        },
+        {
+          "i": 81,
+          "period_ms": 16.67,
+          "gap_ms": 0.34,
+          "build_ms": 4.23,
+          "wait_ms": 7.64,
+          "raster_ms": 11.54
+        },
+        {
+          "i": 278,
+          "period_ms": 16.67,
+          "gap_ms": 0.19,
+          "build_ms": 4.21,
+          "wait_ms": 7.0,
+          "raster_ms": 12.21
+        },
+        {
+          "i": 161,
+          "period_ms": 16.67,
+          "gap_ms": 0.21,
+          "build_ms": 4.21,
+          "wait_ms": 7.47,
+          "raster_ms": 11.65
+        },
+        {
+          "i": 241,
+          "period_ms": 16.67,
+          "gap_ms": 0.32,
+          "build_ms": 4.13,
+          "wait_ms": 6.68,
+          "raster_ms": 12.35
+        },
+        {
+          "i": 121,
+          "period_ms": 16.67,
+          "gap_ms": 0.24,
+          "build_ms": 4.11,
+          "wait_ms": 7.64,
+          "raster_ms": 11.47
+        }
+      ],
+      "passed": false
+    },
+    {
+      "name": "route_text_uniq",
+      "stresses_label": "text",
+      "frames": 295,
+      "span_ms": 6183.33,
+      "worst_ms": 133.33,
+      "p95_ms": 50.0,
+      "median_ms": 16.67,
+      "stall_ms": 200.0,
+      "stall_frames": 2,
+      "build_ms": 1.09,
+      "build_max_ms": 59.52,
+      "raster_ms": 1.24,
+      "worst_frames": [
+        {
+          "i": 188,
+          "period_ms": 133.33,
+          "gap_ms": 0.16,
+          "build_ms": 41.2,
+          "wait_ms": 0.15,
+          "raster_ms": 6.77
+        },
+        {
+          "i": 226,
+          "period_ms": 133.33,
+          "gap_ms": 0.34,
+          "build_ms": 40.52,
+          "wait_ms": 0.15,
+          "raster_ms": 6.79
+        },
+        {
+          "i": 302,
+          "period_ms": 133.33,
+          "gap_ms": 0.26,
+          "build_ms": 40.91,
+          "wait_ms": 0.15,
+          "raster_ms": 6.56
+        },
+        {
+          "i": 37,
+          "period_ms": 133.33,
+          "gap_ms": 0.24,
+          "build_ms": 41.65,
+          "wait_ms": 0.16,
+          "raster_ms": 6.88
+        },
+        {
+          "i": 75,
+          "period_ms": 133.33,
+          "gap_ms": 0.22,
+          "build_ms": 49.3,
+          "wait_ms": 0.14,
+          "raster_ms": 6.83
+        },
+        {
+          "i": 112,
+          "period_ms": 133.33,
+          "gap_ms": 0.18,
+          "build_ms": 41.34,
+          "wait_ms": 0.15,
+          "raster_ms": 6.76
+        },
+        {
+          "i": 150,
+          "period_ms": 133.33,
+          "gap_ms": 0.16,
+          "build_ms": 41.18,
+          "wait_ms": 0.15,
+          "raster_ms": 6.72
+        },
+        {
+          "i": 264,
+          "period_ms": 133.33,
+          "gap_ms": 0.22,
+          "build_ms": 40.78,
+          "wait_ms": 0.13,
+          "raster_ms": 6.81
+        }
+      ],
+      "heaviest_builds": [
+        {
+          "i": 75,
+          "period_ms": 133.33,
+          "gap_ms": 0.22,
+          "build_ms": 49.3,
+          "wait_ms": 0.14,
+          "raster_ms": 6.83
+        },
+        {
+          "i": 37,
+          "period_ms": 133.33,
+          "gap_ms": 0.24,
+          "build_ms": 41.65,
+          "wait_ms": 0.16,
+          "raster_ms": 6.88
+        },
+        {
+          "i": 112,
+          "period_ms": 133.33,
+          "gap_ms": 0.18,
+          "build_ms": 41.34,
+          "wait_ms": 0.15,
+          "raster_ms": 6.76
+        },
+        {
+          "i": 188,
+          "period_ms": 133.33,
+          "gap_ms": 0.16,
+          "build_ms": 41.2,
+          "wait_ms": 0.15,
+          "raster_ms": 6.77
+        },
+        {
+          "i": 150,
+          "period_ms": 133.33,
+          "gap_ms": 0.16,
+          "build_ms": 41.18,
+          "wait_ms": 0.15,
+          "raster_ms": 6.72
+        },
+        {
+          "i": 302,
+          "period_ms": 133.33,
+          "gap_ms": 0.26,
+          "build_ms": 40.91,
+          "wait_ms": 0.15,
+          "raster_ms": 6.56
+        },
+        {
+          "i": 264,
+          "period_ms": 133.33,
+          "gap_ms": 0.22,
+          "build_ms": 40.78,
+          "wait_ms": 0.13,
+          "raster_ms": 6.81
+        },
+        {
+          "i": 226,
+          "period_ms": 133.33,
+          "gap_ms": 0.34,
+          "build_ms": 40.52,
+          "wait_ms": 0.15,
+          "raster_ms": 6.79
+        }
+      ],
+      "passed": false
+    },
+    {
+      "name": "route_grid_bare",
+      "stresses_label": "fill",
+      "frames": 291,
+      "span_ms": 4983.34,
+      "worst_ms": 33.33,
+      "p95_ms": 16.67,
+      "median_ms": 16.67,
+      "stall_ms": 0.0,
+      "stall_frames": 0,
+      "build_ms": 1.09,
+      "build_max_ms": 15.91,
+      "raster_ms": 0.89,
+      "worst_frames": [
+        {
+          "i": 274,
+          "period_ms": 33.33,
+          "gap_ms": 0.18,
+          "build_ms": 5.2,
+          "wait_ms": 1.74,
+          "raster_ms": 7.04
+        },
+        {
+          "i": 1,
+          "period_ms": 33.33,
+          "gap_ms": 0.26,
+          "build_ms": 5.51,
+          "wait_ms": 2.01,
+          "raster_ms": 7.58
+        },
+        {
+          "i": 235,
+          "period_ms": 33.33,
+          "gap_ms": 0.18,
+          "build_ms": 5.22,
+          "wait_ms": 1.72,
+          "raster_ms": 6.87
+        },
+        {
+          "i": 40,
+          "period_ms": 33.33,
+          "gap_ms": 0.19,
+          "build_ms": 5.48,
+          "wait_ms": 1.76,
+          "raster_ms": 7.22
+        },
+        {
+          "i": 79,
+          "period_ms": 33.33,
+          "gap_ms": 0.38,
+          "build_ms": 5.56,
+          "wait_ms": 1.76,
+          "raster_ms": 7.42
+        },
+        {
+          "i": 118,
+          "period_ms": 33.33,
+          "gap_ms": 0.18,
+          "build_ms": 5.51,
+          "wait_ms": 1.68,
+          "raster_ms": 6.91
+        },
+        {
+          "i": 157,
+          "period_ms": 33.33,
+          "gap_ms": 0.18,
+          "build_ms": 5.2,
+          "wait_ms": 1.68,
+          "raster_ms": 7.21
+        },
+        {
+          "i": 196,
+          "period_ms": 33.33,
+          "gap_ms": 0.26,
+          "build_ms": 5.46,
+          "wait_ms": 1.72,
+          "raster_ms": 7.35
+        }
+      ],
+      "heaviest_builds": [
+        {
+          "i": 46,
+          "period_ms": 16.67,
+          "gap_ms": 0.16,
+          "build_ms": 11.01,
+          "wait_ms": 0.15,
+          "raster_ms": 1.27
+        },
+        {
+          "i": 74,
+          "period_ms": 16.67,
+          "gap_ms": 0.16,
+          "build_ms": 10.92,
+          "wait_ms": 0.13,
+          "raster_ms": 0.87
+        },
+        {
+          "i": 79,
+          "period_ms": 33.33,
+          "gap_ms": 0.38,
+          "build_ms": 5.56,
+          "wait_ms": 1.76,
+          "raster_ms": 7.42
+        },
+        {
+          "i": 118,
+          "period_ms": 33.33,
+          "gap_ms": 0.18,
+          "build_ms": 5.51,
+          "wait_ms": 1.68,
+          "raster_ms": 6.91
+        },
+        {
+          "i": 1,
+          "period_ms": 33.33,
+          "gap_ms": 0.26,
+          "build_ms": 5.51,
+          "wait_ms": 2.01,
+          "raster_ms": 7.58
+        },
+        {
+          "i": 40,
+          "period_ms": 33.33,
+          "gap_ms": 0.19,
+          "build_ms": 5.48,
+          "wait_ms": 1.76,
+          "raster_ms": 7.22
+        },
+        {
+          "i": 196,
+          "period_ms": 33.33,
+          "gap_ms": 0.26,
+          "build_ms": 5.46,
+          "wait_ms": 1.72,
+          "raster_ms": 7.35
+        },
+        {
+          "i": 235,
+          "period_ms": 33.33,
+          "gap_ms": 0.18,
+          "build_ms": 5.22,
+          "wait_ms": 1.72,
+          "raster_ms": 6.87
+        }
+      ],
+      "passed": true
+    },
+    {
+      "name": "route_boxes",
+      "stresses_label": "fill",
+      "frames": 295,
+      "span_ms": 5200.0,
+      "worst_ms": 133.33,
+      "p95_ms": 16.67,
+      "median_ms": 16.67,
+      "stall_ms": 166.67,
+      "stall_frames": 2,
+      "build_ms": 1.09,
+      "build_max_ms": 28.47,
+      "raster_ms": 1.18,
+      "worst_frames": [
+        {
+          "i": 37,
+          "period_ms": 133.33,
+          "gap_ms": 0.24,
+          "build_ms": 28.47,
+          "wait_ms": 0.16,
+          "raster_ms": 6.81
+        },
+        {
+          "i": 22,
+          "period_ms": 50.0,
+          "gap_ms": 0.19,
+          "build_ms": 1.38,
+          "wait_ms": 0.16,
+          "raster_ms": 1.12
+        },
+        {
+          "i": 272,
+          "period_ms": 33.33,
+          "gap_ms": 0.17,
+          "build_ms": 11.01,
+          "wait_ms": 3.49,
+          "raster_ms": 6.91
+        },
+        {
+          "i": 38,
+          "period_ms": 33.33,
+          "gap_ms": 0.24,
+          "build_ms": 11.25,
+          "wait_ms": 3.03,
+          "raster_ms": 7.09
+        },
+        {
+          "i": 233,
+          "period_ms": 33.33,
+          "gap_ms": 0.29,
+          "build_ms": 11.46,
+          "wait_ms": 3.64,
+          "raster_ms": 7.27
+        },
+        {
+          "i": 155,
+          "period_ms": 33.33,
+          "gap_ms": 0.17,
+          "build_ms": 10.67,
+          "wait_ms": 3.07,
+          "raster_ms": 14.35
+        },
+        {
+          "i": 77,
+          "period_ms": 33.33,
+          "gap_ms": 0.16,
+          "build_ms": 10.88,
+          "wait_ms": 3.33,
+          "raster_ms": 7.22
+        },
+        {
+          "i": 1,
+          "period_ms": 33.33,
+          "gap_ms": 0.18,
+          "build_ms": 11.24,
+          "wait_ms": 3.34,
+          "raster_ms": 8.12
+        }
+      ],
+      "heaviest_builds": [
+        {
+          "i": 37,
+          "period_ms": 133.33,
+          "gap_ms": 0.24,
+          "build_ms": 28.47,
+          "wait_ms": 0.16,
+          "raster_ms": 6.81
+        },
+        {
+          "i": 58,
+          "period_ms": 16.67,
+          "gap_ms": 0.2,
+          "build_ms": 12.22,
+          "wait_ms": 0.12,
+          "raster_ms": 1.03
+        },
+        {
+          "i": 233,
+          "period_ms": 33.33,
+          "gap_ms": 0.29,
+          "build_ms": 11.46,
+          "wait_ms": 3.64,
+          "raster_ms": 7.27
+        },
+        {
+          "i": 38,
+          "period_ms": 33.33,
+          "gap_ms": 0.24,
+          "build_ms": 11.25,
+          "wait_ms": 3.03,
+          "raster_ms": 7.09
+        },
+        {
+          "i": 1,
+          "period_ms": 33.33,
+          "gap_ms": 0.18,
+          "build_ms": 11.24,
+          "wait_ms": 3.34,
+          "raster_ms": 8.12
+        },
+        {
+          "i": 194,
+          "period_ms": 33.33,
+          "gap_ms": 0.18,
+          "build_ms": 11.15,
+          "wait_ms": 3.29,
+          "raster_ms": 6.99
+        },
+        {
+          "i": 272,
+          "period_ms": 33.33,
+          "gap_ms": 0.17,
+          "build_ms": 11.01,
+          "wait_ms": 3.49,
+          "raster_ms": 6.91
+        },
+        {
+          "i": 77,
+          "period_ms": 33.33,
+          "gap_ms": 0.16,
+          "build_ms": 10.88,
+          "wait_ms": 3.33,
+          "raster_ms": 7.22
+        }
+      ],
+      "passed": false
+    },
+    {
+      "name": "route_push",
+      "stresses_label": "fill",
+      "frames": 281,
+      "span_ms": 5833.34,
+      "worst_ms": 150.0,
+      "p95_ms": 50.0,
+      "median_ms": 16.67,
+      "stall_ms": 216.67,
+      "stall_frames": 2,
+      "build_ms": 1.09,
+      "build_max_ms": 102.89,
+      "raster_ms": 6.39,
+      "worst_frames": [
+        {
+          "i": 35,
+          "period_ms": 150.0,
+          "gap_ms": 0.18,
+          "build_ms": 57.33,
+          "wait_ms": 0.16,
+          "raster_ms": 7.77
+        },
+        {
+          "i": 148,
+          "period_ms": 150.0,
+          "gap_ms": 0.31,
+          "build_ms": 102.88,
+          "wait_ms": 0.16,
+          "raster_ms": 7.29
+        },
+        {
+          "i": 72,
+          "period_ms": 133.33,
+          "gap_ms": 0.17,
+          "build_ms": 46.34,
+          "wait_ms": 0.15,
+          "raster_ms": 7.7
+        },
+        {
+          "i": 110,
+          "period_ms": 133.33,
+          "gap_ms": 0.36,
+          "build_ms": 46.42,
+          "wait_ms": 0.15,
+          "raster_ms": 7.84
+        },
+        {
+          "i": 182,
+          "period_ms": 133.33,
+          "gap_ms": 0.18,
+          "build_ms": 45.59,
+          "wait_ms": 0.22,
+          "raster_ms": 7.59
+        },
+        {
+          "i": 220,
+          "period_ms": 133.33,
+          "gap_ms": 0.15,
+          "build_ms": 45.74,
+          "wait_ms": 0.15,
+          "raster_ms": 14.89
+        },
+        {
+          "i": 258,
+          "period_ms": 133.33,
+          "gap_ms": 0.16,
+          "build_ms": 46.24,
+          "wait_ms": 0.16,
+          "raster_ms": 8.02
+        },
+        {
+          "i": 21,
+          "period_ms": 66.67,
+          "gap_ms": 0.3,
+          "build_ms": 1.41,
+          "wait_ms": 0.16,
+          "raster_ms": 1.33
+        }
+      ],
+      "heaviest_builds": [
+        {
+          "i": 148,
+          "period_ms": 150.0,
+          "gap_ms": 0.31,
+          "build_ms": 102.88,
+          "wait_ms": 0.16,
+          "raster_ms": 7.29
+        },
+        {
+          "i": 35,
+          "period_ms": 150.0,
+          "gap_ms": 0.18,
+          "build_ms": 57.33,
+          "wait_ms": 0.16,
+          "raster_ms": 7.77
+        },
+        {
+          "i": 20,
+          "period_ms": 16.67,
+          "gap_ms": 1.51,
+          "build_ms": 48.58,
+          "wait_ms": 0.17,
+          "raster_ms": 1.71
+        },
+        {
+          "i": 110,
+          "period_ms": 133.33,
+          "gap_ms": 0.36,
+          "build_ms": 46.42,
+          "wait_ms": 0.15,
+          "raster_ms": 7.84
+        },
+        {
+          "i": 72,
+          "period_ms": 133.33,
+          "gap_ms": 0.17,
+          "build_ms": 46.34,
+          "wait_ms": 0.15,
+          "raster_ms": 7.7
+        },
+        {
+          "i": 258,
+          "period_ms": 133.33,
+          "gap_ms": 0.16,
+          "build_ms": 46.24,
+          "wait_ms": 0.16,
+          "raster_ms": 8.02
+        },
+        {
+          "i": 220,
+          "period_ms": 133.33,
+          "gap_ms": 0.15,
+          "build_ms": 45.74,
+          "wait_ms": 0.15,
+          "raster_ms": 14.89
+        },
+        {
+          "i": 182,
+          "period_ms": 133.33,
+          "gap_ms": 0.18,
+          "build_ms": 45.59,
+          "wait_ms": 0.22,
+          "raster_ms": 7.59
+        }
+      ],
+      "passed": false
+    },
+    {
+      "name": "route_hero",
+      "stresses_label": "transform",
+      "frames": 222,
+      "span_ms": 7066.67,
+      "worst_ms": 150.0,
+      "p95_ms": 100.0,
+      "median_ms": 16.67,
+      "stall_ms": 616.67,
+      "stall_frames": 7,
+      "build_ms": 1.3,
+      "build_max_ms": 124.01,
+      "raster_ms": 2.67,
+      "worst_frames": [
+        {
+          "i": 136,
+          "period_ms": 150.0,
+          "gap_ms": 0.17,
+          "build_ms": 55.31,
+          "wait_ms": 0.17,
+          "raster_ms": 5.9
+        },
+        {
+          "i": 57,
+          "period_ms": 133.33,
+          "gap_ms": 0.15,
+          "build_ms": 89.0,
+          "wait_ms": 0.15,
+          "raster_ms": 7.64
+        },
+        {
+          "i": 29,
+          "period_ms": 133.33,
+          "gap_ms": 0.29,
+          "build_ms": 59.4,
+          "wait_ms": 0.15,
+          "raster_ms": 7.61
+        },
+        {
+          "i": 84,
+          "period_ms": 133.33,
+          "gap_ms": 0.17,
+          "build_ms": 124.01,
+          "wait_ms": 3.1,
+          "raster_ms": 5.77
+        },
+        {
+          "i": 196,
+          "period_ms": 133.33,
+          "gap_ms": 0.17,
+          "build_ms": 46.01,
+          "wait_ms": 0.13,
+          "raster_ms": 5.87
+        },
+        {
+          "i": 166,
+          "period_ms": 133.33,
+          "gap_ms": 0.16,
+          "build_ms": 46.32,
+          "wait_ms": 0.16,
+          "raster_ms": 5.96
+        },
+        {
+          "i": 106,
+          "period_ms": 133.33,
+          "gap_ms": 0.16,
+          "build_ms": 54.45,
+          "wait_ms": 0.15,
+          "raster_ms": 5.69
+        },
+        {
+          "i": 85,
+          "period_ms": 133.33,
+          "gap_ms": 0.45,
+          "build_ms": 97.72,
+          "wait_ms": 0.13,
+          "raster_ms": 36.65
+        }
+      ],
+      "heaviest_builds": [
+        {
+          "i": 84,
+          "period_ms": 133.33,
+          "gap_ms": 0.17,
+          "build_ms": 124.01,
+          "wait_ms": 3.1,
+          "raster_ms": 5.77
+        },
+        {
+          "i": 1,
+          "period_ms": 50.0,
+          "gap_ms": 0.26,
+          "build_ms": 99.14,
+          "wait_ms": 0.12,
+          "raster_ms": 30.13
+        },
+        {
+          "i": 85,
+          "period_ms": 133.33,
+          "gap_ms": 0.45,
+          "build_ms": 97.72,
+          "wait_ms": 0.13,
+          "raster_ms": 36.65
+        },
+        {
+          "i": 57,
+          "period_ms": 133.33,
+          "gap_ms": 0.15,
+          "build_ms": 89.0,
+          "wait_ms": 0.15,
+          "raster_ms": 7.64
+        },
+        {
+          "i": 63,
+          "period_ms": 33.33,
+          "gap_ms": 0.34,
+          "build_ms": 72.4,
+          "wait_ms": 0.15,
+          "raster_ms": 18.8
+        },
+        {
+          "i": 7,
+          "period_ms": 33.33,
+          "gap_ms": 0.2,
+          "build_ms": 71.27,
+          "wait_ms": 0.15,
+          "raster_ms": 21.49
+        },
+        {
+          "i": 36,
+          "period_ms": 33.33,
+          "gap_ms": 0.17,
+          "build_ms": 66.13,
+          "wait_ms": 0.16,
+          "raster_ms": 20.68
+        },
+        {
+          "i": 58,
+          "period_ms": 100.0,
+          "gap_ms": 0.19,
+          "build_ms": 65.39,
+          "wait_ms": 0.12,
+          "raster_ms": 31.99
+        }
+      ],
+      "passed": false
+    }
+  ]
+}
