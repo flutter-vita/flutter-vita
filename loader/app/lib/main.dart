@@ -940,6 +940,13 @@ class _AppsTabState extends State<_AppsTab> {
                           _apps = listInstalled(widget.self);
                         });
                       },
+                      onForget: () {
+                        forgetInstalled(_apps[i].titleId);
+                        setState(() {
+                          _note = 'forgot ${_apps[i].titleId}';
+                          _apps = listInstalled(widget.self);
+                        });
+                      },
                     ),
                   ),
           ),
@@ -958,6 +965,7 @@ class _AppRow extends StatelessWidget {
     required this.onDelete,
     required this.onClear,
     required this.onRun,
+    required this.onForget,
   });
 
   final InstalledApp app;
@@ -967,6 +975,7 @@ class _AppRow extends StatelessWidget {
   final VoidCallback onDelete;
   final VoidCallback onClear;
   final VoidCallback onRun;
+  final VoidCallback onForget;
 
   @override
   Widget build(BuildContext context) => ListRow(
@@ -978,12 +987,22 @@ class _AppRow extends StatelessWidget {
                 style: mono.copyWith(color: fg, fontWeight: FontWeight.w600)),
           ),
           Expanded(
-            child: Text('data ${humanBytes(app.cacheBytes)}', style: mono),
+            child: Text(
+              app.present
+                  ? 'data ${humanBytes(app.cacheBytes)}'
+                  : 'not installed',
+              style: app.present ? mono : mono.copyWith(color: warn),
+            ),
           ),
           if (confirming) ...[
             Btn(text: 'REALLY DELETE', colour: danger, onTap: onDelete),
             const SizedBox(width: 8),
             Btn(text: 'CANCEL', colour: muted, onTap: onCancel),
+          ] else if (!app.present) ...[
+            // ux0:app/<id> is gone. There is nothing to run and nothing to
+            // delete, and offering either is how this console reached the
+            // LiveArea home screen twice.
+            Btn(text: 'FORGET', colour: muted, onTap: onForget),
           ] else ...[
             Btn(text: 'RUN', colour: good, onTap: onRun),
             const SizedBox(width: 8),

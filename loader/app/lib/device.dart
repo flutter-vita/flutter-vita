@@ -294,10 +294,20 @@ int clearCrashes() {
 
 /// A title this loader installed, and how much of ux0:data it is holding.
 class InstalledApp {
-  InstalledApp(this.titleId, this.cacheBytes);
+  InstalledApp(this.titleId, this.cacheBytes, {required this.present});
 
   final String titleId;
   final int cacheBytes;
+
+  /// Whether ux0:app/<id> is actually there.
+  ///
+  /// installed.txt is a list of what this loader has installed, not a list of
+  /// what is installed. A title deleted any other way stays in it, and a RUN
+  /// button on that row hands the console to a title that does not exist --
+  /// sceAppMgrLaunchAppByUri fails quietly and the loader has already exited,
+  /// so you end up on the LiveArea home screen. That is how FVTA00004 stranded
+  /// this console twice on 2026-08-31.
+  final bool present;
 }
 
 /// The loader is left out. It installed itself and the registry records that,
@@ -312,7 +322,8 @@ List<InstalledApp> listInstalled(String self) {
   for (final raw in file.readAsLinesSync()) {
     final id = raw.trim();
     if (id.isEmpty || id == self || !seen.add(id)) continue;
-    out.add(InstalledApp(id, _dirBytes('ux0:data/$id')));
+    out.add(InstalledApp(id, _dirBytes('ux0:data/$id'),
+        present: Directory('ux0:app/$id').existsSync()));
   }
   out.sort((a, b) => a.titleId.compareTo(b.titleId));
   return out;
@@ -346,6 +357,24 @@ bool clearAppCache(String titleId) {
   } on FileSystemException {
     return false;
   }
+}
+
+/// Drop a title id from the registry, without touching the title.
+///
+/// For rows whose ux0:app directory is gone: there is nothing to delete and
+/// nothing to run, and the only useful thing left to do with the row is stop
+/// showing it. Rewritten rather than edited in place, for the same reason the
+/// C side rewrites it -- a handful of nine-byte lines cannot be left half
+/// consistent by a rewrite, and can by a seek and a blank-out.
+void forgetInstalled(String titleId) {
+  final file = File(installedPath);
+  if (!file.existsSync()) return;
+  final kept = file
+      .readAsLinesSync()
+      .where((l) => l.trim().isNotEmpty && l.trim() != titleId)
+      .toList();
+  file.writeAsStringSync(kept.isEmpty ? '' : '${kept.join('\n')}\n',
+      flush: true);
 }
 
 /// One line the C watcher picks up within two seconds and then removes.

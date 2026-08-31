@@ -563,12 +563,31 @@ static void record_installed(const char* titleid) {
   sceIoClose(fd);
 }
 
-// Hand the console over and end this process. Never returns.
+static int title_installed(const char* titleid) {
+  char dir[64];
+  snprintf(dir, sizeof dir, "ux0:app/%s", titleid);
+  SceIoStat st;
+  return sceIoGetstat(dir, &st) >= 0;
+}
+
+// Hand the console over and end this process. Returns only if it could not.
 //
 // Split out of cmd_launch because the APPS tab's RUN button arrives on the
-// watcher thread with no socket to answer on, and the three steps below are
-// the part that must not differ between the two callers.
-static void hand_over(const char* titleid) {
+// watcher thread with no socket to answer on, and the steps below are the part
+// that must not differ between the two callers.
+//
+// The existence check is not belt and braces. sceAppMgrLaunchAppByUri on a
+// title that is not installed fails quietly, and by then this process has
+// already exited -- so the console lands on the LiveArea home screen, which
+// answers no port and cannot be driven from the network. That happened twice
+// on 2026-08-31, both times through the APPS tab offering RUN on a title id
+// that was still in installed.txt after the title itself had been deleted.
+static int hand_over(const char* titleid) {
+  if (!title_installed(titleid)) {
+    note("%s is not installed; staying here", titleid);
+    set_status("Waiting", NULL);
+    return -1;
+  }
   // Before the launch, not after: the engine truncates app.log on startup and
   // the launch is the last thing that happens here.
   rotate_app_log(titleid);
@@ -585,9 +604,21 @@ static void hand_over(const char* titleid) {
   // prompt appears only because the outgoing app is still alive.
   sceKernelExitProcess(0);
   for (;;) sceKernelDelayThread(1000 * 1000);
+  return 0;
 }
 
 static void cmd_launch(int sock) {
+  // Checked before the reply, not after: the caller is a deploy script that
+  // reads OK as "the console is on its way", and a script that believes that
+  // wrongly waits out its whole timeout against a loader still sitting here.
+  if (!title_installed(g_target)) {
+    char msg[80];
+    snprintf(msg, sizeof msg, "ERR %s is not installed\n", g_target);
+    note("launch %s: not installed", g_target);
+    dev_server_send(sock, msg);
+    return;
+  }
+
   note("launching %s", g_target);
   set_status("Launching", "%s", g_target);
 
@@ -1045,8 +1076,15 @@ static int handle(int sock, const char* line, int* stop) {
   }
   if (strncmp(line, "launch", 6) == 0 && (line[6] == '\0' || line[6] == ' ')) {
     set_target(line[6] == ' ' ? line + 7 : NULL);
+    // No `*stop = 1` here. It used to sit on the next line with the comment
+    // "not reached; the process is gone", which was true for as long as
+    // cmd_launch could not fail. It can now -- it refuses a title that is not
+    // installed -- and `stop` closes the listening socket and ends the dev
+    // server thread, so the first refused launch left the loader on screen and
+    // unreachable, recoverable only by picking the console up. The launch that
+    // succeeds exits the process from inside cmd_launch and never comes back
+    // here, so there was never anything for this flag to do.
     cmd_launch(sock);
-    *stop = 1;  // not reached; the process is gone
     return 1;
   }
   if (strncmp(line, "promote ", 8) == 0) {
