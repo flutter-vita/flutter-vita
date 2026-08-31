@@ -87,6 +87,11 @@ ELF for the current build is kept at `out/dumps/elf/`.
 
 Treat these as two bugs until something links them.
 
+**Linked, 2026-08-31 evening.** It happened again, and the second dump has its
+ELF: same PC, same `R0`, same `R11`, same `LR` of 1, and the stack under it
+resolves to vitaGL's `glViewport` and `update_scissor_test`. See
+[localsend-gxm-abort-2026-08-31.md](localsend-gxm-abort-2026-08-31.md).
+
 ## Dump discipline, which cost the diagnosis twice
 
 53 dumps on the card. **22 are `.tmp`** -- the console renames only when the
@@ -115,4 +120,6 @@ The UI thread stops and everything downstream of it idles correctly, so:
    both decay monotonically across transfers with 16 MB of memory going missing.
    Whatever is accumulating is easier to catch at transfer three than at the
    moment everything stops.
-3. Only then the SceGxm abort, with an ELF kept alongside the dump.
+3. ~~Only then the SceGxm abort, with an ELF kept alongside the dump.~~ Done:
+   the ELF was kept, the abort recurred, and it is now blocker 3 in
+   [the release list](localsend-release-blockers-2026-08-31.md).

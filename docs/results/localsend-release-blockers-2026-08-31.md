@@ -30,6 +30,10 @@ never reached. The user gets a tap that does nothing.
 **Open folder** on the same page is the same call and the same outcome
 (`open_folder.dart:18`).
 
+It does not crash. Seventeen taps on a fresh boot throw seventeen times with
+memory flat; the fault the console took on 2026-08-31 while a file was being
+tapped is item 3, and the tap is not what caused it.
+
 Fixing it needs a decision, not just a stub. There is no file association on
 this console, so "open" cannot mean "hand it to another app". Either localsend
 shows the file itself -- an image viewer and a text viewer are most of what a
@@ -43,11 +47,27 @@ frames stop after repeated transfers while the platform loop keeps perfect
 cadence, throughput decays 648 → 503 KB/s and free memory 45 → 28 MB across
 nine transfers. Not reproduced again today; nothing about it has changed.
 
+### 3. A data abort inside SceGxm, twice, on the raster thread
+
+    pthread <0x40010197>   io.flutter.raster
+        Stop reason: 0x30004 (Data abort exception)
+        PC: 0xe00aa728 (SceGxm@1 + 0x1e638)
+        R0: 0x70100254   R11: 0x70100250   LR: 0x1
+
+Registers identical to the 08-30 fault, and now symbolicated against the ELF
+that produced it: the raster thread is in `glViewport` (`misc.c:342`, the
+statement after `vglSetViewport`) with `update_scissor_test` (`tests.c:334`)
+further up the stack. Both faults followed hours of uptime and a monotonic
+slide in free memory. Full write-up in
+[localsend-gxm-abort-2026-08-31.md](localsend-gxm-abort-2026-08-31.md).
+
+It takes the app down with no warning, which no other item here does.
+
 ## Missing plugins, failing silently
 
 Each of these is a feature that looks present and does nothing.
 
-### 3. The app cannot report its own address
+### 4. The app cannot report its own address
 
     MissingPluginException(No implementation found for method wifiIPAddress
     on channel dev.fluttercommunity.plus/network_info)
@@ -57,7 +77,7 @@ unprompted -- so this is not fatal. It costs the manual path: when discovery
 does not find the console, there is no address on screen to type into the other
 device.
 
-### 4. No network-change detection
+### 5. No network-change detection
 
     MissingPluginException(No implementation found for method listen
     on channel dev.fluttercommunity.plus/connectivity_status)
@@ -65,7 +85,7 @@ device.
 This console drops its Wi-Fi and comes back on a different lease often enough
 that the loader exists partly to report it. localsend will not notice.
 
-### 5. wakelock_plus throws on every toggle
+### 6. wakelock_plus throws on every toggle
 
     Unhandled Exception: PlatformException(channel-error, Unable to establish
     connection on channel: "dev.flutter.pigeon.wakelock_plus_platform_interface
@@ -76,7 +96,7 @@ on this device is exactly when it must not.
 
 ## Performance
 
-### 6. 29 fps on a static list, and the GPU is idle for it
+### 7. 29 fps on a static list, and the GPU is idle for it
 
     FRAMES active 60 @ 34446 us = 29.03 fps (raster 2275 us = 6%, blit 126 us
     = 0%, dmg 0%) | gl wait 31856 us
@@ -89,7 +109,7 @@ screen that is a scrolling list of text, not moving. The Settings tab measured
 This is the same finding as the 08-25 results and the stall write-up, now on a
 third screen. It is the performance problem; the GPU is not.
 
-### 7. No resource context for texture uploads
+### 8. No resource context for texture uploads
 
     [ERROR:embedder_surface_gl_skia.cc(121)] Could not create a resource
     context for async texture uploads. Expect degraded performance. Set a valid
@@ -101,13 +121,13 @@ chasing item 6 further -- it is an engine-side omission with a named fix.
 
 ## Release polish
 
-### 8. The debug HUD ships
+### 9. The debug HUD ships
 
 The green frame counter is `flutter_vita_debug_overlay`, weak-defaulted to 1 in
 the embedder. `templates/vita-app/release.c` defines it strong at 0, and the
 corpus build is not passing `--release`.
 
-### 9. LiveArea art is the template's
+### 10. LiveArea art is the template's
 
 localsend gets the shared Vita-with-Flutter-logo icon and gate. Fine for a
 corpus app under test, wrong for anything called a release.
@@ -125,7 +145,9 @@ by the shell over every application, not something localsend or the port does.
 
 ## Order to fix
 
-1 is the release blocker and needs a product decision first. 5 is a two-line
-stub with a real consequence. 3 and 4 are small plugins of the kind already in
-`packages/`. 6 is the long-standing one and the only one that is a research
-task rather than a job.
+3 is the only one that loses the user's session, so it goes first even though
+it is the least understood. 1 is the release blocker for what the app is *for*,
+and needs a product decision before any code. 6 is a two-line stub with a real
+consequence. 4 and 5 are small plugins of the kind already in `packages/`. 7 is
+the long-standing one and the only one that is a research task rather than a
+job.
