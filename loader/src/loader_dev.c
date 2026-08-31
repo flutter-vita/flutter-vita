@@ -17,6 +17,7 @@
 #include <psp2/appmgr.h>
 #include <psp2/io/dirent.h>
 #include <psp2/io/fcntl.h>
+#include <psp2/rtc.h>
 #include <psp2/io/stat.h>
 #include <psp2/kernel/processmgr.h>
 #include <psp2/kernel/threadmgr.h>
@@ -187,12 +188,42 @@ static void set_status(const char* status, const char* fmt, ...) {
 
 // A line for the panel and a line for the log file, from one call. The two
 // audiences want the same thing and keeping them in step by hand did not last.
+// MM-DD HH:MM:SS, fifteen characters including the trailing space.
+//
+// Fixed width on purpose: the panel finds the "+ " and "- " markers by
+// stepping over this, and the two halves of that arrangement are a hundred
+// lines apart in two languages. Change the width here and _Console goes wrong
+// quietly.
+//
+// The clock is whatever the console was last set to. Nothing sorts by it --
+// the log archive is numbered for exactly that reason -- but a wrong wall
+// clock still answers "was that this deploy or the one before lunch", which
+// is the question a wall of `put 1 KB` cannot.
+#define STAMP_LEN 15
+
+static void stamp(char* out, int cap) {
+  SceDateTime t;
+  memset(&t, 0, sizeof t);
+  if (sceRtcGetCurrentClockLocalTime(&t) < 0) {
+    snprintf(out, cap, "----- --:--:-- ");
+    return;
+  }
+  snprintf(out, cap, "%02d-%02d %02d:%02d:%02d ", t.month, t.day, t.hour,
+           t.minute, t.second);
+}
+
 static void note(const char* fmt, ...) {
-  char line[LOG_WIDTH];
+  char body[LOG_WIDTH - STAMP_LEN];
   va_list ap;
   va_start(ap, fmt);
-  vsnprintf(line, sizeof line, fmt, ap);
+  vsnprintf(body, sizeof body, fmt, ap);
   va_end(ap);
+
+  char ts[STAMP_LEN + 1];
+  stamp(ts, sizeof ts);
+
+  char line[LOG_WIDTH];
+  snprintf(line, sizeof line, "%s%s", ts, body);
 
   snprintf(g_lines[g_line_count % LOG_LINES], LOG_WIDTH, "%s", line);
   g_line_count++;

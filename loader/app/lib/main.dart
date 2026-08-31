@@ -471,9 +471,22 @@ class _Console extends StatelessWidget {
 
   /// The C side marks the two lines worth picking out of a wall of `put 1 KB`:
   /// an app starting and an app ending. Everything else is the same grey.
+  ///
+  /// Every line carries a fixed-width "MM-DD HH:MM:SS " ahead of the marker
+  /// (STAMP_LEN in loader_dev.c), so the marker is stepped over rather than
+  /// found. A line shorter than the stamp is one this side did not write.
+  static const _stampLen = 15;
+
+  /// Checked with the stamp and without it. A log written before timestamps
+  /// existed keeps its colours, and so does one written by something that is
+  /// not this loader -- blindly stepping over fifteen characters turned
+  /// "+ opened FVTA00009" into "0009" and lost the line.
   static Color _colourOf(String line) {
-    if (line.startsWith('+ ')) return good;
-    if (line.startsWith('- ')) return danger;
+    final body = line.length > _stampLen ? line.substring(_stampLen) : '';
+    for (final candidate in [line, body]) {
+      if (candidate.startsWith('+ ')) return good;
+      if (candidate.startsWith('- ')) return danger;
+    }
     return muted;
   }
 

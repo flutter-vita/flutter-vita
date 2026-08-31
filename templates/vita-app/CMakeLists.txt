@@ -189,6 +189,10 @@ target_link_libraries(${PROJECT_NAME}
   # itself. A stub archive contributes nothing to an app that never calls into
   # it, so this is listed unconditionally rather than behind another switch.
   ScePromoterUtil_stub
+  # For the loader's timestamps on every deploy-log line. The clock is whatever
+  # the console was last set to, which is why nothing sorts by it -- but a
+  # wrong wall clock still tells you two lines are an hour apart.
+  SceRtc_stub
   pthread m
 )
 
