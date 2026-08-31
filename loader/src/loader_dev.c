@@ -53,6 +53,8 @@
 #define STATE_PATH DATA_DIR "/loader-state.txt"
 // The panel reads this one and removes it; see readPanelRequest in device.dart.
 #define PANEL_REQUEST_PATH DATA_DIR "/panel-request.txt"
+// What the DEPLOY console reads. Survives the launch that ends this process.
+#define DEPLOY_LOG DATA_DIR "/deploy.log"
 #define STATE_TMP DATA_DIR "/loader-state.tmp"
 
 // The engine's debug HUD -- frame rate, damage, blit cost, free memory -- is
@@ -64,16 +66,40 @@
 // by deleting this line and rebuilding.
 int flutter_vita_debug_overlay = 0;
 
-// Never the GPU, whatever the memory card says.
+// The GPU, like every other app.
 //
-// The embedder's default became GL on 2026-08-24 and this is the exception,
-// for the reason ADR-0016 decision 7 gives: a hard crash under GL can wedge
-// the console, and the loader is the component that recovers from crashes --
-// so it is the last one permitted to cause an unrecoverable one. A strong
-// definition beats the engine's weak one at link time, which is deliberately
-// stronger than a switch file: a file can be absent, and the one device where
-// that matters is the one with no other way back.
-int flutter_vita_force_software = 1;
+// ADR-0016 decision 7 said software, and the reason was sound at the time: a
+// hard crash under GL can wedge the console, and the loader was the only thing
+// that could recover from a crash -- so it was the last component permitted to
+// cause an unrecoverable one. That premise expired when FVTA00009 shipped. The
+// updater is 50 KB of debugScreen with no engine and no GPU, it can rewrite
+// ux0:app/FVTA00001 from the memory card, and it restores the previous eboot
+// on L. Recovery no longer runs through this binary.
+//
+// Two things this switch drags with it, both handled below rather than
+// discovered later. sceGxm has to be released before handing over to another
+// title, or the console locks up hard enough to need the power button (see
+// flutter_vita_gpu_shutdown, and release_gpu here). And the engine picks its
+// log path off this very flag, so the loader lands on app.log with everything
+// else and would truncate the log of the app that just crashed -- which is
+// what rotate_app_log in the constructor is for.
+//
+// Left as an explicit 0 rather than deleted. The engine's weak default is
+// already 0, so this line changes nothing at link time; it is here because
+// "the loader's rasteriser" is a decision, and a decision that reads as an
+// absence is a decision nobody can find.
+int flutter_vita_force_software = 0;
+
+// Defined by the embedder when it is running the GL path, absent otherwise --
+// hence weak, the same declaration devserver.c and bailout.c carry. Every exit
+// from this file launches another application and then calls
+// sceKernelExitProcess, and under GL that leaves a live GXM context and queued
+// flips pointing at memory the kernel is about to reclaim.
+extern void flutter_vita_gpu_shutdown(void) __attribute__((weak));
+
+static void release_gpu(void) {
+  if (flutter_vita_gpu_shutdown != NULL) flutter_vita_gpu_shutdown();
+}
 
 #define LOG_LINES 12
 #define LOG_WIDTH 96
@@ -157,7 +183,34 @@ static void note(const char* fmt, ...) {
   char with_newline[LOG_WIDTH + 4];
   snprintf(with_newline, sizeof with_newline, "  %s\n", line);
   dev_server_log(with_newline);
+
+  // Appended as well as ringed. `launch` ends this process, so the ring is
+  // empty at every boot and the DEPLOY console showed nothing about the deploy
+  // that just happened -- which is the deploy you go looking for. The file
+  // outlives the process; the ring is what the state file can carry cheaply.
+  const SceUID fd =
+      sceIoOpen(DEPLOY_LOG, SCE_O_WRONLY | SCE_O_CREAT | SCE_O_APPEND, 0777);
+  if (fd >= 0) {
+    sceIoWrite(fd, with_newline + 2, strlen(with_newline) - 2);
+    sceIoClose(fd);
+  }
   publish();
+}
+
+// Keep the deploy log from growing without end.
+//
+// Truncated at boot rather than trimmed line by line: this file is read by a
+// panel that shows its last few dozen lines, so the cost of losing the older
+// half once every few hundred deploys is nothing, and a rewrite-on-every-note
+// scheme would put a read-modify-write of 64 KB in the path of every log line.
+#define DEPLOY_LOG_MAX (64 * 1024)
+
+static void trim_deploy_log(void) {
+  SceIoStat st;
+  if (sceIoGetstat(DEPLOY_LOG, &st) < 0) return;
+  if (st.st_size < DEPLOY_LOG_MAX) return;
+  sceIoRemove(DEPLOY_LOG ".1");
+  sceIoRename(DEPLOY_LOG, DEPLOY_LOG ".1");
 }
 
 // Bytes below a kilobyte, kilobytes below a megabyte, then megabytes to one
@@ -510,6 +563,30 @@ static void record_installed(const char* titleid) {
   sceIoClose(fd);
 }
 
+// Hand the console over and end this process. Never returns.
+//
+// Split out of cmd_launch because the APPS tab's RUN button arrives on the
+// watcher thread with no socket to answer on, and the three steps below are
+// the part that must not differ between the two callers.
+static void hand_over(const char* titleid) {
+  // Before the launch, not after: the engine truncates app.log on startup and
+  // the launch is the last thing that happens here.
+  rotate_app_log(titleid);
+
+  // Under GL this is where the console would be lost without a teardown. The
+  // loader ran software until 2026-08-31 and this was a comment saying so;
+  // it now runs GL like everything else, and the call is real.
+  release_gpu();
+
+  char uri[64];
+  snprintf(uri, sizeof uri, "psgm:play?titleid=%s", titleid);
+  sceAppMgrLaunchAppByUri(0xFFFFF, uri);
+  // Exit at once rather than lingering: the "close the current application?"
+  // prompt appears only because the outgoing app is still alive.
+  sceKernelExitProcess(0);
+  for (;;) sceKernelDelayThread(1000 * 1000);
+}
+
 static void cmd_launch(int sock) {
   note("launching %s", g_target);
   set_status("Launching", "%s", g_target);
@@ -520,20 +597,7 @@ static void cmd_launch(int sock) {
   sceNetSocketClose(sock);
   sceKernelDelayThread(200 * 1000);  // let the reply drain
 
-  // Under GL this is where the console would be lost without a teardown --
-  // see flutter_vita_gpu_shutdown. The loader runs software (decision 7), so
-  // there is nothing to release, and the symbol may not even be linked.
-  // Before the launch, not after: the engine truncates app.log on startup and
-  // the launch is the last thing that happens here.
-  rotate_app_log(g_target);
-
-  char uri[64];
-  snprintf(uri, sizeof uri, "psgm:play?titleid=%s", g_target);
-  sceAppMgrLaunchAppByUri(0xFFFFF, uri);
-  // Exit at once rather than lingering: the "close the current application?"
-  // prompt appears only because the outgoing app is still alive.
-  sceKernelExitProcess(0);
-  for (;;) sceKernelDelayThread(1000 * 1000);
+  hand_over(g_target);
 }
 
 // Install a whole extracted .vpk through the system promoter.
@@ -1080,6 +1144,19 @@ static void serve_request(void) {
     const int r = scePromoterUtilityDeletePkg(titleid);
     note("panel delete %s 0x%08X", titleid, (unsigned)r);
     forget_installed(titleid);
+  } else if (strncmp(buf, "launch ", 7) == 0) {
+    const char* titleid = buf + 7;
+    if (strcmp(titleid, LOADER_SELF_TITLEID) == 0) {
+      note("panel asked to launch the loader; already here");
+      return;
+    }
+    note("panel launch %s", titleid);
+    set_status("Launching", "%s", titleid);
+    // Long enough for one publish and one poll, so the screen says Launching
+    // before it goes. Without it the panel's last frame is whatever it drew
+    // half a second ago, which reads as a freeze.
+    sceKernelDelayThread(600 * 1000);
+    hand_over(titleid);
   } else {
     note("unknown panel request: %s", buf);
   }
@@ -1146,10 +1223,16 @@ __attribute__((constructor)) static void loader_register(void) {
   // Safe from here: sceIo is available to a constructor, and this is the only
   // state the screen can show before the network exists.
   mkdirs();
-  // The loader installed itself (tools/install-vpk.sh, FVTA00001), so it
-  // belongs in the registry the APPS tab reads. Recorded at boot rather than
-  // at that install, because the install that put this build on the card
-  // happened before there was a registry to write to.
-  record_installed(LOADER_SELF_TITLEID);
+  // Before main(), and that is the whole point.
+  //
+  // The engine opens its log with O_TRUNC as the first line of main(), and now
+  // that the loader runs GL it shares app.log with every app -- so without
+  // this, opening the loader after a crash destroys the log of the crash. That
+  // exact regression was measured on 2026-08-28 chasing keklist's emoji grid.
+  // A constructor runs before main, so the file is moved into the archive
+  // while it still holds the last thing the app said.
+  rotate_app_log("loader");
+  trim_deploy_log();
+  note("---- loader %s up ----", LOADER_SELF_TITLEID);
   publish();
 }

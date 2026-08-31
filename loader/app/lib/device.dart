@@ -11,6 +11,7 @@
 // it by writing one line the watcher picks up. A request that arrives while
 // Flutter is dead simply never arrives, which is the correct behaviour.
 
+import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
@@ -20,6 +21,7 @@ const requestPath = '$dataDir/loader-request.txt';
 const panelRequestPath = '$dataDir/panel-request.txt';
 const logDir = '$dataDir/logs';
 const appLogPath = '$dataDir/app.log';
+const deployLogPath = '$dataDir/deploy.log';
 const loaderLogPath = '$dataDir/m3.log';
 const installedPath = '$dataDir/installed.txt';
 const dumpDir = 'ux0:data';
@@ -108,6 +110,43 @@ class LoaderState {
       // once per publish. Next tick.
       return null;
     }
+  }
+}
+
+/// The DEPLOY console's history, newest last.
+///
+/// `launch` ends the loader's process, so the C side's in-memory ring is empty
+/// at every boot and the console showed nothing about the deploy that just
+/// happened -- which is the one you go looking for. loader_dev.c appends every
+/// note to a file instead.
+///
+/// Read from the end. The file is capped at 64 KB and this only ever wants the
+/// last screenful, so seeking beats reading the whole thing on a memory card,
+/// and the first partial line after the seek is dropped.
+List<String> readDeployLog({int lines = 200, int window = 16 * 1024}) {
+  try {
+    final file = File(deployLogPath);
+    if (!file.existsSync()) return const [];
+    final length = file.lengthSync();
+    if (length == 0) return const [];
+    final start = length > window ? length - window : 0;
+    final handle = file.openSync();
+    String text;
+    try {
+      handle.setPositionSync(start);
+      text = const Utf8Decoder(allowMalformed: true)
+          .convert(handle.readSync(length - start));
+    } finally {
+      handle.closeSync();
+    }
+    if (start > 0) {
+      final nl = text.indexOf('\n');
+      if (nl >= 0) text = text.substring(nl + 1);
+    }
+    final all = text.split('\n')..removeWhere((l) => l.trim().isEmpty);
+    return all.length <= lines ? all : all.sublist(all.length - lines);
+  } on FileSystemException {
+    return const [];
   }
 }
 
@@ -255,13 +294,16 @@ int clearCrashes() {
 
 /// A title this loader installed, and how much of ux0:data it is holding.
 class InstalledApp {
-  InstalledApp(this.titleId, this.cacheBytes, {required this.isSelf});
+  InstalledApp(this.titleId, this.cacheBytes);
 
   final String titleId;
   final int cacheBytes;
-  final bool isSelf;
 }
 
+/// The loader is left out. It installed itself and the registry records that,
+/// but a row you cannot delete, cannot run because you are already in it, and
+/// whose data directory is the one holding the list, is a row that only takes
+/// up space.
 List<InstalledApp> listInstalled(String self) {
   final file = File(installedPath);
   if (!file.existsSync()) return const [];
@@ -269,8 +311,8 @@ List<InstalledApp> listInstalled(String self) {
   final out = <InstalledApp>[];
   for (final raw in file.readAsLinesSync()) {
     final id = raw.trim();
-    if (id.isEmpty || !seen.add(id)) continue;
-    out.add(InstalledApp(id, _dirBytes('ux0:data/$id'), isSelf: id == self));
+    if (id.isEmpty || id == self || !seen.add(id)) continue;
+    out.add(InstalledApp(id, _dirBytes('ux0:data/$id')));
   }
   out.sort((a, b) => a.titleId.compareTo(b.titleId));
   return out;
@@ -307,8 +349,14 @@ bool clearAppCache(String titleId) {
 }
 
 /// One line the C watcher picks up within two seconds and then removes.
-void requestDelete(String titleId) {
-  File(requestPath).writeAsStringSync('delete $titleId\n', flush: true);
+void requestDelete(String titleId) => _request('delete $titleId');
+
+/// Hand the console to another title. Ends this process, so nothing after it
+/// on the Dart side runs.
+void requestLaunch(String titleId) => _request('launch $titleId');
+
+void _request(String line) {
+  File(requestPath).writeAsStringSync('$line\n', flush: true);
 }
 
 String humanBytes(int n) {

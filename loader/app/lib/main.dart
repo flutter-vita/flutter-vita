@@ -41,6 +41,7 @@ class LoaderApp extends StatefulWidget {
 
 class _LoaderAppState extends State<LoaderApp> {
   LoaderState _state = const LoaderState();
+  List<String> _console = const [];
   Tab _tab = Tab.deploy;
   PanelCommand? _cmd;
   int _cmdSeq = 0;
@@ -49,6 +50,7 @@ class _LoaderAppState extends State<LoaderApp> {
   @override
   void initState() {
     super.initState();
+    _console = readDeployLog();
     _poll();
     // Twice a second. The states worth watching live are a transfer's byte
     // count and a Wi-Fi drop, and neither needs a frame's worth of latency --
@@ -85,7 +87,13 @@ class _LoaderAppState extends State<LoaderApp> {
     // The sequence number exists so an unchanged file costs one comparison
     // rather than a rebuild of the whole tree twice a second.
     if (next.seq == _state.seq) return;
-    setState(() => _state = next);
+    // The console is re-read here rather than on the tick: the file only grows
+    // when the C side publishes, and that is exactly what the sequence number
+    // reports.
+    setState(() {
+      _state = next;
+      _console = readDeployLog();
+    });
   }
 
   @override
@@ -95,17 +103,25 @@ class _LoaderAppState extends State<LoaderApp> {
       textDirection: TextDirection.ltr,
       child: Container(
         color: bg,
-        padding: const EdgeInsets.fromLTRB(16, 10, 16, 6),
-        child: Column(
+        child: Row(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            _Header(state: s),
-            const SizedBox(height: 8),
-            _Tabs(current: _tab, onPick: (t) => setState(() => _tab = t)),
-            const SizedBox(height: 8),
-            Expanded(child: _body(s)),
-            const SizedBox(height: 6),
-            _Footer(state: s),
+            _Rail(current: _tab, onPick: (t) => setState(() => _tab = t)),
+            Expanded(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(16, 12, 16, 6),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    _Header(state: s),
+                    const SizedBox(height: 10),
+                    Expanded(child: _body(s)),
+                    const SizedBox(height: 6),
+                    _Footer(state: s),
+                  ],
+                ),
+              ),
+            ),
           ],
         ),
       ),
@@ -113,7 +129,7 @@ class _LoaderAppState extends State<LoaderApp> {
   }
 
   Widget _body(LoaderState s) => switch (_tab) {
-        Tab.deploy => _DeployTab(state: s),
+        Tab.deploy => _DeployTab(state: s, console: _console),
         Tab.logs => _LogsTab(command: _cmd),
         Tab.crashes => _CrashesTab(command: _cmd),
         Tab.apps => _AppsTab(self: s.self, command: _cmd),
@@ -129,17 +145,17 @@ class _Header extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Row(
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const FlutterLogo(size: 34),
-        const SizedBox(width: 12),
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Text(
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: [
+            Flexible(
+              child: Text(
                 _hostname,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
                 style: TextStyle(
                   fontSize: 20,
                   height: 1.1,
@@ -149,26 +165,27 @@ class _Header extends StatelessWidget {
                   color: state.ip.isEmpty ? const Color(0xFF5A6B7C) : fg,
                 ),
               ),
-              if (state.detail.isNotEmpty)
-                Text(state.detail,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(fontSize: 13, height: 1.4,
-                        color: dim)),
-            ],
-          ),
+            ),
+            const SizedBox(width: 12),
+            _Status(status: state.status),
+          ],
         ),
-        const SizedBox(width: 12),
-        _Status(status: state.status),
+        if (state.detail.isNotEmpty)
+          Text(state.detail,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(fontSize: 13, height: 1.5, color: dim)),
       ],
     );
   }
 }
 
 /// The five states of ADR-0016's status model, plus the moment before the
-/// first publish. Colour carries the same information as the word, because
-/// the thing this screen is read for is answered from across a desk -- which
-/// is also why it is set at 26pt and not at the 15 it used to be.
+/// first publish. Colour carries the same information as the word.
+///
+/// It was 26pt and alone on the right for one build. Beside the address it
+/// reads as a property of the address, which is what it is, and the tab strip
+/// it used to compete with is a rail now.
 class _Status extends StatelessWidget {
   const _Status({required this.status});
 
@@ -186,18 +203,18 @@ class _Status extends StatelessWidget {
   Widget build(BuildContext context) {
     final colour = _colours[status] ?? const Color(0xFF5A6B7C);
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 8),
+      padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 5),
       decoration: BoxDecoration(
         color: colour.withValues(alpha: 0.16),
-        border: Border.all(color: colour, width: 2),
-        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: colour, width: 1.5),
+        borderRadius: BorderRadius.circular(6),
       ),
       child: Text(
         status.toUpperCase(),
         style: TextStyle(
-          fontSize: 26,
+          fontSize: 14,
           height: 1.0,
-          letterSpacing: 2.5,
+          letterSpacing: 1.6,
           fontWeight: FontWeight.w700,
           color: colour,
         ),
@@ -206,8 +223,13 @@ class _Status extends StatelessWidget {
   }
 }
 
-class _Tabs extends StatelessWidget {
-  const _Tabs({required this.current, required this.onPick});
+/// The navigation rail, extended, as LocalSend draws it above 950 logical
+/// pixels (pages/home_page.dart). At 960 x 544 the Vita is on the far side of
+/// that threshold, and a rail is the right shape for the screen twice over: a
+/// landscape panel has width to spare and no height to spare, and a 60 px row
+/// is a target a thumb hits without aiming, which a 32 px tab strip is not.
+class _Rail extends StatelessWidget {
+  const _Rail({required this.current, required this.onPick});
 
   final Tab current;
   final ValueChanged<Tab> onPick;
@@ -219,37 +241,98 @@ class _Tabs extends StatelessWidget {
     Tab.apps: 'APPS',
   };
 
+  static const _glyphs = {
+    Tab.deploy: Glyph.deploy,
+    Tab.logs: Glyph.logs,
+    Tab.crashes: Glyph.crashes,
+    Tab.apps: Glyph.apps,
+  };
+
   @override
-  Widget build(BuildContext context) => Row(
-        children: [
-          for (final t in Tab.values) ...[
-            GestureDetector(
-              behavior: HitTestBehavior.opaque,
-              onTap: () => onPick(t),
-              child: Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 16, vertical: 7),
-                decoration: BoxDecoration(
-                  color: t == current ? accent.withValues(alpha: 0.16) : sunken,
-                  border: Border.all(color: t == current ? accent : line),
-                  borderRadius: BorderRadius.circular(5),
-                ),
-                child: Text(
-                  _names[t]!,
-                  style: TextStyle(
-                    fontSize: 13,
-                    height: 1.0,
-                    letterSpacing: 1.6,
-                    fontWeight: FontWeight.w700,
-                    color: t == current ? accent : muted,
-                  ),
+  Widget build(BuildContext context) => Container(
+        width: 172,
+        color: sunken,
+        padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 10),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            const Padding(
+              padding: EdgeInsets.only(left: 6, bottom: 16),
+              child: Row(children: [
+                FlutterLogo(size: 26),
+                SizedBox(width: 10),
+                Text('LOADER',
+                    style: TextStyle(
+                      fontSize: 15,
+                      height: 1.0,
+                      letterSpacing: 2.0,
+                      fontWeight: FontWeight.w700,
+                      color: fg,
+                    )),
+              ]),
+            ),
+            for (final t in Tab.values)
+              _RailItem(
+                glyph: _glyphs[t]!,
+                label: _names[t]!,
+                selected: t == current,
+                onTap: () => onPick(t),
+              ),
+          ],
+        ),
+      );
+}
+
+class _RailItem extends StatelessWidget {
+  const _RailItem({
+    required this.glyph,
+    required this.label,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final Glyph glyph;
+  final String label;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final colour = selected ? accent : muted;
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: onTap,
+      child: Container(
+        height: 56,
+        margin: const EdgeInsets.only(bottom: 6),
+        padding: const EdgeInsets.symmetric(horizontal: 12),
+        decoration: BoxDecoration(
+          color: selected ? accent.withValues(alpha: 0.16) : null,
+          borderRadius: BorderRadius.circular(8),
+        ),
+        child: Row(
+          children: [
+            GlyphIcon(glyph, colour: colour, size: 22),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Text(
+                label,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  fontSize: 13,
+                  height: 1.0,
+                  letterSpacing: 1.4,
+                  fontWeight: FontWeight.w700,
+                  color: colour,
                 ),
               ),
             ),
-            const SizedBox(width: 8),
           ],
-        ],
-      );
+        ),
+      ),
+    );
+  }
 }
 
 class _Footer extends StatelessWidget {
@@ -276,9 +359,10 @@ class _Footer extends StatelessWidget {
 // ---------------------------------------------------------------- deploy
 
 class _DeployTab extends StatelessWidget {
-  const _DeployTab({required this.state});
+  const _DeployTab({required this.state, required this.console});
 
   final LoaderState state;
+  final List<String> console;
 
   @override
   Widget build(BuildContext context) => Column(
@@ -288,7 +372,7 @@ class _DeployTab extends StatelessWidget {
             _Progress(done: state.recvDone, total: state.recvTotal),
             const SizedBox(height: 8),
           ],
-          Expanded(child: _Console(lines: state.log)),
+          Expanded(child: _Console(lines: console)),
         ],
       );
 }
@@ -347,11 +431,16 @@ class _Progress extends StatelessWidget {
   }
 }
 
-/// Recent actions, oldest at the top.
+/// The deploy history, oldest at the top, newest pinned to the bottom.
 ///
-/// Empty at every launch and that is by design: `launch` ends this process, so
-/// the loader's whole life is boot, serve a few commands, hand over. The LOGS
-/// tab is where history lives now.
+/// It used to be the C side's in-memory ring, which meant it was empty at
+/// every launch -- and since `launch` is the last thing the loader does, that
+/// emptied it exactly when you wanted to read it. It reads a file now, so a
+/// deploy is still on screen after the app it deployed has come and gone.
+///
+/// Reversed rather than bottom-aligned: a Column that runs past the panel
+/// overflows, and two hundred lines is more than fits. Reverse puts the newest
+/// line at the bottom and makes the rest scroll back under a thumb.
 class _Console extends StatelessWidget {
   const _Console({required this.lines});
 
@@ -362,16 +451,16 @@ class _Console extends StatelessWidget {
         padding: 12,
         child: lines.isEmpty
             ? const Empty('no activity yet')
-            : Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisAlignment: MainAxisAlignment.end,
-                children: [
-                  for (final l in lines)
-                    Text(l,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: mono),
-                ],
+            : ListView.builder(
+                reverse: true,
+                itemCount: lines.length,
+                itemExtent: 18,
+                itemBuilder: (_, i) => Text(
+                  lines[lines.length - 1 - i],
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: mono,
+                ),
               ),
       );
 }
@@ -610,7 +699,7 @@ class _CrashesTabState extends State<_CrashesTab> {
             ),
           ] else
             Btn(
-              text: 'CLEAR ALL',
+              text: 'CLEAR CRASHES',
               colour: danger,
               enabled: _files.isNotEmpty,
               onTap: () => setState(() => _confirmClear = true),
@@ -827,6 +916,13 @@ class _AppsTabState extends State<_AppsTab> {
                       onConfirm: () =>
                           setState(() => _confirming = _apps[i].titleId),
                       onCancel: () => setState(() => _confirming = null),
+                      // Ends this process. The C side answers within two
+                      // seconds, so the note is what the screen shows until
+                      // the console is somewhere else.
+                      onRun: () {
+                        requestLaunch(_apps[i].titleId);
+                        setState(() => _note = 'launching ${_apps[i].titleId}');
+                      },
                       onDelete: () {
                         requestDelete(_apps[i].titleId);
                         setState(() {
@@ -861,6 +957,7 @@ class _AppRow extends StatelessWidget {
     required this.onCancel,
     required this.onDelete,
     required this.onClear,
+    required this.onRun,
   });
 
   final InstalledApp app;
@@ -869,6 +966,7 @@ class _AppRow extends StatelessWidget {
   final VoidCallback onCancel;
   final VoidCallback onDelete;
   final VoidCallback onClear;
+  final VoidCallback onRun;
 
   @override
   Widget build(BuildContext context) => ListRow(
@@ -880,18 +978,15 @@ class _AppRow extends StatelessWidget {
                 style: mono.copyWith(color: fg, fontWeight: FontWeight.w600)),
           ),
           Expanded(
-            child: Text(
-              app.isSelf
-                  ? 'this loader'
-                  : 'data ${humanBytes(app.cacheBytes)}',
-              style: mono,
-            ),
+            child: Text('data ${humanBytes(app.cacheBytes)}', style: mono),
           ),
           if (confirming) ...[
             Btn(text: 'REALLY DELETE', colour: danger, onTap: onDelete),
             const SizedBox(width: 8),
             Btn(text: 'CANCEL', colour: muted, onTap: onCancel),
           ] else ...[
+            Btn(text: 'RUN', colour: good, onTap: onRun),
+            const SizedBox(width: 8),
             Btn(
               text: 'CLEAR DATA',
               colour: warn,
@@ -899,14 +994,7 @@ class _AppRow extends StatelessWidget {
               onTap: onClear,
             ),
             const SizedBox(width: 8),
-            // The loader cannot uninstall itself: it is the process running,
-            // and the C side refuses the request anyway.
-            Btn(
-              text: 'DELETE',
-              colour: danger,
-              enabled: !app.isSelf,
-              onTap: onConfirm,
-            ),
+            Btn(text: 'DELETE', colour: danger, onTap: onConfirm),
           ],
         ],
       );
