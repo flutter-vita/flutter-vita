@@ -84,11 +84,28 @@ int flutter_vita_debug_overlay = 0;
 // else and would truncate the log of the app that just crashed -- which is
 // what rotate_app_log in the constructor is for.
 //
-// Left as an explicit 0 rather than deleted. The engine's weak default is
-// already 0, so this line changes nothing at link time; it is here because
-// "the loader's rasteriser" is a decision, and a decision that reads as an
-// absence is a decision nobody can find.
-int flutter_vita_force_software = 0;
+// Back to 1 on 2026-08-31, hours after the 0 that replaced it, and the reason
+// is not the crash risk ADR-0016 decision 7 named. It is that the panel is not
+// legible under GL on the blessed engine.
+//
+// Seen on the console: the status pill and every Btn render as a filled
+// rectangle with no text in them, while the rail labels and body text next to
+// them are fine. What the blank ones have in common is a translucent
+// container underneath -- withValues(alpha: 0.16) plus a border. A green '0'
+// also lands on top of the Flutter logo, and a grey band across the bottom of
+// the log panel, both of which read as an atlas being sampled wrong rather
+// than a layout that moved.
+//
+// Not necessarily a bug in the GL path as it stands today. The loader links
+// the *blessed* engine (decision 2), b1f20d13d621, which is deliberately older
+// than the tree -- so this may already be fixed in the engine apps use, and
+// the way to find out is to reproduce it in an app rather than to keep
+// re-blessing under a loader nobody can read.
+//
+// Apps are unaffected and stay on the GPU: ux0:data/flutter-vita/software.on
+// is 0 on this console, and the gallery came up "GL up -- OpenGL ES 2.0
+// VitaGL / SGX543MP4+" on the current engine.
+int flutter_vita_force_software = 1;
 
 // Defined by the embedder when it is running the GL path, absent otherwise --
 // hence weak, the same declaration devserver.c and bailout.c carry. Every exit
