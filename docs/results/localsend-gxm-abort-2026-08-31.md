@@ -94,11 +94,50 @@ history page is a large single step in it and reproduces on a fresh boot: the
 heap goes 7M/8M to a 27M/27M peak and settles at 17M/18M, and free user memory
 drops 27,648 K to 21,504 K, for a list of eight rows with no thumbnails.
 
+## The three-dots menu, not the row
+
+Corrected by the user after the first pass: the tap that preceded the fault was
+on a row's overflow menu and then **Show in folder**, not on the row itself.
+That changes the suspect list, because a `PopupMenuButton` is not a tap that
+throws -- it is a route that opens, and it opens by animating a clip from
+nothing to full size.
+
+Every frame of that animation calls `glScissor` with a rectangle that is
+briefly degenerate, and `update_scissor_test` does not defend against one:
+
+    region.x = region.gl_x < 0 ? 0 : region.gl_x;
+    region.w = region.gl_w;
+    ...
+    if (region.x + region.w > active_w) region.w = active_w - region.x;
+
+Nothing clamps `region.w` or `region.h` at zero from below. A scissor that is
+fully off-screen makes `region.w` negative, and the width and height then reach
+GXM through
+
+    sceGxmSetRegionClip(gxm_context, SCE_GXM_REGION_CLIP_OUTSIDE,
+                        region.x, region.y,
+                        region.x + region.w - 1, region.y + region.h - 1);
+
+whose parameters are **unsigned**. A zero-width scissor alone is enough:
+`x + 0 - 1` is `x - 1`, so xMax lands below xMin and GXM is handed an inverted
+region to compute tile ranges from.
+
+That fits the symptom better than uptime does. It puts the fault in the same
+two functions the stack names, it explains why the crash follows an
+interaction rather than arriving at random, and `R2 = -1.0f` is what
+`y_scale = -(height >> 1)` produces for a two-pixel-high viewport -- the sort
+of size a menu passes through on its way open.
+
+**Not yet reproduced.** The console went off the network before this could be
+tested, and a defensive clamp that has never been shown to change anything is
+not a fix. The test is: open the overflow menu on a receive-history row, on
+the GPU path, and see whether it dies.
+
 ## Where to look next
 
-1. **Reproduce it deliberately.** Both faults came after hours of uptime and a
-   long memory slide. A soak that drives `glViewport` and the scissor path hard
-   is a cheaper reproduction than waiting for the console to do it again.
+1. **Open the overflow menu.** The hypothesis above is one tap to test and one
+   clamp to fix, and it is the only account of the fault that does not need
+   hours of uptime to arrive.
 2. **Check the reserve.** `sceGxmReserveVertexDefaultUniformBuffer` is unchecked
    in three places, and vitaGL is a vendored tree with an existing patch series
    for exactly this class of omission.

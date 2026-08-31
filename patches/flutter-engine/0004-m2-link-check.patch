@@ -240,10 +240,10 @@ index 00000000..a5e0625d
 +}  // extern "C"
 diff --git a/engine/src/flutter/shell/platform/embedder/vita_embedder.cc b/engine/src/flutter/shell/platform/embedder/vita_embedder.cc
 new file mode 100644
-index 00000000..8e0eaf00
+index 00000000..8e12f894
 --- /dev/null
 +++ b/engine/src/flutter/shell/platform/embedder/vita_embedder.cc
-@@ -0,0 +1,3098 @@
+@@ -0,0 +1,3470 @@
 +// Copyright (c) 2026, the Flutter Authors. All rights reserved.
 +// Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
@@ -1594,12 +1594,330 @@ index 00000000..8e0eaf00
 +  g_win_first_us = 0;
 +}
 +}
++// --------------------------------------------------------------------------
++// The stall watchdog
++// --------------------------------------------------------------------------
++//
++// Every other instrument in this file reports from the present path, which is
++// fine right up until the thing that goes wrong is that presents stop. Then
++// the instrument and the fault share a thread, the log ends mid-sentence, and
++// what is left behind is a frame rate that trails off to nothing and no reason
++// -- which is the 08-31 localsend stall, still open, and by the user's account
++// the ordinary way a GPU app dies here rather than a localsend peculiarity.
++//
++// This reports from the platform loop instead. That thread waits on vblank,
++// drains platform tasks, touches no GL, and held perfect 16.6 ms cadence right
++// through the stall, so it is the one place in the process that is still
++// running when the screen freezes.
++//
++// What it prints is picked to separate the three explanations a frozen screen
++// cannot be told apart from outside:
++//
++//   * the UI thread has stopped producing layer trees -- parked in a wait,
++//     runClocks flat, raster idle behind it;
++//   * the UI thread is busy -- runClocks climbing with nothing on screen;
++//   * the raster thread is stuck below Skia -- `phase` says which call it went
++//     into, and runClocks says whether it is spinning or blocked.
++//
++// sceKernelGetThreadInfo answers all three for any thread in the process:
++// status, what it is waiting on, and how many cycles it has burned. No
++// debugger, no kernel plugin, and nothing that has to be running beforehand.
++
++// Where the raster thread is in a frame. Read during a stall, when the thread
++// that sets it is by definition not the thread reading it.
++enum RasterPhase : uint32_t {
++  kPhaseIdle = 0,     // between frames, waiting to be handed one
++  kPhaseDraw,         // make_current returned; Skia is submitting
++  kPhasePresent,      // present entered; command submission done
++  kPhaseSwap,         // inside vglSwapBuffers -- vblank and the GPU
++  kPhaseCopy,         // software path: the framebuffer memcpy
++};
++const char* kPhaseNames[] = {"idle", "draw", "present", "swap", "copy"};
++std::atomic<uint32_t> g_raster_phase{kPhaseIdle};
++std::atomic<uint64_t> g_raster_phase_us{0};
++
++void EnterPhase(RasterPhase phase) {
++  g_raster_phase_us.store(sceKernelGetSystemTimeWide(),
++                          std::memory_order_relaxed);
++  g_raster_phase.store(phase, std::memory_order_release);
++}
++
++// The threads to ask about.
++//
++// The kernel names every pthread "pthread", which is why a crash dump lists
++// six of them and says nothing about which is the UI thread. fml announces its
++// own through flutter_vita_log_affinity, so that name is kept here alongside
++// the uid; everything else -- vitaGL's collector, the display queue, SceNet's
++// workers -- arrives through the process-wide thread event handler with
++// whatever the kernel calls it.
++constexpr int kMaxWatched = 48;
++
++struct WatchedThread {
++  std::atomic<SceUID> uid;   // 0 means the slot is free
++  char label[24];            // fml's name, when there is one
++  uint64_t run_clocks;       // at the previous sample
++  uint32_t preempts;         // ditto
++};
++WatchedThread g_watched[kMaxWatched];
++std::atomic<int> g_watched_used{0};
++
++// Called from a thread event handler, so: atomics only, no allocation, no
++// logging, and nothing that can block.
++void NoteThread(SceUID uid, const char* label) {
++  if (uid <= 0) return;
++  const int used = g_watched_used.load(std::memory_order_acquire);
++  for (int i = 0; i < used; i++) {
++    if (g_watched[i].uid.load(std::memory_order_acquire) != uid) continue;
++    if (label != nullptr) {
++      std::snprintf(g_watched[i].label, sizeof g_watched[i].label, "%s", label);
++    }
++    return;
++  }
++  // A free slot from an exited thread first, then the end of the array.
++  for (int i = 0; i < used; i++) {
++    SceUID empty = 0;
++    if (!g_watched[i].uid.compare_exchange_strong(empty, uid,
++                                                  std::memory_order_acq_rel)) {
++      continue;
++    }
++    g_watched[i].label[0] = '\0';
++    if (label != nullptr) {
++      std::snprintf(g_watched[i].label, sizeof g_watched[i].label, "%s", label);
++    }
++    g_watched[i].run_clocks = 0;
++    g_watched[i].preempts = 0;
++    return;
++  }
++  const int slot = g_watched_used.fetch_add(1, std::memory_order_acq_rel);
++  if (slot >= kMaxWatched) {
++    g_watched_used.store(kMaxWatched, std::memory_order_release);
++    return;
++  }
++  g_watched[slot].label[0] = '\0';
++  if (label != nullptr) {
++    std::snprintf(g_watched[slot].label, sizeof g_watched[slot].label, "%s",
++                  label);
++  }
++  g_watched[slot].run_clocks = 0;
++  g_watched[slot].preempts = 0;
++  g_watched[slot].uid.store(uid, std::memory_order_release);
++}
++
++void ForgetThread(SceUID uid) {
++  const int used = g_watched_used.load(std::memory_order_acquire);
++  for (int i = 0; i < used; i++) {
++    SceUID held = uid;
++    if (g_watched[i].uid.compare_exchange_strong(held, 0,
++                                                 std::memory_order_acq_rel)) {
++      return;
++    }
++  }
++}
++
++int ThreadEvent(SceInt32 type, SceUID thid, SceInt32 /* arg */,
++                void* /* common */) {
++  if (type == SCE_KERNEL_THREAD_EVENT_TYPE_START) {
++    NoteThread(thid, nullptr);
++  } else if (type == SCE_KERNEL_THREAD_EVENT_TYPE_EXIT) {
++    ForgetThread(thid);
++  }
++  return 0;
++}
++
++const char* StatusName(SceUInt32 status) {
++  if (status & SCE_THREAD_RUNNING) return "run";
++  if (status & SCE_THREAD_READY) return "ready";
++  if (status & SCE_THREAD_STANDBY) return "standby";
++  if (status & SCE_THREAD_WAITING) return "wait";
++  if (status & SCE_THREAD_DORMANT) return "dormant";
++  if (status & SCE_THREAD_DELETED) return "killed";
++  if (status & SCE_THREAD_DEAD) return "dead";
++  if (status & 256) return "susp";
++  return "?";
++}
++
++// waitType is a threadmgr UID class: the kind of object the thread is parked
++// on. Naming it is the difference between "blocked" and "blocked on a
++// semaphore somebody else holds".
++const char* WaitName(SceUInt32 type) {
++  switch (type) {
++    case SCE_KERNEL_TMID_Semaphore: return "sema";
++    case SCE_KERNEL_TMID_EventFlag: return "evf";
++    case SCE_KERNEL_TMID_Mbox: return "mbox";
++    case SCE_KERNEL_TMID_Vpl: return "vpl";
++    case SCE_KERNEL_TMID_Fpl: return "fpl";
++    case SCE_KERNEL_TMID_Mpipe: return "mpipe";
++    case SCE_KERNEL_TMID_Callback: return "cb";
++    case SCE_KERNEL_TMID_SleepThread: return "sleep";
++    case SCE_KERNEL_TMID_DelayThread: return "delay";
++    case SCE_KERNEL_TMID_SuspendThread: return "suspend";
++    case SCE_KERNEL_TMID_DormantThread: return "dormant";
++    case 0: return "-";
++    default: return "obj";
++  }
++}
++
++// One buffer, because both callers want the same text and neither wants to own
++// it: the platform loop prints it, and the dev server's `diag` returns it.
++std::mutex g_diag_mutex;
++char g_diag_text[6144];
++uint64_t g_diag_last_us = 0;      // when the last sample was taken
++uint64_t g_sys_idle_us[4] = {0};  // per-CPU idle clocks at that sample
++uint32_t g_sys_switches = 0;
++
++// Fill g_diag_text with everything known about why nothing is moving.
++//
++// Deltas are against the previous call, so two calls a few seconds apart are
++// worth far more than one: a thread that is merely parked and a thread that is
++// spinning look identical in a single sample and completely different across
++// two.
++void BuildDiag(const char* why, uint64_t since_present_us) {
++  const uint64_t now = sceKernelGetSystemTimeWide();
++  const uint64_t window_us = g_diag_last_us != 0 ? now - g_diag_last_us : 0;
++  int n = 0;
++  const int cap = static_cast<int>(sizeof g_diag_text);
++
++  n += std::snprintf(g_diag_text + n, cap - n,
++                     "flutter-vita: %s %u ms since present #%u"
++                     " -- raster phase %s for %u ms, loop iter %u\n",
++                     why, static_cast<unsigned>(since_present_us / 1000),
++                     static_cast<unsigned>(g_frame_index),
++                     kPhaseNames[g_raster_phase.load(std::memory_order_acquire)
++                                 % 5],
++                     static_cast<unsigned>(
++                         (now - g_raster_phase_us.load(
++                                    std::memory_order_acquire)) / 1000),
++                     static_cast<unsigned>(g_loop_iterations));
++
++  SceKernelFreeMemorySizeInfo mem;
++  mem.size = sizeof(mem);
++  if (sceKernelGetFreeMemorySize(&mem) >= 0) {
++    n += std::snprintf(g_diag_text + n, cap - n,
++                       "flutter-vita:   mem user=%dK cdram=%dK phycont=%dK"
++                       " heap=%uM/%uM vgl_oom=%u\n",
++                       mem.size_user / 1024, mem.size_cdram / 1024,
++                       mem.size_phycont / 1024, HeapUsedMb(), HeapArenaMb(),
++                       static_cast<unsigned>(vgl_oom_count));
++  }
++
++  // Whether the console is idle or busy, independent of this process. A stall
++  // with all four cores idle is a wait; one with a core pinned is a spin, and
++  // the thread table below says whose.
++  SceKernelSystemInfo sys;
++  std::memset(&sys, 0, sizeof sys);
++  sys.size = sizeof(sys);
++  if (sceKernelGetSystemInfo(&sys) >= 0) {
++    n += std::snprintf(g_diag_text + n, cap - n, "flutter-vita:   cpu idle");
++    for (int c = 0; c < 4; c++) {
++      const uint64_t idle = sys.cpuInfo[c].idleClock;
++      const uint64_t d = idle - g_sys_idle_us[c];
++      n += std::snprintf(g_diag_text + n, cap - n, " %u%%",
++                         window_us != 0
++                             ? static_cast<unsigned>(d * 100 / window_us)
++                             : 0u);
++      g_sys_idle_us[c] = idle;
++    }
++    const uint32_t sw = sys.cpuInfo[0].threadSwitchCount +
++                        sys.cpuInfo[1].threadSwitchCount +
++                        sys.cpuInfo[2].threadSwitchCount +
++                        sys.cpuInfo[3].threadSwitchCount;
++    n += std::snprintf(g_diag_text + n, cap - n, " switches +%u over %u ms\n",
++                       static_cast<unsigned>(sw - g_sys_switches),
++                       static_cast<unsigned>(window_us / 1000));
++    g_sys_switches = sw;
++  }
++
++  const int used = g_watched_used.load(std::memory_order_acquire);
++  for (int i = 0; i < used && n < cap - 128; i++) {
++    const SceUID uid = g_watched[i].uid.load(std::memory_order_acquire);
++    if (uid == 0) continue;
++    SceKernelThreadInfo info;
++    std::memset(&info, 0, sizeof info);
++    info.size = sizeof(info);
++    if (sceKernelGetThreadInfo(uid, &info) < 0) continue;
++
++    // The delta over the window is the whole point: zero means parked, and a
++    // figure near the window length means one thread is eating a core with
++    // nothing to show for it.
++    //
++    // The unit is printed without one. SceKernelSysClock is microseconds
++    // everywhere else in this SDK, and if runClocks follows that then the
++    // percentage beside it is a CPU share; if it is really cycles at 444 MHz
++    // the percentage will read in the tens of thousands and say so plainly.
++    // The first report off the console settles it, and a wrong unit in a log
++    // is worse than no unit.
++    const uint64_t clocks = static_cast<uint64_t>(info.runClocks);
++    const uint64_t ran = clocks - g_watched[i].run_clocks;
++    g_watched[i].run_clocks = clocks;
++    const uint32_t preempts = info.threadPreemptCount - g_watched[i].preempts;
++    g_watched[i].preempts = info.threadPreemptCount;
++
++    n += std::snprintf(
++        g_diag_text + n, cap - n,
++        "flutter-vita:   thr %-18s 0x%08X %-7s %s:0x%08X ran +%u"
++        " (%u%%) pre +%u cpu %d\n",
++        g_watched[i].label[0] != '\0' ? g_watched[i].label : info.name,
++        static_cast<unsigned>(uid), StatusName(info.status),
++        WaitName(info.waitType), static_cast<unsigned>(info.waitId),
++        static_cast<unsigned>(ran),
++        window_us != 0 ? static_cast<unsigned>(ran * 100 / window_us) : 0u,
++        static_cast<unsigned>(preempts),
++        static_cast<int>(info.lastExecutedCpuId));
++  }
++  g_diag_last_us = now;
++}
++
++// Called once per platform-loop iteration, which is once per vblank.
++//
++// Cheap in the common case: one comparison against a timestamp the present
++// path already maintains. The expensive part -- forty-odd sceKernelGetThreadInfo
++// calls -- only runs when the screen has already been frozen for two seconds,
++// at which point nothing else is competing for the CPU anyway.
++constexpr uint64_t kStallUs = 2 * 1000 * 1000;
++constexpr uint64_t kStallRepeatUs = 5 * 1000 * 1000;
++
++uint64_t g_stall_reported_us = 0;
++unsigned g_stall_reports = 0;
++
++void CheckForStall() {
++  if (g_last_present_us == 0) return;  // nothing has ever been presented
++  const uint64_t now = sceKernelGetSystemTimeWide();
++  const uint64_t since = now - g_last_present_us;
++
++  if (since < kStallUs) {
++    if (g_stall_reports != 0) {
++      VLog("flutter-vita: UNSTALLED after %u ms and %u reports\n",
++           static_cast<unsigned>(g_stall_reported_us != 0
++                                     ? (now - g_stall_reported_us) / 1000
++                                     : 0),
++           g_stall_reports);
++      g_stall_reports = 0;
++      g_stall_reported_us = 0;
++    }
++    return;
++  }
++
++  if (g_stall_reported_us != 0 && now - g_stall_reported_us < kStallRepeatUs) {
++    return;
++  }
++  // Ten reports is fifty seconds of evidence. Past that the app is not coming
++  // back and the log is just growing, and an unbuffered write per line on a
++  // memory card is not free.
++  if (g_stall_reports >= 10) return;
++
++  std::lock_guard<std::mutex> lock(g_diag_mutex);
++  BuildDiag("STALL", since);
++  VLog("%s", g_diag_text);
++  g_stall_reported_us = now;
++  g_stall_reports++;
++}
 +
 +// |SoftwareSurfacePresentCallback|
 +bool PresentSurface(void* /* user_data */,
 +                    const void* allocation,
 +                    size_t row_bytes,
 +                    size_t height) {
++  EnterPhase(kPhaseCopy);
 +  NotePresent(row_bytes, height);
 +
 +  if (g_display.base == nullptr) {
@@ -1711,6 +2029,7 @@ index 00000000..8e0eaf00
 +  // a frame the observer never reported would silently reuse the last rect.
 +  g_damage = Damage{};
 +
++  EnterPhase(kPhaseIdle);
 +  ReportFrameWindow();
 +
 +  return true;
@@ -2011,6 +2330,7 @@ index 00000000..8e0eaf00
 +  // without reaching into it.
 +  if (g_gl_stopping.load(std::memory_order_acquire)) return false;
 +  g_gl_in_frame.store(true, std::memory_order_release);
++  EnterPhase(kPhaseDraw);
 +  g_gl_frame_start_us = sceKernelGetSystemTimeWide();
 +  if (g_gl_present_end_us != 0) {
 +    g_last_idle_us = g_gl_frame_start_us - g_gl_present_end_us;
@@ -2022,6 +2342,7 @@ index 00000000..8e0eaf00
 +bool GlClearCurrent(void* /* user_data */) { return true; }
 +
 +bool GlPresent(void* /* user_data */) {
++  EnterPhase(kPhasePresent);
 +  if (g_gl_frame_start_us != 0) {
 +    const uint64_t raster_us =
 +        sceKernelGetSystemTimeWide() - g_gl_frame_start_us;
@@ -2038,6 +2359,7 @@ index 00000000..8e0eaf00
 +  // for any frame that fits inside 16.6 ms and stops discriminating there. The
 +  // raster figure above is what to read when it does.
 +  const uint64_t swap_start = sceKernelGetSystemTimeWide();
++  EnterPhase(kPhaseSwap);
 +  // GL_TRUE is `has_commondialog` in vitaGL's swap: it is what makes vitaGL
 +  // run sceCommonDialogUpdate against its own back buffer, which is how the
 +  // libime keyboard reaches the screen over GL content. Only while one is
@@ -2046,6 +2368,7 @@ index 00000000..8e0eaf00
 +  g_gl_present_end_us = sceKernelGetSystemTimeWide();
 +  g_win_blit_us += g_gl_present_end_us - swap_start;
 +  g_gl_in_frame.store(false, std::memory_order_release);
++  EnterPhase(kPhaseIdle);
 +
 +  ReportFrameWindow();
 +  return true;
@@ -2092,6 +2415,31 @@ index 00000000..8e0eaf00
 +  VLog("flutter-vita: thread %s affinity 0x%05X -> 0x%05X\n",
 +       name != nullptr ? name : "?", static_cast<unsigned>(before),
 +       static_cast<unsigned>(after));
++  // The kernel calls all of these "pthread". This is the only place the port
++  // learns which one is the UI thread and which is the raster thread, and the
++  // stall report is unreadable without that.
++  NoteThread(sceKernelGetThreadId(), name);
++}
++
++// What the stall watchdog would print, on demand, over the dev server.
++//
++// The watchdog only speaks when presents have stopped, and half of what a
++// frozen app needs is the reading from *before* it froze -- or from an app
++// that is merely slow rather than stopped, which is the more common complaint.
++// This is the same sample, taken because someone asked.
++//
++// Two calls are worth four times one: every runClocks figure is a delta
++// against the previous sample, so a single call reports a window of unknown
++// length and a pair reports the seconds between them.
++extern "C" int flutter_vita_diag(char* out, int cap) {
++  if (out == nullptr || cap <= 0) return 0;
++  std::lock_guard<std::mutex> lock(g_diag_mutex);
++  const uint64_t since = g_last_present_us != 0
++                             ? sceKernelGetSystemTimeWide() - g_last_present_us
++                             : 0;
++  BuildDiag("DIAG", since);
++  const int n = std::snprintf(out, cap, "%s", g_diag_text);
++  return n < cap ? n : cap - 1;
 +}
 +
 +extern "C" void flutter_vita_gpu_shutdown(void) {
@@ -2952,6 +3300,26 @@ index 00000000..8e0eaf00
 +  OpenLog();
 +  VLog("flutter-vita: starting\n");
 +
++  // Watch every thread this process ever starts, before it starts any.
++  //
++  // 0x10027 is the process-wide target documented on
++  // sceKernelRegisterThreadEventHandler, and it is what makes the stall report
++  // cover vitaGL's collector and SceNet's workers rather than only the threads
++  // this file happens to know about. If it is refused, the report still works
++  // -- fml announces the four that matter through flutter_vita_log_affinity --
++  // so this logs and carries on rather than failing a launch over a
++  // diagnostic.
++  NoteThread(sceKernelGetThreadId(), "main");
++  const SceUID watcher = sceKernelRegisterThreadEventHandler(
++      "fvita_threads", 0x10027,
++      SCE_KERNEL_THREAD_EVENT_TYPE_START | SCE_KERNEL_THREAD_EVENT_TYPE_EXIT,
++      ThreadEvent, nullptr);
++  if (watcher < 0) {
++    VLog("flutter-vita: thread watcher refused (0x%08X); stall reports will "
++         "only list named threads\n",
++         static_cast<unsigned>(watcher));
++  }
++
 +  // Before the engine, deliberately. If startup hangs or dies, the dev server
 +  // is already answering and the log can be pulled without the app exiting.
 +  StartDevServer();
@@ -3287,6 +3655,10 @@ index 00000000..8e0eaf00
 +    PumpTouch(engine);
 +    DrainInjectedTaps(engine);
 +    DrainInjectedDrag(engine);
++
++    // Cheap unless the screen has actually frozen: one subtraction against a
++    // timestamp the present path already keeps.
++    CheckForStall();
 +
 +    // Is the platform thread keeping up with the panel, and is it doing the
 +    // engine's work or its own? A loop period well over 16.6 ms means this

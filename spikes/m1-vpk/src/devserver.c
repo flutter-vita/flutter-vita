@@ -84,6 +84,11 @@ void dev_server_set_ready_handler(void (*ready)(void)) {
 // flutter_vita_gpu_shutdown in vita_embedder.cc.
 extern void flutter_vita_gpu_shutdown(void) __attribute__((weak));
 
+// The stall watchdog's report, taken now. Weak because the spikes link this
+// file without an embedder behind it, and a dev server that refuses to build
+// for a spike is a dev server the spikes stop using.
+extern int flutter_vita_diag(char* out, int cap) __attribute__((weak));
+
 static void release_gpu(void) {
   if (flutter_vita_gpu_shutdown != NULL) {
     flutter_vita_gpu_shutdown();
@@ -298,14 +303,26 @@ static int serve(int sock, const char* log_path, const char* eboot_path) {
         strcmp(line, "log") != 0 && strncmp(line, "get ", 4) != 0 &&
         strncmp(line, "put ", 4) != 0 && strcmp(line, "shot") != 0 &&
         strncmp(line, "tap ", 4) != 0 && strncmp(line, "swipe ", 6) != 0 &&
-        strcmp(line, "shotinfo") != 0) {
+        strcmp(line, "diag") != 0 && strcmp(line, "shotinfo") != 0) {
       send_str(sock, "ERR not served here (ping|probe|log|get|put|shot"
-                     "|shotinfo|tap|swipe|ls|stage|install|launch|promote)\n");
+                     "|shotinfo|tap|swipe|diag|ls|stage|install|launch"
+                     "|promote)\n");
       continue;
     }
 
     if (strcmp(line, "ping") == 0) {
       send_str(sock, "pong\n");
+    } else if (strcmp(line, "diag") == 0) {
+      // Why nothing is moving, asked from here rather than waited for in the
+      // log. The report is a snapshot with deltas against the previous one, so
+      // the useful thing to do with this verb is call it twice.
+      if (flutter_vita_diag == NULL) {
+        send_str(sock, "ERR no watchdog in this build\n");
+      } else {
+        static char diag[6144];
+        flutter_vita_diag(diag, sizeof diag);
+        send_str(sock, diag);
+      }
     } else if (strncmp(line, "ls ", 3) == 0) {
       cmd_ls(sock, line + 3);
     } else if (strncmp(line, "rm ", 3) == 0) {
@@ -585,7 +602,7 @@ static int serve(int sock, const char* log_path, const char* eboot_path) {
       *(volatile unsigned int*)0 = 0xDEAD;
       return 1;  // not reached
     } else if (n > 0) {
-    send_str(sock, "ERR unknown (ping|probe|log|get|put|ls|rm|shot|shotinfo|"
+    send_str(sock, "ERR unknown (ping|probe|diag|log|get|put|ls|rm|shot|shotinfo|"
                                     "tap <x> <y>|overlay on|off|handoff [titleid]|relaunch|"
                                     "crash|exit)\n");
     }
