@@ -138,8 +138,21 @@ else
   # `rmtree` is confined to ux0:data on the loader side; see cmd_rmtree.
   say "$PORT" "rmtree $STAGE" 120 | sed 's/^/    /'
 
+  # The LiveArea art is staged nowhere and copied in after the promote.
+  #
+  # scePromoterUtilityPromotePkgWithRif validates sce_sys against the package
+  # header, and head.bin is a keyless template describing some other package's
+  # file set -- so an icon0.png the header has never heard of is rejected
+  # outright, 0x8010113D, before anything is written. Measured 2026-08-31: the
+  # same tree promotes on the first try with sce_sys/icon0.png and
+  # sce_sys/livearea removed, and fails every time with either present.
+  #
+  # The shell reads the art out of ux0:app/<id>/sce_sys, not out of the
+  # package, so putting it there afterwards gives the same result. An app may
+  # write any title's directory but its own, and the loader is neither.
   echo "==> staging into $STAGE"
-  ( cd "$WORK" && find . -type f | sed 's|^\./||' | sort ) \
+  ( cd "$WORK" && find . -type f | sed 's|^\./||' \
+      | grep -v -e '^sce_sys/icon0\.png$' -e '^sce_sys/livearea/' | sort ) \
     | while read -r rel; do put "$WORK/$rel" "$STAGE/$rel"; done
   say "$PORT" "ls $STAGE" 30 | sed 's/^/    /'
 
@@ -157,6 +170,15 @@ else
        exit 1 ;;
   esac
   say "$PORT" "exist $TITLE_ID" 30 | sed 's/^/    /'
+
+  ART="$( cd "$WORK" && find . -type f \
+      \( -name icon0.png -o -path './sce_sys/livearea/*' \) \
+      | sed 's|^\./||' | sort )"
+  if [ -n "$ART" ]; then
+    echo "==> livearea"
+    printf '%s\n' "$ART" \
+      | while read -r rel; do put "$WORK/$rel" "ux0:app/$TITLE_ID/$rel"; done
+  fi
 fi
 
 if [ "$LAUNCH" -eq 1 ]; then

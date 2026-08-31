@@ -87,6 +87,12 @@ static char g_detail[80] = "";
 static char g_ip[24] = "";
 static char g_target[16] = LOADER_TARGET_TITLEID;
 
+// Bytes of the transfer in flight, for the panel's progress bar. The `detail`
+// string already carries the same numbers as prose, and prose is the wrong
+// shape for a bar: the panel would have to parse English to draw a rectangle.
+static int g_recv_done = 0;
+static int g_recv_total = 0;
+
 static char g_lines[LOG_LINES][LOG_WIDTH];
 static int g_line_count = 0;  // total ever, not the ring size
 static unsigned g_seq = 0;
@@ -95,9 +101,11 @@ static void publish(void) {
   g_seq++;
   char buf[LOG_LINES * LOG_WIDTH + 512];
   int n = snprintf(buf, sizeof buf,
-                   "seq %u\nip %s\nport %d\ntarget %s\nstatus %s\ndetail %s\n",
+                   "seq %u\nip %s\nport %d\ntarget %s\nstatus %s\ndetail %s\n"
+                   "self %s\nrecv %d %d\n",
                    g_seq, g_ip[0] ? g_ip : "-", LOADER_PORT, g_target,
-                   g_status, g_detail);
+                   g_status, g_detail, LOADER_SELF_TITLEID, g_recv_done,
+                   g_recv_total);
   // Oldest first, so the Dart side can append without reversing.
   const int have = g_line_count < LOG_LINES ? g_line_count : LOG_LINES;
   const int start = g_line_count - have;
@@ -225,8 +233,9 @@ static int receive_to(int sock, const char* dest, int size, const char* what) {
     // card in the middle of a transfer.
     if (since_report >= 512 * 1024) {
       since_report = 0;
-      set_status("Receiving", "%d of %d KB", (size - remaining) / 1024,
-                 size / 1024);
+      g_recv_done = size - remaining;
+      g_recv_total = size;
+      set_status("Receiving", "%d of %d KB", g_recv_done / 1024, size / 1024);
     }
   }
   sceIoClose(fd);
@@ -239,6 +248,8 @@ static int receive_to(int sock, const char* dest, int size, const char* what) {
     return -1;
   }
   note_size(what, size);
+  g_recv_done = 0;
+  g_recv_total = 0;
   set_status("Waiting", NULL);
   dev_server_send(sock, "OK\n");
   return 0;
@@ -248,6 +259,11 @@ static void set_target(const char* arg) {
   snprintf(g_target, sizeof g_target, "%s",
            (arg != NULL && arg[0] != '\0') ? arg : LOADER_TARGET_TITLEID);
 }
+
+// Defined with the log rotation, which is the other thing that only makes sense
+// in the process that launches apps.
+static void record_installed(const char* titleid);
+static void forget_installed(const char* titleid);
 
 static int cmd_install(int sock) {
   set_status("Installing", "%s", g_target);
@@ -296,6 +312,7 @@ static int cmd_install(int sock) {
     return -1;
   }
   note("installed %s into %s", human_size(total), g_target);
+  record_installed(g_target);
   set_status("Waiting", NULL);
   dev_server_send(sock, "OK\n");
   return 0;
@@ -307,6 +324,184 @@ static int cmd_install(int sock) {
 // state after Launching because there is no loader after it. Launching
 // another title is what unlocks the target's directory, which cannot happen
 // while this process holds it.
+// Keep the log the app that just ran wrote, instead of letting the next one
+// truncate it.
+//
+// The engine opens ux0:data/flutter-vita/app.log with O_TRUNC before anything
+// else runs, so an app's log survives exactly until the next launch. That is
+// the wrong lifetime for the thing you go looking for after a crash, and it
+// cannot be fixed in the app: the truncate is inside the engine archive.
+//
+// It can be fixed here. The loader is what launches apps, so it is the one
+// process that knows a log is about to be destroyed and can move it first.
+// Numbered rather than timestamped because this console's clock is whatever
+// the user last set it to, and a wrong date sorts wrong; the index only has to
+// increase.
+#define LOG_DIR DATA_DIR "/logs"
+#define LOG_KEEP 20
+
+// Read a whole small file into buf. Returns the byte count, or 0.
+static int read_small(const char* path, char* buf, int cap) {
+  const SceUID fd = sceIoOpen(path, SCE_O_RDONLY, 0777);
+  if (fd < 0) return 0;
+  const int n = sceIoRead(fd, buf, cap - 1);
+  sceIoClose(fd);
+  if (n <= 0) return 0;
+  buf[n] = '\0';
+  for (int i = 0; i < n; i++) {
+    if (buf[i] == '\n' || buf[i] == '\r') { buf[i] = '\0'; return i; }
+  }
+  return n;
+}
+
+static void write_small(const char* path, const char* text) {
+  const SceUID fd =
+      sceIoOpen(path, SCE_O_WRONLY | SCE_O_CREAT | SCE_O_TRUNC, 0777);
+  if (fd < 0) return;
+  sceIoWrite(fd, text, strlen(text));
+  sceIoClose(fd);
+}
+
+// `next_titleid` is the app about to run, not the one whose log is being
+// archived. The log sitting in app.log belongs to the *previous* launch, so
+// naming it after the incoming title would label every archive with the wrong
+// app the moment two different ids are deployed in a row. The previous id is
+// kept in LOG_DIR/last for exactly this.
+static void rotate_app_log(const char* next_titleid) {
+  sceIoMkdir(LOG_DIR, 0777);
+
+  char prev[24] = {0};
+  if (read_small(LOG_DIR "/last", prev, sizeof prev) <= 0) {
+    snprintf(prev, sizeof prev, "unknown");
+  }
+  write_small(LOG_DIR "/last", next_titleid);
+
+  SceIoStat st;
+  if (sceIoGetstat(DATA_DIR "/app.log", &st) < 0 || st.st_size == 0) return;
+
+  // The next index, read from a file rather than by scanning: the directory
+  // listing would have to be parsed and the answer is one integer.
+  int seq = 0;
+  char idx[16] = {0};
+  if (read_small(LOG_DIR "/next", idx, sizeof idx) > 0) seq = atoi(idx);
+
+  char dest[192];
+  snprintf(dest, sizeof dest, LOG_DIR "/%04d-%s.log", seq, prev);
+  sceIoRemove(dest);
+  if (sceIoRename(DATA_DIR "/app.log", dest) < 0) return;
+  note("kept log %04d-%s.log", seq, prev);
+
+  seq++;
+  snprintf(idx, sizeof idx, "%d", seq);
+  write_small(LOG_DIR "/next", idx);
+
+  // Bounded, because a memory card is not infinite and nobody reads the
+  // twenty-first-oldest log. Only this loader's own naming is removed, so a
+  // file dropped in here by hand survives.
+  const int oldest = seq - LOG_KEEP;
+  for (int i = oldest - 8; i < oldest; i++) {
+    if (i < 0) continue;
+    const SceUID d = sceIoDopen(LOG_DIR);
+    if (d < 0) return;
+    SceIoDirent e;
+    memset(&e, 0, sizeof e);
+    while (sceIoDread(d, &e) > 0) {
+      char prefix[8];
+      snprintf(prefix, sizeof prefix, "%04d-", i);
+      if (strncmp(e.d_name, prefix, strlen(prefix)) == 0) {
+        char victim[192];
+        snprintf(victim, sizeof victim, LOG_DIR "/%s", e.d_name);
+        sceIoRemove(victim);
+      }
+      memset(&e, 0, sizeof e);
+    }
+    sceIoDclose(d);
+  }
+}
+
+// Which title ids this loader has installed.
+//
+// The panel lists these and offers to remove them or clear their data, and it
+// deliberately lists nothing else. ux0:app holds the console's own titles and
+// whatever else is on the card, and a delete button beside one of those, on a
+// device with no undo, is a footgun rather than a feature.
+//
+// One id per line, appended, deduplicated on read rather than on write -- the
+// write happens on the install path where an extra sceIo round trip is a cost
+// and correctness here is worth nothing.
+#define INSTALLED_PATH DATA_DIR "/installed.txt"
+
+// Rewritten rather than edited in place: the file is a handful of nine-byte
+// lines and a rewrite cannot leave it half-consistent the way a seek and a
+// blank-out can.
+static void forget_installed(const char* titleid) {
+  SceUID fd = sceIoOpen(INSTALLED_PATH, SCE_O_RDONLY, 0777);
+  if (fd < 0) return;
+  char buf[1024] = {0};
+  const int n = sceIoRead(fd, buf, sizeof buf - 1);
+  sceIoClose(fd);
+  if (n <= 0) return;
+
+  char out[1024];
+  int len = 0;
+  const char* p = buf;
+  while (*p != '\0') {
+    const char* nl = strchr(p, '\n');
+    const int line_len = nl != NULL ? (int)(nl - p) : (int)strlen(p);
+    if (line_len > 0 &&
+        !(line_len == (int)strlen(titleid) &&
+          strncmp(p, titleid, (size_t)line_len) == 0) &&
+        len + line_len + 1 < (int)sizeof out) {
+      memcpy(out + len, p, (size_t)line_len);
+      len += line_len;
+      out[len++] = '\n';
+    }
+    if (nl == NULL) break;
+    p = nl + 1;
+  }
+  fd = sceIoOpen(INSTALLED_PATH, SCE_O_WRONLY | SCE_O_CREAT | SCE_O_TRUNC, 0777);
+  if (fd < 0) return;
+  if (len > 0) sceIoWrite(fd, out, len);
+  sceIoClose(fd);
+}
+
+static int installed_has(const char* titleid) {
+  const SceUID fd = sceIoOpen(INSTALLED_PATH, SCE_O_RDONLY, 0777);
+  if (fd < 0) return 0;
+  char buf[1024] = {0};
+  const int n = sceIoRead(fd, buf, sizeof buf - 1);
+  sceIoClose(fd);
+  if (n <= 0) return 0;
+  const char* p = buf;
+  while (*p != '\0') {
+    const char* nl = strchr(p, '\n');
+    const int line_len = nl != NULL ? (int)(nl - p) : (int)strlen(p);
+    if (line_len == (int)strlen(titleid) &&
+        strncmp(p, titleid, (size_t)line_len) == 0) {
+      return 1;
+    }
+    if (nl == NULL) break;
+    p = nl + 1;
+  }
+  return 0;
+}
+
+// Deduplicated on write after all. It was on read, which is cheaper on the
+// install path, but the loader now records itself on every boot -- and a file
+// that grows by a line each time the console is switched on is a file that
+// eventually outgrows the 1 KB the readers allocate for it.
+static void record_installed(const char* titleid) {
+  mkdirs();
+  if (installed_has(titleid)) return;
+  const SceUID fd =
+      sceIoOpen(INSTALLED_PATH, SCE_O_WRONLY | SCE_O_CREAT | SCE_O_APPEND, 0777);
+  if (fd < 0) return;
+  char line[16];
+  const int n = snprintf(line, sizeof line, "%s\n", titleid);
+  sceIoWrite(fd, line, n);
+  sceIoClose(fd);
+}
+
 static void cmd_launch(int sock) {
   note("launching %s", g_target);
   set_status("Launching", "%s", g_target);
@@ -320,6 +515,10 @@ static void cmd_launch(int sock) {
   // Under GL this is where the console would be lost without a teardown --
   // see flutter_vita_gpu_shutdown. The loader runs software (decision 7), so
   // there is nothing to release, and the symbol may not even be linked.
+  // Before the launch, not after: the engine truncates app.log on startup and
+  // the launch is the last thing that happens here.
+  rotate_app_log(g_target);
+
   char uri[64];
   snprintf(uri, sizeof uri, "psgm:play?titleid=%s", g_target);
   sceAppMgrLaunchAppByUri(0xFFFFF, uri);
@@ -430,6 +629,13 @@ static void cmd_paf(int sock, const char* arg) {
 // resident is not a stub that returns an error, it is address zero, so
 // "continue and let Init decide" is `blx 0`. That was tried on 2026-08-22 and
 // the dump is a prefetch abort with PC 0.
+// `sock` may be -1. The watcher thread calls this on behalf of the panel, which
+// has no socket, and dev_server_send on a fd that was never opened is not a
+// no-op -- it is a write to whatever -1 means to sceNetSend.
+static void reply(int sock, const char* msg) {
+  if (sock >= 0) dev_server_send(sock, msg);
+}
+
 static int promoter_up(int sock) {
   char m[192];
   if (g_pu_up) return 1;
@@ -438,7 +644,7 @@ static int promoter_up(int sock) {
     if (paf < 0) {
       snprintf(m, sizeof m, "ERR paf 0x%08X\n", (unsigned)paf);
       note("promoter: paf 0x%08X", (unsigned)paf);
-      dev_server_send(sock, m);
+      reply(sock, m);
       return 0;
     }
     g_paf_up = 1;
@@ -447,14 +653,14 @@ static int promoter_up(int sock) {
   if (r < 0) {
     snprintf(m, sizeof m, "ERR loadmodule 0x%08X (paf was ok)\n", (unsigned)r);
     note("promoter: load 0x%08X", (unsigned)r);
-    dev_server_send(sock, m);
+    reply(sock, m);
     return 0;
   }
   r = scePromoterUtilityInit();
   if (r < 0) {
     snprintf(m, sizeof m, "ERR init 0x%08X\n", (unsigned)r);
     note("promoter: init 0x%08X", (unsigned)r);
-    dev_server_send(sock, m);
+    reply(sock, m);
     sceSysmoduleUnloadModuleInternal(SCE_SYSMODULE_INTERNAL_PROMOTER_UTIL);
     return 0;
   }
@@ -493,7 +699,8 @@ static void cmd_promoter(int sock, const char* arg) {
 // and GetResult is read separately because a call can return >= 0 and still
 // fail -- the return value says the request was accepted, the result says what
 // happened.
-static void promoter_finish(int sock, const char* what, int r) {
+static void promoter_finish(int sock, const char* what, int r,
+                            const char* titleid) {
   char m[224];
   int state = -1, res = -1;
   if (r >= 0) {
@@ -505,6 +712,7 @@ static void promoter_finish(int sock, const char* what, int r) {
     scePromoterUtilityGetResult(&res);
   }
   const int ok = (r >= 0 && res == 0);
+  if (ok && titleid != NULL && titleid[0] != '\0') record_installed(titleid);
   snprintf(m, sizeof m, "%s %s call=0x%08X state=%d result=0x%08X\n",
            ok ? "OK" : "ERR", what, (unsigned)r, state, (unsigned)res);
   note("%s %s (result 0x%08X)", what, ok ? "ok" : "failed", (unsigned)res);
@@ -526,19 +734,33 @@ static void promoter_finish(int sock, const char* what, int r) {
 //                signing work entirely.
 //
 // None of them unloads anything afterwards. See cmd_paf.
-static void cmd_promote(int sock, const char* dir) {
-  set_status("Installing", "promoting %s", dir);
-  if (!promoter_up(sock)) { set_status("Waiting", NULL); return; }
-  note("promote %s", dir);
-  promoter_finish(sock, "promote", scePromoterUtilityPromotePkg(dir, 1));
+// `<dir> [titleid]`. The id is optional and is only ever used to record what
+// was installed for the panel's apps list -- the promoter reads the package's
+// own param.sfo and does not take our word for it. Splitting here rather than
+// reading the sfo in C: the caller already parsed it to name the head.bin.
+static const char* split_titleid(char* arg) {
+  char* sp = strrchr(arg, ' ');
+  if (sp == NULL) return NULL;
+  *sp = '\0';
+  return sp + 1;
 }
 
-static void cmd_promote_rif(int sock, const char* dir) {
-  set_status("Installing", "promoting %s with rif", dir);
+static void cmd_promote(int sock, char* arg) {
+  const char* titleid = split_titleid(arg);
+  set_status("Installing", "promoting %s", arg);
   if (!promoter_up(sock)) { set_status("Waiting", NULL); return; }
-  note("promoterif %s", dir);
+  note("promote %s", arg);
+  promoter_finish(sock, "promote", scePromoterUtilityPromotePkg(arg, 1),
+                  titleid);
+}
+
+static void cmd_promote_rif(int sock, char* arg) {
+  const char* titleid = split_titleid(arg);
+  set_status("Installing", "promoting %s with rif", arg);
+  if (!promoter_up(sock)) { set_status("Waiting", NULL); return; }
+  note("promoterif %s", arg);
   promoter_finish(sock, "promoterif",
-                  scePromoterUtilityPromotePkgWithRif(dir, 1));
+                  scePromoterUtilityPromotePkgWithRif(arg, 1), titleid);
 }
 
 // `import <dir> <titleid>`
@@ -566,7 +788,8 @@ static void cmd_import(int sock, const char* args) {
   note("import %s as %s", p.path, p.titleid);
   snprintf(m, sizeof m, "  path=%s titleid=%s\n", p.path, p.titleid);
   dev_server_send(sock, m);
-  promoter_finish(sock, "import", scePromoterUtilityPromoteImport(&p));
+  promoter_finish(sock, "import", scePromoterUtilityPromoteImport(&p),
+                  p.titleid);
 }
 
 static void cmd_exist(int sock, const char* titleid) {
@@ -748,11 +971,11 @@ static int handle(int sock, const char* line, int* stop) {
     return 1;
   }
   if (strncmp(line, "promote ", 8) == 0) {
-    cmd_promote(sock, line + 8);
+    cmd_promote(sock, (char*)line + 8);
     return 1;
   }
   if (strncmp(line, "promoterif ", 11) == 0) {
-    cmd_promote_rif(sock, line + 11);
+    cmd_promote_rif(sock, (char*)line + 11);
     return 1;
   }
   if (strncmp(line, "import ", 7) == 0) {
@@ -800,6 +1023,53 @@ static int handle(int sock, const char* line, int* stop) {
 // frame to name. That is what the first version of this file did, and the
 // dump for it is the reason dev_server_set_ready_handler exists.
 
+// What the panel asks the C layer to do, and why it is a file.
+//
+// The panel can clear a log or delete an app's data directory by itself --
+// dart:io writes ux0:data as happily as this does. What it cannot do is delete
+// a *title*, because that goes through the promoter, and the promoter lives on
+// this side.
+//
+// ADR-0016 decision 3 keeps the reliability-critical half free of a platform
+// channel, and the panel already learns everything by polling a file this side
+// writes. A file the panel writes and this side polls is the same arrangement
+// pointed the other way: no channel, no engine dependency, and a request that
+// arrives while Flutter is dead simply never arrives.
+//
+// One line, `delete <titleid>`, removed before it is acted on so a crash in
+// the middle cannot replay it on the next boot.
+#define REQUEST_PATH DATA_DIR "/loader-request.txt"
+
+static void serve_request(void) {
+  const SceUID fd = sceIoOpen(REQUEST_PATH, SCE_O_RDONLY, 0777);
+  if (fd < 0) return;
+  char buf[96] = {0};
+  const int n = sceIoRead(fd, buf, sizeof buf - 1);
+  sceIoClose(fd);
+  sceIoRemove(REQUEST_PATH);
+  if (n <= 0) return;
+  for (int i = 0; i < n; i++) {
+    if (buf[i] == '\n' || buf[i] == '\r') { buf[i] = '\0'; break; }
+  }
+
+  if (strncmp(buf, "delete ", 7) == 0) {
+    const char* titleid = buf + 7;
+    if (strcmp(titleid, LOADER_SELF_TITLEID) == 0) {
+      note("panel asked to delete the loader; refused");
+      return;
+    }
+    if (!promoter_up(-1)) {
+      note("delete %s: promoter would not start", titleid);
+      return;
+    }
+    const int r = scePromoterUtilityDeletePkg(titleid);
+    note("panel delete %s 0x%08X", titleid, (unsigned)r);
+    forget_installed(titleid);
+  } else {
+    note("unknown panel request: %s", buf);
+  }
+}
+
 static int watcher(SceSize args, void* argp) {
   (void)args;
   (void)argp;
@@ -831,6 +1101,7 @@ static int watcher(SceSize args, void* argp) {
       g_ip[0] = '\0';
       set_status("No network", "check Wi-Fi on the console");
     }
+    serve_request();
     sceKernelDelayThread(2 * 1000 * 1000);
   }
   return 0;  // not reached; sceKernelCreateThread wants the signature
@@ -860,5 +1131,10 @@ __attribute__((constructor)) static void loader_register(void) {
   // Safe from here: sceIo is available to a constructor, and this is the only
   // state the screen can show before the network exists.
   mkdirs();
+  // The loader installed itself (tools/install-vpk.sh, FVTA00001), so it
+  // belongs in the registry the APPS tab reads. Recorded at boot rather than
+  // at that install, because the install that put this build on the card
+  // happened before there was a registry to write to.
+  record_installed(LOADER_SELF_TITLEID);
   publish();
 }

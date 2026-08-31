@@ -283,12 +283,24 @@ static int serve(int sock, const char* log_path, const char* eboot_path) {
     // -- see dev_server_set_minimal. The list is spelled out here rather than
     // deleted from the dispatch below because both products link the same
     // file, and an app under development still wants the whole thing.
+    //
+    // tap and swipe are on the list because the loader's screen became a
+    // screen you press (ADR-0016): four tabs, a log viewer and a delete
+    // button. A deploy tool that can read the panel with `shot` but cannot
+    // reach the CRASHES tab can only verify the first thing the panel draws.
+    //
+    // Not in the loader yet. This file is compiled from the engine package
+    // (package-engine.sh copies it there), and the loader links the blessed
+    // one -- so minimal mode gains tap at the next bless, not at the next
+    // loader build. Deliberate: ADR-0016 decision 2 is that nothing reaches
+    // the loader's engine without someone choosing to re-bless.
     if (g_minimal && strcmp(line, "ping") != 0 && strcmp(line, "probe") != 0 &&
         strcmp(line, "log") != 0 && strncmp(line, "get ", 4) != 0 &&
         strncmp(line, "put ", 4) != 0 && strcmp(line, "shot") != 0 &&
+        strncmp(line, "tap ", 4) != 0 && strncmp(line, "swipe ", 6) != 0 &&
         strcmp(line, "shotinfo") != 0) {
       send_str(sock, "ERR not served here (ping|probe|log|get|put|shot"
-                     "|shotinfo|ls|stage|install|launch|promote)\n");
+                     "|shotinfo|tap|swipe|ls|stage|install|launch|promote)\n");
       continue;
     }
 

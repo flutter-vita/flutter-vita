@@ -39,6 +39,8 @@ foreach(required APP_NAME TITLE_ID SUPERVISOR_TITLE_ID SNAPSHOT_S FLUTTER_ASSETS
 endforeach()
 
 set(VITA_APP_NAME "${APP_NAME}")
+set(LIVEAREA_DIR "${CMAKE_CURRENT_SOURCE_DIR}/livearea" CACHE PATH
+    "Directory holding icon0.png, template.xml, bg0.png and startup.png")
 set(VITA_TITLEID  "${TITLE_ID}")
 set(VITA_VERSION  "01.00")
 
@@ -271,6 +273,14 @@ set(VPK_FILES
   # without naming a Vita-specific family. Monochrome and 1.9 MB; the colour
   # font was tried and is documented in assets/fonts/README.md.
   FILE "${ENGINE_DIR}/data/NotoEmoji-Regular.ttf" fonts/NotoEmoji-Regular.ttf
+  # LiveArea: the bubble icon, the gate art and the page background. Without
+  # these the system draws its blank placeholder, which makes every app built
+  # from this template look like a corrupt install. LIVEAREA_DIR lets an app
+  # ship its own set; the default is the shared Vita-with-Flutter-logo art.
+  FILE "${LIVEAREA_DIR}/icon0.png" sce_sys/icon0.png
+  FILE "${LIVEAREA_DIR}/template.xml" sce_sys/livearea/contents/template.xml
+  FILE "${LIVEAREA_DIR}/bg0.png" sce_sys/livearea/contents/bg0.png
+  FILE "${LIVEAREA_DIR}/startup.png" sce_sys/livearea/contents/startup.png
 )
 if(NOT NO_SUPERVISOR)
   list(APPEND VPK_FILES
