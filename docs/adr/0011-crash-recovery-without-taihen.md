@@ -81,7 +81,7 @@ See [ADR-0014](0014-gpu-backend-via-vitagl.md) for the evidence.
 | An SDK setting to suppress the crash dialog | **Does not exist.** The dialog is SceShell's; changing it means shell code. |
 | A SceShell plugin | Excluded by the constraint above. |
 | vitacompanion | Independently dead on this console — two clean attempts, `spikes/vita-tooling/README.md`, "do not retry". |
-| Background app (`eboot2.bin`) | Blocked: the shell resolves it through its installed-titles database and `ScePromoterUtil` refuses to load for us (`MODULEMGR_NO_LIB`). Would need a one-off VitaShell install. |
+| Background app (`eboot2.bin`) | ~~Blocked~~ **Unblocked 2026-08-31.** The shell resolves it through its installed-titles database, and `ScePromoterUtil` was read as refusing to load (`MODULEMGR_NO_LIB`). It does not refuse: it imports from PAF, which was not resident. Load PAF first and the promoter works, so no VitaShell install is needed. See [`spikes/promoter`](../../spikes/promoter/). |
 
 ## Decision
 

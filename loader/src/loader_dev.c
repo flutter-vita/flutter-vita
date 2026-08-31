@@ -329,47 +329,72 @@ static void cmd_launch(int sock) {
 // loader replaces *itself*, which matters more now than it did, because a
 // Flutter loader is ~20 MB rather than 91 KB and there is no other route for
 // it. The promoter is a system service and is not bound by this sandbox.
+// PAF, loaded the way VitaShell loads it.
+//
+// ScePromoterUtil imports from PAF. Until PAF is resident in this process the
+// promoter's library cannot be linked and the load is refused with
+// SCE_KERNEL_ERROR_MODULEMGR_NO_LIB -- which is what this loader, and the C one
+// before it, and three ADRs, all read as "the promoter is unavailable on this
+// console". It is not. The error was naming its own cause. See
+// spikes/promoter, which walks every route and shows the promoter loading and
+// initialising the moment PAF goes first.
+//
+// The argument block is not optional. The plain
+// sceSysmoduleLoadModuleInternal(PAF) faults the process; the spike did it
+// twice. These values are VitaShell's verbatim -- 0x180000 is the heap PAF is
+// being given -- and note that buf[0] is a *size*, not flags, which is why
+// zeroing a SceSysmoduleOpt and filling in only `result` was never the same
+// call.
+static int load_sce_paf(void) {
+  static uint32_t argp[] = {0x180000, (uint32_t)-1, (uint32_t)-1, 1,
+                            (uint32_t)-1, (uint32_t)-1};
+  int result = -1;
+  uint32_t buf[4];
+  buf[0] = sizeof buf;
+  buf[1] = (uint32_t)&result;
+  buf[2] = (uint32_t)-1;
+  buf[3] = (uint32_t)-1;
+  return sceSysmoduleLoadModuleInternalWithArg(
+      SCE_SYSMODULE_INTERNAL_PAF, sizeof argp, argp,
+      (const SceSysmoduleOpt*)buf);
+}
+
+// Leaving PAF resident and then exiting rebooted the console once, which is the
+// only difference from VitaShell left after the load itself started working.
+// Every path out of cmd_promote goes through this.
+static int unload_sce_paf(void) {
+  uint32_t buf = 0;
+  return sceSysmoduleUnloadModuleInternalWithArg(
+      SCE_SYSMODULE_INTERNAL_PAF, 0, NULL, (const SceSysmoduleOpt*)&buf);
+}
+
 static void cmd_promote(int sock, const char* dir) {
   char m[256];
   set_status("Installing", "promoting %s", dir);
-  // scePromoterUtil is an internal sysmodule and is not resident by default.
-  // Calling into it without loading it first jumps through an unresolved stub
-  // and takes the process down.
-  // scePromoterUtil is an internal sysmodule and is not resident by default.
-  // A failed load is fatal here and must stay fatal: an import stub for a
+
+  // PAF first, then the promoter, then Init. That order is the whole fix; see
+  // load_sce_paf. A failed load stays fatal, and must: an import stub for a
   // module that is not resident is not a stub that returns an error, it is
-  // address zero, so "continue and let Init decide" is `blx 0`. That was
-  // tried, on 2026-08-22, and the dump is a prefetch abort with PC 0 inside
-  // this function.
+  // address zero, so "continue and let Init decide" is `blx 0`. That was tried
+  // on 2026-08-22 and the dump is a prefetch abort with PC 0 inside this
+  // function.
+  const int paf = load_sce_paf();
+  if (paf < 0) {
+    snprintf(m, sizeof m, "ERR paf 0x%08X\n", (unsigned)paf);
+    note("promote: paf 0x%08X", (unsigned)paf);
+    set_status("Waiting", NULL);
+    dev_server_send(sock, m);
+    return;
+  }
+
   int r = sceSysmoduleLoadModuleInternal(SCE_SYSMODULE_INTERNAL_PROMOTER_UTIL);
   if (r < 0) {
-    // Second spelling, because the first has been observed returning
-    // SCE_KERNEL_ERROR_MODULEMGR_NO_LIB (0x8002D003) on this console for both
-    // this loader and the C one it replaces. VitaShell and VHBB use the
-    // WithArg form.
-    //
-    // `option` is not optional despite the name: passing NULL returns
-    // SCE_KERNEL_ERROR_INVALID_MEMORY_ACCESS (0x80022005), which is the module
-    // manager reporting the null pointer rather than anything about the
-    // module. The struct wants somewhere to put the module's own result.
-    int inner = 0;
-    SceSysmoduleOpt opt;
-    memset(&opt, 0, sizeof opt);
-    opt.result = &inner;
-    const int r2 = sceSysmoduleLoadModuleInternalWithArg(
-        SCE_SYSMODULE_INTERNAL_PROMOTER_UTIL, 0, NULL, &opt);
-    if (r2 < 0) {
-      snprintf(m, sizeof m,
-               "ERR loadmodule 0x%08X / witharg 0x%08X (inner 0x%08X)\n",
-               (unsigned)r, (unsigned)r2, (unsigned)inner);
-      note("promote: load 0x%08X witharg 0x%08X inner 0x%08X", (unsigned)r,
-           (unsigned)r2, (unsigned)inner);
-      set_status("Waiting", NULL);
-      dev_server_send(sock, m);
-      return;
-    }
-    note("promote: loadmodule 0x%08X, witharg ok", (unsigned)r);
-    r = r2;
+    snprintf(m, sizeof m, "ERR loadmodule 0x%08X\n", (unsigned)r);
+    note("promote: load 0x%08X (paf was ok)", (unsigned)r);
+    set_status("Waiting", NULL);
+    dev_server_send(sock, m);
+    unload_sce_paf();
+    return;
   }
   r = scePromoterUtilityInit();
   if (r < 0) {
@@ -378,6 +403,7 @@ static void cmd_promote(int sock, const char* dir) {
     set_status("Waiting", NULL);
     dev_server_send(sock, m);
     sceSysmoduleUnloadModuleInternal(SCE_SYSMODULE_INTERNAL_PROMOTER_UTIL);
+    unload_sce_paf();
     return;
   }
   note("promoting %s", dir);
@@ -394,6 +420,7 @@ static void cmd_promote(int sock, const char* dir) {
   }
   scePromoterUtilityExit();
   sceSysmoduleUnloadModuleInternal(SCE_SYSMODULE_INTERNAL_PROMOTER_UTIL);
+  unload_sce_paf();
   const int ok = (r >= 0 && res == 0);
   snprintf(m, sizeof m, "%s promote=0x%08X state=%d result=0x%08X\n",
            ok ? "OK" : "ERR", (unsigned)r, state, (unsigned)res);

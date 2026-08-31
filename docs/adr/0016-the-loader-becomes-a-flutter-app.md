@@ -177,17 +177,24 @@ all five elements, the watcher publishes the address within a second of Wi-Fi
 associating, the log fills live, `launch <titleid>` hands the console over, and
 the whole thing is 13 MB rather than the 20 MB this ADR guessed.
 
-**Not working: `promote`, which is the only route by which the Flutter loader
-can reach `FVTA00003`.** An app cannot write its own install directory —
-`ux0:app/<self>` is the read-only `app0:` mount — so a new loader has to go
-through the system promoter, and on this console
-`sceSysmoduleLoadModuleInternal(SCE_SYSMODULE_INTERNAL_PROMOTER_UTIL)` returns
-`SCE_KERNEL_ERROR_MODULEMGR_NO_LIB` (`0x8002D003`). The `WithArg` spelling
-returns the same code once it is given a real `SceSysmoduleOpt` — passing
-`NULL` for `option` returns `INVALID_MEMORY_ACCESS` and says nothing about the
-module. **The existing C loader fails identically**, so this is the console's
-state rather than anything this rework introduced, and it is not a reason to
-doubt the design.
+**Not working: `promote`.** ~~The only route by which the Flutter loader can
+reach `FVTA00003`.~~ `sceSysmoduleLoadModuleInternal(SCE_SYSMODULE_INTERNAL_PROMOTER_UTIL)`
+returns `SCE_KERNEL_ERROR_MODULEMGR_NO_LIB` (`0x8002D003`), the `WithArg`
+spelling returns the same, and the C loader fails identically.
+
+> **Corrected 2026-08-31.** All of those measurements were right and the
+> conclusion was wrong. `NO_LIB` means a library could not be linked: the
+> promoter imports from PAF, and PAF was not resident in our process. Load PAF
+> first — with its argument block, which is not optional — and the promoter
+> loads and initialises. No taiHEN and no kernel module. See
+> [`spikes/promoter`](../../spikes/promoter/); the fix is in
+> `loader/src/loader_dev.c`.
+>
+> Two other conclusions in this ADR rest on the old reading. A new loader does
+> **not** have to go through the promoter at all: an app can write any title's
+> directory except its own, so any running app can install a loader by file
+> copy. And a new title id, which does need the promoter, is now ours to
+> register.
 
 Two things learned the hard way while getting here, both worth more than the
 code they fixed:

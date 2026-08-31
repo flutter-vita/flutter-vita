@@ -93,16 +93,26 @@ assumption:
   by it. An app's own install directory is the read-only `app0:` mount and no
   amount of unsafe-ness changes that. So the loader cannot update itself, and
   the crash supervisor has to ship with the app instead.
-- *`ScePromoterUtil` is refused with `MODULEMGR_NO_LIB`.* Still true under
-  UNSAFE — `sceSysmoduleLoadModuleInternal` returns `0x8002D003`. This one was
-  worth re-measuring, because it was originally concluded under the safe-self
-  mistake and everything else in that paragraph turned out to be an artefact of
-  it. Not this.
+- *`ScePromoterUtil` is refused with `MODULEMGR_NO_LIB`.* **Wrong, and wrong for
+  four months.** `sceSysmoduleLoadModuleInternal` does return `0x8002D003`, and
+  that was re-measured correctly under UNSAFE, in both spellings, from the 91 KB
+  C loader as well as the Flutter one. The measurement was right; the conclusion
+  drawn from it was not. `NO_LIB` means a library could not be linked, and the
+  library in question is PAF: the promoter imports from it, and it is not
+  resident in our process. **Load PAF first and the promoter loads.** See
+  [`spikes/promoter`](../promoter/), which walks every route and shows
+  `scePromoterUtilityInit` returning `0x00000000` on hardware.
+
+  Which makes this paragraph the *second* time this page recorded a platform
+  prohibition that was our own doing, after the safe-self mistake below — and
+  the second time the fix was to compare against something that works rather
+  than to measure our own failure again.
 
 Routes explored and abandoned before finding it: `ux0:patch` (invisible to a
-safe self, same as `ux0:app`), and `ScePromoterUtil` (its library is refused
-with `MODULEMGR_NO_LIB`, and calling it without
-`sceSysmoduleLoadModuleInternal` first crashes the process outright).
+safe self, same as `ux0:app`), and `ScePromoterUtil` (abandoned on the
+`MODULEMGR_NO_LIB` reading corrected above; it works, given PAF). Calling into
+either without loading the module first still crashes the process outright, and
+that part was never in doubt.
 
 The lesson is narrow and worth keeping: **check your own build flags before
 concluding the platform forbids something.** Four measurements were correct and

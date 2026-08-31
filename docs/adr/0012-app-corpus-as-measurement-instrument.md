@@ -37,6 +37,14 @@ informative than the assumption predicted.
 `ScePromoterUtil` will not load for us. Five apps at five title ids would have
 reintroduced by hand exactly the human step ADR-0011 removed.
 
+> **Corrected 2026-08-31.** The promoter loads once PAF is loaded first, so a
+> new title id costs nothing manual. This constraint no longer applies. The
+> decision below still stands on its own merits — one app per axis, overlap
+> rejected on sight, is about what the corpus measures, not about how many
+> title ids we could afford — but "we cannot" was never true, and a future
+> reader should not take the number five as forced. See
+> [`spikes/promoter`](../../spikes/promoter/).
+
 ## Decision
 
 **Five apps, one per axis**, pinned by commit in
