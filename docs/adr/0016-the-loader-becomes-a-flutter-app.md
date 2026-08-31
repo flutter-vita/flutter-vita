@@ -126,8 +126,16 @@ CLI and I actually use" has to mean. `stage` is half of `install` —
 `tools/deploy.sh` streams the eboot with it and then installs from the staged
 copy. `promote` is how the loader replaces *itself*, and it matters more now
 than it did: a Flutter loader is ~13 MB and `ux0:app/<self>` is a read-only
-mount, so the promoter is the only route by which a new loader can reach the
-console at all. `ls` survives because it has repeatedly answered "is this path
+mount, so the promoter is ~~the only route by which a new loader can reach the
+console at all~~ one of two routes.
+
+> **Corrected 2026-08-31.** The read-only mount is real and only covers the
+> app's *own* directory. Any other title's is ordinary storage an UNSAFE self
+> writes freely, so an app installs the loader by plain file copy, and the
+> promoter is needed only to register a title id that does not exist yet. The
+> loader installs the app, the app installs the loader:
+> `tools/update-loader.sh` is that second half, and it replaced FVTA00004 in
+> place today with no promoter and no tap. `ls` survives because it has repeatedly answered "is this path
 writable" without a rebuild, including twice in this session.
 
 ## The status model
@@ -178,7 +186,8 @@ associating, the log fills live, `launch <titleid>` hands the console over, and
 the whole thing is 13 MB rather than the 20 MB this ADR guessed.
 
 **Not working: `promote`.** ~~The only route by which the Flutter loader can
-reach `FVTA00003`.~~ `sceSysmoduleLoadModuleInternal(SCE_SYSMODULE_INTERNAL_PROMOTER_UTIL)`
+reach `FVTA00003`.~~ Not needed for that, and see `spikes/promoter` for why it
+is unusable anyway. `sceSysmoduleLoadModuleInternal(SCE_SYSMODULE_INTERNAL_PROMOTER_UTIL)`
 returns `SCE_KERNEL_ERROR_MODULEMGR_NO_LIB` (`0x8002D003`), the `WithArg`
 spelling returns the same, and the C loader fails identically.
 
