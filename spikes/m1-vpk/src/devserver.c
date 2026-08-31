@@ -4,6 +4,7 @@
 #include <psp2/bgapputil.h>
 #include <psp2/kernel/processmgr.h>
 #include <psp2/ctrl.h>
+#include <psp2/io/dirent.h>
 #include <psp2/io/fcntl.h>
 #include <psp2/io/stat.h>
 #include <psp2/kernel/threadmgr.h>
@@ -209,6 +210,59 @@ static void cmd_log(int sock, const char* log_path) {
 
 // One connection, one or more commands. Returns 1 if the caller should stop
 // serving (exit or relaunch), 0 to keep going.
+// `ls <path>` and `rm <path>`, in the shared server rather than only in the
+// loader's extras.
+//
+// An app has always been able to write any title but its own -- ux0:app/<self>
+// is the read-only app0: mount, and everything else is ordinary storage. That
+// asymmetry is what makes a loader possible at all, and it runs both ways:
+// FVTA00002 can write ux0:app/FVTA00004, which is the directory the loader
+// itself gets EACCES on. Measured, not assumed.
+//
+// So the loader can be updated by any running app, with no scePromoterUtil --
+// which is just as well, because it refuses to load on this console
+// (MODULEMGR_NO_LIB, 0x8002D003, recorded three times now). What was missing
+// was not permission, it was that an app could write a file into another
+// title and then neither see it nor take it back. `put` alone can install a
+// loader; it cannot clean up after one.
+//
+// No glob and no recursion in `rm`, deliberately. This deletes on a console
+// with one lifeline app installed on it.
+static void cmd_ls(int sock, const char* path) {
+  char m[320];
+  const SceUID d = sceIoDopen(path);
+  if (d < 0) {
+    snprintf(m, sizeof m, "ERR dopen 0x%08X\n", (unsigned)d);
+    send_str(sock, m);
+    return;
+  }
+  SceIoDirent e;
+  int count = 0;
+  memset(&e, 0, sizeof e);
+  while (sceIoDread(d, &e) > 0 && count < 400) {
+    snprintf(m, sizeof m, "%s %10lld %s\n",
+             SCE_S_ISDIR(e.d_stat.st_mode) ? "d" : "-",
+             (long long)e.d_stat.st_size, e.d_name);
+    send_str(sock, m);
+    memset(&e, 0, sizeof e);
+    count++;
+  }
+  sceIoDclose(d);
+  snprintf(m, sizeof m, "(%d entries)\n", count);
+  send_str(sock, m);
+}
+
+static void cmd_rm(int sock, const char* path) {
+  char m[192];
+  const int r = sceIoRemove(path);
+  if (r < 0) {
+    snprintf(m, sizeof m, "ERR remove 0x%08X %s\n", (unsigned)r, path);
+  } else {
+    snprintf(m, sizeof m, "OK removed %s\n", path);
+  }
+  send_str(sock, m);
+}
+
 static int serve(int sock, const char* log_path, const char* eboot_path) {
   char line[256];
   for (;;) {
@@ -240,6 +294,10 @@ static int serve(int sock, const char* log_path, const char* eboot_path) {
 
     if (strcmp(line, "ping") == 0) {
       send_str(sock, "pong\n");
+    } else if (strncmp(line, "ls ", 3) == 0) {
+      cmd_ls(sock, line + 3);
+    } else if (strncmp(line, "rm ", 3) == 0) {
+      cmd_rm(sock, line + 3);
     } else if (strcmp(line, "log") == 0) {
       cmd_log(sock, log_path);
       return 0;  // close so the reader sees EOF
@@ -515,7 +573,7 @@ static int serve(int sock, const char* log_path, const char* eboot_path) {
       *(volatile unsigned int*)0 = 0xDEAD;
       return 1;  // not reached
     } else if (n > 0) {
-    send_str(sock, "ERR unknown (ping|probe|log|get|put|shot|shotinfo|"
+    send_str(sock, "ERR unknown (ping|probe|log|get|put|ls|rm|shot|shotinfo|"
                                     "tap <x> <y>|overlay on|off|handoff [titleid]|relaunch|"
                                     "crash|exit)\n");
     }
@@ -608,19 +666,36 @@ static int supervisor_enabled(void) {
 // address is, not having to reconnect.
 #define MDNS_PORT 5353
 #define MDNS_GROUP "224.0.0.251"
-#define MDNS_NAME "flutter-vita"
 #define MDNS_TTL 120
+
+// The names this console answers to, each with `.local` appended on the wire.
+//
+// `flutter-vita` is what the tools default to. `flutter.vita` is here because
+// that is the obvious thing to want to type, and a bare `flutter.vita` cannot
+// be made to work: mDNS answers for the `.local` domain and nothing else, so a
+// name ending in `.vita` goes to the unicast DNS resolver, which has never
+// heard of this console. Keeping the dot and landing in `.local` is as close as
+// the protocol allows, and answering to both costs one comparison per query.
+static const char* const kMdnsNames[] = {"flutter-vita", "flutter.vita"};
+#define MDNS_NAME_COUNT ((int)(sizeof kMdnsNames / sizeof kMdnsNames[0]))
 
 static int g_mdns_sock = -1;
 
-// Writes `\7flutter-vita\5local\0` -- DNS wire format, each label prefixed by
-// its length. Returns bytes written.
-static int mdns_write_name(unsigned char* out) {
-  const int n = (int)strlen(MDNS_NAME);
+// Writes `name` plus `local` in DNS wire format -- each label prefixed by its
+// length, the whole thing terminated by a zero byte. Dots in `name` separate
+// labels, so "flutter.vita" becomes `\7flutter\4vita\5local\0`. Returns bytes
+// written.
+static int mdns_write_name(unsigned char* out, const char* name) {
   int at = 0;
-  out[at++] = (unsigned char)n;
-  memcpy(out + at, MDNS_NAME, (size_t)n);
-  at += n;
+  const char* p = name;
+  while (*p != '\0') {
+    const char* dot = strchr(p, '.');
+    const int n = dot ? (int)(dot - p) : (int)strlen(p);
+    out[at++] = (unsigned char)n;
+    memcpy(out + at, p, (size_t)n);
+    at += n;
+    p = dot ? dot + 1 : p + n;
+  }
   out[at++] = 5;
   memcpy(out + at, "local", 5);
   at += 5;
@@ -628,28 +703,43 @@ static int mdns_write_name(unsigned char* out) {
   return at;
 }
 
-// True if the question at `q` names us. `len` bounds the whole packet so a
-// malformed or hostile label length cannot walk off the end.
+// Case-insensitive label compare. DNS names are matched without regard to case
+// and macOS does send them capitalised sometimes.
+static int mdns_label_eq(const unsigned char* got, const char* want, int n) {
+  for (int i = 0; i < n; i++) {
+    unsigned char a = got[i];
+    unsigned char b = (unsigned char)want[i];
+    if (a >= 'A' && a <= 'Z') a = (unsigned char)(a + 32);
+    if (b >= 'A' && b <= 'Z') b = (unsigned char)(b + 32);
+    if (a != b) return 0;
+  }
+  return 1;
+}
+
+// True if the question at `at` names us as `name`.`local`. `len` bounds the
+// whole packet, so a malformed or hostile label length cannot walk off the end.
 static int mdns_name_matches(const unsigned char* pkt, int len, int at,
-                             int* end_out) {
-  const char* want[2] = {MDNS_NAME, "local"};
-  const int want_n[2] = {(int)sizeof(MDNS_NAME) - 1, 5};
-  for (int part = 0; part < 2; part++) {
+                             const char* name, int* end_out) {
+  const char* p = name;
+  for (;;) {
+    const char* dot = strchr(p, '.');
+    const int want = dot ? (int)(dot - p) : (int)strlen(p);
     if (at >= len) return 0;
     const int n = pkt[at++];
     // Compression pointers are legal in a question in theory and never appear
     // in practice; refusing them keeps this loop obviously terminating.
     if (n == 0 || (n & 0xC0) != 0 || at + n > len) return 0;
-    if (n != want_n[part]) return 0;
-    for (int i = 0; i < n; i++) {
-      unsigned char a = pkt[at + i];
-      unsigned char b = (unsigned char)want[part][i];
-      if (a >= 'A' && a <= 'Z') a = (unsigned char)(a + 32);
-      if (b >= 'A' && b <= 'Z') b = (unsigned char)(b + 32);
-      if (a != b) return 0;
-    }
+    if (n != want || !mdns_label_eq(pkt + at, p, n)) return 0;
     at += n;
+    if (dot == NULL) break;
+    p = dot + 1;
   }
+  if (at >= len) return 0;
+  const int tail = pkt[at++];
+  if (tail != 5 || at + 5 > len || !mdns_label_eq(pkt + at, "local", 5)) {
+    return 0;
+  }
+  at += 5;
   if (at >= len || pkt[at] != 0) return 0;
   *end_out = at + 1;
   return 1;
@@ -671,7 +761,7 @@ static unsigned int mdns_self_addr(void) {
 
 // One A record, multicast to the group. QDCOUNT is zero and the answer carries
 // the name in full, which is what lets the reply stand alone.
-static void mdns_respond(void) {
+static void mdns_respond(const char* name) {
   const unsigned int addr = mdns_self_addr();
   if (addr == 0 || g_mdns_sock < 0) return;
 
@@ -680,7 +770,7 @@ static void mdns_respond(void) {
   out[2] = 0x84;  // QR=1, AA=1
   out[7] = 1;     // ANCOUNT=1
   int at = 12;
-  at += mdns_write_name(out + at);
+  at += mdns_write_name(out + at, name);
   out[at++] = 0; out[at++] = 1;        // TYPE=A
   out[at++] = 0x80; out[at++] = 1;     // CLASS=IN, cache-flush
   out[at++] = 0; out[at++] = 0;
@@ -705,7 +795,9 @@ static int mdns_thread(SceSize args, void* argp) {
   // Two unsolicited announcements a second apart, so the name resolves before
   // anything asks rather than only after the first query times out.
   for (int i = 0; i < 2; i++) {
-    mdns_respond();
+    for (int n = 0; n < MDNS_NAME_COUNT; n++) {
+      mdns_respond(kMdnsNames[n]);
+    }
     sceKernelDelayThread(1000 * 1000);
   }
 
@@ -727,11 +819,17 @@ static int mdns_thread(SceSize args, void* argp) {
     int at = 12;
     for (int q = 0; q < qdcount; q++) {
       int after = 0;
-      if (!mdns_name_matches(pkt, n, at, &after)) break;
-      if (after + 4 > n) break;
+      const char* hit = NULL;
+      for (int i = 0; i < MDNS_NAME_COUNT; i++) {
+        if (mdns_name_matches(pkt, n, at, kMdnsNames[i], &after)) {
+          hit = kMdnsNames[i];
+          break;
+        }
+      }
+      if (hit == NULL || after + 4 > n) break;
       const int qtype = (pkt[after] << 8) | pkt[after + 1];
       if (qtype == 1 || qtype == 255) {  // A, or ANY
-        mdns_respond();
+        mdns_respond(hit);
       }
       break;  // one question is all anything asks us
     }
@@ -788,7 +886,9 @@ static void start_mdns(void) {
     return;
   }
   sceKernelStartThread(th, 0, NULL);
-  logf_("  [dev] %s.local\n", MDNS_NAME);
+  for (int i = 0; i < MDNS_NAME_COUNT; i++) {
+    logf_("  [dev] %s.local\n", kMdnsNames[i]);
+  }
 }
 
 static void start_supervisor(void) {
