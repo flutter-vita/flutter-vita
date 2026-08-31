@@ -1,0 +1,962 @@
+flutter-vita: starting
+  [dev] flutter-vita.local
+flutter-vita: clocks arm=500 bus=222 gpu=222 xbar=166
+  [dev] flutter.vita.local
+  [dev] listening on 192.168.0.32:1339
+flutter-vita: GL up -- OpenGL ES 2.0 VitaGL / SGX543MP4+ (vglInit returned 0)
+flutter-vita: thread io.flutter.ui affinity 0x00000 -> 0x00000
+ARWE 0x82dc00fc enter handle=83207390 signaled=0
+ARWE 0x82dc00fc pre-wait handle=83207390
+ARWE 0x82dc00fc post-wait handle=83207390
+flutter-vita: thread io.flutter.raster affinity 0x00000 -> 0x00000
+ARWE 0x82dc00fc enter handle=83207b80 signaled=0
+ARWE 0x82dc00fc pre-wait handle=83207b80
+ARWE 0x82dc00fc post-wait handle=83207b80
+flutter-vita: thread io.flutter.io affinity 0x00000 -> 0x00000
+ARWE 0x82dc00fc enter handle=83207390 signaled=0
+ARWE 0x82dc00fc pre-wait handle=83207390
+ARWE 0x82dc00fc post-wait handle=83207390
+flutter-vita: thread io.worker.1 affinity 0x00000 -> 0x00000
+flutter-vita: thread io.worker.2 affinity 0x00000 -> 0x00000
+[ERROR:flutter/shell/platform/embedder/embedder_surface_gl_skia.cc(121)] Could not create a resource context for async texture uploads. Expect degraded performance. Set a valid make_resource_current callback on FlutterOpenGLRendererConfig.
+ARWE 0x82dbf554 enter handle=832e4f98 signaled=1
+flutter-vita: GL unresolved eglGetCurrentDisplay
+ARWE 0x82dc0ac8 enter handle=834d0738 signaled=0
+[ERROR:flutter/shell/platform/embedder/embedder_surface_gl_skia.cc(121)] Could not create a resource context for async texture uploads. Expect degraded performance. Set a valid make_resource_current callback on FlutterOpenGLRendererConfig.
+ARWE 0x82dc0ac8 pre-wait handle=834d0738
+ARWE 0x82dc0ac8 post-wait handle=834d0738
+flutter-vita: engine running (heap 0M/2M, free user=45056K cdram=0K phycont=0K)
+flutter-vita: touch aa=[0,0..1919,1087] scale=0.5003,0.5005
+flutter-vita: GXM belongs to vitaGL; it composites the IME
+flutter-vita: IME ready (lang=1 enter=0)
+flutter-vita: channel flutter/isolate [25] isolates/5583916319621667
+flutter-vita: channel flutter/keyboard [19] ..getKeyboardState.
+flutter-vita: channel flutter/platform [54] {"method":"System.initializationComplete","args":null}
+flutter-vita: channel io.material.plugins/dynamic_color [17] ..getCorePalette.
+flutter-vita: channel io.material.plugins/dynamic_color [17] ..getAccentColor.
+[dart] 2026-08-31 07:40:53.592745    [INFO] [PersistenceService] Existing version: 3
+[dart] 2026-08-31 07:40:53.626443    [INFO] [ChildIsolateMain] Child isolate is ready: HttpScanDiscoveryIsolate (logLevel: INFO)
+[dart] 2026-08-31 07:40:53.640541    [INFO] [ChildIsolateMain] Child isolate is ready: HttpTargetDiscoveryIsolate (logLevel: INFO)
+[dart] 2026-08-31 07:40:53.662493    [INFO] [ChildIsolateMain] Child isolate is ready: MulticastDiscoveryIsolate (logLevel: INFO)
+[dart] 2026-08-31 07:40:53.668431    [INFO] [Multicast] Bind UDP multicast port (ip: [192.168.0.32], group: 224.0.0.167, port: 53317)
+flutter-vita: present #0 row_bytes=3840 height=544 heap=1M/2M free user=31744K cdram=0K phycont=0K
+flutter-vita: channel flutter/platform [114] {"method":"SystemChrome.setApplicationSwitcherDescription","args":{"label":"LocalSend","primaryColor":4278217312}}
+flutter-vita: channel flutter/navigation [49] {"method":"selectSingleEntryHistory","args":null}
+flutter-vita: channel flutter/navigation [84] {"method":"routeInformationUpdated","args":{"uri":"/","state":null,"replace":false}}
+flutter-vita: channel flutter/platform [379] {"method":"SystemChrome.setSystemUIOverlayStyle","args":{"systemNavigationBarColor":4278190080,"systemNavigationBarDividerColor":null,"systemStatusBarContrastEn...
+flutter-vita: channel flutter/navigation [91] {"method":"routeInformationUpdated","args":{"uri":"HomePage","state":null,"replace":false}}
+[dart] 2026-08-31 07:40:53.942244    [INFO] [Multicast] Announce via UDP
+flutter-vita: channel dev.fluttercommunity.plus/connectivity_status [9] ..listen.
+flutter-vita: channel flutter/platform [58] {"method":"LiveText.isLiveTextInputAvailable","args":null}
+flutter-vita: channel flutter/platform [53] {"method":"Clipboard.hasStrings","args":"text/plain"}
+flutter-vita: channel flutter/processtext [31] ..ProcessText.queryTextActions.
+flutter-vita: channel flutter/platform [58] {"method":"LiveText.isLiveTextInputAvailable","args":null}
+flutter-vita: channel flutter/platform [53] {"method":"Clipboard.hasStrings","args":"text/plain"}
+flutter-vita: channel flutter/processtext [31] ..ProcessText.queryTextActions.
+[dart] 2026-08-31 07:40:54.064029    [INFO] [Server] Starting server...
+flutter-vita: channel dev.fluttercommunity.plus/network_info [16] ..wifiIPAddress.
+flutter-vita: channel flutter/platform [342] {"method":"SystemChrome.setSystemUIOverlayStyle","args":{"systemNavigationBarColor":null,"systemNavigationBarDividerColor":null,"systemStatusBarContrastEnforced...
+[dart] MissingPluginException(No implementation found for method listen on channel dev.fluttercommunity.plus/connectivity_status)
+[dart] #0      MethodChannel._invokeMethod (package:flutter/src/services/platform_channel.dart:364)
+[dart] <asynchronous suspension>
+[dart] #1      EventChannel.receiveBroadcastStream.<anonymous closure> (package:flutter/src/services/platform_channel.dart:711)
+[dart] <asynchronous suspension>
+[dart] 2026-08-31 07:40:54.114764 [WARNING] [NetworkInfo] Failed to get wifi IP
+[dart] MissingPluginException(No implementation found for method wifiIPAddress on channel dev.fluttercommunity.plus/network_info)
+flutter-vita: present #1 row_bytes=3840 height=544 heap=5M/5M free user=28672K cdram=0K phycont=0K
+flutter-vita: JANK frame #1 gap 433394 us (raster 119430 us, wait 311602 us)
+[dart] 2026-08-31 07:40:54.198149    [INFO] [Server] Server started. (Port: 53317, HTTPS only)
+[dart] 2026-08-31 07:40:54.230390    [INFO] [NetworkInfo] Network state: [192.168.0.32]
+flutter-vita: present #2 row_bytes=3840 height=544 heap=6M/6M free user=28672K cdram=0K phycont=0K
+flutter-vita: JANK frame #2 gap 54739 us (raster 2369 us, wait 47822 us)
+flutter-vita: channel flutter/platform [58] {"method":"LiveText.isLiveTextInputAvailable","args":null}
+flutter-vita: channel flutter/platform [53] {"method":"Clipboard.hasStrings","args":"text/plain"}
+flutter-vita: channel flutter/processtext [31] ..ProcessText.queryTextActions.
+flutter-vita: present #3 row_bytes=3840 height=544 heap=6M/6M free user=28672K cdram=0K phycont=0K
+flutter-vita: present #4 row_bytes=3840 height=544 heap=6M/6M free user=30720K cdram=0K phycont=0K
+flutter-vita: present #5 row_bytes=3840 height=544 heap=6M/7M free user=30720K cdram=0K phycont=0K
+flutter-vita: JANK frame #5 gap 57375 us (raster 44665 us, wait 10675 us)
+flutter-vita: present #6 row_bytes=3840 height=544 heap=6M/7M free user=30720K cdram=0K phycont=0K
+flutter-vita: present #7 row_bytes=3840 height=544 heap=6M/7M free user=30720K cdram=0K phycont=0K
+flutter-vita: present #8 row_bytes=3840 height=544 heap=6M/7M free user=30720K cdram=0K phycont=0K
+flutter-vita: present #9 row_bytes=3840 height=544 heap=6M/7M free user=30720K cdram=0K phycont=0K
+flutter-vita: present #10 row_bytes=3840 height=544 heap=6M/7M free user=30720K cdram=0K phycont=0K
+flutter-vita: present #11 row_bytes=3840 height=544 heap=6M/7M free user=30720K cdram=0K phycont=0K
+[dart] 2026-08-31 07:40:54.473420    [INFO] [Multicast] Announce via UDP
+flutter-vita: present #12 row_bytes=3840 height=544 heap=6M/7M free user=30720K cdram=0K phycont=0K
+flutter-vita: present #13 row_bytes=3840 height=544 heap=6M/7M free user=30720K cdram=0K phycont=0K
+flutter-vita: present #14 row_bytes=3840 height=544 heap=6M/7M free user=30720K cdram=0K phycont=0K
+flutter-vita: present #15 row_bytes=3840 height=544 heap=6M/7M free user=30720K cdram=0K phycont=0K
+flutter-vita: present #16 row_bytes=3840 height=544 heap=6M/7M free user=30720K cdram=0K phycont=0K
+flutter-vita: present #17 row_bytes=3840 height=544 heap=6M/7M free user=30720K cdram=0K phycont=0K
+flutter-vita: present #18 row_bytes=3840 height=544 heap=6M/7M free user=30720K cdram=0K phycont=0K
+flutter-vita: present #19 row_bytes=3840 height=544 heap=6M/7M free user=30720K cdram=0K phycont=0K
+flutter-vita: present #20 row_bytes=3840 height=544 heap=6M/7M free user=29696K cdram=0K phycont=0K
+flutter-vita: present #21 row_bytes=3840 height=544 heap=6M/7M free user=29696K cdram=0K phycont=0K
+flutter-vita: present #22 row_bytes=3840 height=544 heap=6M/7M free user=29696K cdram=0K phycont=0K
+flutter-vita: present #23 row_bytes=3840 height=544 heap=6M/7M free user=29696K cdram=0K phycont=0K
+flutter-vita: present #24 row_bytes=3840 height=544 heap=6M/7M free user=29696K cdram=0K phycont=0K
+flutter-vita: present #25 row_bytes=3840 height=544 heap=6M/7M free user=29696K cdram=0K phycont=0K
+flutter-vita: present #26 row_bytes=3840 height=544 heap=6M/7M free user=29696K cdram=0K phycont=0K
+flutter-vita: present #27 row_bytes=3840 height=544 heap=6M/7M free user=29696K cdram=0K phycont=0K
+flutter-vita: present #28 row_bytes=3840 height=544 heap=6M/7M free user=29696K cdram=0K phycont=0K
+flutter-vita: present #29 row_bytes=3840 height=544 heap=6M/7M free user=29696K cdram=0K phycont=0K
+flutter-vita: present #30 row_bytes=3840 height=544 heap=6M/7M free user=29696K cdram=0K phycont=0K
+flutter-vita: present #31 row_bytes=3840 height=544 heap=6M/7M free user=29696K cdram=0K phycont=0K
+flutter-vita: present #32 row_bytes=3840 height=544 heap=6M/7M free user=29696K cdram=0K phycont=0K
+flutter-vita: present #33 row_bytes=3840 height=544 heap=6M/7M free user=29696K cdram=0K phycont=0K
+flutter-vita: present #34 row_bytes=3840 height=544 heap=6M/7M free user=29696K cdram=0K phycont=0K
+flutter-vita: present #35 row_bytes=3840 height=544 heap=6M/7M free user=29696K cdram=0K phycont=0K
+flutter-vita: present #36 row_bytes=3840 height=544 heap=6M/7M free user=29696K cdram=0K phycont=0K
+flutter-vita: present #37 row_bytes=3840 height=544 heap=6M/7M free user=29696K cdram=0K phycont=0K
+flutter-vita: present #38 row_bytes=3840 height=544 heap=6M/7M free user=29696K cdram=0K phycont=0K
+flutter-vita: present #39 row_bytes=3840 height=544 heap=6M/7M free user=29696K cdram=0K phycont=0K
+flutter-vita: present #40 row_bytes=3840 height=544 heap=6M/7M free user=28672K cdram=0K phycont=0K
+flutter-vita: present #41 row_bytes=3840 height=544 heap=6M/7M free user=28672K cdram=0K phycont=0K
+flutter-vita: JANK frame #41 gap 86998 us (raster 7618 us, wait 75969 us)
+flutter-vita: present #42 row_bytes=3840 height=544 heap=7M/7M free user=28672K cdram=0K phycont=0K
+flutter-vita: present #43 row_bytes=3840 height=544 heap=7M/7M free user=28672K cdram=0K phycont=0K
+flutter-vita: present #44 row_bytes=3840 height=544 heap=7M/7M free user=28672K cdram=0K phycont=0K
+flutter-vita: present #45 row_bytes=3840 height=544 heap=6M/7M free user=28672K cdram=0K phycont=0K
+flutter-vita: present #46 row_bytes=3840 height=544 heap=6M/7M free user=28672K cdram=0K phycont=0K
+flutter-vita: present #47 row_bytes=3840 height=544 heap=6M/7M free user=28672K cdram=0K phycont=0K
+flutter-vita: present #48 row_bytes=3840 height=544 heap=6M/7M free user=29696K cdram=0K phycont=0K
+flutter-vita: JANK frame #48 gap 68667 us (raster 8317 us, wait 56837 us)
+flutter-vita: present #49 row_bytes=3840 height=544 heap=6M/7M free user=29696K cdram=0K phycont=0K
+flutter-vita: present #50 row_bytes=3840 height=544 heap=6M/7M free user=29696K cdram=0K phycont=0K
+flutter-vita: JANK frame #50 gap 52356 us (raster 6789 us, wait 42608 us)
+flutter-vita: present #51 row_bytes=3840 height=544 heap=6M/7M free user=29696K cdram=0K phycont=0K
+flutter-vita: present #52 row_bytes=3840 height=544 heap=6M/7M free user=29696K cdram=0K phycont=0K
+flutter-vita: present #53 row_bytes=3840 height=544 heap=6M/7M free user=29696K cdram=0K phycont=0K
+flutter-vita: present #54 row_bytes=3840 height=544 heap=6M/7M free user=29696K cdram=0K phycont=0K
+flutter-vita: present #55 row_bytes=3840 height=544 heap=6M/7M free user=29696K cdram=0K phycont=0K
+flutter-vita: present #56 row_bytes=3840 height=544 heap=6M/7M free user=29696K cdram=0K phycont=0K
+flutter-vita: present #57 row_bytes=3840 height=544 heap=6M/7M free user=29696K cdram=0K phycont=0K
+flutter-vita: present #58 row_bytes=3840 height=544 heap=6M/7M free user=29696K cdram=0K phycont=0K
+flutter-vita: present #59 row_bytes=3840 height=544 heap=6M/7M free user=29696K cdram=0K phycont=0K
+flutter-vita: present #60 row_bytes=3840 height=544 heap=6M/7M free user=29696K cdram=0K phycont=0K
+flutter-vita: FRAMES active 59 @ 25881 us = 38.63 fps (raster 7620 us = 29%, blit 138 us = 0%, dmg 0%, hud 0 us) | raster max 119430 us | idle gaps 1 | max 433 ms | gl wait 22176 us
+flutter-vita: present #61 row_bytes=3840 height=544 heap=6M/7M free user=29696K cdram=0K phycont=0K
+flutter-vita: present #62 row_bytes=3840 height=544 heap=6M/7M free user=29696K cdram=0K phycont=0K
+flutter-vita: present #63 row_bytes=3840 height=544 heap=6M/7M free user=29696K cdram=0K phycont=0K
+flutter-vita: present #64 row_bytes=3840 height=544 heap=6M/7M free user=29696K cdram=0K phycont=0K
+flutter-vita: present #65 row_bytes=3840 height=544 heap=6M/7M free user=29696K cdram=0K phycont=0K
+flutter-vita: present #66 row_bytes=3840 height=544 heap=6M/7M free user=29696K cdram=0K phycont=0K
+flutter-vita: present #67 row_bytes=3840 height=544 heap=6M/7M free user=29696K cdram=0K phycont=0K
+flutter-vita: present #68 row_bytes=3840 height=544 heap=6M/7M free user=29696K cdram=0K phycont=0K
+flutter-vita: present #69 row_bytes=3840 height=544 heap=6M/7M free user=29696K cdram=0K phycont=0K
+flutter-vita: present #70 row_bytes=3840 height=544 heap=6M/7M free user=29696K cdram=0K phycont=0K
+flutter-vita: present #71 row_bytes=3840 height=544 heap=6M/7M free user=29696K cdram=0K phycont=0K
+flutter-vita: present #72 row_bytes=3840 height=544 heap=6M/7M free user=29696K cdram=0K phycont=0K
+flutter-vita: present #73 row_bytes=3840 height=544 heap=6M/7M free user=29696K cdram=0K phycont=0K
+flutter-vita: present #74 row_bytes=3840 height=544 heap=6M/7M free user=29696K cdram=0K phycont=0K
+flutter-vita: present #75 row_bytes=3840 height=544 heap=6M/7M free user=29696K cdram=0K phycont=0K
+flutter-vita: present #76 row_bytes=3840 height=544 heap=6M/7M free user=29696K cdram=0K phycont=0K
+flutter-vita: present #77 row_bytes=3840 height=544 heap=6M/7M free user=29696K cdram=0K phycont=0K
+flutter-vita: present #78 row_bytes=3840 height=544 heap=6M/7M free user=29696K cdram=0K phycont=0K
+flutter-vita: present #79 row_bytes=3840 height=544 heap=6M/7M free user=29696K cdram=0K phycont=0K
+flutter-vita: present #80 row_bytes=3840 height=544 heap=6M/7M free user=29696K cdram=0K phycont=0K
+flutter-vita: present #81 row_bytes=3840 height=544 heap=6M/7M free user=29696K cdram=0K phycont=0K
+flutter-vita: present #82 row_bytes=3840 height=544 heap=6M/7M free user=29696K cdram=0K phycont=0K
+[dart] 2026-08-31 07:40:56.483283    [INFO] [Multicast] Announce via UDP
+flutter-vita: present #83 row_bytes=3840 height=544 heap=6M/7M free user=29696K cdram=0K phycont=0K
+flutter-vita: JANK frame #83 gap 50614 us (raster 2901 us, wait 44802 us)
+flutter-vita: present #84 row_bytes=3840 height=544 heap=6M/7M free user=29696K cdram=0K phycont=0K
+flutter-vita: JANK frame #84 gap 62069 us (raster 2677 us, wait 25382 us)
+flutter-vita: present #85 row_bytes=3840 height=544 heap=6M/7M free user=29696K cdram=0K phycont=0K
+flutter-vita: present #86 row_bytes=3840 height=544 heap=6M/7M free user=29696K cdram=0K phycont=0K
+flutter-vita: present #87 row_bytes=3840 height=544 heap=6M/7M free user=29696K cdram=0K phycont=0K
+flutter-vita: present #88 row_bytes=3840 height=544 heap=6M/7M free user=29696K cdram=0K phycont=0K
+flutter-vita: present #89 row_bytes=3840 height=544 heap=6M/7M free user=29696K cdram=0K phycont=0K
+flutter-vita: present #90 row_bytes=3840 height=544 heap=6M/7M free user=29696K cdram=0K phycont=0K
+flutter-vita: present #91 row_bytes=3840 height=544 heap=6M/7M free user=29696K cdram=0K phycont=0K
+flutter-vita: present #92 row_bytes=3840 height=544 heap=6M/7M free user=29696K cdram=0K phycont=0K
+flutter-vita: present #93 row_bytes=3840 height=544 heap=6M/7M free user=29696K cdram=0K phycont=0K
+flutter-vita: present #94 row_bytes=3840 height=544 heap=6M/7M free user=29696K cdram=0K phycont=0K
+flutter-vita: present #95 row_bytes=3840 height=544 heap=6M/7M free user=29696K cdram=0K phycont=0K
+flutter-vita: present #96 row_bytes=3840 height=544 heap=6M/7M free user=29696K cdram=0K phycont=0K
+flutter-vita: present #97 row_bytes=3840 height=544 heap=6M/7M free user=29696K cdram=0K phycont=0K
+flutter-vita: present #98 row_bytes=3840 height=544 heap=6M/7M free user=29696K cdram=0K phycont=0K
+flutter-vita: present #99 row_bytes=3840 height=544 heap=6M/7M free user=29696K cdram=0K phycont=0K
+flutter-vita: present #100 row_bytes=3840 height=544 heap=6M/7M free user=29696K cdram=0K phycont=0K
+flutter-vita: present #101 row_bytes=3840 height=544 heap=6M/7M free user=29696K cdram=0K phycont=0K
+flutter-vita: present #102 row_bytes=3840 height=544 heap=6M/7M free user=29696K cdram=0K phycont=0K
+flutter-vita: JANK frame #102 gap 50121 us (raster 2543 us, wait 44496 us)
+flutter-vita: present #103 row_bytes=3840 height=544 heap=6M/7M free user=29696K cdram=0K phycont=0K
+flutter-vita: present #104 row_bytes=3840 height=544 heap=6M/7M free user=29696K cdram=0K phycont=0K
+flutter-vita: present #105 row_bytes=3840 height=544 heap=6M/7M free user=29696K cdram=0K phycont=0K
+flutter-vita: present #106 row_bytes=3840 height=544 heap=6M/7M free user=29696K cdram=0K phycont=0K
+flutter-vita: present #107 row_bytes=3840 height=544 heap=6M/7M free user=29696K cdram=0K phycont=0K
+flutter-vita: present #108 row_bytes=3840 height=544 heap=6M/7M free user=29696K cdram=0K phycont=0K
+flutter-vita: present #109 row_bytes=3840 height=544 heap=6M/7M free user=29696K cdram=0K phycont=0K
+flutter-vita: present #110 row_bytes=3840 height=544 heap=6M/7M free user=29696K cdram=0K phycont=0K
+flutter-vita: present #111 row_bytes=3840 height=544 heap=6M/7M free user=29696K cdram=0K phycont=0K
+flutter-vita: present #112 row_bytes=3840 height=544 heap=6M/7M free user=29696K cdram=0K phycont=0K
+flutter-vita: present #113 row_bytes=3840 height=544 heap=6M/7M free user=29696K cdram=0K phycont=0K
+flutter-vita: present #114 row_bytes=3840 height=544 heap=6M/7M free user=29696K cdram=0K phycont=0K
+flutter-vita: present #115 row_bytes=3840 height=544 heap=6M/7M free user=29696K cdram=0K phycont=0K
+flutter-vita: present #116 row_bytes=3840 height=544 heap=6M/7M free user=29696K cdram=0K phycont=0K
+flutter-vita: present #117 row_bytes=3840 height=544 heap=6M/7M free user=29696K cdram=0K phycont=0K
+flutter-vita: present #118 row_bytes=3840 height=544 heap=6M/7M free user=29696K cdram=0K phycont=0K
+flutter-vita: present #119 row_bytes=3840 height=544 heap=6M/7M free user=29696K cdram=0K phycont=0K
+flutter-vita: present #120 row_bytes=3840 height=544 heap=6M/7M free user=29696K cdram=0K phycont=0K
+flutter-vita: FRAMES active 60 @ 34947 us = 28.61 fps (raster 2678 us = 7%, blit 133 us = 0%, dmg 0%, hud 0 us) | raster max 5997 us | idle gaps 0 | max 62 ms | gl wait 28669 us
+flutter-vita: present #121 row_bytes=3840 height=544 heap=6M/7M free user=29696K cdram=0K phycont=0K
+flutter-vita: present #122 row_bytes=3840 height=544 heap=6M/7M free user=29696K cdram=0K phycont=0K
+flutter-vita: present #123 row_bytes=3840 height=544 heap=6M/7M free user=29696K cdram=0K phycont=0K
+flutter-vita: present #124 row_bytes=3840 height=544 heap=6M/7M free user=29696K cdram=0K phycont=0K
+flutter-vita: present #125 row_bytes=3840 height=544 heap=6M/7M free user=29696K cdram=0K phycont=0K
+flutter-vita: present #126 row_bytes=3840 height=544 heap=6M/7M free user=28672K cdram=0K phycont=0K
+flutter-vita: present #127 row_bytes=3840 height=544 heap=6M/7M free user=28672K cdram=0K phycont=0K
+flutter-vita: present #128 row_bytes=3840 height=544 heap=6M/7M free user=28672K cdram=0K phycont=0K
+flutter-vita: present #129 row_bytes=3840 height=544 heap=6M/7M free user=28672K cdram=0K phycont=0K
+flutter-vita: LOOP 300 iterations @ 16627 us mean | 45 tasks (43177 us total, 959 us mean)
+flutter-vita: PARAGRAPHS 40 | ctor 2868 us | build 3335 us | layout 249008 us | 6380 us each
+flutter-vita: present #130 row_bytes=3840 height=544 heap=6M/7M free user=28672K cdram=0K phycont=0K
+flutter-vita: present #131 row_bytes=3840 height=544 heap=6M/7M free user=28672K cdram=0K phycont=0K
+flutter-vita: present #132 row_bytes=3840 height=544 heap=6M/7M free user=28672K cdram=0K phycont=0K
+flutter-vita: present #133 row_bytes=3840 height=544 heap=6M/7M free user=28672K cdram=0K phycont=0K
+flutter-vita: present #134 row_bytes=3840 height=544 heap=6M/7M free user=28672K cdram=0K phycont=0K
+flutter-vita: present #135 row_bytes=3840 height=544 heap=6M/7M free user=28672K cdram=0K phycont=0K
+flutter-vita: present #136 row_bytes=3840 height=544 heap=6M/7M free user=28672K cdram=0K phycont=0K
+flutter-vita: present #137 row_bytes=3840 height=544 heap=6M/7M free user=28672K cdram=0K phycont=0K
+flutter-vita: present #138 row_bytes=3840 height=544 heap=6M/7M free user=28672K cdram=0K phycont=0K
+flutter-vita: present #139 row_bytes=3840 height=544 heap=6M/7M free user=28672K cdram=0K phycont=0K
+flutter-vita: present #140 row_bytes=3840 height=544 heap=6M/7M free user=28672K cdram=0K phycont=0K
+flutter-vita: JANK frame #140 gap 50300 us (raster 2571 us, wait 44313 us)
+flutter-vita: present #141 row_bytes=3840 height=544 heap=6M/7M free user=28672K cdram=0K phycont=0K
+flutter-vita: present #142 row_bytes=3840 height=544 heap=6M/7M free user=28672K cdram=0K phycont=0K
+flutter-vita: present #143 row_bytes=3840 height=544 heap=6M/7M free user=28672K cdram=0K phycont=0K
+flutter-vita: present #144 row_bytes=3840 height=544 heap=6M/7M free user=28672K cdram=0K phycont=0K
+flutter-vita: present #145 row_bytes=3840 height=544 heap=6M/7M free user=28672K cdram=0K phycont=0K
+flutter-vita: present #146 row_bytes=3840 height=544 heap=6M/7M free user=28672K cdram=0K phycont=0K
+flutter-vita: present #147 row_bytes=3840 height=544 heap=6M/7M free user=28672K cdram=0K phycont=0K
+flutter-vita: present #148 row_bytes=3840 height=544 heap=6M/7M free user=28672K cdram=0K phycont=0K
+flutter-vita: present #149 row_bytes=3840 height=544 heap=6M/7M free user=28672K cdram=0K phycont=0K
+flutter-vita: present #150 row_bytes=3840 height=544 heap=6M/7M free user=28672K cdram=0K phycont=0K
+flutter-vita: present #151 row_bytes=3840 height=544 heap=6M/7M free user=28672K cdram=0K phycont=0K
+flutter-vita: present #152 row_bytes=3840 height=544 heap=6M/7M free user=28672K cdram=0K phycont=0K
+flutter-vita: present #153 row_bytes=3840 height=544 heap=6M/7M free user=28672K cdram=0K phycont=0K
+flutter-vita: present #154 row_bytes=3840 height=544 heap=6M/7M free user=28672K cdram=0K phycont=0K
+flutter-vita: present #155 row_bytes=3840 height=544 heap=6M/7M free user=28672K cdram=0K phycont=0K
+flutter-vita: present #156 row_bytes=3840 height=544 heap=6M/7M free user=28672K cdram=0K phycont=0K
+flutter-vita: present #157 row_bytes=3840 height=544 heap=6M/7M free user=28672K cdram=0K phycont=0K
+flutter-vita: present #158 row_bytes=3840 height=544 heap=6M/7M free user=28672K cdram=0K phycont=0K
+flutter-vita: present #159 row_bytes=3840 height=544 heap=6M/7M free user=28672K cdram=0K phycont=0K
+flutter-vita: present #160 row_bytes=3840 height=544 heap=6M/7M free user=28672K cdram=0K phycont=0K
+flutter-vita: present #161 row_bytes=3840 height=544 heap=6M/7M free user=28672K cdram=0K phycont=0K
+flutter-vita: present #162 row_bytes=3840 height=544 heap=6M/7M free user=28672K cdram=0K phycont=0K
+flutter-vita: present #163 row_bytes=3840 height=544 heap=6M/7M free user=28672K cdram=0K phycont=0K
+flutter-vita: present #164 row_bytes=3840 height=544 heap=6M/7M free user=28672K cdram=0K phycont=0K
+flutter-vita: present #165 row_bytes=3840 height=544 heap=6M/7M free user=28672K cdram=0K phycont=0K
+flutter-vita: present #166 row_bytes=3840 height=544 heap=6M/7M free user=28672K cdram=0K phycont=0K
+flutter-vita: present #167 row_bytes=3840 height=544 heap=6M/7M free user=28672K cdram=0K phycont=0K
+flutter-vita: present #168 row_bytes=3840 height=544 heap=6M/7M free user=28672K cdram=0K phycont=0K
+flutter-vita: present #169 row_bytes=3840 height=544 heap=6M/7M free user=28672K cdram=0K phycont=0K
+flutter-vita: present #170 row_bytes=3840 height=544 heap=6M/7M free user=28672K cdram=0K phycont=0K
+flutter-vita: present #171 row_bytes=3840 height=544 heap=6M/7M free user=28672K cdram=0K phycont=0K
+flutter-vita: JANK frame #171 gap 50135 us (raster 2489 us, wait 44004 us)
+flutter-vita: present #172 row_bytes=3840 height=544 heap=6M/7M free user=28672K cdram=0K phycont=0K
+flutter-vita: present #173 row_bytes=3840 height=544 heap=6M/7M free user=28672K cdram=0K phycont=0K
+flutter-vita: present #174 row_bytes=3840 height=544 heap=6M/7M free user=28672K cdram=0K phycont=0K
+flutter-vita: present #175 row_bytes=3840 height=544 heap=6M/7M free user=28672K cdram=0K phycont=0K
+flutter-vita: present #176 row_bytes=3840 height=544 heap=6M/7M free user=28672K cdram=0K phycont=0K
+flutter-vita: present #177 row_bytes=3840 height=544 heap=6M/7M free user=28672K cdram=0K phycont=0K
+flutter-vita: present #178 row_bytes=3840 height=544 heap=6M/7M free user=28672K cdram=0K phycont=0K
+flutter-vita: present #179 row_bytes=3840 height=544 heap=6M/7M free user=28672K cdram=0K phycont=0K
+flutter-vita: present #180 row_bytes=3840 height=544 heap=6M/7M free user=28672K cdram=0K phycont=0K
+flutter-vita: FRAMES active 60 @ 34733 us = 28.79 fps (raster 2744 us = 7%, blit 126 us = 0%, dmg 0%, hud 0 us) | raster max 5605 us | idle gaps 0 | max 50 ms | gl wait 28175 us
+flutter-vita: present #181 row_bytes=3840 height=544 heap=6M/7M free user=28672K cdram=0K phycont=0K
+flutter-vita: present #182 row_bytes=3840 height=544 heap=6M/7M free user=28672K cdram=0K phycont=0K
+flutter-vita: present #183 row_bytes=3840 height=544 heap=6M/7M free user=28672K cdram=0K phycont=0K
+flutter-vita: present #184 row_bytes=3840 height=544 heap=6M/7M free user=28672K cdram=0K phycont=0K
+flutter-vita: present #185 row_bytes=3840 height=544 heap=6M/7M free user=28672K cdram=0K phycont=0K
+flutter-vita: present #186 row_bytes=3840 height=544 heap=6M/7M free user=28672K cdram=0K phycont=0K
+flutter-vita: present #187 row_bytes=3840 height=544 heap=6M/7M free user=28672K cdram=0K phycont=0K
+flutter-vita: present #188 row_bytes=3840 height=544 heap=6M/7M free user=28672K cdram=0K phycont=0K
+flutter-vita: present #189 row_bytes=3840 height=544 heap=6M/7M free user=28672K cdram=0K phycont=0K
+flutter-vita: present #190 row_bytes=3840 height=544 heap=6M/7M free user=28672K cdram=0K phycont=0K
+flutter-vita: present #191 row_bytes=3840 height=544 heap=6M/7M free user=28672K cdram=0K phycont=0K
+flutter-vita: JANK frame #191 gap 50077 us (raster 2449 us, wait 43943 us)
+flutter-vita: present #192 row_bytes=3840 height=544 heap=6M/7M free user=28672K cdram=0K phycont=0K
+flutter-vita: present #193 row_bytes=3840 height=544 heap=6M/7M free user=28672K cdram=0K phycont=0K
+flutter-vita: present #194 row_bytes=3840 height=544 heap=6M/7M free user=28672K cdram=0K phycont=0K
+flutter-vita: present #195 row_bytes=3840 height=544 heap=6M/7M free user=28672K cdram=0K phycont=0K
+flutter-vita: present #196 row_bytes=3840 height=544 heap=6M/7M free user=28672K cdram=0K phycont=0K
+flutter-vita: present #197 row_bytes=3840 height=544 heap=6M/7M free user=28672K cdram=0K phycont=0K
+flutter-vita: present #198 row_bytes=3840 height=544 heap=6M/7M free user=28672K cdram=0K phycont=0K
+flutter-vita: present #199 row_bytes=3840 height=544 heap=6M/7M free user=28672K cdram=0K phycont=0K
+flutter-vita: JANK frame #231 gap 50005 us (raster 2423 us, wait 47459 us)
+flutter-vita: present #240 row_bytes=3840 height=544 heap=6M/7M free user=28672K cdram=0K phycont=0K
+flutter-vita: FRAMES active 60 @ 34455 us = 29.02 fps (raster 2481 us = 7%, blit 123 us = 0%, dmg 0%, hud 0 us) | raster max 3091 us | idle gaps 0 | max 50 ms | gl wait 30525 us
+flutter-vita: JANK frame #246 gap 50137 us (raster 2407 us, wait 47601 us)
+flutter-vita: JANK frame #261 gap 50077 us (raster 2443 us, wait 47484 us)
+flutter-vita: JANK frame #272 gap 50137 us (raster 2432 us, wait 47583 us)
+flutter-vita: LOOP 300 iterations @ 16627 us mean | 0 tasks (1970 us total, 0 us mean)
+flutter-vita: JANK frame #287 gap 50010 us (raster 2402 us, wait 47467 us)
+flutter-vita: present #300 row_bytes=3840 height=544 heap=6M/7M free user=28672K cdram=0K phycont=0K
+flutter-vita: JANK frame #300 gap 53762 us (raster 2388 us, wait 47575 us)
+flutter-vita: FRAMES active 60 @ 34991 us = 28.57 fps (raster 2460 us = 7%, blit 123 us = 0%, dmg 0%, hud 0 us) | raster max 3120 us | idle gaps 0 | max 53 ms | gl wait 31604 us
+flutter-vita: JANK frame #313 gap 50217 us (raster 2566 us, wait 47528 us)
+flutter-vita: JANK frame #335 gap 50075 us (raster 2531 us, wait 47422 us)
+flutter-vita: JANK frame #347 gap 50037 us (raster 2420 us, wait 47478 us)
+flutter-vita: present #360 row_bytes=3840 height=544 heap=6M/7M free user=28672K cdram=0K phycont=0K
+flutter-vita: FRAMES active 60 @ 34450 us = 29.02 fps (raster 2467 us = 7%, blit 122 us = 0%, dmg 0%, hud 0 us) | raster max 3143 us | idle gaps 0 | max 50 ms | gl wait 31543 us
+flutter-vita: JANK frame #364 gap 50282 us (raster 2491 us, wait 47650 us)
+flutter-vita: JANK frame #380 gap 50136 us (raster 2607 us, wait 47407 us)
+flutter-vita: JANK frame #392 gap 50074 us (raster 2580 us, wait 47367 us)
+flutter-vita: LOOP 300 iterations @ 16627 us mean | 0 tasks (2028 us total, 0 us mean)
+flutter-vita: present #420 row_bytes=3840 height=544 heap=6M/7M free user=28672K cdram=0K phycont=0K
+flutter-vita: FRAMES active 60 @ 34720 us = 28.80 fps (raster 2478 us = 7%, blit 124 us = 0%, dmg 0%, hud 0 us) | raster max 3163 us | idle gaps 0 | max 50 ms | gl wait 31855 us
+flutter-vita: JANK frame #434 gap 50122 us (raster 2507 us, wait 47493 us)
+flutter-vita: JANK frame #475 gap 50178 us (raster 2737 us, wait 47308 us)
+flutter-vita: present #480 row_bytes=3840 height=544 heap=6M/7M free user=28672K cdram=0K phycont=0K
+flutter-vita: FRAMES active 60 @ 34720 us = 28.80 fps (raster 2553 us = 7%, blit 123 us = 0%, dmg 0%, hud 0 us) | raster max 3260 us | idle gaps 0 | max 50 ms | gl wait 31844 us
+flutter-vita: JANK frame #488 gap 50406 us (raster 2643 us, wait 47638 us)
+flutter-vita: JANK frame #504 gap 59283 us (raster 2912 us, wait 56245 us)
+flutter-vita: JANK frame #508 gap 51035 us (raster 3180 us, wait 47725 us)
+flutter-vita: JANK frame #521 gap 50240 us (raster 2474 us, wait 47642 us)
+flutter-vita: present #540 row_bytes=3840 height=544 heap=6M/7M free user=28672K cdram=0K phycont=0K
+flutter-vita: FRAMES active 60 @ 34723 us = 28.79 fps (raster 2500 us = 7%, blit 125 us = 0%, dmg 0%, hud 0 us) | raster max 3180 us | idle gaps 0 | max 59 ms | gl wait 31777 us
+flutter-vita: LOOP 300 iterations @ 16627 us mean | 0 tasks (1959 us total, 0 us mean)
+flutter-vita: JANK frame #583 gap 50466 us (raster 2664 us, wait 47679 us)
+flutter-vita: JANK frame #599 gap 50170 us (raster 2500 us, wait 47549 us)
+flutter-vita: present #600 row_bytes=3840 height=544 heap=6M/7M free user=28672K cdram=0K phycont=0K
+flutter-vita: FRAMES active 60 @ 34446 us = 29.03 fps (raster 2476 us = 7%, blit 125 us = 0%, dmg 0%, hud 0 us) | raster max 3064 us | idle gaps 0 | max 50 ms | gl wait 31642 us
+flutter-vita: JANK frame #637 gap 50155 us (raster 2534 us, wait 47497 us)
+flutter-vita: JANK frame #651 gap 50039 us (raster 2543 us, wait 47371 us)
+flutter-vita: present #660 row_bytes=3840 height=544 heap=6M/7M free user=28672K cdram=0K phycont=0K
+flutter-vita: FRAMES active 60 @ 34443 us = 29.03 fps (raster 2450 us = 7%, blit 123 us = 0%, dmg 0%, hud 0 us) | raster max 3082 us | idle gaps 0 | max 50 ms | gl wait 31670 us
+flutter-vita: JANK frame #663 gap 50107 us (raster 2572 us, wait 47412 us)
+flutter-vita: JANK frame #677 gap 50030 us (raster 2617 us, wait 47291 us)
+flutter-vita: JANK frame #696 gap 50072 us (raster 2437 us, wait 47481 us)
+flutter-vita: LOOP 300 iterations @ 16627 us mean | 0 tasks (1970 us total, 0 us mean)
+flutter-vita: present #720 row_bytes=3840 height=544 heap=6M/7M free user=28672K cdram=0K phycont=0K
+flutter-vita: FRAMES active 60 @ 34727 us = 28.79 fps (raster 2478 us = 7%, blit 124 us = 0%, dmg 0%, hud 0 us) | raster max 3084 us | idle gaps 0 | max 50 ms | gl wait 31854 us
+flutter-vita: JANK frame #728 gap 50087 us (raster 2401 us, wait 47566 us)
+flutter-vita: JANK frame #756 gap 50023 us (raster 2442 us, wait 47444 us)
+flutter-vita: JANK frame #772 gap 50390 us (raster 2657 us, wait 47613 us)
+flutter-vita: present #780 row_bytes=3840 height=544 heap=6M/7M free user=28672K cdram=0K phycont=0K
+flutter-vita: FRAMES active 60 @ 34724 us = 28.79 fps (raster 2464 us = 7%, blit 124 us = 0%, dmg 0%, hud 0 us) | raster max 3060 us | idle gaps 0 | max 50 ms | gl wait 31845 us
+flutter-vita: JANK frame #789 gap 50299 us (raster 2583 us, wait 47574 us)
+flutter-vita: JANK frame #810 gap 50789 us (raster 3215 us, wait 47429 us)
+flutter-vita: JANK frame #818 gap 50263 us (raster 2526 us, wait 47613 us)
+flutter-vita: JANK frame #832 gap 50264 us (raster 2415 us, wait 47707 us)
+flutter-vita: present #840 row_bytes=3840 height=544 heap=6M/7M free user=28672K cdram=0K phycont=0K
+flutter-vita: FRAMES active 60 @ 34686 us = 28.83 fps (raster 2471 us = 7%, blit 123 us = 0%, dmg 0%, hud 0 us) | raster max 3215 us | idle gaps 0 | max 50 ms | gl wait 31938 us
+flutter-vita: LOOP 300 iterations @ 16627 us mean | 0 tasks (1949 us total, 0 us mean)
+flutter-vita: JANK frame #899 gap 50168 us (raster 2562 us, wait 47464 us)
+flutter-vita: present #900 row_bytes=3840 height=544 heap=6M/7M free user=28672K cdram=0K phycont=0K
+flutter-vita: FRAMES active 60 @ 34724 us = 28.79 fps (raster 2470 us = 7%, blit 124 us = 0%, dmg 0%, hud 0 us) | raster max 3146 us | idle gaps 0 | max 50 ms | gl wait 32048 us
+flutter-vita: JANK frame #912 gap 50053 us (raster 2570 us, wait 47338 us)
+flutter-vita: JANK frame #932 gap 84477 us (raster 3379 us, wait 80971 us)
+flutter-vita: JANK frame #945 gap 50030 us (raster 2630 us, wait 47260 us)
+flutter-vita: present #960 row_bytes=3840 height=544 heap=6M/7M free user=28672K cdram=0K phycont=0K
+flutter-vita: FRAMES active 60 @ 35000 us = 28.57 fps (raster 2572 us = 7%, blit 123 us = 0%, dmg 0%, hud 0 us) | raster max 3379 us | idle gaps 0 | max 84 ms | gl wait 32143 us
+flutter-vita: JANK frame #963 gap 50133 us (raster 2582 us, wait 47359 us)
+flutter-vita: JANK frame #980 gap 50104 us (raster 2472 us, wait 47505 us)
+flutter-vita: LOOP 300 iterations @ 16627 us mean | 0 tasks (1930 us total, 0 us mean)
+flutter-vita: JANK frame #1008 gap 50026 us (raster 2379 us, wait 47519 us)
+flutter-vita: present #1020 row_bytes=3840 height=544 heap=6M/7M free user=28672K cdram=0K phycont=0K
+flutter-vita: FRAMES active 60 @ 34443 us = 29.03 fps (raster 2482 us = 7%, blit 128 us = 0%, dmg 0%, hud 0 us) | raster max 3264 us | idle gaps 0 | max 50 ms | gl wait 31670 us
+flutter-vita: JANK frame #1045 gap 84056 us (raster 2872 us, wait 81032 us)
+[dart] 2026-08-31 07:41:29.973215    [INFO] [ReceiveController] Session Id: fc61e557-478c-4d1e-8336-e9d1c94ff4cb
+[dart] 2026-08-31 07:41:29.975669    [INFO] [ReceiveController] Destination Directory: ux0:downloads
+flutter-vita: channel flutter/navigation [95] {"method":"routeInformationUpdated","args":{"uri":"ProgressPage","state":null,"replace":false}}
+flutter-vita: channel dev.flutter.pigeon.wakelock_plus_platform_interface.WakelockPlusApi.toggle [6] ......
+flutter-vita: JANK frame #1047 gap 113399 us (raster 20227 us, wait 93034 us)
+[ERROR:flutter/runtime/dart_vm_initializer.cc(40)] Unhandled Exception: PlatformException(channel-error, Unable to establish connection on channel: "dev.flutter.pigeon.wakelock_plus_platform_interface.WakelockPlusApi.toggle"., null, null)
+#0      _extractReplyValueOrThrow (package:wakelock_plus_platform_interface/messages.g.dart:18)
+#1      WakelockPlusApi.toggle (package:wakelock_plus_platform_interface/messages.g.dart:202)
+<asynchronous suspension>
+#2      MethodChannelWakelockPlus.toggle (package:wakelock_plus_platform_interface/src/method_channel_wakelock_plus.dart:20)
+<asynchronous suspension>
+
+flutter-vita: JANK frame #1048 gap 67229 us (raster 5914 us, wait 59245 us)
+flutter-vita: JANK frame #1049 gap 64486 us (raster 2701 us, wait 59175 us)
+[dart] 2026-08-31 07:41:30.286685    [INFO] [ReceiveController] Saving blob5m.bin to ux0:downloads/blob5m-8.bin
+flutter-vita: JANK frame #1054 gap 120189 us (raster 21499 us, wait 98469 us)
+flutter-vita: JANK frame #1056 gap 101670 us (raster 2559 us, wait 98899 us)
+flutter-vita: JANK frame #1057 gap 50757 us (raster 3466 us, wait 44331 us)
+flutter-vita: JANK frame #1058 gap 72925 us (raster 2614 us, wait 67741 us)
+flutter-vita: JANK frame #1060 gap 57408 us (raster 3181 us, wait 54032 us)
+flutter-vita: JANK frame #1061 gap 132342 us (raster 3190 us, wait 125591 us)
+flutter-vita: JANK frame #1062 gap 63616 us (raster 7773 us, wait 51628 us)
+flutter-vita: JANK frame #1065 gap 67031 us (raster 4439 us, wait 62370 us)
+flutter-vita: JANK frame #1067 gap 94610 us (raster 2498 us, wait 91913 us)
+flutter-vita: JANK frame #1068 gap 50892 us (raster 4075 us, wait 44376 us)
+flutter-vita: JANK frame #1069 gap 58190 us (raster 2607 us, wait 52848 us)
+flutter-vita: JANK frame #1070 gap 52159 us (raster 2638 us, wait 46051 us)
+flutter-vita: JANK frame #1071 gap 55489 us (raster 2932 us, wait 49856 us)
+flutter-vita: JANK frame #1072 gap 51015 us (raster 3897 us, wait 43673 us)
+flutter-vita: JANK frame #1073 gap 124989 us (raster 3101 us, wait 119247 us)
+flutter-vita: JANK frame #1075 gap 68731 us (raster 2616 us, wait 65909 us)
+flutter-vita: JANK frame #1078 gap 61250 us (raster 5248 us, wait 55822 us)
+flutter-vita: JANK frame #1079 gap 65000 us (raster 2585 us, wait 59653 us)
+flutter-vita: present #1080 row_bytes=3840 height=544 heap=8M/8M free user=28672K cdram=0K phycont=0K
+flutter-vita: JANK frame #1080 gap 50358 us (raster 5118 us, wait 39649 us)
+flutter-vita: FRAMES active 60 @ 51070 us = 19.58 fps (raster 3659 us = 7%, blit 167 us = 0%, dmg 0%, hud 0 us) | raster max 21499 us | idle gaps 0 | max 132 ms | gl wait 46225 us
+flutter-vita: JANK frame #1081 gap 80371 us (raster 2628 us, wait 74522 us)
+flutter-vita: JANK frame #1083 gap 62371 us (raster 3665 us, wait 58525 us)
+flutter-vita: JANK frame #1084 gap 50439 us (raster 2673 us, wait 45020 us)
+flutter-vita: JANK frame #1085 gap 90428 us (raster 2631 us, wait 84878 us)
+flutter-vita: JANK frame #1086 gap 90268 us (raster 3196 us, wait 83913 us)
+flutter-vita: JANK frame #1088 gap 59386 us (raster 2682 us, wait 56527 us)
+flutter-vita: JANK frame #1089 gap 67010 us (raster 5107 us, wait 58797 us)
+flutter-vita: JANK frame #1090 gap 57089 us (raster 2943 us, wait 51250 us)
+flutter-vita: JANK frame #1091 gap 98059 us (raster 3091 us, wait 92062 us)
+flutter-vita: JANK frame #1093 gap 60578 us (raster 2921 us, wait 57463 us)
+flutter-vita: JANK frame #1095 gap 57628 us (raster 2605 us, wait 54824 us)
+flutter-vita: JANK frame #1096 gap 134753 us (raster 4848 us, wait 125923 us)
+flutter-vita: LOOP 300 iterations @ 16627 us mean | 2 tasks (8886 us total, 4443 us mean)
+flutter-vita: PARAGRAPHS 57 | ctor 4795 us | build 5238 us | layout 40670 us | 889 us each
+flutter-vita: JANK frame #1097 gap 58185 us (raster 4800 us, wait 49662 us)
+flutter-vita: JANK frame #1098 gap 83377 us (raster 3113 us, wait 76881 us)
+flutter-vita: JANK frame #1099 gap 62324 us (raster 5917 us, wait 53041 us)
+flutter-vita: JANK frame #1104 gap 80482 us (raster 3257 us, wait 77019 us)
+flutter-vita: JANK frame #1106 gap 93512 us (raster 3478 us, wait 89824 us)
+flutter-vita: JANK frame #1108 gap 100291 us (raster 3450 us, wait 96628 us)
+flutter-vita: JANK frame #1110 gap 82040 us (raster 2568 us, wait 79260 us)
+flutter-vita: JANK frame #1111 gap 62442 us (raster 6234 us, wait 52561 us)
+flutter-vita: JANK frame #1112 gap 67518 us (raster 2823 us, wait 59765 us)
+flutter-vita: JANK frame #1114 gap 58136 us (raster 3778 us, wait 54169 us)
+flutter-vita: JANK frame #1115 gap 66389 us (raster 6142 us, wait 56988 us)
+flutter-vita: JANK frame #1116 gap 69462 us (raster 3464 us, wait 61562 us)
+flutter-vita: JANK frame #1118 gap 108979 us (raster 3143 us, wait 105586 us)
+flutter-vita: JANK frame #1121 gap 78137 us (raster 3238 us, wait 74695 us)
+flutter-vita: JANK frame #1122 gap 64852 us (raster 2913 us, wait 59242 us)
+flutter-vita: JANK frame #1123 gap 79861 us (raster 3596 us, wait 73592 us)
+flutter-vita: JANK frame #1126 gap 65393 us (raster 22515 us, wait 42707 us)
+flutter-vita: JANK frame #1128 gap 59596 us (raster 2505 us, wait 56883 us)
+flutter-vita: JANK frame #1129 gap 53673 us (raster 4193 us, wait 45872 us)
+flutter-vita: JANK frame #1130 gap 79881 us (raster 3058 us, wait 72903 us)
+flutter-vita: JANK frame #1131 gap 51124 us (raster 3387 us, wait 43523 us)
+flutter-vita: JANK frame #1133 gap 81067 us (raster 3129 us, wait 77725 us)
+flutter-vita: JANK frame #1135 gap 64849 us (raster 3249 us, wait 61409 us)
+flutter-vita: JANK frame #1137 gap 52787 us (raster 3765 us, wait 48769 us)
+flutter-vita: JANK frame #1138 gap 62334 us (raster 3095 us, wait 56630 us)
+flutter-vita: JANK frame #1139 gap 123859 us (raster 3021 us, wait 118213 us)
+flutter-vita: present #1140 row_bytes=3840 height=544 heap=8M/9M free user=26624K cdram=0K phycont=0K
+flutter-vita: FRAMES active 60 @ 62226 us = 16.07 fps (raster 4260 us = 6%, blit 208 us = 0%, dmg 0%, hud 0 us) | raster max 22515 us | idle gaps 0 | max 134 ms | gl wait 55569 us
+flutter-vita: JANK frame #1143 gap 58860 us (raster 6833 us, wait 51850 us)
+flutter-vita: JANK frame #1144 gap 53024 us (raster 2944 us, wait 45495 us)
+flutter-vita: JANK frame #1145 gap 118355 us (raster 3359 us, wait 111706 us)
+flutter-vita: JANK frame #1147 gap 51140 us (raster 3377 us, wait 47586 us)
+flutter-vita: JANK frame #1149 gap 107865 us (raster 3082 us, wait 104595 us)
+flutter-vita: JANK frame #1150 gap 59258 us (raster 3501 us, wait 50915 us)
+flutter-vita: JANK frame #1151 gap 51874 us (raster 3202 us, wait 44324 us)
+flutter-vita: JANK frame #1152 gap 111449 us (raster 3381 us, wait 103392 us)
+flutter-vita: JANK frame #1154 gap 50582 us (raster 2870 us, wait 47508 us)
+flutter-vita: JANK frame #1158 gap 102120 us (raster 2945 us, wait 98979 us)
+flutter-vita: JANK frame #1160 gap 82665 us (raster 3105 us, wait 79357 us)
+flutter-vita: JANK frame #1162 gap 57837 us (raster 2479 us, wait 55158 us)
+flutter-vita: JANK frame #1166 gap 77817 us (raster 4302 us, wait 73312 us)
+flutter-vita: JANK frame #1168 gap 61893 us (raster 6956 us, wait 54741 us)
+flutter-vita: JANK frame #1171 gap 100845 us (raster 2482 us, wait 98172 us)
+flutter-vita: JANK frame #1172 gap 57782 us (raster 4771 us, wait 50197 us)
+flutter-vita: JANK frame #1175 gap 57564 us (raster 2842 us, wait 54530 us)
+flutter-vita: JANK frame #1176 gap 67943 us (raster 4484 us, wait 60657 us)
+flutter-vita: JANK frame #1177 gap 53271 us (raster 2709 us, wait 47765 us)
+[dart] 2026-08-31 07:41:37.971671    [INFO] [ReceiveController] Saved blob5m.bin.
+[dart] 2026-08-31 07:41:37.976325    [INFO] [ReceiveController] Received all files.
+flutter-vita: channel flutter/navigation [91] {"method":"routeInformationUpdated","args":{"uri":"HomePage","state":null,"replace":false}}
+flutter-vita: channel flutter/platform [58] {"method":"LiveText.isLiveTextInputAvailable","args":null}
+flutter-vita: channel flutter/platform [53] {"method":"Clipboard.hasStrings","args":"text/plain"}
+flutter-vita: channel flutter/processtext [31] ..ProcessText.queryTextActions.
+flutter-vita: channel flutter/platform [58] {"method":"LiveText.isLiveTextInputAvailable","args":null}
+flutter-vita: channel flutter/platform [53] {"method":"Clipboard.hasStrings","args":"text/plain"}
+flutter-vita: channel flutter/processtext [31] ..ProcessText.queryTextActions.
+flutter-vita: channel flutter/platform [58] {"method":"LiveText.isLiveTextInputAvailable","args":null}
+flutter-vita: channel flutter/platform [53] {"method":"Clipboard.hasStrings","args":"text/plain"}
+flutter-vita: channel flutter/processtext [31] ..ProcessText.queryTextActions.
+flutter-vita: JANK frame #1179 gap 107648 us (raster 3871 us, wait 103586 us)
+[dart] 2026-08-31 07:41:38.090928    [INFO] [Server] Server already running.
+flutter-vita: channel dev.flutter.pigeon.wakelock_plus_platform_interface.WakelockPlusApi.toggle [6] ......
+[ERROR:flutter/runtime/dart_vm_initializer.cc(40)] Unhandled Exception: PlatformException(channel-error, Unable to establish connection on channel: "dev.flutter.pigeon.wakelock_plus_platform_interface.WakelockPlusApi.toggle"., null, null)
+#0      _extractReplyValueOrThrow (package:wakelock_plus_platform_interface/messages.g.dart:18)
+#1      WakelockPlusApi.toggle (package:wakelock_plus_platform_interface/messages.g.dart:202)
+<asynchronous suspension>
+#2      MethodChannelWakelockPlus.toggle (package:wakelock_plus_platform_interface/src/method_channel_wakelock_plus.dart:20)
+<asynchronous suspension>
+
+flutter-vita: JANK frame #1180 gap 56957 us (raster 3179 us, wait 50684 us)
+flutter-vita: LOOP 300 iterations @ 16683 us mean | 12 tasks (32370 us total, 2697 us mean)
+flutter-vita: PARAGRAPHS 106 | ctor 8691 us | build 9355 us | layout 67347 us | 805 us each
+flutter-vita: present #1200 row_bytes=3840 height=544 heap=8M/9M free user=27648K cdram=0K phycont=0K
+flutter-vita: FRAMES active 60 @ 44968 us = 22.23 fps (raster 4676 us = 10%, blit 172 us = 0%, dmg 0%, hud 0 us) | raster max 13403 us | idle gaps 0 | max 118 ms | gl wait 38850 us
+flutter-vita: JANK frame #1217 gap 87410 us (raster 12887 us, wait 74395 us)
+flutter-vita: JANK frame #1225 gap 122929 us (raster 3610 us, wait 119157 us)
+flutter-vita: JANK frame #1228 gap 83731 us (raster 7032 us, wait 76539 us)
+flutter-vita: JANK frame #1236 gap 51387 us (raster 9605 us, wait 41655 us)
+flutter-vita: JANK frame #1241 gap 56188 us (raster 11815 us, wait 44231 us)
+flutter-vita: JANK frame #1251 gap 51246 us (raster 12934 us, wait 38182 us)
+flutter-vita: present #1260 row_bytes=3840 height=544 heap=8M/9M free user=27648K cdram=0K phycont=0K
+flutter-vita: FRAMES active 60 @ 32776 us = 30.51 fps (raster 7175 us = 21%, blit 134 us = 0%, dmg 0%, hud 0 us) | raster max 14192 us | idle gaps 0 | max 122 ms | gl wait 24899 us
+flutter-vita: JANK frame #1262 gap 50962 us (raster 4278 us, wait 46558 us)
+flutter-vita: JANK frame #1271 gap 58267 us (raster 7854 us, wait 50286 us)
+flutter-vita: JANK frame #1292 gap 61502 us (raster 5012 us, wait 56357 us)
+flutter-vita: JANK frame #1298 gap 51782 us (raster 11819 us, wait 39809 us)
+flutter-vita: JANK frame #1303 gap 52448 us (raster 12957 us, wait 39353 us)
+[dart] 2026-08-31 07:41:42.291304    [INFO] [ReceiveController] Session Id: 3f1d0d84-9e9a-4c9c-8857-47c94ec44d7a
+flutter-vita: JANK frame #1308 gap 98826 us (raster 5138 us, wait 93560 us)
+[dart] 2026-08-31 07:41:42.294313    [INFO] [ReceiveController] Destination Directory: ux0:downloads
+flutter-vita: channel flutter/navigation [95] {"method":"routeInformationUpdated","args":{"uri":"ProgressPage","state":null,"replace":false}}
+flutter-vita: JANK frame #1309 gap 80252 us (raster 2183 us, wait 73217 us)
+flutter-vita: channel dev.flutter.pigeon.wakelock_plus_platform_interface.WakelockPlusApi.toggle [6] ......
+[ERROR:flutter/runtime/dart_vm_initializer.cc(40)] Unhandled Exception: PlatformException(channel-error, Unable to establish connection on channel: "dev.flutter.pigeon.wakelock_plus_platform_interface.WakelockPlusApi.toggle"., null, null)
+#0      _extractReplyValueOrThrow (package:wakelock_plus_platform_interface/messages.g.dart:18)
+#1      WakelockPlusApi.toggle (package:wakelock_plus_platform_interface/messages.g.dart:202)
+<asynchronous suspension>
+#2      MethodChannelWakelockPlus.toggle (package:wakelock_plus_platform_interface/src/method_channel_wakelock_plus.dart:20)
+<asynchronous suspension>
+
+flutter-vita: JANK frame #1310 gap 102796 us (raster 2664 us, wait 97171 us)
+flutter-vita: JANK frame #1316 gap 83106 us (raster 3489 us, wait 79435 us)
+flutter-vita: JANK frame #1317 gap 69657 us (raster 5563 us, wait 60636 us)
+[dart] 2026-08-31 07:41:42.778770    [INFO] [ReceiveController] Saving blob5m.bin to ux0:downloads/blob5m-9.bin
+flutter-vita: JANK frame #1319 gap 65571 us (raster 12591 us, wait 52816 us)
+flutter-vita: present #1320 row_bytes=3840 height=544 heap=10M/10M free user=26624K cdram=0K phycont=0K
+flutter-vita: FRAMES active 60 @ 40412 us = 24.74 fps (raster 6289 us = 15%, blit 147 us = 0%, dmg 0%, hud 0 us) | raster max 14197 us | idle gaps 0 | max 102 ms | gl wait 32867 us
+flutter-vita: JANK frame #1321 gap 52611 us (raster 3064 us, wait 49355 us)
+flutter-vita: JANK frame #1322 gap 61435 us (raster 3188 us, wait 54892 us)
+flutter-vita: JANK frame #1323 gap 86475 us (raster 2645 us, wait 80607 us)
+flutter-vita: JANK frame #1324 gap 83713 us (raster 3447 us, wait 77656 us)
+flutter-vita: LOOP 300 iterations @ 16683 us mean | 2 tasks (18789 us total, 9394 us mean)
+flutter-vita: PARAGRAPHS 18 | ctor 1205 us | build 1481 us | layout 10874 us | 753 us each
+flutter-vita: JANK frame #1325 gap 53996 us (raster 3006 us, wait 47845 us)
+flutter-vita: JANK frame #1326 gap 64917 us (raster 3152 us, wait 58043 us)
+flutter-vita: JANK frame #1327 gap 57145 us (raster 3289 us, wait 50701 us)
+flutter-vita: JANK frame #1328 gap 55888 us (raster 2719 us, wait 50016 us)
+flutter-vita: JANK frame #1329 gap 109102 us (raster 2807 us, wait 103431 us)
+flutter-vita: JANK frame #1330 gap 99933 us (raster 2970 us, wait 93322 us)
+flutter-vita: JANK frame #1332 gap 68003 us (raster 3144 us, wait 64665 us)
+flutter-vita: JANK frame #1333 gap 74909 us (raster 7788 us, wait 63383 us)
+flutter-vita: JANK frame #1334 gap 50445 us (raster 2964 us, wait 43960 us)
+flutter-vita: JANK frame #1336 gap 52075 us (raster 2856 us, wait 49041 us)
+flutter-vita: JANK frame #1339 gap 79705 us (raster 4357 us, wait 75173 us)
+flutter-vita: JANK frame #1340 gap 81279 us (raster 3191 us, wait 74457 us)
+flutter-vita: JANK frame #1342 gap 64816 us (raster 2773 us, wait 61850 us)
+flutter-vita: JANK frame #1343 gap 95810 us (raster 3002 us, wait 89105 us)
+flutter-vita: JANK frame #1344 gap 109546 us (raster 5442 us, wait 100481 us)
+flutter-vita: JANK frame #1346 gap 71437 us (raster 5147 us, wait 66094 us)
+flutter-vita: JANK frame #1347 gap 121355 us (raster 3788 us, wait 113919 us)
+flutter-vita: JANK frame #1349 gap 54274 us (raster 2933 us, wait 51132 us)
+flutter-vita: JANK frame #1352 gap 54586 us (raster 3571 us, wait 50822 us)
+flutter-vita: JANK frame #1354 gap 64990 us (raster 3159 us, wait 61623 us)
+flutter-vita: JANK frame #1355 gap 91076 us (raster 3359 us, wait 84104 us)
+flutter-vita: JANK frame #1357 gap 57112 us (raster 3247 us, wait 53666 us)
+flutter-vita: JANK frame #1358 gap 78743 us (raster 3819 us, wait 70080 us)
+flutter-vita: JANK frame #1359 gap 55478 us (raster 3592 us, wait 48190 us)
+flutter-vita: JANK frame #1360 gap 107227 us (raster 3618 us, wait 99839 us)
+flutter-vita: JANK frame #1362 gap 71701 us (raster 2864 us, wait 68632 us)
+flutter-vita: JANK frame #1364 gap 57043 us (raster 3540 us, wait 53324 us)
+flutter-vita: JANK frame #1365 gap 54125 us (raster 4516 us, wait 45826 us)
+flutter-vita: JANK frame #1366 gap 54238 us (raster 2703 us, wait 48232 us)
+flutter-vita: JANK frame #1367 gap 59244 us (raster 3367 us, wait 52247 us)
+flutter-vita: JANK frame #1368 gap 74393 us (raster 3951 us, wait 66806 us)
+flutter-vita: JANK frame #1369 gap 80362 us (raster 2815 us, wait 72435 us)
+flutter-vita: JANK frame #1370 gap 64506 us (raster 6221 us, wait 54576 us)
+flutter-vita: JANK frame #1371 gap 55920 us (raster 5275 us, wait 47079 us)
+flutter-vita: JANK frame #1372 gap 91799 us (raster 3057 us, wait 85027 us)
+flutter-vita: JANK frame #1373 gap 66558 us (raster 3362 us, wait 59448 us)
+flutter-vita: JANK frame #1374 gap 85609 us (raster 3368 us, wait 78566 us)
+flutter-vita: JANK frame #1376 gap 53658 us (raster 3227 us, wait 50223 us)
+flutter-vita: JANK frame #1377 gap 55974 us (raster 3135 us, wait 48157 us)
+flutter-vita: JANK frame #1378 gap 55813 us (raster 3542 us, wait 47709 us)
+flutter-vita: present #1380 row_bytes=3840 height=544 heap=10M/10M free user=26624K cdram=0K phycont=0K
+flutter-vita: JANK frame #1380 gap 77254 us (raster 3474 us, wait 69909 us)
+flutter-vita: FRAMES active 60 @ 65028 us = 15.37 fps (raster 3721 us = 5%, blit 201 us = 0%, dmg 0%, hud 0 us) | raster max 7805 us | idle gaps 0 | max 121 ms | gl wait 58491 us
+flutter-vita: JANK frame #1381 gap 55205 us (raster 3846 us, wait 48605 us)
+flutter-vita: JANK frame #1382 gap 85638 us (raster 2901 us, wait 79088 us)
+flutter-vita: JANK frame #1383 gap 80027 us (raster 3294 us, wait 71833 us)
+flutter-vita: JANK frame #1385 gap 52233 us (raster 2874 us, wait 49182 us)
+flutter-vita: JANK frame #1386 gap 66391 us (raster 8420 us, wait 54334 us)
+flutter-vita: JANK frame #1387 gap 85563 us (raster 3332 us, wait 78662 us)
+flutter-vita: JANK frame #1388 gap 65645 us (raster 3345 us, wait 58621 us)
+flutter-vita: JANK frame #1389 gap 107985 us (raster 3622 us, wait 100719 us)
+flutter-vita: JANK frame #1392 gap 62831 us (raster 2968 us, wait 59649 us)
+flutter-vita: JANK frame #1394 gap 58143 us (raster 3230 us, wait 54711 us)
+flutter-vita: JANK frame #1396 gap 63421 us (raster 2971 us, wait 60258 us)
+flutter-vita: JANK frame #1397 gap 116133 us (raster 3095 us, wait 108846 us)
+flutter-vita: JANK frame #1398 gap 98545 us (raster 3051 us, wait 91736 us)
+flutter-vita: JANK frame #1399 gap 59500 us (raster 9113 us, wait 46291 us)
+flutter-vita: JANK frame #1400 gap 79434 us (raster 3680 us, wait 72040 us)
+flutter-vita: LOOP 300 iterations @ 16627 us mean | 0 tasks (3277 us total, 0 us mean)
+flutter-vita: PARAGRAPHS 78 | ctor 9072 us | build 12487 us | layout 71257 us | 1189 us each
+flutter-vita: JANK frame #1401 gap 111274 us (raster 4567 us, wait 102988 us)
+flutter-vita: JANK frame #1402 gap 64113 us (raster 2613 us, wait 57686 us)
+flutter-vita: JANK frame #1403 gap 69501 us (raster 2759 us, wait 62064 us)
+flutter-vita: JANK frame #1404 gap 86976 us (raster 2974 us, wait 79817 us)
+flutter-vita: JANK frame #1406 gap 67578 us (raster 3315 us, wait 64083 us)
+flutter-vita: JANK frame #1407 gap 70593 us (raster 5715 us, wait 60752 us)
+flutter-vita: JANK frame #1408 gap 80053 us (raster 2627 us, wait 72994 us)
+flutter-vita: JANK frame #1410 gap 80562 us (raster 3722 us, wait 76663 us)
+flutter-vita: JANK frame #1411 gap 75030 us (raster 2988 us, wait 66262 us)
+flutter-vita: JANK frame #1412 gap 64694 us (raster 2712 us, wait 56557 us)
+flutter-vita: JANK frame #1413 gap 103514 us (raster 2776 us, wait 96251 us)
+flutter-vita: JANK frame #1414 gap 82535 us (raster 2818 us, wait 75577 us)
+flutter-vita: JANK frame #1416 gap 65752 us (raster 2996 us, wait 62550 us)
+flutter-vita: JANK frame #1417 gap 84474 us (raster 3341 us, wait 77303 us)
+flutter-vita: JANK frame #1418 gap 67235 us (raster 3187 us, wait 59720 us)
+flutter-vita: JANK frame #1419 gap 59849 us (raster 2836 us, wait 52801 us)
+flutter-vita: JANK frame #1420 gap 66574 us (raster 6962 us, wait 54956 us)
+flutter-vita: JANK frame #1421 gap 62958 us (raster 2836 us, wait 56575 us)
+flutter-vita: JANK frame #1422 gap 112158 us (raster 2546 us, wait 105073 us)
+flutter-vita: JANK frame #1423 gap 80417 us (raster 2892 us, wait 72690 us)
+flutter-vita: JANK frame #1424 gap 82706 us (raster 8079 us, wait 69741 us)
+flutter-vita: JANK frame #1425 gap 61833 us (raster 3187 us, wait 55047 us)
+flutter-vita: JANK frame #1426 gap 59078 us (raster 3044 us, wait 51535 us)
+flutter-vita: JANK frame #1427 gap 62616 us (raster 2660 us, wait 56337 us)
+flutter-vita: JANK frame #1428 gap 67179 us (raster 2979 us, wait 59313 us)
+flutter-vita: JANK frame #1429 gap 70580 us (raster 3286 us, wait 61709 us)
+flutter-vita: JANK frame #1430 gap 58287 us (raster 2929 us, wait 51025 us)
+flutter-vita: JANK frame #1431 gap 130482 us (raster 3477 us, wait 121965 us)
+flutter-vita: JANK frame #1432 gap 60039 us (raster 2825 us, wait 52420 us)
+flutter-vita: JANK frame #1433 gap 82044 us (raster 2745 us, wait 74084 us)
+flutter-vita: JANK frame #1434 gap 100887 us (raster 3344 us, wait 92867 us)
+flutter-vita: JANK frame #1435 gap 96851 us (raster 2897 us, wait 90063 us)
+flutter-vita: JANK frame #1436 gap 74138 us (raster 2703 us, wait 67460 us)
+flutter-vita: JANK frame #1437 gap 59493 us (raster 2825 us, wait 51715 us)
+flutter-vita: JANK frame #1438 gap 112443 us (raster 3063 us, wait 104693 us)
+flutter-vita: JANK frame #1439 gap 87394 us (raster 3356 us, wait 79011 us)
+flutter-vita: present #1440 row_bytes=3840 height=544 heap=9M/11M free user=23552K cdram=0K phycont=0K
+flutter-vita: JANK frame #1440 gap 81263 us (raster 2625 us, wait 70016 us)
+flutter-vita: FRAMES active 60 @ 73395 us = 13.62 fps (raster 3686 us = 5%, blit 201 us = 0%, dmg 0%, hud 0 us) | raster max 9286 us | idle gaps 0 | max 130 ms | gl wait 65870 us
+flutter-vita: JANK frame #1441 gap 58548 us (raster 8741 us, wait 45435 us)
+flutter-vita: JANK frame #1442 gap 79674 us (raster 2709 us, wait 73131 us)
+flutter-vita: JANK frame #1443 gap 80431 us (raster 2187 us, wait 73113 us)
+[dart] 2026-08-31 07:41:51.466179    [INFO] [ReceiveController] Saved blob5m.bin.
+[dart] 2026-08-31 07:41:51.470501    [INFO] [ReceiveController] Received all files.
+flutter-vita: channel flutter/navigation [91] {"method":"routeInformationUpdated","args":{"uri":"HomePage","state":null,"replace":false}}
+flutter-vita: channel flutter/platform [58] {"method":"LiveText.isLiveTextInputAvailable","args":null}
+flutter-vita: channel flutter/platform [53] {"method":"Clipboard.hasStrings","args":"text/plain"}
+flutter-vita: channel flutter/processtext [31] ..ProcessText.queryTextActions.
+flutter-vita: channel flutter/platform [58] {"method":"LiveText.isLiveTextInputAvailable","args":null}
+flutter-vita: channel flutter/platform [53] {"method":"Clipboard.hasStrings","args":"text/plain"}
+flutter-vita: channel flutter/processtext [31] ..ProcessText.queryTextActions.
+flutter-vita: channel flutter/platform [58] {"method":"LiveText.isLiveTextInputAvailable","args":null}
+flutter-vita: channel flutter/platform [53] {"method":"Clipboard.hasStrings","args":"text/plain"}
+flutter-vita: channel flutter/processtext [31] ..ProcessText.queryTextActions.
+flutter-vita: JANK frame #1445 gap 98070 us (raster 4417 us, wait 93480 us)
+flutter-vita: channel dev.flutter.pigeon.wakelock_plus_platform_interface.WakelockPlusApi.toggle [6] ......
+[dart] 2026-08-31 07:41:51.562116    [INFO] [Server] Server already running.
+[ERROR:flutter/runtime/dart_vm_initializer.cc(40)] Unhandled Exception: PlatformException(channel-error, Unable to establish connection on channel: "dev.flutter.pigeon.wakelock_plus_platform_interface.WakelockPlusApi.toggle"., null, null)
+#0      _extractReplyValueOrThrow (package:wakelock_plus_platform_interface/messages.g.dart:18)
+#1      WakelockPlusApi.toggle (package:wakelock_plus_platform_interface/messages.g.dart:202)
+<asynchronous suspension>
+#2      MethodChannelWakelockPlus.toggle (package:wakelock_plus_platform_interface/src/method_channel_wakelock_plus.dart:20)
+<asynchronous suspension>
+
+flutter-vita: JANK frame #1446 gap 67512 us (raster 3226 us, wait 60457 us)
+flutter-vita: JANK frame #1478 gap 135872 us (raster 13746 us, wait 121995 us)
+flutter-vita: JANK frame #1480 gap 55953 us (raster 11750 us, wait 44055 us)
+flutter-vita: JANK frame #1481 gap 112693 us (raster 4152 us, wait 104578 us)
+flutter-vita: JANK frame #1482 gap 53571 us (raster 3503 us, wait 34761 us)
+flutter-vita: JANK frame #1483 gap 161874 us (raster 7145 us, wait 130989 us)
+flutter-vita: JANK frame #1485 gap 50054 us (raster 9305 us, wait 40550 us)
+flutter-vita: JANK frame #1488 gap 55511 us (raster 10603 us, wait 44769 us)
+flutter-vita: LOOP 300 iterations @ 16738 us mean | 12 tasks (55999 us total, 4666 us mean)
+flutter-vita: PARAGRAPHS 83 | ctor 8139 us | build 10701 us | layout 51512 us | 847 us each
+flutter-vita: JANK frame #1496 gap 58165 us (raster 13019 us, wait 45016 us)
+flutter-vita: present #1500 row_bytes=3840 height=544 heap=9M/11M free user=28672K cdram=0K phycont=0K
+flutter-vita: FRAMES active 60 @ 42566 us = 23.49 fps (raster 8650 us = 20%, blit 149 us = 0%, dmg 0%, hud 0 us) | raster max 15738 us | idle gaps 0 | max 161 ms | gl wait 32239 us
+flutter-vita: JANK frame #1502 gap 81903 us (raster 6114 us, wait 75648 us)
+flutter-vita: JANK frame #1504 gap 53926 us (raster 11967 us, wait 41815 us)
+flutter-vita: JANK frame #1509 gap 55910 us (raster 10395 us, wait 45365 us)
+flutter-vita: JANK frame #1514 gap 54433 us (raster 12938 us, wait 41362 us)
+flutter-vita: JANK frame #1516 gap 54514 us (raster 11127 us, wait 43258 us)
+flutter-vita: JANK frame #1520 gap 62087 us (raster 4320 us, wait 57575 us)
+flutter-vita: JANK frame #1523 gap 69003 us (raster 12939 us, wait 55933 us)
+flutter-vita: JANK frame #1530 gap 51039 us (raster 6659 us, wait 44248 us)
+flutter-vita: JANK frame #1532 gap 58275 us (raster 13048 us, wait 45053 us)
+flutter-vita: JANK frame #1538 gap 50359 us (raster 13100 us, wait 37080 us)
+flutter-vita: JANK frame #1541 gap 51013 us (raster 4443 us, wait 46406 us)
+flutter-vita: JANK frame #1542 gap 71304 us (raster 14101 us, wait 52929 us)
+flutter-vita: JANK frame #1543 gap 53646 us (raster 12613 us, wait 36763 us)
+flutter-vita: JANK frame #1545 gap 50675 us (raster 10307 us, wait 40231 us)
+flutter-vita: JANK frame #1548 gap 98749 us (raster 7104 us, wait 91491 us)
+[dart] 2026-08-31 07:41:55.941638    [INFO] [ReceiveController] Session Id: 21757596-3c24-4279-8a17-adac5f9bce9d
+[dart] 2026-08-31 07:41:55.945500    [INFO] [ReceiveController] Destination Directory: ux0:downloads
+flutter-vita: channel flutter/navigation [95] {"method":"routeInformationUpdated","args":{"uri":"ProgressPage","state":null,"replace":false}}
+flutter-vita: JANK frame #1549 gap 125107 us (raster 2127 us, wait 118994 us)
+flutter-vita: channel dev.flutter.pigeon.wakelock_plus_platform_interface.WakelockPlusApi.toggle [6] ......
+[ERROR:flutter/runtime/dart_vm_initializer.cc(40)] Unhandled Exception: PlatformException(channel-error, Unable to establish connection on channel: "dev.flutter.pigeon.wakelock_plus_platform_interface.WakelockPlusApi.toggle"., null, null)
+#0      _extractReplyValueOrThrow (package:wakelock_plus_platform_interface/messages.g.dart:18)
+#1      WakelockPlusApi.toggle (package:wakelock_plus_platform_interface/messages.g.dart:202)
+<asynchronous suspension>
+#2      MethodChannelWakelockPlus.toggle (package:wakelock_plus_platform_interface/src/method_channel_wakelock_plus.dart:20)
+<asynchronous suspension>
+
+flutter-vita: JANK frame #1550 gap 57392 us (raster 2941 us, wait 50332 us)
+flutter-vita: JANK frame #1551 gap 104950 us (raster 8696 us, wait 91874 us)
+flutter-vita: JANK frame #1553 gap 98005 us (raster 4331 us, wait 93467 us)
+flutter-vita: JANK frame #1554 gap 55065 us (raster 2835 us, wait 47688 us)
+flutter-vita: JANK frame #1555 gap 91790 us (raster 4958 us, wait 82417 us)
+[dart] 2026-08-31 07:41:56.553237    [INFO] [ReceiveController] Saving blob5m.bin to ux0:downloads/blob5m-10.bin
+flutter-vita: JANK frame #1556 gap 73587 us (raster 3003 us, wait 65038 us)
+flutter-vita: JANK frame #1557 gap 96838 us (raster 7171 us, wait 84178 us)
+flutter-vita: JANK frame #1558 gap 86148 us (raster 2887 us, wait 79254 us)
+flutter-vita: JANK frame #1559 gap 82252 us (raster 2873 us, wait 74901 us)
+flutter-vita: present #1560 row_bytes=3840 height=544 heap=11M/12M free user=27648K cdram=0K phycont=0K
+flutter-vita: JANK frame #1560 gap 119274 us (raster 3642 us, wait 107532 us)
+flutter-vita: FRAMES active 60 @ 53164 us = 18.80 fps (raster 8446 us = 15%, blit 153 us = 0%, dmg 0%, hud 0 us) | raster max 14101 us | idle gaps 0 | max 125 ms | gl wait 42784 us
+flutter-vita: JANK frame #1561 gap 91706 us (raster 3809 us, wait 84398 us)
+flutter-vita: JANK frame #1562 gap 62857 us (raster 2684 us, wait 55943 us)
+flutter-vita: JANK frame #1563 gap 88844 us (raster 2545 us, wait 82380 us)
+flutter-vita: JANK frame #1564 gap 138763 us (raster 3185 us, wait 102650 us)
+flutter-vita: JANK frame #1565 gap 92209 us (raster 2737 us, wait 84997 us)
+flutter-vita: JANK frame #1566 gap 91539 us (raster 3213 us, wait 83543 us)
+flutter-vita: JANK frame #1567 gap 78492 us (raster 3131 us, wait 71629 us)
+flutter-vita: JANK frame #1568 gap 106482 us (raster 3267 us, wait 98649 us)
+flutter-vita: JANK frame #1569 gap 71447 us (raster 8238 us, wait 59211 us)
+flutter-vita: JANK frame #1570 gap 89312 us (raster 3169 us, wait 81634 us)
+flutter-vita: JANK frame #1571 gap 92608 us (raster 3374 us, wait 84560 us)
+flutter-vita: JANK frame #1572 gap 69121 us (raster 7770 us, wait 56856 us)
+flutter-vita: JANK frame #1573 gap 69577 us (raster 3213 us, wait 61943 us)
+flutter-vita: JANK frame #1574 gap 105916 us (raster 4499 us, wait 97260 us)
+flutter-vita: LOOP 300 iterations @ 16627 us mean | 2 tasks (11168 us total, 5584 us mean)
+flutter-vita: PARAGRAPHS 37 | ctor 2685 us | build 3952 us | layout 28924 us | 961 us each
+flutter-vita: JANK frame #1575 gap 110227 us (raster 2988 us, wait 102583 us)
+flutter-vita: JANK frame #1576 gap 96881 us (raster 2746 us, wait 89707 us)
+flutter-vita: JANK frame #1577 gap 67002 us (raster 6694 us, wait 56485 us)
+flutter-vita: JANK frame #1578 gap 76337 us (raster 3092 us, wait 69014 us)
+flutter-vita: JANK frame #1579 gap 83177 us (raster 4503 us, wait 74385 us)
+flutter-vita: JANK frame #1580 gap 110820 us (raster 2739 us, wait 103617 us)
+flutter-vita: JANK frame #1581 gap 75108 us (raster 7313 us, wait 63149 us)
+flutter-vita: JANK frame #1582 gap 82185 us (raster 3387 us, wait 76444 us)
+flutter-vita: JANK frame #1583 gap 85484 us (raster 2759 us, wait 80640 us)
+flutter-vita: JANK frame #1584 gap 126914 us (raster 2724 us, wait 122554 us)
+flutter-vita: JANK frame #1585 gap 101440 us (raster 3501 us, wait 96105 us)
+flutter-vita: JANK frame #1586 gap 81585 us (raster 3164 us, wait 76357 us)
+flutter-vita: JANK frame #1587 gap 119270 us (raster 3343 us, wait 113818 us)
+flutter-vita: JANK frame #1588 gap 75680 us (raster 8998 us, wait 64081 us)
+flutter-vita: JANK frame #1589 gap 67933 us (raster 2938 us, wait 62407 us)
+flutter-vita: JANK frame #1590 gap 107636 us (raster 3101 us, wait 102594 us)
+flutter-vita: JANK frame #1591 gap 82055 us (raster 2573 us, wait 76861 us)
+flutter-vita: JANK frame #1592 gap 108804 us (raster 3437 us, wait 103057 us)
+flutter-vita: JANK frame #1593 gap 78352 us (raster 2704 us, wait 73384 us)
+flutter-vita: JANK frame #1594 gap 91863 us (raster 3552 us, wait 86336 us)
+flutter-vita: JANK frame #1595 gap 92769 us (raster 2957 us, wait 87302 us)
+flutter-vita: JANK frame #1596 gap 89551 us (raster 2842 us, wait 84512 us)
+flutter-vita: JANK frame #1597 gap 100473 us (raster 3268 us, wait 95046 us)
+flutter-vita: JANK frame #1598 gap 52721 us (raster 2726 us, wait 47342 us)
+flutter-vita: JANK frame #1599 gap 86132 us (raster 3124 us, wait 81220 us)
+flutter-vita: JANK frame #1600 gap 97522 us (raster 4098 us, wait 90838 us)
+flutter-vita: JANK frame #1601 gap 102497 us (raster 3126 us, wait 96787 us)
+flutter-vita: JANK frame #1602 gap 133762 us (raster 3477 us, wait 127141 us)
+flutter-vita: JANK frame #1603 gap 71615 us (raster 2822 us, wait 66132 us)
+flutter-vita: JANK frame #1604 gap 54412 us (raster 2827 us, wait 49288 us)
+flutter-vita: JANK frame #1605 gap 61314 us (raster 2458 us, wait 56890 us)
+flutter-vita: JANK frame #1606 gap 77792 us (raster 2916 us, wait 72877 us)
+flutter-vita: JANK frame #1607 gap 87536 us (raster 2488 us, wait 83179 us)
+flutter-vita: JANK frame #1608 gap 88396 us (raster 2995 us, wait 82959 us)
+flutter-vita: JANK frame #1609 gap 90939 us (raster 2612 us, wait 86049 us)
+flutter-vita: JANK frame #1610 gap 110917 us (raster 2960 us, wait 105625 us)
+flutter-vita: JANK frame #1611 gap 118348 us (raster 3075 us, wait 113136 us)
+flutter-vita: JANK frame #1612 gap 55168 us (raster 2711 us, wait 49979 us)
+flutter-vita: JANK frame #1613 gap 64006 us (raster 3616 us, wait 58291 us)
+flutter-vita: JANK frame #1614 gap 72083 us (raster 3405 us, wait 66299 us)
+flutter-vita: JANK frame #1615 gap 75461 us (raster 3363 us, wait 69488 us)
+flutter-vita: JANK frame #1616 gap 99321 us (raster 2673 us, wait 93980 us)
+flutter-vita: JANK frame #1617 gap 74870 us (raster 3334 us, wait 68753 us)
+flutter-vita: JANK frame #1618 gap 84649 us (raster 3109 us, wait 78949 us)
+flutter-vita: JANK frame #1619 gap 96553 us (raster 2830 us, wait 91298 us)
+flutter-vita: present #1620 row_bytes=3840 height=544 heap=10M/12M free user=24576K cdram=0K phycont=0K
+flutter-vita: JANK frame #1620 gap 73120 us (raster 7858 us, wait 59774 us)
+flutter-vita: FRAMES active 60 @ 88159 us = 11.34 fps (raster 3579 us = 4%, blit 197 us = 0%, dmg 0%, hud 0 us) | raster max 8998 us | idle gaps 0 | max 138 ms | gl wait 81039 us
+flutter-vita: JANK frame #1621 gap 74812 us (raster 2729 us, wait 70258 us)
+flutter-vita: JANK frame #1622 gap 92863 us (raster 2763 us, wait 87503 us)
+flutter-vita: JANK frame #1623 gap 95138 us (raster 2656 us, wait 89625 us)
+flutter-vita: JANK frame #1624 gap 117694 us (raster 2686 us, wait 112487 us)
+flutter-vita: JANK frame #1625 gap 57221 us (raster 2881 us, wait 51461 us)
+flutter-vita: JANK frame #1626 gap 75274 us (raster 2830 us, wait 69900 us)
+flutter-vita: JANK frame #1627 gap 87675 us (raster 2994 us, wait 81887 us)
+flutter-vita: JANK frame #1628 gap 97491 us (raster 4107 us, wait 90488 us)
+flutter-vita: JANK frame #1629 gap 74958 us (raster 3252 us, wait 69145 us)
+flutter-vita: JANK frame #1630 gap 159278 us (raster 3017 us, wait 153395 us)
+flutter-vita: JANK frame #1631 gap 67800 us (raster 3043 us, wait 61655 us)
+flutter-vita: LOOP 300 iterations @ 16627 us mean | 0 tasks (2826 us total, 0 us mean)
+flutter-vita: PARAGRAPHS 77 | ctor 8092 us | build 8267 us | layout 69945 us | 1120 us each
+flutter-vita: JANK frame #1632 gap 88413 us (raster 2575 us, wait 82996 us)
+flutter-vita: JANK frame #1633 gap 87526 us (raster 3859 us, wait 81104 us)
+flutter-vita: JANK frame #1634 gap 112231 us (raster 3168 us, wait 106258 us)
+flutter-vita: JANK frame #1635 gap 89577 us (raster 3869 us, wait 82944 us)
+flutter-vita: JANK frame #1636 gap 94398 us (raster 2771 us, wait 88965 us)
+flutter-vita: JANK frame #1637 gap 91837 us (raster 3468 us, wait 85509 us)
+flutter-vita: JANK frame #1638 gap 68035 us (raster 7189 us, wait 58155 us)
+flutter-vita: JANK frame #1639 gap 69835 us (raster 2923 us, wait 64130 us)
+flutter-vita: JANK frame #1640 gap 108410 us (raster 3887 us, wait 101548 us)
+flutter-vita: JANK frame #1641 gap 73337 us (raster 2916 us, wait 67811 us)
+flutter-vita: JANK frame #1642 gap 75488 us (raster 3066 us, wait 69685 us)
+flutter-vita: JANK frame #1643 gap 113720 us (raster 2701 us, wait 108978 us)
+flutter-vita: JANK frame #1644 gap 85760 us (raster 3418 us, wait 78837 us)
+flutter-vita: JANK frame #1645 gap 91940 us (raster 2953 us, wait 86105 us)
+flutter-vita: JANK frame #1646 gap 53947 us (raster 2450 us, wait 47935 us)
+flutter-vita: JANK frame #1647 gap 94070 us (raster 3074 us, wait 88009 us)
+flutter-vita: JANK frame #1648 gap 65252 us (raster 2724 us, wait 59257 us)
+flutter-vita: JANK frame #1649 gap 77094 us (raster 2965 us, wait 70793 us)
+flutter-vita: JANK frame #1650 gap 100106 us (raster 3234 us, wait 93936 us)
+flutter-vita: JANK frame #1651 gap 93026 us (raster 2870 us, wait 87261 us)
+flutter-vita: JANK frame #1652 gap 92368 us (raster 3112 us, wait 85895 us)
+flutter-vita: JANK frame #1653 gap 116477 us (raster 3456 us, wait 109960 us)
+flutter-vita: JANK frame #1654 gap 76019 us (raster 8398 us, wait 64708 us)
+flutter-vita: JANK frame #1655 gap 68763 us (raster 2474 us, wait 63538 us)
+flutter-vita: JANK frame #1656 gap 135953 us (raster 3151 us, wait 129396 us)
+flutter-vita: JANK frame #1657 gap 83560 us (raster 3003 us, wait 77638 us)
+flutter-vita: JANK frame #1658 gap 133850 us (raster 2919 us, wait 128092 us)
+flutter-vita: JANK frame #1659 gap 92516 us (raster 3367 us, wait 86152 us)
+flutter-vita: JANK frame #1660 gap 108514 us (raster 3244 us, wait 102445 us)
+flutter-vita: JANK frame #1661 gap 111307 us (raster 2966 us, wait 105374 us)
+flutter-vita: JANK frame #1662 gap 53496 us (raster 2765 us, wait 47459 us)
+flutter-vita: JANK frame #1663 gap 78486 us (raster 3350 us, wait 71657 us)
+flutter-vita: JANK frame #1664 gap 54090 us (raster 2446 us, wait 48756 us)
+[dart] 2026-08-31 07:42:06.190320    [INFO] [ReceiveController] Saved blob5m.bin.
+[dart] 2026-08-31 07:42:06.193922    [INFO] [ReceiveController] Received all files.
+flutter-vita: channel flutter/navigation [91] {"method":"routeInformationUpdated","args":{"uri":"HomePage","state":null,"replace":false}}
+flutter-vita: channel flutter/platform [58] {"method":"LiveText.isLiveTextInputAvailable","args":null}
+flutter-vita: channel flutter/platform [53] {"method":"Clipboard.hasStrings","args":"text/plain"}
+flutter-vita: channel flutter/processtext [31] ..ProcessText.queryTextActions.
+flutter-vita: channel flutter/platform [58] {"method":"LiveText.isLiveTextInputAvailable","args":null}
+flutter-vita: channel flutter/platform [53] {"method":"Clipboard.hasStrings","args":"text/plain"}
+flutter-vita: channel flutter/processtext [31] ..ProcessText.queryTextActions.
+flutter-vita: channel flutter/platform [58] {"method":"LiveText.isLiveTextInputAvailable","args":null}
+flutter-vita: channel flutter/platform [53] {"method":"Clipboard.hasStrings","args":"text/plain"}
+flutter-vita: channel flutter/processtext [31] ..ProcessText.queryTextActions.
+flutter-vita: JANK frame #1665 gap 121934 us (raster 4062 us, wait 114467 us)
+[dart] 2026-08-31 07:42:06.300985    [INFO] [Server] Server already running.
+flutter-vita: channel dev.flutter.pigeon.wakelock_plus_platform_interface.WakelockPlusApi.toggle [6] ......
+[ERROR:flutter/runtime/dart_vm_initializer.cc(40)] Unhandled Exception: PlatformException(channel-error, Unable to establish connection on channel: "dev.flutter.pigeon.wakelock_plus_platform_interface.WakelockPlusApi.toggle"., null, null)
+#0      _extractReplyValueOrThrow (package:wakelock_plus_platform_interface/messages.g.dart:18)
+#1      WakelockPlusApi.toggle (package:wakelock_plus_platform_interface/messages.g.dart:202)
+<asynchronous suspension>
+#2      MethodChannelWakelockPlus.toggle (package:wakelock_plus_platform_interface/src/method_channel_wakelock_plus.dart:20)
+<asynchronous suspension>
+
+flutter-vita: JANK frame #1666 gap 71780 us (raster 5787 us, wait 63323 us)
+flutter-vita: JANK frame #1675 gap 50194 us (raster 14369 us, wait 35637 us)
+flutter-vita: present #1680 row_bytes=3840 height=544 heap=10M/11M free user=24576K cdram=0K phycont=0K
+flutter-vita: FRAMES active 60 @ 78336 us = 12.76 fps (raster 4875 us = 6%, blit 187 us = 0%, dmg 0%, hud 0 us) | raster max 15786 us | idle gaps 0 | max 159 ms | gl wait 71070 us
+flutter-vita: JANK frame #1686 gap 52320 us (raster 12274 us, wait 39888 us)
+flutter-vita: JANK frame #1687 gap 62302 us (raster 13835 us, wait 45693 us)
+flutter-vita: JANK frame #1689 gap 82213 us (raster 4951 us, wait 77132 us)
+flutter-vita: JANK frame #1691 gap 52568 us (raster 3891 us, wait 48529 us)
+flutter-vita: JANK frame #1692 gap 56006 us (raster 11455 us, wait 41289 us)
+flutter-vita: JANK frame #1694 gap 130397 us (raster 12401 us, wait 117860 us)
+flutter-vita: JANK frame #1696 gap 53255 us (raster 9639 us, wait 43415 us)
+flutter-vita: JANK frame #1697 gap 62734 us (raster 6426 us, wait 52467 us)
+flutter-vita: JANK frame #1698 gap 111396 us (raster 7467 us, wait 100527 us)
+flutter-vita: JANK frame #1699 gap 70999 us (raster 12746 us, wait 54185 us)
+flutter-vita: JANK frame #1700 gap 52730 us (raster 11405 us, wait 37988 us)
+flutter-vita: JANK frame #1702 gap 51411 us (raster 4078 us, wait 47205 us)
+flutter-vita: JANK frame #1703 gap 54317 us (raster 13134 us, wait 38376 us)
+flutter-vita: JANK frame #1704 gap 52773 us (raster 13953 us, wait 36012 us)
+flutter-vita: LOOP 300 iterations @ 16627 us mean | 12 tasks (23884 us total, 1990 us mean)
+flutter-vita: PARAGRAPHS 75 | ctor 6079 us | build 6778 us | layout 45940 us | 783 us each
+flutter-vita: JANK frame #1706 gap 64675 us (raster 4536 us, wait 60012 us)
+flutter-vita: JANK frame #1707 gap 53932 us (raster 11593 us, wait 39625 us)
+flutter-vita: JANK frame #1709 gap 50825 us (raster 4169 us, wait 46461 us)
+flutter-vita: JANK frame #1710 gap 54229 us (raster 7575 us, wait 43918 us)
+flutter-vita: JANK frame #1711 gap 129307 us (raster 13505 us, wait 113120 us)
+flutter-vita: JANK frame #1716 gap 58246 us (raster 13710 us, wait 44393 us)
+flutter-vita: JANK frame #1717 gap 56465 us (raster 3767 us, wait 49323 us)
+flutter-vita: JANK frame #1718 gap 56563 us (raster 12395 us, wait 41281 us)
+flutter-vita: JANK frame #1719 gap 57534 us (raster 14335 us, wait 40408 us)
+flutter-vita: JANK frame #1720 gap 55651 us (raster 4869 us, wait 47894 us)
+flutter-vita: JANK frame #1722 gap 50171 us (raster 4685 us, wait 45350 us)
+flutter-vita: JANK frame #1723 gap 55703 us (raster 12488 us, wait 40368 us)
+flutter-vita: JANK frame #1724 gap 54357 us (raster 11636 us, wait 39963 us)
+flutter-vita: JANK frame #1725 gap 78643 us (raster 14669 us, wait 61127 us)
+flutter-vita: JANK frame #1726 gap 51245 us (raster 11549 us, wait 36299 us)
+flutter-vita: JANK frame #1728 gap 81517 us (raster 5304 us, wait 76077 us)
+flutter-vita: JANK frame #1730 gap 56013 us (raster 10349 us, wait 45526 us)
+flutter-vita: JANK frame #1731 gap 66295 us (raster 12763 us, wait 50316 us)
+flutter-vita: JANK frame #1733 gap 73955 us (raster 12558 us, wait 61263 us)
+flutter-vita: JANK frame #1734 gap 59470 us (raster 5837 us, wait 50836 us)
+flutter-vita: JANK frame #1735 gap 52010 us (raster 11256 us, wait 38028 us)
+flutter-vita: JANK frame #1737 gap 68841 us (raster 11559 us, wait 57153 us)
+flutter-vita: JANK frame #1738 gap 53057 us (raster 11947 us, wait 38040 us)
+flutter-vita: JANK frame #1739 gap 83303 us (raster 14226 us, wait 66226 us)
+flutter-vita: present #1740 row_bytes=3840 height=544 heap=9M/11M free user=28672K cdram=0K phycont=0K
+flutter-vita: JANK frame #1740 gap 53234 us (raster 9932 us, wait 36984 us)
+flutter-vita: FRAMES active 60 @ 57415 us = 17.41 fps (raster 9629 us = 16%, blit 147 us = 0%, dmg 0%, hud 0 us) | raster max 16246 us | idle gaps 0 | max 130 ms | gl wait 45749 us
+flutter-vita: JANK frame #1742 gap 50409 us (raster 11422 us, wait 38835 us)
+flutter-vita: JANK frame #1743 gap 90392 us (raster 14195 us, wait 73048 us)
+flutter-vita: JANK frame #1746 gap 52356 us (raster 12987 us, wait 39221 us)
+flutter-vita: JANK frame #1747 gap 53621 us (raster 12045 us, wait 38847 us)
+flutter-vita: JANK frame #1749 gap 71144 us (raster 13443 us, wait 57564 us)
+flutter-vita: JANK frame #1750 gap 59835 us (raster 10389 us, wait 46496 us)
+flutter-vita: JANK frame #1751 gap 51886 us (raster 4578 us, wait 44404 us)
+flutter-vita: JANK frame #1752 gap 75821 us (raster 14498 us, wait 58345 us)
+flutter-vita: JANK frame #1754 gap 52455 us (raster 12428 us, wait 39888 us)
+flutter-vita: JANK frame #1755 gap 67144 us (raster 13231 us, wait 51019 us)
+flutter-vita: JANK frame #1756 gap 55596 us (raster 13314 us, wait 39327 us)
+flutter-vita: JANK frame #1759 gap 74420 us (raster 14392 us, wait 59896 us)
+flutter-vita: JANK frame #1761 gap 51839 us (raster 12233 us, wait 39475 us)
+flutter-vita: JANK frame #1762 gap 88354 us (raster 12782 us, wait 72833 us)
+flutter-vita: JANK frame #1763 gap 66358 us (raster 13812 us, wait 49325 us)
+flutter-vita: JANK frame #1764 gap 59834 us (raster 4362 us, wait 52674 us)
+flutter-vita: JANK frame #1765 gap 50346 us (raster 12392 us, wait 35046 us)
+flutter-vita: JANK frame #1766 gap 55031 us (raster 14296 us, wait 37838 us)
+flutter-vita: JANK frame #1768 gap 66478 us (raster 11790 us, wait 54557 us)
+flutter-vita: JANK frame #1769 gap 53471 us (raster 12082 us, wait 38402 us)
+flutter-vita: JANK frame #1771 gap 59517 us (raster 15506 us, wait 43867 us)
+flutter-vita: JANK frame #1772 gap 57157 us (raster 4801 us, wait 49435 us)
+flutter-vita: JANK frame #1773 gap 56915 us (raster 12967 us, wait 40996 us)
+flutter-vita: JANK frame #1774 gap 59918 us (raster 6457 us, wait 50476 us)
+flutter-vita: JANK frame #1775 gap 56834 us (raster 14421 us, wait 39340 us)
+flutter-vita: JANK frame #1776 gap 56336 us (raster 12648 us, wait 40715 us)
+flutter-vita: JANK frame #1777 gap 54447 us (raster 19396 us, wait 31827 us)
+flutter-vita: LOOP 300 iterations @ 16627 us mean | 0 tasks (2946 us total, 0 us mean)
+flutter-vita: LOOP 300 iterations @ 16627 us mean | 0 tasks (1962 us total, 0 us mean)
+flutter-vita: LOOP 300 iterations @ 16627 us mean | 0 tasks (1967 us total, 0 us mean)
+flutter-vita: LOOP 300 iterations @ 16627 us mean | 0 tasks (1881 us total, 0 us mean)
+flutter-vita: LOOP 300 iterations @ 16627 us mean | 0 tasks (1917 us total, 0 us mean)
+flutter-vita: LOOP 300 iterations @ 16627 us mean | 0 tasks (1946 us total, 0 us mean)
+flutter-vita: LOOP 300 iterations @ 16627 us mean | 0 tasks (1875 us total, 0 us mean)
+flutter-vita: LOOP 300 iterations @ 16627 us mean | 0 tasks (2003 us total, 0 us mean)
+flutter-vita: LOOP 300 iterations @ 16627 us mean | 0 tasks (1904 us total, 0 us mean)
+flutter-vita: LOOP 300 iterations @ 16627 us mean | 0 tasks (1964 us total, 0 us mean)
+flutter-vita: LOOP 300 iterations @ 16627 us mean | 0 tasks (1926 us total, 0 us mean)
+flutter-vita: LOOP 300 iterations @ 16627 us mean | 0 tasks (2025 us total, 0 us mean)
+flutter-vita: LOOP 300 iterations @ 16627 us mean | 0 tasks (2027 us total, 0 us mean)
+flutter-vita: LOOP 300 iterations @ 16627 us mean | 0 tasks (1871 us total, 0 us mean)
+flutter-vita: LOOP 300 iterations @ 16627 us mean | 0 tasks (1855 us total, 0 us mean)
+flutter-vita: LOOP 300 iterations @ 16627 us mean | 0 tasks (1979 us total, 0 us mean)
+flutter-vita: LOOP 300 iterations @ 16627 us mean | 0 tasks (1917 us total, 0 us mean)
+flutter-vita: LOOP 300 iterations @ 16627 us mean | 0 tasks (1929 us total, 0 us mean)
+flutter-vita: LOOP 300 iterations @ 16627 us mean | 0 tasks (1935 us total, 0 us mean)
+flutter-vita: LOOP 300 iterations @ 16627 us mean | 0 tasks (2003 us total, 0 us mean)
+flutter-vita: LOOP 300 iterations @ 16627 us mean | 0 tasks (2012 us total, 0 us mean)
+flutter-vita: LOOP 300 iterations @ 16627 us mean | 0 tasks (1976 us total, 0 us mean)
+flutter-vita: LOOP 300 iterations @ 16627 us mean | 0 tasks (1973 us total, 0 us mean)
+flutter-vita: LOOP 300 iterations @ 16627 us mean | 0 tasks (1973 us total, 0 us mean)
+flutter-vita: LOOP 300 iterations @ 16627 us mean | 0 tasks (1947 us total, 0 us mean)
+flutter-vita: LOOP 300 iterations @ 16627 us mean | 0 tasks (1902 us total, 0 us mean)
+flutter-vita: LOOP 300 iterations @ 16627 us mean | 0 tasks (1902 us total, 0 us mean)
+flutter-vita: LOOP 300 iterations @ 16627 us mean | 0 tasks (1959 us total, 0 us mean)
+flutter-vita: LOOP 300 iterations @ 16627 us mean | 0 tasks (1887 us total, 0 us mean)
+flutter-vita: LOOP 300 iterations @ 16627 us mean | 0 tasks (1967 us total, 0 us mean)
+flutter-vita: LOOP 300 iterations @ 16627 us mean | 0 tasks (2004 us total, 0 us mean)
+flutter-vita: LOOP 300 iterations @ 16627 us mean | 0 tasks (2009 us total, 0 us mean)
+flutter-vita: touch down 381.2,337.3
+flutter-vita: touch up 381.2,337.3
+flutter-vita: touch down 321.2,295.8
+flutter-vita: touch up 322.2,325.8
+flutter-vita: LOOP 300 iterations @ 16627 us mean | 0 tasks (1872 us total, 0 us mean)
+flutter-vita: LOOP 300 iterations @ 16627 us mean | 0 tasks (1874 us total, 0 us mean)
+flutter-vita: LOOP 300 iterations @ 16627 us mean | 0 tasks (1878 us total, 0 us mean)
+flutter-vita: LOOP 300 iterations @ 16627 us mean | 0 tasks (2006 us total, 0 us mean)
+flutter-vita: LOOP 300 iterations @ 16627 us mean | 0 tasks (1889 us total, 0 us mean)
+flutter-vita: LOOP 300 iterations @ 16627 us mean | 0 tasks (2023 us total, 0 us mean)
+flutter-vita: LOOP 300 iterations @ 16627 us mean | 0 tasks (1995 us total, 0 us mean)
+flutter-vita: LOOP 300 iterations @ 16627 us mean | 0 tasks (1905 us total, 0 us mean)
+flutter-vita: LOOP 300 iterations @ 16627 us mean | 0 tasks (1885 us total, 0 us mean)
+flutter-vita: LOOP 300 iterations @ 16627 us mean | 0 tasks (1945 us total, 0 us mean)
+flutter-vita: LOOP 300 iterations @ 16627 us mean | 0 tasks (1972 us total, 0 us mean)
+flutter-vita: LOOP 300 iterations @ 16627 us mean | 0 tasks (1910 us total, 0 us mean)
+flutter-vita: LOOP 300 iterations @ 16627 us mean | 0 tasks (1940 us total, 0 us mean)
+flutter-vita: LOOP 300 iterations @ 16627 us mean | 0 tasks (1914 us total, 0 us mean)
+flutter-vita: LOOP 300 iterations @ 16627 us mean | 0 tasks (1972 us total, 0 us mean)
+flutter-vita: touch down 108.6,262.7
+flutter-vita: touch up 108.6,262.7
+flutter-vita: LOOP 300 iterations @ 16627 us mean | 0 tasks (1962 us total, 0 us mean)
