@@ -126,24 +126,72 @@ FVTA00001, one id per corpus app (ADR-0012), the background supervisor
 (ADR-0011) — need the second, and can be bought instead with one manual
 VitaShell install per id.
 
+## Answered on the console, 2026-08-31
+
+All of it from the loader rather than from this spike, for the reason the
+section above gives: the loader is a Flutter app with a live GXM context, a dev
+server, and no exit of its own, which is VitaShell's shape and not
+`debugScreen`'s. `promote` was split into `paf on|off|state`, `promoter on|off`,
+`promote`, `promoterif`, `import` and `exist`, so each step can be driven and
+watched separately instead of five things happening per power cycle.
+
+**PAF can be resident indefinitely.** `paf on` returned `0x00000000` and the
+console was still answering three minutes later, then through four promoter
+calls, then fifteen minutes on. The ten-second death does not happen when
+nothing unmaps PAF. Two variables moved at once -- no unload, and a process with
+a display context -- so which of them mattered is still open, but the cell that
+had never been filled in is filled and the answer is that this is survivable.
+
+**The promoter is stable once up.** `scePromoterUtilityInit` returns 0 and stays
+usable across repeated calls. `scePromoterUtilityCheckExist` discriminates
+correctly, which it did not appear to before:
+
+    exist FVTA00002   call=0x00000000  res=3            (installed)
+    exist FVTA00005   call=0x80101005  res=-            (not installed)
+
+**`PromotePkg` accepts an arbitrary staging directory.** Given an extracted
+2.5 MB vpk under `ux0:data/flutter-vita/pkg5`, the call itself returned
+`0x00000000` and the operation ran to completion, `state=0`. It is not refusing
+the path and it is not refusing to work.
+
+It refuses the *package*:
+
+    promote     call=0x00000000  state=0   result=0x8010111C
+    promoterif  call=0x8010111C  state=-1
+
+Both spellings, the same code, and `promoterif` reports it from the call rather
+than the result. An extracted vpk has `eboot.bin` and `sce_sys/param.sfo` and
+nothing else; what it does not have is `sce_sys/package/head.bin`.
+
+**`PromoteImport` refuses its arguments, not the package.** `0x80AF5022`
+immediately, both from an arbitrary directory and from `ux0:temp/game`, which is
+the path its own header documents. Returning before doing any work means the
+params struct, the attribute, or the expected layout is wrong -- not that the
+content was inspected and rejected. Worth another attempt; it is the only one of
+the three documented as skipping the licence check.
+
+So the whole remaining distance is one file.
+
 ## If someone picks this up
+
 
 The remaining unknown is the ten seconds, not the promoter. Cheapest next
 measurements, in order:
 
-1. **Load PAF and never unload it**, holding for several minutes without
-   exiting. First now rather than third: every run so far unmapped PAF and none
-   survived, so the one cell of the table nothing has filled in is the one the
-   dumps point at. If it lives, the rule is that PAF is loaded once and kept,
-   and `promote` becomes usable as it stands.
-2. Load and unload PAF with **no promoter at all**, to confirm the promoter has
-   no part in the fault.
-3. The same from a process with a real GXM context rather than `debugScreen` —
-   the one difference from VitaShell that could explain why the same unload is
-   safe there.
+1. **`head.bin`.** Everything else works. VitaShell writes one from an embedded
+   template with three HMAC-SHA1 signatures over the package's own contents,
+   then calls `PromotePkgWithRif`. Its implementation is GPLv3 and this repo is
+   BSD-3-Clause, so it has to be written from the published format rather than
+   copied.
+2. **`PromoteImport`'s argument shape**, which is cheaper than 1 if it lands. It
+   is the only call documented as skipping the licence check, and it is refusing
+   before it inspects anything, so the fix is a layout or a struct field rather
+   than a signature.
+3. **Which variable made PAF safe** -- not unloading it, or the display context.
+   Only matters if something other than the loader ever needs the promoter.
 
-`tools/analyse-crash.sh` read those dumps, and reading the next one is one
-command.
+`tools/analyse-crash.sh` read the dumps that got this far, and reading the next
+one is one command.
 
 Then the packaging, which is untouched and is its own piece of work. VitaShell
 extracts a vpk to a staging directory, builds `sce_sys/package/head.bin` from an

@@ -11,8 +11,11 @@ endif()
 project(flutter_vita_m1 C CXX ASM)
 include("${VITASDK}/share/vita.cmake" REQUIRED)
 
-set(VITA_APP_NAME "Flutter Vita M1")
-set(VITA_TITLEID  "FVTA00002")
+# Overridable, because the promoter work needs this same app built under a
+# title id the console has never seen -- registering a fresh id is the one
+# thing a file copy cannot do, and testing it needs a package to register.
+set(VITA_APP_NAME "Flutter Vita M1" CACHE STRING "LiveArea display name")
+set(VITA_TITLEID  "FVTA00002"       CACHE STRING "nine characters")
 set(VITA_VERSION  "01.00")
 
 # -g even in Release: the debug info never reaches the device (eboot.bin is a

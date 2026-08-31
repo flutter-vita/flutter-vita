@@ -368,49 +368,129 @@ static int unload_sce_paf(void) {
       SCE_SYSMODULE_INTERNAL_PAF, 0, NULL, (const SceSysmoduleOpt*)&buf);
 }
 
-static void cmd_promote(int sock, const char* dir) {
-  char m[256];
-  set_status("Installing", "promoting %s", dir);
+// Whether this process currently has each module resident.
+//
+// Tracked rather than queried, because the question these answer is not "is it
+// loaded" but "did *we* load it", and the unload has to be exactly balanced.
+static int g_paf_up = 0;
+static int g_pu_up = 0;
 
-  // PAF first, then the promoter, then Init. That order is the whole fix; see
-  // load_sce_paf. A failed load stays fatal, and must: an import stub for a
-  // module that is not resident is not a stub that returns an error, it is
-  // address zero, so "continue and let Init decide" is `blx 0`. That was tried
-  // on 2026-08-22 and the dump is a prefetch abort with PC 0 inside this
-  // function.
-  const int paf = load_sce_paf();
-  if (paf < 0) {
-    snprintf(m, sizeof m, "ERR paf 0x%08X\n", (unsigned)paf);
-    note("promote: paf 0x%08X", (unsigned)paf);
-    set_status("Waiting", NULL);
-    dev_server_send(sock, m);
-    return;
+// The promoter is driven in steps, and that is the point of it.
+//
+// It used to be one command that loaded PAF, loaded the promoter, initialised,
+// promoted, and then unwound all of it. That is the right shape for a feature
+// and the wrong shape for an investigation, because every run tested five
+// things at once and the console went down about ten seconds after each.
+//
+// What the dumps say (spikes/promoter): PAF starts a thread of its own, called
+// `ScePaf EntryCall`, and *that* thread takes a data abort six bytes into the
+// PAF module while our threads sit idle. Every run that died had unmapped PAF
+// first, by unloading it or by exiting. No run has yet kept it resident and
+// survived, so that is the cell to fill in, and filling it in needs the load
+// and the unload to be separate commands.
+//
+// It is driven from here rather than from the spike for a second reason. The
+// spike draws with debugScreen, which writes the framebuffer directly and
+// initialises no display subsystem; VitaShell, which does all of this safely,
+// is a vita2d app with a live GXM context. The loader is the only thing here
+// with VitaShell's shape -- a real context, a dev server, and no exit of its
+// own -- and it is also where the feature has to end up.
+static void cmd_paf(int sock, const char* arg) {
+  char m[192];
+  if (strcmp(arg, "on") == 0) {
+    if (g_paf_up) { dev_server_send(sock, "OK paf already up\n"); return; }
+    const int r = load_sce_paf();
+    if (r >= 0) g_paf_up = 1;
+    snprintf(m, sizeof m, "%s paf load 0x%08X\n", r >= 0 ? "OK" : "ERR",
+             (unsigned)r);
+    note("paf on 0x%08X", (unsigned)r);
+  } else if (strcmp(arg, "off") == 0) {
+    const int r = unload_sce_paf();
+    if (r >= 0) g_paf_up = 0;
+    snprintf(m, sizeof m, "%s paf unload 0x%08X\n", r >= 0 ? "OK" : "ERR",
+             (unsigned)r);
+    note("paf off 0x%08X", (unsigned)r);
+  } else if (strcmp(arg, "state") == 0) {
+    snprintf(m, sizeof m, "OK paf=%d promoter=%d\n", g_paf_up, g_pu_up);
+  } else {
+    snprintf(m, sizeof m, "ERR paf on|off|state\n");
   }
+  dev_server_send(sock, m);
+}
 
+// Load PAF if it is not up, then the promoter, then Init.
+//
+// A failed load stays fatal and must: an import stub for a module that is not
+// resident is not a stub that returns an error, it is address zero, so
+// "continue and let Init decide" is `blx 0`. That was tried on 2026-08-22 and
+// the dump is a prefetch abort with PC 0.
+static int promoter_up(int sock) {
+  char m[192];
+  if (g_pu_up) return 1;
+  if (!g_paf_up) {
+    const int paf = load_sce_paf();
+    if (paf < 0) {
+      snprintf(m, sizeof m, "ERR paf 0x%08X\n", (unsigned)paf);
+      note("promoter: paf 0x%08X", (unsigned)paf);
+      dev_server_send(sock, m);
+      return 0;
+    }
+    g_paf_up = 1;
+  }
   int r = sceSysmoduleLoadModuleInternal(SCE_SYSMODULE_INTERNAL_PROMOTER_UTIL);
   if (r < 0) {
-    snprintf(m, sizeof m, "ERR loadmodule 0x%08X\n", (unsigned)r);
-    note("promote: load 0x%08X (paf was ok)", (unsigned)r);
-    set_status("Waiting", NULL);
+    snprintf(m, sizeof m, "ERR loadmodule 0x%08X (paf was ok)\n", (unsigned)r);
+    note("promoter: load 0x%08X", (unsigned)r);
     dev_server_send(sock, m);
-    unload_sce_paf();
-    return;
+    return 0;
   }
   r = scePromoterUtilityInit();
   if (r < 0) {
     snprintf(m, sizeof m, "ERR init 0x%08X\n", (unsigned)r);
-    note("promote: init 0x%08X", (unsigned)r);
-    set_status("Waiting", NULL);
+    note("promoter: init 0x%08X", (unsigned)r);
     dev_server_send(sock, m);
     sceSysmoduleUnloadModuleInternal(SCE_SYSMODULE_INTERNAL_PROMOTER_UTIL);
-    unload_sce_paf();
+    return 0;
+  }
+  g_pu_up = 1;
+  note("promoter up");
+  return 1;
+}
+
+static void cmd_promoter(int sock, const char* arg) {
+  char m[192];
+  if (strcmp(arg, "on") == 0) {
+    if (promoter_up(sock)) dev_server_send(sock, "OK promoter up\n");
     return;
   }
-  note("promoting %s", dir);
-  r = scePromoterUtilityPromotePkg(dir, 1);
+  if (strcmp(arg, "off") == 0) {
+    // Deliberately does not touch PAF. Unloading the two together is what
+    // every fatal run did, and separating them is the whole experiment.
+    int r = -1;
+    if (g_pu_up) {
+      scePromoterUtilityExit();
+      r = sceSysmoduleUnloadModuleInternal(SCE_SYSMODULE_INTERNAL_PROMOTER_UTIL);
+      g_pu_up = 0;
+    }
+    snprintf(m, sizeof m, "OK promoter off 0x%08X (paf still %d)\n",
+             (unsigned)r, g_paf_up);
+    dev_server_send(sock, m);
+    return;
+  }
+  snprintf(m, sizeof m, "ERR promoter on|off\n");
+  dev_server_send(sock, m);
+}
+
+// Wait out an operation and report both halves of its answer.
+//
+// sync=1 is documented to block, and is not trusted: GetState is polled anyway,
+// and GetResult is read separately because a call can return >= 0 and still
+// fail -- the return value says the request was accepted, the result says what
+// happened.
+static void promoter_finish(int sock, const char* what, int r) {
+  char m[224];
   int state = -1, res = -1;
   if (r >= 0) {
-    // sync=1 should block, but poll anyway rather than trust it.
     for (int i = 0; i < 600; i++) {
       if (scePromoterUtilityGetState(&state) < 0) break;
       if (state == 0) break;
@@ -418,14 +498,78 @@ static void cmd_promote(int sock, const char* dir) {
     }
     scePromoterUtilityGetResult(&res);
   }
-  scePromoterUtilityExit();
-  sceSysmoduleUnloadModuleInternal(SCE_SYSMODULE_INTERNAL_PROMOTER_UTIL);
-  unload_sce_paf();
   const int ok = (r >= 0 && res == 0);
-  snprintf(m, sizeof m, "%s promote=0x%08X state=%d result=0x%08X\n",
-           ok ? "OK" : "ERR", (unsigned)r, state, (unsigned)res);
-  note("promote %s (result 0x%08X)", ok ? "ok" : "failed", (unsigned)res);
+  snprintf(m, sizeof m, "%s %s call=0x%08X state=%d result=0x%08X\n",
+           ok ? "OK" : "ERR", what, (unsigned)r, state, (unsigned)res);
+  note("%s %s (result 0x%08X)", what, ok ? "ok" : "failed", (unsigned)res);
   set_status("Waiting", NULL);
+  dev_server_send(sock, m);
+}
+
+// The three ways in, kept as three commands because they want different things
+// of the directory and nothing here knows which of them this console accepts.
+//
+//   promote      PromotePkg. What the loader has always called.
+//   promoterif   PromotePkgWithRif. What VitaShell calls, and it builds a
+//                sce_sys/package/head.bin with three HMAC-SHA1 signatures
+//                before doing so.
+//   import       PromoteImport, documented as installing Content Manager
+//                import content "without checking license files", and the only
+//                one of the three that is handed the title id rather than
+//                reading it out of the package. If it works it removes the
+//                signing work entirely.
+//
+// None of them unloads anything afterwards. See cmd_paf.
+static void cmd_promote(int sock, const char* dir) {
+  set_status("Installing", "promoting %s", dir);
+  if (!promoter_up(sock)) { set_status("Waiting", NULL); return; }
+  note("promote %s", dir);
+  promoter_finish(sock, "promote", scePromoterUtilityPromotePkg(dir, 1));
+}
+
+static void cmd_promote_rif(int sock, const char* dir) {
+  set_status("Installing", "promoting %s with rif", dir);
+  if (!promoter_up(sock)) { set_status("Waiting", NULL); return; }
+  note("promoterif %s", dir);
+  promoter_finish(sock, "promoterif",
+                  scePromoterUtilityPromotePkgWithRif(dir, 1));
+}
+
+// `import <dir> <titleid>`
+static void cmd_import(int sock, const char* args) {
+  char m[192];
+  const char* sp = strchr(args, ' ');
+  if (sp == NULL) {
+    dev_server_send(sock, "ERR import <dir> <titleid>\n");
+    return;
+  }
+  ScePromoterUtilityImportParams p;
+  memset(&p, 0, sizeof p);
+  const size_t dirlen = (size_t)(sp - args);
+  if (dirlen >= sizeof p.path) {
+    dev_server_send(sock, "ERR path too long\n");
+    return;
+  }
+  memcpy(p.path, args, dirlen);
+  snprintf(p.titleid, sizeof p.titleid, "%s", sp + 1);
+  p.type = SCE_PKG_TYPE_VITA;
+  // 0x00 on Vita content, 0x01 on PSM, per the header's own note.
+  p.attribute = 0;
+  set_status("Installing", "importing %s as %s", p.path, p.titleid);
+  if (!promoter_up(sock)) { set_status("Waiting", NULL); return; }
+  note("import %s as %s", p.path, p.titleid);
+  snprintf(m, sizeof m, "  path=%s titleid=%s\n", p.path, p.titleid);
+  dev_server_send(sock, m);
+  promoter_finish(sock, "import", scePromoterUtilityPromoteImport(&p));
+}
+
+static void cmd_exist(int sock, const char* titleid) {
+  char m[192];
+  if (!promoter_up(sock)) return;
+  int res = -1;
+  const int r = scePromoterUtilityCheckExist(titleid, &res);
+  snprintf(m, sizeof m, "OK exist %s call=0x%08X res=%d\n", titleid,
+           (unsigned)r, res);
   dev_server_send(sock, m);
 }
 
@@ -518,6 +662,26 @@ static int handle(int sock, const char* line, int* stop) {
   }
   if (strncmp(line, "promote ", 8) == 0) {
     cmd_promote(sock, line + 8);
+    return 1;
+  }
+  if (strncmp(line, "promoterif ", 11) == 0) {
+    cmd_promote_rif(sock, line + 11);
+    return 1;
+  }
+  if (strncmp(line, "import ", 7) == 0) {
+    cmd_import(sock, line + 7);
+    return 1;
+  }
+  if (strncmp(line, "exist ", 6) == 0) {
+    cmd_exist(sock, line + 6);
+    return 1;
+  }
+  if (strncmp(line, "paf ", 4) == 0) {
+    cmd_paf(sock, line + 4);
+    return 1;
+  }
+  if (strncmp(line, "promoter ", 9) == 0) {
+    cmd_promoter(sock, line + 9);
     return 1;
   }
   if (strncmp(line, "ls ", 3) == 0) {
