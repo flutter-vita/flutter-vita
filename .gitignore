@@ -72,3 +72,4 @@ loader/app/lib/build_info.dart
 # Generated on first run by tools/benchserver.py, thirty days, one host.
 tools/bench.crt
 tools/bench.key
+build/vita-release/

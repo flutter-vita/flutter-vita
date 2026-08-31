@@ -17,6 +17,7 @@
 #   EXTRA_SOURCES   ;-list of extra C/C++ files to compile into the app
 #   NO_SUPERVISOR   ON to leave out eboot2.bin and param2.sfo
 #   EXTRA_DEFINES   ;-list of K=V preprocessor defines
+#   RELEASE         ON to link release.c instead of the dev loop
 cmake_minimum_required(VERSION 3.16)
 
 if(NOT DEFINED CMAKE_TOOLCHAIN_FILE)
@@ -56,9 +57,9 @@ set(CMAKE_C_FLAGS   "${CMAKE_C_FLAGS} -std=gnu11 -Wall -O2 -g")
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=gnu++20 -Wall -O2 -g")
 
 # The embedder, with main(), is inside the archive. What is not is the dev
-# server it calls into — three undefined symbols the app has to satisfy. It
+# server it calls into — five undefined symbols the app has to satisfy. It
 # ships as source in the artifact so it can be replaced: a shipping app wants
-# no listening socket, and can link a stub with the same three entry points.
+# no listening socket, and can link a stub with the same five entry points.
 # bailout.c is the other half of the dev loop and is dropped for shipping
 # alongside devserver.c. It overrides abort() and __assert_func(), which works
 # only because both are *undefined* in the engine archive -- the engine calls
@@ -74,10 +75,22 @@ set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=gnu++20 -Wall -O2 -g")
 # and listing that beside the devserver stub. The symbol in the archive is weak;
 # a strong definition linked alongside wins. It can also be toggled at runtime
 # with `overlay off` on the dev server, which is what to use for a screenshot.
+#
+# RELEASE=ON is that build, and release.c is the file described above: the five
+# stubs, plus the strong `flutter_vita_debug_overlay = 0`. Nothing else in this
+# file changes, which is the point -- a release app is the same link as a debug
+# one with two files swapped for one, not a second build path that can rot.
+if(RELEASE)
+  set(DEV_LOOP_SOURCES ${CMAKE_CURRENT_SOURCE_DIR}/release.c)
+else()
+  set(DEV_LOOP_SOURCES
+    ${ENGINE_DIR}/src/devserver.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/bailout.c)
+endif()
+
 add_executable(${PROJECT_NAME}
   ${SNAPSHOT_S}
-  ${ENGINE_DIR}/src/devserver.c
-  ${CMAKE_CURRENT_SOURCE_DIR}/bailout.c
+  ${DEV_LOOP_SOURCES}
   ${CMAKE_CURRENT_SOURCE_DIR}/heap.c
   # Product-specific C, compiled beside the dev server. The loader (ADR-0016)
   # uses this to register its own commands and its own port from a constructor,

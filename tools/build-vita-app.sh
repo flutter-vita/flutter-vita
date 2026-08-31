@@ -12,6 +12,7 @@
 #   --extra-source F  extra C/C++ compiled into the app; repeatable
 #   --no-supervisor   leave out eboot2.bin (the loader; ADR-0016)
 #   --define K=V      preprocessor define for the extra sources; repeatable
+#   --release         no dev server, no debug HUD, no bailout, no supervisor
 #
 # The app configures itself in pubspec.yaml, which is the opt-in surface:
 #
@@ -61,6 +62,17 @@ ENTRY_POINT="lib/main.dart"
 EXTRA_SOURCES=""
 NO_SUPERVISOR="OFF"
 EXTRA_DEFINES=""
+# Debug and release are the same pipeline with a different final link. What
+# release drops is everything that exists to serve the person developing the
+# app: the dev server's listening socket, the debug HUD over every frame, the
+# bailout that launches a development loader on abort, and the crash supervisor
+# that relaunches one. See templates/vita-app/release.c.
+#
+# It is not a Dart-level distinction. The kernel is already compiled with
+# -Ddart.vm.product=true and the bundle with --release, in both modes, because
+# nothing here has ever built a JIT app -- so "debug" means the dev loop is
+# linked in, and nothing about how the Dart was compiled.
+RELEASE="OFF"
 
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -75,6 +87,10 @@ while [ $# -gt 0 ]; do
       [ -f "$src" ] || { echo "no such file: $2" >&2; exit 1; }
       EXTRA_SOURCES="${EXTRA_SOURCES:+$EXTRA_SOURCES;}$src"; shift 2 ;;
     --no-supervisor) NO_SUPERVISOR="ON"; shift ;;
+    # Implies --no-supervisor. The supervisor's whole job is relaunching the
+    # development loader when the app dies, and a release build is one that has
+    # no loader to relaunch.
+    --release)  RELEASE="ON"; NO_SUPERVISOR="ON"; shift ;;
     --define) EXTRA_DEFINES="${EXTRA_DEFINES:+$EXTRA_DEFINES;}$2"; shift 2 ;;
     -h|--help)  sed -n '2,20p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
     -*)         echo "unknown option: $1" >&2; exit 2 ;;
@@ -91,6 +107,11 @@ APP_DIR="$(cd "$APP_DIR" && pwd)"
 export PATH="$VITASDK/bin:$PATH"
 
 OUT_DIR="${OUT_DIR:-$APP_DIR/build/vita}"
+# Absolute, because the paths derived from it are handed to cmake, which runs
+# with its own working directory. A relative --out produced "Cannot find source
+# file: <out>/snapshot.S" from a run that had just written exactly that file.
+mkdir -p "$OUT_DIR"
+OUT_DIR="$(cd "$OUT_DIR" && pwd)"
 SDK="$FLUTTER_DIR/bin/cache/dart-sdk"
 # Prefer the engine artifact's own platform dill over the Flutter cache's.
 #
@@ -243,7 +264,7 @@ GEN_SNAPSHOT="$ENGINE_DIR/host-$HOST/gen_snapshot_armv7"
 [ -n "$APP_NAME" ] || APP_NAME="$PKG_NAME"
 
 mkdir -p "$OUT_DIR"
-echo "==> $APP_NAME [$TITLE_ID]"
+echo "==> $APP_NAME [$TITLE_ID]$([ "$RELEASE" = ON ] && echo '  release')"
 
 echo "==> flutter build bundle"
 ( cd "$APP_DIR" && "$FLUTTER_DIR/bin/flutter" pub get >/dev/null &&
@@ -334,6 +355,7 @@ cmake -S "${FLUTTER_VITA_TEMPLATE:-$ROOT/templates/vita-app}" -B "$OUT_DIR/cmake
   -DENGINE_DIR="$ENGINE_DIR" \
   -DEXTRA_SOURCES="$EXTRA_SOURCES" \
   -DNO_SUPERVISOR="$NO_SUPERVISOR" \
+  -DRELEASE="$RELEASE" \
   -DEXTRA_DEFINES="$EXTRA_DEFINES" >/dev/null
 cmake --build "$OUT_DIR/cmake" -j"$(getconf _NPROCESSORS_ONLN 2>/dev/null || echo 4)"
 
