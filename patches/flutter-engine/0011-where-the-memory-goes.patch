@@ -51,7 +51,7 @@ index cc1fb42a..a3c2ee69 100644
  #if !SLIMPELLER
              textures,
 diff --git a/engine/src/flutter/shell/common/rasterizer.cc b/engine/src/flutter/shell/common/rasterizer.cc
-index bfde8890..16559f9a 100644
+index bfde8890..c2ba9cfe 100644
 --- a/engine/src/flutter/shell/common/rasterizer.cc
 +++ b/engine/src/flutter/shell/common/rasterizer.cc
 @@ -13,6 +13,8 @@
@@ -71,7 +71,7 @@ index bfde8890..16559f9a 100644
  #include "third_party/skia/include/core/SkImage.h"
  #include "third_party/skia/include/core/SkImageInfo.h"
  #include "third_party/skia/include/core/SkMatrix.h"
-@@ -304,6 +307,62 @@ DrawStatus Rasterizer::Draw(const std::shared_ptr<FramePipeline>& pipeline) {
+@@ -304,6 +307,73 @@ DrawStatus Rasterizer::Draw(const std::shared_ptr<FramePipeline>& pipeline) {
        break;
    }
  
@@ -126,7 +126,18 @@ index bfde8890..16559f9a 100644
 +                     << " unref q="
 +                     << g_vita_unref_queued.load(std::memory_order_relaxed)
 +                     << " d="
-+                     << g_vita_unref_drained.load(std::memory_order_relaxed);
++                     << g_vita_unref_drained.load(std::memory_order_relaxed)
++                     // The *other* resource cache. GrDirectContext's holds GPU
++                     // resources; this one is CPU-side and holds mipmaps,
++                     // scaled bitmaps and filter results. Missing it cost a
++                     // round of "eliminated everything, found nothing" -- and
++                     // a transition that scales a rasterised snapshot every
++                     // frame is precisely what fills it.
++                     << " skres="
++                     << (SkGraphics::GetResourceCacheTotalBytesUsed() >> 10)
++                     << "K/"
++                     << (SkGraphics::GetResourceCacheTotalByteLimit() >> 10)
++                     << "K";
 +    }
 +  }
 +#endif  // !SLIMPELLER
