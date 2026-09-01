@@ -1,5 +1,12 @@
 # The transition this port picks by default is the one that exhausts the heap
 
+> **Superseded in part, 2026-09-01 evening.** The leak described here is not
+> Zoom's and has no ten-cycle threshold. It follows *position*: the second
+> route scene in a process leaks about 12 MB a sample whichever scene it is,
+> and the first never does. See
+> [the-second-route-scene-2026-09-01.md](the-second-route-scene-2026-09-01.md).
+> The timing figures below stand; the memory attribution does not.
+
 The port reports `TargetPlatform.linux` (ADR-0008). Material's default page
 transition for Linux is `ZoomPageTransitionsBuilder`, so every `MaterialPageRoute`
 in every app on this console is a Zoom transition that nobody chose, and every
