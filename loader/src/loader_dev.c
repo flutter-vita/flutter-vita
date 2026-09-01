@@ -873,7 +873,9 @@ static void promoter_finish(int sock, const char* what, int r,
            ok ? "OK" : "ERR", what, (unsigned)r, state, (unsigned)res);
   note("%s %s (result 0x%08X)", what, ok ? "ok" : "failed", (unsigned)res);
   set_status("Waiting", NULL);
-  dev_server_send(sock, m);
+  // reply, not dev_server_send: the panel's delete arrives on the watcher
+  // thread with sock = -1 and nothing to answer on.
+  reply(sock, m);
 }
 
 // The three ways in, kept as three commands because they want different things
@@ -1023,20 +1025,63 @@ static void cmd_rmtree(int sock, const char* path) {
   dev_server_send(sock, m);
 }
 
+// Restart the loader, immediately, after a delete.
+//
+// Not a workaround dressed up as a feature: a delete takes this process down a
+// few seconds later and I cannot yet say why. What is known is that the
+// promoter leaves PAF resident, that PAF runs a thread of its own, and that no
+// core dump is written -- so nothing here is faulting, which is why there is
+// nothing to read. See the note above cmd_paf.
+//
+// What that cost, twice on 2026-09-01, was the console sitting on the LiveArea
+// home screen: no port answers there, so the machine cannot be driven back
+// without someone picking it up. An unexplained death and a deliberate restart
+// end in the same place five seconds apart, and only one of them leaves the
+// loader running.
+//
+// So this is honest about being a mitigation. When the cause is found this
+// should go, and a delete should simply not do it.
+static void restart_after_delete(void) {
+  note("restarting after a delete");
+  set_status("Restarting", "after a delete");
+  // Long enough for the reply to leave and for one publish-and-poll, so the
+  // last frame on screen says what is happening.
+  sceKernelDelayThread(600 * 1000);
+  hand_over(LOADER_SELF_TITLEID);
+  // Only reached if the launch was refused, which for our own title id means
+  // ux0:app/<self> has gone -- there is nothing to hand to, so stay up.
+  note("could not relaunch; staying here");
+  set_status("Waiting", NULL);
+}
+
 // Unregister a title. The other half of promote, and the only way to take a
 // title id back once it has been handed out.
+//
+// Through promoter_finish like every other promoter call, and it was not until
+// 2026-09-01. It fired DeletePkg and answered on the spot, so `OK delete
+// FVTA00009 0x00000000` meant the request had been accepted and nothing more.
+// The loader then went back to serving the panel -- which lists ux0:app on
+// every poll -- while the promoter's worker was still removing a title from
+// underneath that enumeration. Twice that evening the loader went down inside
+// a second of a delete and left the console on the LiveArea home screen, which
+// is the one place it must never leave it: nothing there answers a socket.
+//
+// The wait is the fix, and reading the result is the other half of it. A call
+// can be accepted and still fail, and reporting the accept as success is how
+// a title that is still there gets called gone.
 static void cmd_delete(int sock, const char* titleid) {
-  char m[224];
   if (strcmp(titleid, LOADER_SELF_TITLEID) == 0) {
     dev_server_send(sock, "ERR refusing to delete the loader\n");
     return;
   }
   if (!promoter_up(sock)) return;
-  const int r = scePromoterUtilityDeletePkg(titleid);
-  snprintf(m, sizeof m, "%s delete %s 0x%08X\n", r >= 0 ? "OK" : "ERR",
-           titleid, (unsigned)r);
-  note("delete %s 0x%08X", titleid, (unsigned)r);
-  dev_server_send(sock, m);
+  set_status("Deleting", "removing %s", titleid);
+  note("delete %s", titleid);
+  // NULL: promoter_finish records a title id as *installed* on success, which
+  // is the opposite of what happened here.
+  promoter_finish(sock, "delete", scePromoterUtilityDeletePkg(titleid), NULL);
+  forget_installed(titleid);
+  restart_after_delete();
 }
 
 // Kept when almost everything else was dropped, because it has repeatedly
@@ -1232,9 +1277,9 @@ static void serve_request(void) {
       note("delete %s: promoter would not start", titleid);
       return;
     }
-    const int r = scePromoterUtilityDeletePkg(titleid);
-    note("panel delete %s 0x%08X", titleid, (unsigned)r);
+    promoter_finish(-1, "delete", scePromoterUtilityDeletePkg(titleid), NULL);
     forget_installed(titleid);
+    restart_after_delete();
   } else if (strncmp(buf, "launch ", 7) == 0) {
     const char* titleid = buf + 7;
     if (strcmp(titleid, LOADER_SELF_TITLEID) == 0) {
