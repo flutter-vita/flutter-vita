@@ -6,7 +6,8 @@
 #
 #   --title-id ID   which loader to replace   (default FVTA00001)
 #   --updater ID    the updater's title id    (default FVTA00009)
-#   --keep-updater  leave the updater installed afterwards
+#   --keep-updater    leave the updater installed (the default)
+#   --remove-updater  delete it afterwards -- costs a visible restart
 #   --port N        the port to talk to       (default 1341)
 #   --build-port N  the port to build for     (default: build-loader.sh's)
 #   --no-build      require the vpk argument
@@ -48,13 +49,29 @@ VPK=""
 # on the scratch loader's port.
 BUILD_PORT=""
 UPDATER_VPK="$ROOT/loader/updater/build/flutter_vita_updater.vpk"
-KEEP_UPDATER=0
+
+# The updater stays unless asked otherwise, and that is a deliberate reversal.
+#
+# Deleting it is the tidy end state and it works: the loader removes it,
+# restarts itself, and answers again about nine seconds later. Those nine
+# seconds are the problem. The loader has to exit for the shell to relaunch it,
+# so the LiveArea home screen is on the television for all of them, on every
+# update. Watching that happen five times in one evening is what this costs,
+# and the thing being avoided is a 50 KB bubble.
+#
+# It is also the rescue path: launching "Flutter Loader Updater" holding L
+# restores the eboot it replaced, and that works when the loader does not.
+# Deleting it after every update removes the recovery tool as routine.
+#
+# --remove-updater when you actually want it gone.
+KEEP_UPDATER=1
 
 while [ $# -gt 0 ]; do
   case "$1" in
     --title-id) TITLE_ID="$2"; shift 2 ;;
     --updater)  UPDATER="$2"; shift 2 ;;
     --keep-updater) KEEP_UPDATER=1; shift ;;
+    --remove-updater) KEEP_UPDATER=0; shift ;;
     --port)       PORT="$2"; shift 2 ;;
     --build-port) BUILD_PORT="$2"; shift 2 ;;
     --host)     HOST="$2"; shift 2 ;;
