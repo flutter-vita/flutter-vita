@@ -27,6 +27,15 @@ const String kDonePath = '$kDataDir/bench-done';
 const String kSwitchPath = '$kDataDir/bench.on';
 const String kSoftwareSwitchPath = '$kDataDir/software.on';
 
+/// Comma-separated scene names. Empty or absent means run everything.
+///
+/// Added 2026-09-01, after a full run wedged: `route_wrap` and `route_spans`
+/// between them grew the heap from 8 MB to the 159 MB ceiling in twelve
+/// seconds, and every scene after them ran on a full heap until the UI thread
+/// blocked inside a FreeType allocation. Anything scheduled behind a leak is
+/// measuring the leak, so a subset has to be runnable on a fresh heap.
+const String kOnlyPath = '$kDataDir/bench.only';
+
 /// True when the host has asked for an unattended run.
 ///
 /// Same shape as gl.on: a '1' in the first byte, not merely the file existing,
@@ -40,6 +49,22 @@ bool switchOn(String path) {
     return bytes.isNotEmpty && bytes.first == 0x31;
   } on FileSystemException {
     return false;
+  }
+}
+
+/// The scene names this run is restricted to, or an empty set for all of them.
+Set<String> onlyScenes() {
+  try {
+    final f = File(kOnlyPath);
+    if (!f.existsSync()) return const <String>{};
+    return f
+        .readAsStringSync()
+        .split(',')
+        .map((s) => s.trim())
+        .where((s) => s.isNotEmpty)
+        .toSet();
+  } on FileSystemException {
+    return const <String>{};
   }
 }
 
@@ -232,6 +257,11 @@ class BenchRunner {
 
   Future<void> runAll(BuildContext context, {void Function(String)? onProgress}) async {
     recorder.attach();
+    final only = onlyScenes();
+    bool wanted(String name) => only.isEmpty || only.contains(name);
+    if (only.isNotEmpty) {
+      print('bench: restricted to ${only.length} scenes: ${only.join(', ')}');
+    }
     await prepareAssets();
     // Before any scene, because it is a measurement of the machine rather than
     // of a scene, and because a scene that has already run has warmed caches
@@ -254,6 +284,7 @@ class BenchRunner {
       // reporting eleven scenes and a failure -- and that is exactly what the
       // first run on hardware did.
       for (final scene in [...animatedScenes, ...motionScenes]) {
+        if (!wanted(scene.name)) continue;
         onProgress?.call(scene.name);
         // Into the engine log, not just the on-screen label. A run that stops
         // finishing tells the host only that it stopped -- on 2026-08-24 that
@@ -271,6 +302,7 @@ class BenchRunner {
         }
       }
       for (final scene in drivenScenes) {
+        if (!wanted(scene.name)) continue;
         onProgress?.call(scene.name);
         print('bench: scene ${scene.name}');
         await _quiet();
@@ -284,6 +316,7 @@ class BenchRunner {
         }
       }
       for (final scene in [...routeScenes, ...transitionScenes, ...modalScenes]) {
+        if (!wanted(scene.name)) continue;
         onProgress?.call(scene.name);
         print('bench: scene ${scene.name}');
         await _quiet();

@@ -46,8 +46,18 @@ runs of the same binary:
   the modes and reports neither. The heavy frames sit at 144, 223 and 300 of
   300 — spaced about two repeats apart.
 
-  The leading explanation is **Dart GC landing on a build frame**: the cost
-  scales with how much a scene allocates. `route_push` builds the most and
+  The leading explanation used to be **Dart GC landing on a build frame**: the
+  cost scales with how much a scene allocates. On 2026-09-01 a better one
+  turned up -- the heap filling underneath the run. `ZoomPageTransitionsBuilder`
+  is Material's default for `TargetPlatform.linux`, which is what this port
+  reports, and it grows the native heap about 4.4 MB per push and never gives
+  it back; `route_wrap` and `route_spans` between them reached the 159 MB
+  ceiling in twelve seconds. `route_wrap` was scene 12 of 18 in the order these
+  numbers were taken in. See
+  [page-transitions-2026-09-01.md](../../../docs/results/page-transitions-2026-09-01.md).
+
+  The original wording follows, because the reasoning still applies to whatever
+  is left after the leak is accounted for. `route_push` builds the most and
   throws the largest outliers (110.6 and 85.7 over a tight cluster at 51);
   `route_grid_bare` builds the fewest and is flat at 5.8. **This is a
   hypothesis — nothing has measured a collection.** The port has no VM service.

@@ -6,6 +6,7 @@
 #   ./tools/bench.sh --baseline            write the result in as the baseline
 #   ./tools/bench.sh --relaunch            reuse the installed build, skip the deploy
 #   ./tools/bench.sh --leave sw|gl         renderer the console rests on (default gl)
+#   ./tools/bench.sh --scenes a,b,c        run only these scenes
 #   ./tools/bench.sh --host IP --loader-port N
 #
 # gl.on is read once at startup, so comparing renderers is always two runs and
@@ -36,6 +37,14 @@ ONLY=""
 # Which renderer the console is left on when the run finishes. See the note
 # beside the write at the bottom.
 LEAVE=gl
+# Scene subset, written to bench.only for the app to read. Empty runs
+# everything.
+#
+# It exists because a scene scheduled behind a leak measures the leak: on
+# 2026-09-01 route_wrap and route_spans took the heap from 8 MB to the 159 MB
+# ceiling and every scene after them ran on a full heap until the run wedged.
+# Isolating a group is the only way to measure one on a fresh heap.
+SCENES=""
 WRITE_BASELINE=0
 BUILD=1
 # Reuse what is installed instead of staging 13 MB again.
@@ -54,6 +63,7 @@ while [ $# -gt 0 ]; do
     --loader-port) LDR="$2"; shift 2 ;;
     --only)        ONLY="$2"; shift 2 ;;
     --leave)       LEAVE="$2"; shift 2 ;;
+    --scenes)      SCENES="$2"; shift 2 ;;
     --baseline)    WRITE_BASELINE=1; shift ;;
     --no-build)    BUILD=0; shift ;;
     --relaunch)    RELAUNCH=1; BUILD=0; shift ;;
@@ -106,6 +116,10 @@ run_one() {  # <sw|gl>
   echo "==> $mode: arming"
   put "$swval" "ux0:data/flutter-vita/software.on"
   put "1"      "ux0:data/flutter-vita/bench.on"
+  # Always written, even when empty: the loader can put a file and cannot
+  # delete one, so a stale subset from the previous invocation would silently
+  # restrict a run that asked for everything.
+  put "$SCENES" "ux0:data/flutter-vita/bench.only"
   # Cleared first so a stale file from the previous run cannot be mistaken for
   # this one's output.
   put "0"      "ux0:data/flutter-vita/bench-done"

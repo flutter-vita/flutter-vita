@@ -473,6 +473,23 @@ final List<RouteScene> transitionScenes = <RouteScene>[
       transitions: const ZoomPageTransitionsBuilder(),
     ),
   ),
+  // The same Zoom with its snapshotting turned off.
+  //
+  // Zoom rasterises the entering and exiting routes into offscreen images and
+  // animates those instead of the live widgets, which is meant to be the fast
+  // path. On this port it is where the memory goes: with snapshotting on, nine
+  // push-and-pop cycles took the heap from 6 MB to 46 MB and a full suite run
+  // reached the 159 MB ceiling and wedged. Every other transition measured
+  // holds flat.
+  RouteScene(
+    name: 'route_tx_zoom_nosnap',
+    stresses: Stresses.saveLayer,
+    page: _txPage,
+    route: (context, page) => _TxRoute<void>(
+      page: page,
+      transitions: const ZoomPageTransitionsBuilder(allowSnapshotting: false),
+    ),
+  ),
   RouteScene(
     name: 'route_tx_fade_fwd',
     stresses: Stresses.opacity,
