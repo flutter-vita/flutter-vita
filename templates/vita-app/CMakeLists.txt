@@ -266,6 +266,14 @@ file(GLOB_RECURSE APP_ASSETS RELATIVE "${FLUTTER_ASSETS}" "${FLUTTER_ASSETS}/*")
 list(FILTER APP_ASSETS EXCLUDE REGEX "kernel_blob.bin|\\.last_build_id")
 
 set(VPK_FILES
+  # The engine's receipt, shipped so the app can say which engine produced a
+  # number. framework_rev cannot: it is a git revision and stays identical
+  # across rebuilds, so two engines that differ by a patch report the same
+  # value. MANIFEST.txt carries `built at`, which does move.
+  #
+  # This exists because of 2026-08-22, when three published figures turned out
+  # to have come from an engine that predated the switch they were measuring.
+  FILE "${ENGINE_DIR}/MANIFEST.txt" engine.txt
   FILE "${ENGINE_DIR}/data/icudtl.dat" icudtl.dat
   # The system font, scanned from app0:/fonts. Deliberately not inside
   # flutter_assets: that directory holds icon fonts meant to be looked up by

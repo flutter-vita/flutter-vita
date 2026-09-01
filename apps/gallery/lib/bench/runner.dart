@@ -27,6 +27,46 @@ const String kDonePath = '$kDataDir/bench-done';
 const String kSwitchPath = '$kDataDir/bench.on';
 const String kSoftwareSwitchPath = '$kDataDir/software.on';
 
+/// Where suites write results now that more than one app has them.
+///
+/// bench-result.json stays as well: the host tools read it, and a suite that
+/// silently stops writing the file its tooling reads is a suite whose results
+/// vanish.
+const String kBenchDir = '$kDataDir/bench';
+
+/// The engine receipt, shipped inside the vpk by templates/vita-app.
+const String kEngineManifest = 'app0:/engine.txt';
+
+/// Which engine build this binary links, or null if it cannot tell.
+///
+/// `built at` rather than the git revision: the revision is identical across
+/// rebuilds, so it cannot separate two engines that differ by a patch -- which
+/// is the only distinction that matters when deciding whether two runs may be
+/// read against each other.
+String? engineStamp() {
+  try {
+    final f = File(kEngineManifest);
+    if (!f.existsSync()) return null;
+    String? rev;
+    String? built;
+    for (final line in f.readAsLinesSync()) {
+      final parts = line.trim().split(RegExp(r'\s+'));
+      if (parts.length < 2) continue;
+      if (parts[0] == 'engine' && rev == null) rev = parts[1];
+      if (parts[0] == 'built' && parts[1] == 'at' && parts.length > 2) {
+        built = parts[2];
+      }
+    }
+    if (rev == null && built == null) return null;
+    final short = rev == null ? '?' : rev.substring(0, 10);
+    return built == null ? short : '$short $built';
+  } catch (_) {
+    // A receipt that cannot be read is a run without a stamp, which the loader
+    // already shows as not comparable. It is not a reason to lose the numbers.
+    return null;
+  }
+}
+
 /// Comma-separated scene names. Empty or absent means run everything.
 ///
 /// Added 2026-09-01, after a full run wedged: `route_wrap` and `route_spans`
@@ -359,17 +399,40 @@ class BenchRunner {
   void write() {
     final payload = <String, Object>{
       'schema': 1,
+      'suite': 'gallery',
       'software_on_requested': switchOn(kSoftwareSwitchPath),
       'dart_version': Platform.version.split(' ').first,
+      // When, and by which engine. Both absent until today, which is why the
+      // loader's TESTS tab shows the one result on this card as "no engine
+      // stamp, not comparable" -- it was right to.
+      'taken': DateTime.now().toIso8601String(),
+      if (engineStamp() case final String e) 'engine': e,
       'scenes': results.map((r) => r.toJson()).toList(),
     };
+    final text = const JsonEncoder.withIndent('  ').convert(payload);
     Directory(kDataDir).createSync(recursive: true);
-    final tmp = File('$kResultPath.part');
-    tmp.writeAsStringSync(const JsonEncoder.withIndent('  ').convert(payload),
-        flush: true);
-    final target = File(kResultPath);
-    if (target.existsSync()) target.deleteSync();
-    tmp.renameSync(kResultPath);
+    _writeAtomic(kResultPath, text);
+    // Also under bench/, one file per app per suite, which is what the
+    // loader's hub lists. The legacy path stays for the host tools.
+    try {
+      Directory(kBenchDir).createSync(recursive: true);
+      _writeAtomic('$kBenchDir/FVTA00002-gallery.json', text);
+    } catch (_) {
+      // The hub copy is a convenience. Losing it must not lose the run.
+    }
     File(kDonePath).writeAsStringSync('1', flush: true);
+  }
+
+  /// Write via a .part file and a rename, the only atomic operation here.
+  ///
+  /// A reader that catches a half-written result must not be able to parse it
+  /// as a short one: the loader would show a run that lost most of its scenes
+  /// as a run that measured three.
+  void _writeAtomic(String path, String text) {
+    final tmp = File('$path.part');
+    tmp.writeAsStringSync(text, flush: true);
+    final target = File(path);
+    if (target.existsSync()) target.deleteSync();
+    tmp.renameSync(path);
   }
 }
