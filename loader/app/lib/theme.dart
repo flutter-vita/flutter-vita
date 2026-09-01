@@ -143,7 +143,7 @@ class Empty extends StatelessWidget {
 /// would mean either `uses-material-design: true` for four shapes, or dropping
 /// the file into app0:/fonts -- where the embedder treats every face as a
 /// fallback for every codepoint, and body text starts rendering as icons.
-enum Glyph { deploy, logs, crashes, apps }
+enum Glyph { deploy, logs, crashes, apps, tests }
 
 class GlyphIcon extends StatelessWidget {
   const GlyphIcon(this.glyph, {super.key, required this.colour, this.size = 22});
@@ -225,6 +225,13 @@ class _GlyphPainter extends CustomPainter {
                 fill);
           }
         }
+      // A bar chart. Three columns of different heights on a baseline, which
+      // is what a benchmark looks like from across the room.
+      case Glyph.tests:
+        canvas.drawLine(p(3, 20), p(21, 20), stroke);
+        canvas.drawLine(p(7, 20), p(7, 13), stroke);
+        canvas.drawLine(p(12, 20), p(12, 6), stroke);
+        canvas.drawLine(p(17, 20), p(17, 10), stroke);
     }
   }
 

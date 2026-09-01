@@ -23,6 +23,7 @@ import 'package:flutter/widgets.dart';
 import 'build_info.dart';
 import 'device.dart';
 import 'psp2dmp.dart';
+import 'tests.dart';
 import 'theme.dart';
 
 /// The name every tool in tools/ resolves, answered by the dev server's mDNS.
@@ -30,7 +31,7 @@ const _hostname = 'flutter-vita.local';
 
 void main() => runApp(const LoaderApp());
 
-enum Tab { deploy, logs, crashes, apps }
+enum Tab { deploy, logs, crashes, apps, tests }
 
 class LoaderApp extends StatefulWidget {
   const LoaderApp({super.key});
@@ -140,6 +141,7 @@ class _LoaderAppState extends State<LoaderApp> {
         Tab.logs => _LogsTab(command: _cmd),
         Tab.crashes => _CrashesTab(command: _cmd),
         Tab.apps => _AppsTab(self: s.self, command: _cmd),
+        Tab.tests => _TestsTab(command: _cmd),
       };
 }
 
@@ -246,6 +248,7 @@ class _Rail extends StatelessWidget {
     Tab.logs: 'LOGS',
     Tab.crashes: 'CRASHES',
     Tab.apps: 'APPS',
+    Tab.tests: 'TESTS',
   };
 
   static const _glyphs = {
@@ -253,6 +256,7 @@ class _Rail extends StatelessWidget {
     Tab.logs: Glyph.logs,
     Tab.crashes: Glyph.crashes,
     Tab.apps: Glyph.apps,
+    Tab.tests: Glyph.tests,
   };
 
   @override
@@ -1163,4 +1167,183 @@ class _Dot extends StatelessWidget {
         height: 8,
         decoration: BoxDecoration(color: colour, shape: BoxShape.circle),
       );
+}
+
+
+/// The benchmark hub.
+///
+/// Starting a run means launching the app that owns the suite and getting out
+/// of the way -- see the note at the top of tests.dart for why nothing runs
+/// inside the loader. The bottom half is every result on the card, which is the
+/// part that makes this a hub rather than a second RUN button.
+class _TestsTab extends StatefulWidget {
+  const _TestsTab({required this.command});
+
+  final PanelCommand? command;
+
+  @override
+  State<_TestsTab> createState() => _TestsTabState();
+}
+
+class _TestsTabState extends State<_TestsTab> {
+  List<BenchEntry> _entries = const [];
+  List<BenchResult> _results = const [];
+  String? _note;
+
+  @override
+  void initState() {
+    super.initState();
+    _refresh();
+  }
+
+  void _refresh() => setState(() {
+        _entries = readManifest();
+        _results = readResults();
+      });
+
+  @override
+  void didUpdateWidget(_TestsTab old) {
+    super.didUpdateWidget(old);
+    final c = widget.command;
+    if (c == null || c.seq == old.command?.seq) return;
+    if (c.verb == 'select' && c.index >= 0 && c.index < _entries.length) {
+      _start(_entries[c.index]);
+    }
+  }
+
+  void _start(BenchEntry e) {
+    final ok = startRun(e);
+    setState(() => _note = ok
+        ? 'launching ${e.titleId} — it will run ${e.suite} and come back here'
+        : '${e.titleId} is not installed');
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    // Results without an engine stamp cannot honestly be read against each
+    // other, and saying so once at the top is cheaper than a caveat per row.
+    final unstamped = _results.where((r) => !r.comparable).length;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Row(children: [
+          Expanded(
+            child: Text(_note ?? 'suites this console can run',
+                maxLines: 1, overflow: TextOverflow.ellipsis, style: label),
+          ),
+          Btn(text: 'REFRESH', onTap: _refresh, colour: muted),
+        ]),
+        const SizedBox(height: 8),
+        Panel(
+          child: _entries.isEmpty
+              ? const Empty('no suites in benchmarks.txt')
+              : Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    for (final e in _entries) _SuiteRow(entry: e, onRun: () => _start(e)),
+                  ],
+                ),
+        ),
+        const SizedBox(height: 10),
+        Text(
+          unstamped == 0
+              ? 'results on this card'
+              : 'results on this card — $unstamped with no engine stamp, '
+                  'not comparable',
+          style: label,
+        ),
+        const SizedBox(height: 6),
+        Expanded(
+          child: Panel(
+            child: _results.isEmpty
+                ? const Empty('nothing has been run here yet')
+                : ListView.builder(
+                    itemCount: _results.length,
+                    itemExtent: 52,
+                    itemBuilder: (_, i) => _ResultRow(result: _results[i]),
+                  ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _SuiteRow extends StatelessWidget {
+  const _SuiteRow({required this.entry, required this.onRun});
+
+  final BenchEntry entry;
+  final VoidCallback onRun;
+
+  @override
+  Widget build(BuildContext context) => Padding(
+        padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 4),
+        child: Row(
+          children: [
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text('${entry.suite}  ·  ${entry.titleId}',
+                      maxLines: 1, overflow: TextOverflow.ellipsis, style: heading),
+                  Text(entry.present ? entry.label : 'not installed',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                          fontSize: 12,
+                          color: entry.present ? muted : danger)),
+                ],
+              ),
+            ),
+            Btn(text: 'RUN', colour: good, onTap: onRun, enabled: entry.present),
+          ],
+        ),
+      );
+}
+
+class _ResultRow extends StatelessWidget {
+  const _ResultRow({required this.result});
+
+  final BenchResult result;
+
+  @override
+  Widget build(BuildContext context) {
+    final r = result;
+    final when = r.when == null
+        ? '—'
+        : '${r.when!.month.toString().padLeft(2, '0')}-'
+            '${r.when!.day.toString().padLeft(2, '0')} '
+            '${r.when!.hour.toString().padLeft(2, '0')}:'
+            '${r.when!.minute.toString().padLeft(2, '0')}';
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 5, horizontal: 4),
+      child: Row(
+        children: [
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text('${r.suite}  ·  ${r.renderer}  ·  $when',
+                    maxLines: 1, overflow: TextOverflow.ellipsis, style: label),
+                Text(
+                  '${r.scenes} scenes, ${r.stalled} stalled, '
+                  'worst ${r.worstMs.toStringAsFixed(1)} ms'
+                  '${r.comparable ? '' : '  · no engine stamp'}',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                      fontSize: 12,
+                      color: r.comparable
+                          ? (r.stalled == 0 ? good : warn)
+                          : muted),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 }
