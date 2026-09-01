@@ -131,7 +131,7 @@ class _BenchPageState extends State<BenchPage> with TickerProviderStateMixin {
             Expanded(
               child: Center(
                 child: Text(
-                  '${animatedScenes.length + routeScenes.length} scenes\n'
+                  '${animatedScenes.length + motionScenes.length + drivenScenes.length + routeScenes.length + transitionScenes.length + modalScenes.length} scenes\n'
                   'a stall is 2+ consecutive frames at or below 30 fps',
                   textAlign: TextAlign.center,
                   style: const TextStyle(fontSize: 13, color: Colors.white54),

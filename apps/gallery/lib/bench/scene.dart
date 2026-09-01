@@ -37,7 +37,18 @@ enum Stresses {
   text,
 
   /// Long lists: build and layout cost dominated by widget churn.
-  listChurn;
+  listChurn,
+
+  /// A runtime fragment shader -- ShaderMask, ink_sparkle, the overscroll
+  /// stretch. Untested territory until 2026-09-01, because until then a whole
+  /// class of Skia program would not compile at all
+  /// (patches/vitagl/0004).
+  shader,
+
+  /// Relayout every frame. Distinct from `fill` because the cost is in the
+  /// layout walk rather than in painting, and distinct from `transform`
+  /// because a transform reuses the layout it already has.
+  layout;
 
   String get label => switch (this) {
         Stresses.fill => 'fill',
@@ -48,6 +59,8 @@ enum Stresses {
         Stresses.imageScale => 'imageScale',
         Stresses.text => 'text',
         Stresses.listChurn => 'listChurn',
+        Stresses.shader => 'shader',
+        Stresses.layout => 'layout',
       };
 }
 
@@ -86,6 +99,8 @@ class RouteScene {
     required this.name,
     required this.stresses,
     required this.page,
+    this.route,
+    this.settle = const Duration(milliseconds: 450),
     this.repeats = 8,
   });
 
@@ -93,10 +108,67 @@ class RouteScene {
   final Stresses stresses;
   final WidgetBuilder page;
 
+  /// How the page is pushed. Null means [MaterialPageRoute], which is what
+  /// every scene used before 2026-09-01.
+  ///
+  /// It exists because the transition is a variable worth isolating. This port
+  /// reports `TargetPlatform.linux` (ADR-0008), and Material's default for
+  /// Linux is [ZoomPageTransitionsBuilder] -- the most expensive stock
+  /// transition there is, built out of offscreen layers that a tile-based
+  /// deferred GPU pays a full framebuffer round trip for (ADR-0014). Every
+  /// route number this suite ever produced was a Zoom number, with no way to
+  /// tell what belonged to the transition and what belonged to the page.
+  ///
+  /// The scenes that use it push the *same page* through different builders,
+  /// so the difference between them is the transition and nothing else.
+  final Route<void> Function(BuildContext context, WidgetBuilder page)? route;
+
+  /// How long to hold after the push, and again after the pop.
+  ///
+  /// Longer than the transition on purpose. A dropped frame makes a 300 ms
+  /// animation take longer in frames, not in wall clock, so a fixed settle
+  /// past the end is sound -- but a modal sheet animates for longer than a
+  /// page does, and cutting it off measures half a transition.
+  final Duration settle;
+
   /// More than an animated scene gets, and for a measurable reason: a route
   /// transition is 300 ms of which only the animating part produces frames,
   /// and on this console that is a handful. Three repeats of `route_hero`
   /// produced three frames in total on 2026-08-24 -- not a distribution, and
   /// the report now refuses to grade it.
+  final int repeats;
+}
+
+/// A scene the runner cannot drive with a controller or a push.
+///
+/// Drawer, tab swipe, ballistic fling, ink splash: each is started by calling
+/// something and then waiting, and none of them exposes an [Animation] the
+/// bench can hold. They are the ones a person actually complains about, so
+/// leaving them out because they do not fit the other two shapes was the wrong
+/// trade.
+///
+/// [stage] is mounted once and left up for the whole scene, so the widget
+/// tree's first build is not charged to the measurement -- same reason
+/// [AnimatedScene] settles for two frames first.
+class DrivenScene {
+  const DrivenScene({
+    required this.name,
+    required this.stresses,
+    required this.stage,
+    required this.drive,
+    this.repeats = 4,
+  });
+
+  final String name;
+  final Stresses stresses;
+
+  /// Built once. Hold whatever keys or controllers [drive] needs at the top
+  /// level of scenes.dart, the way `list_churn` already holds its
+  /// ScrollController.
+  final Widget Function() stage;
+
+  /// One repetition. Awaited; the recorder is running throughout.
+  final Future<void> Function() drive;
+
   final int repeats;
 }

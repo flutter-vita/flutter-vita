@@ -8,6 +8,8 @@
 
 import 'dart:ui' as ui;
 
+import 'package:flutter/cupertino.dart' show CupertinoPageTransitionsBuilder;
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
 
@@ -364,5 +366,382 @@ final List<RouteScene> routeScenes = <RouteScene>[
         ),
       ),
     ),
+  ),
+];
+
+// ---------------------------------------------------------------- transitions
+//
+// Everything above this line was written before it was clear which stock
+// transition this port even uses. It uses ZoomPageTransitionsBuilder, because
+// the port reports TargetPlatform.linux (ADR-0008) and that is Material's
+// Linux default -- so all eight route scenes above are Zoom measurements that
+// nobody chose.
+//
+// The scenes below push *one* page through five different transitions. Same
+// widgets, same first build, same settle: the only thing that varies is the
+// animation wrapped around it. `route_tx_none` is the control -- no transition
+// at all -- so the build cost can be subtracted from the other four rather
+// than guessed at.
+
+/// A route whose transition is whatever it was handed.
+///
+/// [PageTransitionsBuilder.buildTransitions] takes a non-nullable [PageRoute],
+/// so a PageRouteBuilder cannot delegate to one; it needs a real route to hand
+/// over. This is the smallest thing that is one.
+class _TxRoute<T> extends PageRoute<T> {
+  _TxRoute({required this.page, required this.transitions});
+
+  final WidgetBuilder page;
+  final PageTransitionsBuilder transitions;
+
+  @override
+  Duration get transitionDuration => transitions.transitionDuration;
+  @override
+  Duration get reverseTransitionDuration => transitions.reverseTransitionDuration;
+  @override
+  Color? get barrierColor => null;
+  @override
+  String? get barrierLabel => null;
+  @override
+  bool get maintainState => true;
+
+  @override
+  Widget buildPage(BuildContext context, Animation<double> animation,
+          Animation<double> secondaryAnimation) =>
+      page(context);
+
+  @override
+  Widget buildTransitions(BuildContext context, Animation<double> animation,
+          Animation<double> secondaryAnimation, Widget child) =>
+      transitions.buildTransitions<T>(
+          this, context, animation, secondaryAnimation, child);
+}
+
+/// The control: pushed and popped with no animation whatsoever.
+class _NoTxRoute<T> extends PageRoute<T> {
+  _NoTxRoute({required this.page});
+
+  final WidgetBuilder page;
+
+  @override
+  Duration get transitionDuration => Duration.zero;
+  @override
+  Duration get reverseTransitionDuration => Duration.zero;
+  @override
+  Color? get barrierColor => null;
+  @override
+  String? get barrierLabel => null;
+  @override
+  bool get maintainState => true;
+
+  @override
+  Widget buildPage(BuildContext context, Animation<double> animation,
+          Animation<double> secondaryAnimation) =>
+      page(context);
+
+  @override
+  Widget buildTransitions(BuildContext context, Animation<double> animation,
+          Animation<double> secondaryAnimation, Widget child) =>
+      child;
+}
+
+/// The one page all five transition scenes push.
+///
+/// Deliberately the same shape as `route_boxes`, which is already baselined, so
+/// the transition comparison can be read against a scene that has history.
+Widget _txPage(BuildContext context) => Scaffold(
+      appBar: AppBar(title: const Text('tx')),
+      body: _content(seed: 4, text: false),
+    );
+
+final List<RouteScene> transitionScenes = <RouteScene>[
+  RouteScene(
+    name: 'route_tx_none',
+    stresses: Stresses.fill,
+    page: _txPage,
+    route: (context, page) => _NoTxRoute<void>(page: page),
+    settle: const Duration(milliseconds: 250),
+  ),
+  // The port's current default, named so it is obvious that it is one option
+  // among several rather than the way things are.
+  RouteScene(
+    name: 'route_tx_zoom',
+    stresses: Stresses.saveLayer,
+    page: _txPage,
+    route: (context, page) => _TxRoute<void>(
+      page: page,
+      transitions: const ZoomPageTransitionsBuilder(),
+    ),
+  ),
+  RouteScene(
+    name: 'route_tx_fade_fwd',
+    stresses: Stresses.opacity,
+    page: _txPage,
+    route: (context, page) => _TxRoute<void>(
+      page: page,
+      transitions: const FadeForwardsPageTransitionsBuilder(),
+    ),
+  ),
+  RouteScene(
+    name: 'route_tx_fade_up',
+    stresses: Stresses.opacity,
+    page: _txPage,
+    route: (context, page) => _TxRoute<void>(
+      page: page,
+      transitions: const FadeUpwardsPageTransitionsBuilder(),
+    ),
+  ),
+  // A pure slide with a parallax on the outgoing route: no offscreen, no
+  // alpha. If the GPU is going to win a transition anywhere, here.
+  RouteScene(
+    name: 'route_tx_cupertino',
+    stresses: Stresses.transform,
+    page: _txPage,
+    route: (context, page) => _TxRoute<void>(
+      page: page,
+      transitions: const CupertinoPageTransitionsBuilder(),
+    ),
+  ),
+];
+
+// --------------------------------------------------------------------- modals
+//
+// A dialog and a bottom sheet are route pushes too, so they reuse the same
+// driver -- but both draw a scrim over the whole screen for the length of the
+// animation, which is a full-viewport alpha composite that no page transition
+// does.
+
+final List<RouteScene> modalScenes = <RouteScene>[
+  RouteScene(
+    name: 'modal_dialog',
+    stresses: Stresses.opacity,
+    page: (context) => AlertDialog(
+      title: const Text('dialog'),
+      content: const Text('a scrim over the whole screen, and a scaled fade'),
+      actions: [TextButton(onPressed: () {}, child: const Text('ok'))],
+    ),
+    route: (context, page) => DialogRoute<void>(context: context, builder: page),
+  ),
+  RouteScene(
+    name: 'modal_sheet',
+    stresses: Stresses.opacity,
+    page: (context) => SizedBox(
+      height: 260,
+      child: _content(seed: 5, text: false),
+    ),
+    route: (context, page) => ModalBottomSheetRoute<void>(
+      builder: page,
+      isScrollControlled: false,
+    ),
+    // Longer than a page push: the sheet's own animation is 250 ms in and
+    // 200 ms out, and the scrim keeps compositing until it is gone.
+    settle: const Duration(milliseconds: 600),
+  ),
+];
+
+// --------------------------------------------------------------------- motion
+//
+// Animations that are not transitions. Each one is a thing a real screen does
+// every day and none of them was measured before 2026-09-01.
+
+/// Two children an AnimatedSwitcher crossfades between.
+Widget _switcherChild(int i) => KeyedSubtree(
+      key: ValueKey<int>(i),
+      child: _content(seed: i * 7.0, text: false),
+    );
+
+final List<AnimatedScene> motionScenes = <AnimatedScene>[
+  // A crossfade between two subtrees. Both are alive and both are painted for
+  // the whole transition, each inside its own FadeTransition -- so this is two
+  // full-screen alpha composites at once, which is more than any single
+  // route transition asks for.
+  AnimatedScene(
+    name: 'switch_fade',
+    stresses: Stresses.saveLayer,
+    duration: const Duration(milliseconds: 600),
+    repeats: 3,
+    builder: (context, t) => AnimatedSwitcher(
+      duration: const Duration(milliseconds: 300),
+      child: _switcherChild(t < 0.5 ? 0 : 1),
+    ),
+  ),
+  // Relayout every frame, and nothing else: no alpha, no offscreen, no
+  // transform. The control for every complaint that "the animation is smooth
+  // until the box changes size".
+  AnimatedScene(
+    name: 'layout_resize',
+    stresses: Stresses.layout,
+    builder: (context, t) => Center(
+      child: SizedBox(
+        width: 120 + 700 * t,
+        height: 100 + 380 * t,
+        child: _content(seed: 6, text: false),
+      ),
+    ),
+  ),
+  // Text whose size changes every frame, which throws away the paragraph and
+  // lays it out again. Common in collapsing headers and hero titles, and the
+  // most expensive thing a phone-shaped app does that looks free.
+  AnimatedScene(
+    name: 'text_resize',
+    stresses: Stresses.text,
+    builder: (context, t) => Center(
+      child: Text(
+        'resizing headline',
+        style: TextStyle(fontSize: 14 + 34 * t),
+      ),
+    ),
+  ),
+  // A runtime fragment shader over the whole viewport. Worth having for the
+  // first time now that Skia's programs actually compile
+  // (patches/vitagl/0004); before that this scene would have measured the
+  // fallback, silently.
+  AnimatedScene(
+    name: 'shader_mask',
+    stresses: Stresses.shader,
+    builder: (context, t) => ShaderMask(
+      blendMode: BlendMode.modulate,
+      shaderCallback: (rect) => LinearGradient(
+        begin: Alignment(-1 + 2 * t, -1),
+        end: Alignment(1 + 2 * t, 1),
+        colors: const [Color(0xFFFFFFFF), Color(0x22FFFFFF), Color(0xFFFFFFFF)],
+      ).createShader(rect),
+      child: _content(seed: 7, text: false),
+    ),
+  ),
+  // The cheapest thing that animates forever. Here as a floor: if a spinner
+  // alone cannot hold 60 fps, nothing measured above it means anything.
+  AnimatedScene(
+    name: 'spinner',
+    stresses: Stresses.fill,
+    duration: const Duration(milliseconds: 900),
+    builder: (context, t) => const Center(
+      child: SizedBox(
+        width: 48,
+        height: 48,
+        child: CircularProgressIndicator(),
+      ),
+    ),
+  ),
+];
+
+// --------------------------------------------------------------------- driven
+//
+// Started by calling something rather than by advancing a controller.
+
+final GlobalKey<ScaffoldState> _drawerKey = GlobalKey<ScaffoldState>();
+final PageController _pageCtl = PageController();
+final ScrollController _flingScroll = ScrollController();
+
+Future<void> _settle(int ms) =>
+    Future<void>.delayed(Duration(milliseconds: ms));
+
+final List<DrivenScene> drivenScenes = <DrivenScene>[
+  // A drawer is a slide plus a scrim over everything behind it, and the scrim
+  // animates its alpha the whole way. Closest thing in the suite to what a
+  // navigation drawer costs on a screen that is already busy.
+  DrivenScene(
+    name: 'drawer_open',
+    stresses: Stresses.opacity,
+    stage: () => Scaffold(
+      key: _drawerKey,
+      drawer: Drawer(
+        child: ListView(
+          children: List<Widget>.generate(
+            12,
+            (i) => ListTile(title: Text('item $i')),
+          ),
+        ),
+      ),
+      body: _content(seed: 8, text: false),
+    ),
+    drive: () async {
+      _drawerKey.currentState?.openDrawer();
+      await _settle(500);
+      _drawerKey.currentState?.closeDrawer();
+      await _settle(500);
+    },
+  ),
+  // What TabBarView does, without the tab bar: two full-screen pages, one
+  // sliding out while the other slides in, both built and both painted.
+  DrivenScene(
+    name: 'page_swipe',
+    stresses: Stresses.fill,
+    stage: () => PageView(
+      controller: _pageCtl,
+      children: [
+        _content(seed: 9, text: false),
+        _content(seed: 10, text: true),
+      ],
+    ),
+    drive: () async {
+      await _pageCtl.animateToPage(1,
+          duration: const Duration(milliseconds: 300), curve: Curves.easeOut);
+      await _settle(150);
+      await _pageCtl.animateToPage(0,
+          duration: const Duration(milliseconds: 300), curve: Curves.easeOut);
+      await _settle(150);
+    },
+  ),
+  // A real fling, not an animateTo. goBallistic runs the platform scroll
+  // simulation, so the frame rate is whatever the physics asks for rather than
+  // whatever curve the bench picked -- and it overscrolls at the end, which is
+  // the only thing in the suite that reaches the stretch effect.
+  //
+  // This is the gesture behind the standing complaint: scrolling a list on
+  // this console runs at 29 fps with the raster thread at 8%, so the cost is
+  // the UI thread rebuilding rows.
+  DrivenScene(
+    name: 'scroll_fling',
+    stresses: Stresses.listChurn,
+    stage: () => ListView.builder(
+      controller: _flingScroll,
+      itemCount: 400,
+      itemBuilder: (context, i) => ListTile(
+        dense: true,
+        leading: CircleAvatar(child: Text('$i')),
+        title: Text('row $i'),
+        subtitle: Text('subtitle for row $i'),
+      ),
+    ),
+    drive: () async {
+      final p = _flingScroll.position;
+      if (p is ScrollPositionWithSingleContext) {
+        p.goBallistic(-6000);
+        await _settle(900);
+        p.goBallistic(6000);
+        await _settle(900);
+      } else {
+        await _settle(100);
+      }
+    },
+  ),
+  // An ink splash, driven by synthetic pointer events rather than by calling
+  // onTap -- onTap does not produce a splash, and the splash is the thing
+  // being measured. It also means the hit test and the gesture arena are in
+  // the window, which is where a tap that feels late actually goes.
+  DrivenScene(
+    name: 'ripple_tap',
+    stresses: Stresses.shader,
+    stage: () => Material(
+      color: const Color(0xFF203040),
+      child: InkWell(
+        onTap: () {},
+        child: const SizedBox.expand(),
+      ),
+    ),
+    drive: () async {
+      const id = 7;
+      const at = Offset(300, 200);
+      GestureBinding.instance
+          .handlePointerEvent(const PointerDownEvent(pointer: id, position: at));
+      await _settle(60);
+      GestureBinding.instance
+          .handlePointerEvent(const PointerUpEvent(pointer: id, position: at));
+      // The splash keeps expanding after the pointer is gone; cutting the
+      // window at the up event measures the first 60 ms of it and nothing
+      // else.
+      await _settle(700);
+    },
   ),
 ];

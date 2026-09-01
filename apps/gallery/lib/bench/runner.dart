@@ -164,10 +164,18 @@ class BenchRunner {
     // 300 ms of wall clock whether or not frames are dropped, so a fixed
     // settle longer than that is sound. Dropped frames make it look worse,
     // which is the thing being measured, not longer.
-    const settle = Duration(milliseconds: 450);
+    final settle = scene.settle;
+
+    // A scene with no route factory is pushed the way every scene was pushed
+    // before 2026-09-01: MaterialPageRoute, which on this port means
+    // ZoomPageTransitionsBuilder. The factory exists so the transition can be
+    // the variable rather than an unstated constant -- see RouteScene.route.
+    Route<void> makeRoute() => scene.route == null
+        ? MaterialPageRoute<void>(builder: scene.page)
+        : scene.route!(context, scene.page);
 
     Future<void> pushAndPop() async {
-      unawaited(navigator.push(MaterialPageRoute<void>(builder: scene.page)));
+      unawaited(navigator.push(makeRoute()));
       await Future<void>.delayed(settle);
       if (navigator.canPop()) navigator.pop();
       await Future<void>.delayed(settle);
@@ -188,6 +196,38 @@ class BenchRunner {
       scene.stresses.label,
       recorder.take(mark, dropTrailing: _flushFrames, keep: scene.repeats),
     ));
+  }
+
+  /// Mount, settle, then call the scene's driver [DrivenScene.repeats] times.
+  ///
+  /// The stage stays up across repeats. Remounting between them would charge
+  /// the widget tree's first build to every repetition and drown the thing
+  /// being measured -- a fling is 900 ms of scrolling, a rebuilt ListView is
+  /// one 240 ms frame.
+  Future<void> runDriven(DrivenScene scene) async {
+    setStage(scene.stage());
+    await SchedulerBinding.instance.endOfFrame;
+    await SchedulerBinding.instance.endOfFrame;
+
+    // One untimed repetition, same reason a route scene gets one: the first
+    // drawer open builds the drawer, the first fling builds every row it
+    // passes, and neither is what the scene is about.
+    await scene.drive();
+    await _quiet();
+
+    final mark = recorder.mark();
+    for (var i = 0; i < scene.repeats; i++) {
+      await scene.drive();
+    }
+    await _flush();
+    results.add(SceneResult(
+      scene.name,
+      scene.stresses.label,
+      recorder.take(mark, dropTrailing: _flushFrames, keep: scene.repeats),
+    ));
+
+    setStage(null);
+    await SchedulerBinding.instance.endOfFrame;
   }
 
   Future<void> runAll(BuildContext context, {void Function(String)? onProgress}) async {
@@ -213,7 +253,7 @@ class BenchRunner {
       // scene threw reports nothing at all, which is strictly worse than
       // reporting eleven scenes and a failure -- and that is exactly what the
       // first run on hardware did.
-      for (final scene in animatedScenes) {
+      for (final scene in [...animatedScenes, ...motionScenes]) {
         onProgress?.call(scene.name);
         // Into the engine log, not just the on-screen label. A run that stops
         // finishing tells the host only that it stopped -- on 2026-08-24 that
@@ -230,7 +270,20 @@ class BenchRunner {
           setStage(null);
         }
       }
-      for (final scene in routeScenes) {
+      for (final scene in drivenScenes) {
+        onProgress?.call(scene.name);
+        print('bench: scene ${scene.name}');
+        await _quiet();
+        try {
+          await runDriven(scene);
+        } catch (e, st) {
+          print('bench: scene ${scene.name} threw: $e');
+          print('$st');
+          results.add(SceneResult.failed(scene.name, scene.stresses.label, '$e'));
+          setStage(null);
+        }
+      }
+      for (final scene in [...routeScenes, ...transitionScenes, ...modalScenes]) {
         onProgress?.call(scene.name);
         print('bench: scene ${scene.name}');
         await _quiet();
@@ -241,6 +294,12 @@ class BenchRunner {
           print('bench: scene ${scene.name} threw: $e');
           print('$st');
           results.add(SceneResult.failed(scene.name, scene.stresses.label, '$e'));
+          // A modal that threw mid-push can leave its route on the stack, and
+          // the next scene would then measure a transition on top of it.
+          final nav = Navigator.of(context, rootNavigator: true);
+          while (nav.canPop()) {
+            nav.pop();
+          }
         }
       }
     } finally {

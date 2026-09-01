@@ -5,6 +5,7 @@
 #   ./tools/bench.sh --only sw|gl          one renderer
 #   ./tools/bench.sh --baseline            write the result in as the baseline
 #   ./tools/bench.sh --relaunch            reuse the installed build, skip the deploy
+#   ./tools/bench.sh --leave sw|gl         renderer the console rests on (default gl)
 #   ./tools/bench.sh --host IP --loader-port N
 #
 # gl.on is read once at startup, so comparing renderers is always two runs and
@@ -32,6 +33,9 @@ APP_VPK="$ROOT/apps/gallery/build/vita/gallery.vpk"
 BASELINE_DIR="$ROOT/apps/gallery/bench"
 OUT_DIR="$ROOT/out/bench"
 ONLY=""
+# Which renderer the console is left on when the run finishes. See the note
+# beside the write at the bottom.
+LEAVE=gl
 WRITE_BASELINE=0
 BUILD=1
 # Reuse what is installed instead of staging 13 MB again.
@@ -49,6 +53,7 @@ while [ $# -gt 0 ]; do
     --host)        HOST="$2"; shift 2 ;;
     --loader-port) LDR="$2"; shift 2 ;;
     --only)        ONLY="$2"; shift 2 ;;
+    --leave)       LEAVE="$2"; shift 2 ;;
     --baseline)    WRITE_BASELINE=1; shift ;;
     --no-build)    BUILD=0; shift ;;
     --relaunch)    RELAUNCH=1; BUILD=0; shift ;;
@@ -149,11 +154,21 @@ run_one() {  # <sw|gl>
   fi
   echo "    renderer confirmed: $actual"
 
+  # 20 minutes. The old budget was 180 s, which fitted the eighteen scenes
+  # that existed on 2026-08-25 and nothing since: the suite is 34 scenes now
+  # and a software run of it takes longer than that on its own. A poll budget
+  # that expires mid-run reports "the run never finished", which reads as a
+  # hang and is not one.
   echo "==> $mode: running scenes"
   local done=0
-  for _ in $(seq 1 90); do
+  for i in $(seq 1 600); do
     if say "$DEV" "get ux0:data/flutter-vita/bench-done" 6 | grep -q '^1'; then
       done=1; break
+    fi
+    # Something every half minute, so a long run is distinguishable from a
+    # dead one without reading the app log.
+    if [ $((i % 15)) -eq 0 ]; then
+      echo "    still running (${i}0s)"
     fi
     sleep 2
   done
@@ -170,10 +185,19 @@ MODES="sw gl"
 [ -n "$ONLY" ] && MODES="$ONLY"
 for m in $MODES; do run_one "$m"; done
 
-# Leave the console on software. A hard crash under GL wedges the whole thing
-# (ADR-0014), so the resting state is the one that cannot -- even though GL is
-# now the default for a normal run.
-put "1" "ux0:data/flutter-vita/software.on"
+# What renderer the console is left on.
+#
+# This used to be software unconditionally, on the grounds that a hard crash
+# under GL wedges the whole console (ADR-0014) so the resting state should be
+# the one that cannot. Two things changed on 2026-09-01: the reservation that
+# took GXM down is checked (patches/vitagl/0002) and the shader that would not
+# link now links (0004). What the old default cost, meanwhile, was real and
+# recurring -- every app launched after a bench run was silently on the
+# software path, including runs whose numbers were then read as GL.
+#
+# So the resting state is GL, which is also the app default, and --leave sw is
+# there for anyone who wants the old behaviour back.
+put "$([ "$LEAVE" = sw ] && echo 1 || echo 0)" "ux0:data/flutter-vita/software.on"
 put "0" "ux0:data/flutter-vita/bench.on"
 
 echo

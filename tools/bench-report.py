@@ -195,6 +195,61 @@ def main():
     print(f"{DIM}* a stall is 2+ consecutive frames at or below 30 fps"
           f" — see ADR-0017{OFF}")
 
+    # ---- what to fix first ----------------------------------------------
+    # The table has one row per scene and up to nine columns per renderer,
+    # which is the right shape for reading a single scene and the wrong shape
+    # for the question people actually arrive with: which of these is bad.
+    #
+    # Ranked by stall -- total time below 30 fps -- because that is the metric
+    # that corresponds to something a person felt, and because it is a total
+    # over the window rather than a single frame (see MEAN_MARGIN above for why
+    # worst-frame cannot carry this).
+    #
+    # `where` names the thread the time went to. It is the difference between a
+    # scene the GPU could help and a scene no renderer change will touch, and
+    # on this port almost everything has turned out to be the second kind.
+    rank_mode = "gl" if "gl" in have else have[0]
+    ranked = []
+    for name, s_ in scenes_of(results[rank_mode]).items():
+        if not sound(s_):
+            continue
+        b = bad_build(s_)
+        r = s_["raster_ms"]
+        # "neither" is decided first, and on an absolute threshold rather
+        # than on the ratio between the two. A scene whose build is 4.5 ms and
+        # whose raster is 1.1 ms has a build four times the raster and a
+        # perfectly healthy build -- route_bare, which stalls 183 ms on numbers
+        # that fit inside a frame twice over. Ranking that as "UI thread" sends
+        # someone to optimise a build that is not the problem.
+        #
+        # 8 ms is half a vsync: under it, neither thread can be what made the
+        # frame late. Every scene that lands here has looked like a collection
+        # arriving on a build frame -- see the bimodality note in
+        # apps/gallery/bench/README.md. Nothing has measured one; the port has
+        # no VM service.
+        if s_["stall_ms"] > 0 and b < 8.0 and r < 8.0:
+            where = "neither"
+        elif b > max(2 * r, 4.0):
+            where = "UI thread"
+        elif r > max(2 * b, 4.0):
+            where = "raster"
+        else:
+            where = "both"
+        ranked.append((s_["stall_ms"], bad_build(s_), name, s_, where))
+    ranked.sort(key=lambda t: (-t[0], -t[1]))
+    worst = [t for t in ranked if t[0] > 0 or t[1] >= 16.67][:12]
+    if worst:
+        print(f"\n{rank_mode}: what to fix first{DIM} — ranked by time below "
+              f"30 fps, then by the build time of a bad frame{OFF}")
+        print(f"{'scene':<18}{'stresses':<11}{'stall':>9}{'worst':>9}"
+              f"{'bad bld':>9}{'raster':>9}  where")
+        for stall, bld, name, s_, where in worst:
+            print(f"{name:<18}{s_.get('stresses_label',''):<11}"
+                  f"{fmt(stall):>9}{fmt(s_['worst_ms']):>9}"
+                  f"{fmt(bld):>9}{fmt(s_['raster_ms']):>9}  {where}")
+        print(f"{DIM}where: which thread the time went to. \"UI thread\" means "
+              f"no renderer change will help it{OFF}")
+
     if args.frames is not None:
         wanted = set(args.frames)
         for m in have:

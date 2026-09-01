@@ -8,8 +8,13 @@ single-vsync step as a regression.
 
 | file | scenes | taken | tracks the current build? |
 |---|---|---|---|
-| `gl.json` | 18 | 2026-08-25 | **yes** |
+| `gl.json` | 18 | 2026-08-25 | **no — 16 scenes behind, see below** |
 | `sw.json` | 14 | 2026-08-24 | **no — frozen, see below** |
+
+Both are stale as of 2026-09-01: the suite went from 18 scenes to 34 that day
+and neither file has been re-taken since. Everything added is listed as
+ungraded by the report until `./tools/bench.sh --baseline` is run on both
+renderers in one sitting.
 
 ## sw.json is frozen on purpose
 
@@ -59,6 +64,46 @@ Which is why the gate compares worst-frame with a 10%-and-one-vsync margin
 rather than comparing `bad bld` directly. It is the coarser statistic and the
 steadier one.
 
+## What the suite covers, since 2026-09-01
+
+Six groups, and the boundary between them is how the runner drives them, not
+what they look like.
+
+| group | scenes | driven by |
+|---|---|---|
+| animated | `fill_lerp` … `list_churn` | an AnimationController from 0 to 1 and back |
+| motion | `switch_fade`, `layout_resize`, `text_resize`, `shader_mask`, `spinner` | the same, added 2026-09-01 |
+| driven | `drawer_open`, `page_swipe`, `scroll_fling`, `ripple_tap` | calling something and waiting |
+| route | `route_bare` … `route_hero` | `Navigator.push` of a `MaterialPageRoute` |
+| transition | `route_tx_none`, `route_tx_zoom`, `route_tx_fade_fwd`, `route_tx_fade_up`, `route_tx_cupertino` | the same push, one page, five transitions |
+| modal | `modal_dialog`, `modal_sheet` | a `DialogRoute` and a `ModalBottomSheetRoute` |
+
+### Why the transition group exists
+
+This port reports `TargetPlatform.linux` (ADR-0008), and Material's default
+transition for Linux is `ZoomPageTransitionsBuilder`. So every `route_*` number
+this project has ever published is a Zoom number that nobody chose, with the
+transition and the page's first build mixed together and no way to separate
+them.
+
+The five transition scenes push **the same page** — the shape of
+`route_boxes`, which already has history — through five different builders.
+`route_tx_none` has no transition at all, which makes the page's build cost a
+measured quantity rather than a guess, and the other four are that plus one
+animation each.
+
+### Why `scroll_fling` is not another list scene
+
+`list_churn` drives a `ScrollController` along a curve the bench picked.
+`scroll_fling` calls `goBallistic`, so the frame rate is whatever the platform
+scroll simulation asks for, and it overscrolls at the end — the only thing in
+the suite that reaches the stretch effect. It is the gesture behind the
+standing complaint that scrolling holds 29 fps with the raster thread at 8%.
+
+`ripple_tap` likewise uses synthetic pointer events rather than calling
+`onTap`, because `onTap` produces no splash and the splash is the point. Hit
+testing and the gesture arena are inside its window as a result.
+
 ## Adding a scene
 
 A scene with no row here is **not graded**. The report says so by name now, but
@@ -68,3 +113,16 @@ After adding one:
 ```bash
 ./tools/bench.sh --only gl --baseline
 ```
+
+## Reading the report
+
+`bench-report.py` prints the full table first and then a **what to fix first**
+block: the same scenes ranked by `stall` — total time below 30 fps, the metric
+that corresponds to something a person felt — with a `where` column naming the
+thread the time went to.
+
+`where` is worth more than the ranking. "UI thread" means no renderer change
+will help that scene, which on this port has been almost all of them.
+"neither" means both threads finished inside 8 ms and the frame was still late;
+every scene that lands there has looked like a collection arriving on a build
+frame, and nothing has measured one because the port has no VM service.
