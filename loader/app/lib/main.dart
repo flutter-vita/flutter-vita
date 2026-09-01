@@ -66,6 +66,8 @@ class _LoaderAppState extends State<LoaderApp> {
     super.dispose();
   }
 
+  MdnsStatus _mdns = MdnsStatus.unknown;
+
   void _poll() {
     final cmd = readPanelRequest(_cmdSeq + 1);
     if (cmd != null) {
@@ -94,6 +96,10 @@ class _LoaderAppState extends State<LoaderApp> {
     setState(() {
       _state = next;
       _console = readDeployLog();
+      // Re-read with the state, not on the tick. The C side republishes every
+      // ten seconds whether or not anything happened, which is exactly the
+      // cadence these numbers move at.
+      _mdns = MdnsStatus.read();
     });
   }
 
@@ -114,7 +120,7 @@ class _LoaderAppState extends State<LoaderApp> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    _Header(state: s),
+                    _Header(state: s, mdns: _mdns),
                     const SizedBox(height: 10),
                     Expanded(child: _body(s)),
                     const SizedBox(height: 6),
@@ -148,12 +154,52 @@ class _LoaderAppState extends State<LoaderApp> {
 // ---------------------------------------------------------------- header
 
 class _Header extends StatelessWidget {
-  const _Header({required this.state});
+  const _Header({required this.state, required this.mdns});
 
   final LoaderState state;
+  final MdnsStatus mdns;
+
+  /// What the badge should say, which is not always what C published.
+  ///
+  /// C reports what this process is doing. It said "Waiting" through every
+  /// unreachable stretch of 2026-09-01, correctly -- the socket was listening
+  /// and the console had an address. The gap it cannot see is the name: a host
+  /// types flutter-vita.local, and if nothing is announcing it, the console is
+  /// unreachable while looking perfectly healthy from where you are standing.
+  ///
+  /// Only "Waiting" is overridden. A transfer in flight says what it is doing.
+  String get _badge {
+    if (state.status != 'Waiting') return state.status;
+    if (state.ip.isEmpty) return 'No network';
+    if (mdns.announced == 0 || (mdns.announced > 0 && !mdns.joined)) {
+      return 'Name off';
+    }
+    return 'Waiting';
+  }
+
+  /// One line of everything a host needs to reach this console.
+  String get _line {
+    final bits = <String>[];
+    bits.add(state.ip.isEmpty ? 'no address' : '${state.ip}:${state.port}');
+    if (mdns.announced < 0) {
+      bits.add('name unknown');
+    } else if (mdns.announced == 0) {
+      bits.add('name not announced');
+    } else {
+      bits.add('name announced ${mdns.announced}x'
+          '${mdns.joined ? "" : ", group not joined"}');
+    }
+    bits.add(switch (state.lastCmdAge) {
+      < 0 => 'no host yet',
+      < 60 => 'host ${state.lastCmdAge}s ago',
+      _ => 'host ${state.lastCmdAge ~/ 60}m ago',
+    });
+    return bits.join('   ·   ');
+  }
 
   @override
   Widget build(BuildContext context) {
+    final badge = _badge;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -176,9 +222,13 @@ class _Header extends StatelessWidget {
               ),
             ),
             const SizedBox(width: 12),
-            _Status(status: state.status),
+            _Status(status: badge),
           ],
         ),
+        Text(_line,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(fontSize: 12, height: 1.6, color: dim)),
         if (state.detail.isNotEmpty)
           Text(state.detail,
               maxLines: 1,
@@ -202,6 +252,10 @@ class _Status extends StatelessWidget {
 
   static const _colours = <String, Color>{
     'No network': danger,
+    // Amber, not red: the console is up and the socket is listening, but
+    // nothing is publishing the name, so a host that types flutter-vita.local
+    // will not find it.
+    'Name off': warn,
     'Waiting': accent,
     'Receiving': warn,
     'Installing': warn,

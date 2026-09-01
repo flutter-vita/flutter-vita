@@ -26,6 +26,77 @@ const loaderLogPath = '$dataDir/m3.log';
 const installedPath = '$dataDir/installed.txt';
 const dumpDir = 'ux0:data';
 
+/// What the mDNS responder has actually done, from the file it writes.
+///
+/// The panel showed WAITING through every unreachable stretch of 2026-09-01
+/// and it was telling the truth: the console had an address and the socket was
+/// listening. What it had no way to say was that nothing could look the name
+/// up. These four numbers are what the responder knows, so this is where the
+/// panel gets to stop guessing.
+class MdnsStatus {
+  const MdnsStatus({
+    required this.joined,
+    required this.announced,
+    required this.queries,
+    required this.lastQueryAge,
+  });
+
+  /// Whether the console joined 224.0.0.251. False means queries cannot reach
+  /// us at all.
+  final bool joined;
+
+  /// A records sent unasked. Zero means the name is not being published, and
+  /// no host will resolve it.
+  final int announced;
+
+  /// Queries answered. Zero is not alarming on its own -- measured on
+  /// 2026-09-01, this console has never received one, and the name resolves
+  /// entirely off the announcements.
+  final int queries;
+
+  /// Seconds since the last query, or -1 if there has never been one.
+  final int lastQueryAge;
+
+  static const unknown =
+      MdnsStatus(joined: false, announced: -1, queries: 0, lastQueryAge: -1);
+
+  /// True when the file was there and says the name is being published.
+  bool get publishing => announced > 0;
+
+  /// Never throws. A missing or half-written file is "we cannot tell", which
+  /// the panel renders differently from "it is broken".
+  static MdnsStatus read() {
+    try {
+      final f = File('$dataDir/mdns.txt');
+      if (!f.existsSync()) return unknown;
+      var joined = false;
+      var announced = -1, queries = 0, last = -1;
+      for (final line in f.readAsLinesSync()) {
+        final parts = line.trim().split(' ');
+        if (parts.length != 2) continue;
+        final v = int.tryParse(parts[1]) ?? 0;
+        switch (parts[0]) {
+          case 'joined':
+            joined = v != 0;
+          case 'announced':
+            announced = v;
+          case 'queries':
+            queries = v;
+          case 'last':
+            last = v;
+        }
+      }
+      return MdnsStatus(
+          joined: joined,
+          announced: announced,
+          queries: queries,
+          lastQueryAge: last);
+    } catch (_) {
+      return unknown;
+    }
+  }
+}
+
 /// Everything the C layer publishes, as one immutable snapshot.
 class LoaderState {
   const LoaderState({
@@ -37,6 +108,7 @@ class LoaderState {
     this.self = '',
     this.recvDone = 0,
     this.recvTotal = 0,
+    this.lastCmdAge = -1,
     this.log = const [],
   });
 
@@ -48,6 +120,10 @@ class LoaderState {
   final String self;
   final int recvDone;
   final int recvTotal;
+
+  /// Seconds since a host last sent a command, or -1 if none ever has.
+  final int lastCmdAge;
+
   final List<String> log;
 
   bool get receiving => recvTotal > 0;
@@ -56,7 +132,7 @@ class LoaderState {
   /// writer is 300 lines of C with no allocator to spare, and every field
   /// here is a single token or the rest of the line.
   static LoaderState parse(String text) {
-    var seq = 0, port = 0, done = 0, total = 0;
+    var seq = 0, port = 0, done = 0, total = 0, lastCmd = -1;
     var ip = '', status = 'Starting', detail = '', self = '';
     final log = <String>[];
     for (final line in text.split('\n')) {
@@ -83,6 +159,8 @@ class LoaderState {
             done = int.tryParse(parts[0]) ?? 0;
             total = int.tryParse(parts[1]) ?? 0;
           }
+        case 'lastcmd':
+          lastCmd = int.tryParse(value) ?? -1;
         case 'log':
           log.add(value);
       }
@@ -96,6 +174,7 @@ class LoaderState {
       self: self,
       recvDone: done,
       recvTotal: total,
+      lastCmdAge: lastCmd,
       log: log,
     );
   }
