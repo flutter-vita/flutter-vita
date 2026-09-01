@@ -6,6 +6,7 @@
 #
 #   --title-id ID   which loader to replace   (default FVTA00001)
 #   --updater ID    the updater's title id    (default FVTA00009)
+#   --keep-updater  leave the updater installed afterwards
 #   --port N        the port to talk to       (default 1341)
 #   --build-port N  the port to build for     (default: build-loader.sh's)
 #   --no-build      require the vpk argument
@@ -17,7 +18,8 @@
 #   1. put the new build onto the card, into ux0:data/flutter-vita/loader-update
 #   2. launch FVTA00009, a 50 KB app with no engine whose only job is to copy
 #      that tree over ux0:app/<target> and launch the target back
-#   3. wait for the new loader to answer on its port
+#   3. wait for the new loader to answer on its port, then take FVTA00009
+#      back off the card
 #
 # It replaced tools/update-loader.sh's route, which needed a working Flutter
 # app with a dev server in FVTA00002 -- so a broken app slot used to take the
@@ -45,16 +47,19 @@ VPK=""
 # They were one option for about ten minutes, which built FVTA00001 to listen
 # on the scratch loader's port.
 BUILD_PORT=""
+UPDATER_VPK="$ROOT/loader/updater/build/flutter_vita_updater.vpk"
+KEEP_UPDATER=0
 
 while [ $# -gt 0 ]; do
   case "$1" in
     --title-id) TITLE_ID="$2"; shift 2 ;;
     --updater)  UPDATER="$2"; shift 2 ;;
+    --keep-updater) KEEP_UPDATER=1; shift ;;
     --port)       PORT="$2"; shift 2 ;;
     --build-port) BUILD_PORT="$2"; shift 2 ;;
     --host)     HOST="$2"; shift 2 ;;
     --no-build) BUILD=0; shift ;;
-    -h|--help)  sed -n '2,28p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    -h|--help)  sed -n '2,31p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
     -*) echo "unknown option: $1" >&2; exit 2 ;;
     *)  VPK="$1"; BUILD=0; shift ;;
   esac
@@ -93,10 +98,18 @@ esac
 # The updater has to exist before the loader is asked to hand over to it. A
 # launch of a title that is not installed is a silent no-op, and the console
 # would sit on the loader with a staged update it never applies.
-say "$PORT" "exist $UPDATER" 20 | grep -q "res=3" || {
-  echo "!! $UPDATER is not installed. Install it first:" >&2
-  echo "     ./tools/install-vpk.sh loader/updater/build/flutter_vita_updater.vpk" >&2
-  exit 1; }
+#
+# Installing it here rather than telling you to go and do it: the updater is
+# scaffolding, and asking a human to put scaffolding up by hand before every
+# loader change is how the loader stops getting changed.
+if ! say "$PORT" "exist $UPDATER" 20 | grep -q "res=3"; then
+  echo "==> installing $UPDATER"
+  [ -f "$UPDATER_VPK" ] || {
+    echo "!! no updater vpk at $UPDATER_VPK" >&2
+    echo "   cmake --build loader/updater/build" >&2; exit 1; }
+  "$HERE/install-vpk.sh" "$UPDATER_VPK" --host "$HOST" --port "$PORT" \
+    --no-launch | sed 's/^/    /'
+fi
 
 WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
@@ -133,7 +146,18 @@ for _ in $(seq 1 40); do
   sleep 3
   PONG="$(say "$PORT" ping 5 2>/dev/null || true)"
   case "$PONG" in
-    pong\ loader*) echo "    $PONG"; exit 0 ;;
+    pong\ loader*)
+      echo "    $PONG"
+      # The updater is scaffolding and comes back down. It is a bubble on the
+      # LiveArea that does exactly one thing and does it destructively, and
+      # every one of these left behind is a way to overwrite the loader by
+      # accident. --keep-updater is for chasing a failing update, when the
+      # cost of reinstalling it between attempts is the thing you are paying.
+      if [ "$KEEP_UPDATER" -eq 0 ]; then
+        echo "==> removing $UPDATER"
+        say "$PORT" "delete $UPDATER" 60 | sed 's/^/    /' || true
+      fi
+      exit 0 ;;
   esac
 done
 
