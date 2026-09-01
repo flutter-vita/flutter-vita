@@ -151,24 +151,76 @@ thread creation order.
 
 ### The clamp did not fix it
 
-[patches/vitagl/0002](../../patches/vitagl/0002-an-empty-scissor-is-not-an-inverted-one.patch)
-clamps `region.w`/`region.h` at zero, skips the tile clipper for an empty
-region, and clamps a zero-size viewport to 1x1. Built into `libvitaGL.a`,
-linked (`nm` confirms `vgl_degenerate_scissor` in the shipped ELF), deployed.
+[patches/vitagl/0002](../../patches/vitagl/0002-the-reservation-vitagl-never-checked.patch)
+first clamped `region.w`/`region.h` at zero, skipped the tile clipper for an
+empty region, and clamped a zero-size viewport to 1x1. Built, linked (`nm`
+confirmed `vgl_degenerate_scissor` in the shipped ELF), deployed.
 
-**Same tap, same death.** So the inverted region clip is a real defect and not
-this one. The patch stays, described as what it is.
+**Same tap, same death, and the counter read zero** — the degenerate path never
+even ran. Recorded because it rules something out: the fault is not in the
+arguments vitaGL computes for the clip.
 
-What that rules out matters as much: the fault is not the *arguments* vitaGL
-computes for the clip. It is in `sceGxmSetViewport` or in the state the context
-is in when it gets there.
+## What it actually was
+
+The fourth dump answered it, because the core file happens to contain the page
+the registers point into:
+
+    LOAD va=0x70100000 filesz=8192
+
+    70100250: BF800000 3F800000 3F800000 BF800000
+
+`R11` is 0x70100250 and that is `{-1.0, 1.0, 1.0, -1.0}` — vitaGL's clear quad,
+in GXM-mapped memory, the exact buffer `update_scissor_test` passes to
+`sceGxmSetUniformDataF` as its *source*. `R0` is 0x70100254, one float along.
+`R3` is 4, the component count. And **`R4` is 0**.
+
+So the source is fine and the destination is null:
+
+```c
+void *vertex_buffer;
+sceGxmReserveVertexDefaultUniformBuffer(gxm_context, &vertex_buffer);
+sceGxmSetUniformDataF(vertex_buffer, clear_position, 0, 4, &clear_vertices->x);
+```
+
+`sceGxmReserveVertexDefaultUniformBuffer` can refuse. It refuses when the
+scene's default uniform pool is exhausted, and outright when it is called
+outside a scene. On refusal it does not write `vertex_buffer`. **vitaGL never
+checks the return value**, in any of the three places it makes these calls —
+`tests.c:297`, `tests.c:332`, `misc.c:682`. GXM then writes through the null.
+
+The `update_scissor_test` frame at `tests.c:334` that showed up on the stack in
+the 08-31 and 09-01 dumps was not stale after all. It was the caller.
+
+## The fix, and what it proved
+
+Check the return, and skip the uniform writes and the draw when it fails:
+
+    flutter-vita: GXM refused 12 uniform-buffer reservations (12 total)
+                  -- vitaGL skipped the draw instead of writing through a null
+
+Twelve refusals on the first menu open, and the app lives. Twenty open-close
+cycles of the overflow menu: alive, screen correct, no visible clipping
+artefacts. Two minutes with the menu held open: no stall — the same menu used
+to freeze it inside twenty-two seconds.
+
+That last line matters beyond this crash. **The stall and the abort were the
+same bug**, which is why [the stall write-up](localsend-stall-2026-08-31.md)
+could never find anything wrong with the threads: nothing was wrong with them.
+GXM had been handed a draw built on a null uniform buffer, and depending on
+what was at address zero that either faulted immediately or wedged the
+pipeline with the raster thread waiting politely for a frame that would never
+be handed to it.
+
+Cost of the fix: a scissor stencil skipped for one frame, so a clip lands one
+frame late, on the frames where GXM refuses.
 
 ## Where to look next
 
-1. **Open the overflow menu.** The hypothesis above is one tap to test and one
-   clamp to fix, and it is the only account of the fault that does not need
-   hours of uptime to arrive.
-2. **Check the reserve.** `sceGxmReserveVertexDefaultUniformBuffer` is unchecked
-   in three places, and vitaGL is a vendored tree with an existing patch series
-   for exactly this class of omission.
-3. **Find who sets a two-pixel viewport**, if `R2` means what it looks like.
+1. ~~Open the overflow menu.~~ Done, and it was the reproduction.
+2. ~~Check the reserve.~~ Done, and it was the bug.
+3. **Find out why GXM refuses.** Twelve refusals on one menu open is not
+   nothing. Either the scene's uniform pool is too small for what Skia asks of
+   it, or `update_scissor_test` is running outside a scene — and the second
+   would be a vitaGL sequencing bug worth its own patch.
+4. **Re-run the receive-transfer stall.** The 08-31 slide in free memory across
+   nine transfers is a separate observation and is not explained by this.

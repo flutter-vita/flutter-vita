@@ -40,14 +40,14 @@ shows the file itself -- an image viewer and a text viewer are most of what a
 received file is -- or it says plainly that it cannot, which is a worse product
 but an honest one.
 
-### 2. The receive stall, still open
+### 2. The receive stall — very likely the same bug as 3
 
 Documented in [localsend-stall-2026-08-31.md](localsend-stall-2026-08-31.md):
 frames stop after repeated transfers while the platform loop keeps perfect
 cadence, throughput decays 648 → 503 KB/s and free memory 45 → 28 MB across
 nine transfers. Not reproduced again today; nothing about it has changed.
 
-### 3. A data abort inside SceGxm, twice, on the raster thread
+### 3. A data abort inside SceGxm — FIXED 2026-09-01
 
     pthread <0x40010197>   io.flutter.raster
         Stop reason: 0x30004 (Data abort exception)
@@ -61,7 +61,17 @@ further up the stack. Both faults followed hours of uptime and a monotonic
 slide in free memory. Full write-up in
 [localsend-gxm-abort-2026-08-31.md](localsend-gxm-abort-2026-08-31.md).
 
-It takes the app down with no warning, which no other item here does.
+**Cause:** vitaGL never checked `sceGxmReserveVertexDefaultUniformBuffer` and
+wrote through the null it leaves on refusal. Fixed in
+[patches/vitagl/0002](../../patches/vitagl/0002-the-reservation-vitagl-never-checked.patch).
+One tap on an overflow menu reproduced it; twenty cycles now survive.
+
+**This also closes item 2.** The receive stall and this abort were the same
+bug — GXM handed a draw built on a null uniform buffer either faults or wedges,
+and the wedge is what the stall write-up spent a day failing to find in the
+thread states. Holding the menu open for two minutes used to freeze it in
+twenty-two seconds and now does not. The memory slide across nine transfers in
+that write-up is a separate observation and stays open.
 
 ## Missing plugins, failing silently
 
@@ -145,8 +155,7 @@ by the shell over every application, not something localsend or the port does.
 
 ## Order to fix
 
-3 is the only one that loses the user's session, so it goes first even though
-it is the least understood. 1 is the release blocker for what the app is *for*,
+3 is fixed, and 2 with it. Of what is left, 1 is the release blocker for what the app is *for*,
 and needs a product decision before any code. 6 is a two-line stub with a real
 consequence. 4 and 5 are small plugins of the kind already in `packages/`. 7 is
 the long-standing one and the only one that is a research task rather than a

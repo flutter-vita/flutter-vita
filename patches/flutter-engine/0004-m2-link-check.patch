@@ -240,10 +240,10 @@ index 00000000..a5e0625d
 +}  // extern "C"
 diff --git a/engine/src/flutter/shell/platform/embedder/vita_embedder.cc b/engine/src/flutter/shell/platform/embedder/vita_embedder.cc
 new file mode 100644
-index 00000000..193f4dc1
+index 00000000..62960107
 --- /dev/null
 +++ b/engine/src/flutter/shell/platform/embedder/vita_embedder.cc
-@@ -0,0 +1,3588 @@
+@@ -0,0 +1,3604 @@
 +// Copyright (c) 2026, the Flutter Authors. All rights reserved.
 +// Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
@@ -393,6 +393,10 @@ index 00000000..193f4dc1
 +// display. Patched into vitaGL alongside the clamps that stop those reaching
 +// sceGxmSetRegionClip as an inverted unsigned range; see patches/vitagl.
 +extern "C" unsigned int vgl_degenerate_scissor;
++// How many GXM default-uniform-buffer reservations were refused. Non-zero
++// means the guard in patches/vitagl/0003 caught the write that used to be a
++// data abort at SceGxm+0x1e638.
++extern "C" unsigned int vgl_reserve_failed;
 +
 +// Paragraph timing, defined in lib/ui/text/paragraph.cc. ADR-0017: 48 Text
 +// widgets cost 41 ms of UI thread and one Text holding the same 48 glyphs
@@ -1876,11 +1880,13 @@ index 00000000..193f4dc1
 +  if (sceKernelGetFreeMemorySize(&mem) >= 0) {
 +    n += std::snprintf(g_diag_text + n, cap - n,
 +                       "flutter-vita:   mem user=%dK cdram=%dK phycont=%dK"
-+                       " heap=%uM/%uM vgl_oom=%u bad_scissor=%u\n",
++                       " heap=%uM/%uM vgl_oom=%u bad_scissor=%u"
++                       " reserve_fail=%u\n",
 +                       mem.size_user / 1024, mem.size_cdram / 1024,
 +                       mem.size_phycont / 1024, HeapUsedMb(), HeapArenaMb(),
 +                       static_cast<unsigned>(vgl_oom_count),
-+                       static_cast<unsigned>(vgl_degenerate_scissor));
++                       static_cast<unsigned>(vgl_degenerate_scissor),
++                       static_cast<unsigned>(vgl_reserve_failed));
 +  }
 +
 +  // Whether the console is idle or busy, independent of this process. A stall
@@ -3814,6 +3820,16 @@ index 00000000..193f4dc1
 +                                   reported_bad_scissor),
 +             static_cast<unsigned>(vgl_degenerate_scissor));
 +        reported_bad_scissor = vgl_degenerate_scissor;
++      }
++
++      static unsigned reported_reserve_fail = 0;
++      if (vgl_reserve_failed != reported_reserve_fail) {
++        VLog("flutter-vita: GXM refused %u uniform-buffer reservations "
++             "(%u total) -- vitaGL skipped the draw instead of writing "
++             "through a null\n",
++             static_cast<unsigned>(vgl_reserve_failed - reported_reserve_fail),
++             static_cast<unsigned>(vgl_reserve_failed));
++        reported_reserve_fail = vgl_reserve_failed;
 +      }
 +
 +      if (vgl_oom_count != g_vgl_oom_reported) {

@@ -1,0 +1,190 @@
+diff --git a/source/misc.c b/source/misc.c
+index 1a27d55..6dc62b3 100644
+--- a/source/misc.c
++++ b/source/misc.c
+@@ -327,6 +327,15 @@ void glViewport(GLint x, GLint y, GLsizei width, GLsizei height) {
+ 	}
+ #endif
+ 
++	// Same reasoning as the scissor clamp in tests.c: Skia passes a zero-sized
++	// viewport while a route animates, and a viewport with no area gives
++	// sceGxmSetViewport a scale of zero and an offset that is not the centre of
++	// anything. One pixel is the smallest thing that is still a rectangle.
++	if (width <= 0)
++		width = 1;
++	if (height <= 0)
++		height = 1;
++
+ 	x_scale = width >> 1;
+ 	x_port = x + x_scale;
+ 	y_scale = -(height >> 1);
+@@ -670,12 +679,28 @@ void glClear(GLbitfield mask) {
+ 	sceGxmSetVertexProgram(gxm_context, clear_vertex_program_patched);
+ 	sceGxmSetFragmentProgram(gxm_context, is_fbo_float ? clear_fragment_program_float_patched : clear_fragment_program_patched);
+ 
+-	sceGxmReserveVertexDefaultUniformBuffer(gxm_context, &vbuffer);
+-	sceGxmSetUniformDataF(vbuffer, clear_position, 0, 4, &clear_vertices->x);
+-	sceGxmSetUniformDataF(vbuffer, clear_depth, 0, 1, &clear_depth_value);
++	// Both reservations can be refused and neither was checked. See the note in
++	// tests.c: a refusal leaves the pointer untouched and the write below goes
++	// through a null.
++	extern unsigned int vgl_reserve_failed;
++	vbuffer = NULL;
++	if (sceGxmReserveVertexDefaultUniformBuffer(gxm_context, &vbuffer) < 0)
++		vbuffer = NULL;
++	if (vbuffer) {
++		sceGxmSetUniformDataF(vbuffer, clear_position, 0, 4, &clear_vertices->x);
++		sceGxmSetUniformDataF(vbuffer, clear_depth, 0, 1, &clear_depth_value);
++	} else {
++		vgl_reserve_failed++;
++	}
+ 
+-	sceGxmReserveFragmentDefaultUniformBuffer(gxm_context, &fbuffer);
+-	sceGxmSetUniformDataF(fbuffer, clear_color, 0, 4, &clear_rgba_val.r);
++	fbuffer = NULL;
++	if (sceGxmReserveFragmentDefaultUniformBuffer(gxm_context, &fbuffer) < 0)
++		fbuffer = NULL;
++	if (fbuffer) {
++		sceGxmSetUniformDataF(fbuffer, clear_color, 0, 4, &clear_rgba_val.r);
++	} else {
++		vgl_reserve_failed++;
++	}
+ 
+ 	// Disable fragment program if not clearing color buffer. Depth and stencil clears are unaffected.
+ 	if (!(mask & GL_COLOR_BUFFER_BIT)) {
+diff --git a/source/tests.c b/source/tests.c
+index aad6b0e..646e225 100644
+--- a/source/tests.c
++++ b/source/tests.c
+@@ -33,6 +33,21 @@ GLboolean dirty_scissor_state = GL_FALSE; // Flag for when scissor test update m
+ 
+ // Scissor Test
+ scissor_region region; // Current scissor test region setup
++
++// How many glScissor calls have arrived with no area, or with an origin past
++// the end of the display, since launch. Non-zero means the clamps below are
++// load-bearing rather than theoretical.
++//
++// A counter and not a log line: vgl_log is sceClibPrintf, which needs a kernel
++// plugin this port deliberately does without, and a line per call here would be
++// thousands a second. The embedder prints the count instead, the same
++// arrangement as vgl_oom_count in patch 0001.
++unsigned int vgl_degenerate_scissor = 0;
++
++// How many default-uniform-buffer reservations have been refused since launch.
++// Non-zero means GXM said no and vitaGL used to write through the null it left
++// behind; see the guards below and patches/vitagl/0003.
++unsigned int vgl_reserve_failed = 0;
+ GLboolean scissor_test_state = GL_FALSE; // Current state for GL_SCISSOR_TEST
+ SceGxmFragmentProgram *scissor_test_fragment_program; // Scissor test fragment program
+ vector4f *scissor_test_vertices = NULL; // Scissor test region vertices
+@@ -284,6 +299,29 @@ void update_scissor_test() {
+ 	if (region.y + region.h > active_h)
+ 		region.h = active_h - region.y;
+ 
++	// A scissor can be empty, and the two clamps above can make it negative.
++	//
++	// Skia asks for both constantly -- a popup menu animating open passes
++	// through every width from zero, and a list row clipped off-screen leaves
++	// region.x past active_w, at which point `active_w - region.x` is below
++	// zero. Neither is an error in GL; glScissor(x, y, 0, 0) means "draw
++	// nothing".
++	//
++	// What happens next is not fine. region.w and region.h reach
++	// sceGxmSetRegionClip as `region.x + region.w - 1`, and that function's
++	// parameters are **unsigned**: a width of zero makes xMax one below xMin,
++	// and a negative width makes it a number near 2^32. GXM computes tile
++	// ranges from those without checking them.
++	//
++	// flutter-vita took a data abort at SceGxm+0x1e638 three times -- 08-30,
++	// 08-31 and 09-01 -- always on the raster thread, always with the same
++	// registers, and on 09-01 reproducibly, one tap on an overflow menu. See
++	// docs/results/localsend-gxm-abort-2026-08-31.md.
++	if (region.w < 0)
++		region.w = 0;
++	if (region.h < 0)
++		region.h = 0;
++
+ #ifndef DISABLE_TILE_CLIPPER
+ 	// Invalidating internal tile based region clip
+ 	sceGxmSetRegionClip(gxm_context, SCE_GXM_REGION_CLIP_OUTSIDE, 0, 0, active_w - 1, active_h - 1);
+@@ -293,8 +331,12 @@ void update_scissor_test() {
+ 		// Calculating scissor test region vertices
+ 		vector4f_convert_to_local_space(scissor_test_vertices, region.x, region.y, region.w, region.h);
+ 
+-		void *vertex_buffer;
+-		sceGxmReserveVertexDefaultUniformBuffer(gxm_context, &vertex_buffer);
++		void *vertex_buffer = NULL;
++		if (sceGxmReserveVertexDefaultUniformBuffer(gxm_context, &vertex_buffer) < 0)
++			vertex_buffer = NULL;
++		if (!vertex_buffer)
++			vgl_reserve_failed++;
++		if (vertex_buffer) {
+ 		sceGxmSetUniformDataF(vertex_buffer, clear_position, 0, 4, &clear_vertices->x);
+ 		sceGxmSetUniformDataF(vertex_buffer, clear_depth, 0, 1, &scissor_depth);
+ 
+@@ -312,6 +354,7 @@ void update_scissor_test() {
+ 			SCE_GXM_STENCIL_OP_KEEP,
+ 			0, 0);
+ 		sceGxmDraw(gxm_context, SCE_GXM_PRIMITIVE_TRIANGLE_FAN, SCE_GXM_INDEX_FORMAT_U16, depth_clear_indices, 4);
++		}
+ 	}
+ 
+ 	// Setting stencil surface mask update bit on the scissor test region
+@@ -328,12 +371,31 @@ void update_scissor_test() {
+ 		SCE_GXM_STENCIL_OP_KEEP,
+ 		0, 0);
+ 
+-	void *vertex_buffer;
+-	sceGxmReserveVertexDefaultUniformBuffer(gxm_context, &vertex_buffer);
++	// sceGxmReserveVertexDefaultUniformBuffer can refuse, and vitaGL never
++	// asked. It refuses when the scene's default uniform pool is exhausted and
++	// when it is called outside a scene at all, and on refusal it leaves
++	// *vertex_buffer untouched -- so the next line hands sceGxmSetUniformDataF
++	// a null destination and GXM writes through it.
++	//
++	// That is the SceGxm+0x1e638 data abort this port took four times between
++	// 2026-08-30 and 2026-09-01, always on the raster thread, always with
++	// R4 = 0 and R11 pointing at these very vertices in GXM-mapped memory.
++	// It reproduces in one tap: open an overflow menu in a Flutter app on the
++	// GL path. See docs/results/localsend-gxm-abort-2026-08-31.md.
++	//
++	// Skipping the draw loses the scissor stencil for one frame, which shows as
++	// a clip that is one frame late. The alternative is the console going down.
++	void *vertex_buffer = NULL;
++	if (sceGxmReserveVertexDefaultUniformBuffer(gxm_context, &vertex_buffer) < 0)
++		vertex_buffer = NULL;
++	if (!vertex_buffer)
++		vgl_reserve_failed++;
++	if (vertex_buffer) {
+ 	sceGxmSetUniformDataF(vertex_buffer, clear_position, 0, 4, scissor_test_state ? &scissor_test_vertices->x : &clear_vertices->x);
+ 	sceGxmSetUniformDataF(vertex_buffer, clear_depth, 0, 1, &scissor_depth);
+ 
+ 	sceGxmDraw(gxm_context, SCE_GXM_PRIMITIVE_TRIANGLE_FAN, SCE_GXM_INDEX_FORMAT_U16, depth_clear_indices, 4);
++	}
+ 
+ 	// Restoring viewport and culling
+ 	validate_viewport();
+@@ -341,7 +403,12 @@ void update_scissor_test() {
+ 
+ #ifndef DISABLE_TILE_CLIPPER
+ 	// Reducing GPU workload by performing tile granularity clipping
+-	if (scissor_test_state) {
++	//
++	// Only for a region with area. The tile clipper is an optimisation on top
++	// of the stencil the rest of this function writes, so skipping it for an
++	// empty scissor costs a little GPU time on a draw that is fully clipped
++	// away anyway -- and the stencil still rejects every pixel.
++	if (scissor_test_state && region.w > 0 && region.h > 0) {
+ #ifndef HAVE_UNFLIPPED_FBOS
+ 		if (!is_rendering_display) {
+ 			uint32_t y = region.gl_y > 0 ? region.gl_y : 0;
+@@ -386,6 +453,8 @@ void glScissor(GLint x, GLint y, GLsizei width, GLsizei height) {
+ 	region.gl_y = y;
+ 	region.gl_w = width;
+ 	region.gl_h = height;
++	if (width <= 0 || height <= 0 || x > DISPLAY_WIDTH || y > DISPLAY_HEIGHT)
++		vgl_degenerate_scissor++;
+ 
+ 	if (scissor_test_state)
+ 		dirty_scissor_state = GL_TRUE;

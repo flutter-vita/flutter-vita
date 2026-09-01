@@ -32,118 +32,45 @@ these patches are the artifact.
 | # | Patch | What it does |
 |---|---|---|
 | 0001 | [what-a-failed-allocation-costs](0001-what-a-failed-allocation-costs.patch) | A texture upload that memcpy'd into NULL, and a collector wait that slept a flat second |
-| 0002 | [an-empty-scissor-is-not-an-inverted-one](0002-an-empty-scissor-is-not-an-inverted-one.patch) | Clamps a zero or negative scissor and a zero-size viewport, and counts them. **Did not stop the SceGxm abort it was aimed at** |
+| 0002 | [the-reservation-vitagl-never-checked](0002-the-reservation-vitagl-never-checked.patch) | `sceGxmReserveVertexDefaultUniformBuffer` can refuse, and vitaGL wrote through the null it left. Four data aborts. Also clamps an empty scissor and a zero-size viewport |
 
-## Applying
+## 0002, the one that took the console down
 
-`../../tools/apply-patches.sh --apply` handles this series with the rest.
-`libvitaGL.a` is **not** rebuilt by the app build, so after applying:
-
-```bash
-cd third_party/vitaGL && make HAVE_SHADER_CACHE=1 -j8
-```
-
----
-
-## `TEXTURES_SPEEDHACK=1`, and why it is not optional here
-
-Upstream describes it as making `glTexSubImage2D` "non fully OpenGL compliant
-but … slightly faster". On this port it is the difference between running and
-running out of memory.
-
-Without it, `_glTexSubImage2D` clones any texture the GPU touched in the last
-`FRAME_PURGE_FREQ` (4) frames before modifying it, and the old copy is freed by
-the collector rather than immediately. Skia's glyph atlas is 2048×2048 A8 —
-4 MB — and Skia sub-uploads into it whenever text changes. Each of those
-uploads therefore allocated 4 MB and left 4 MB pending collection.
-
-That is what exhausted the pools on 2026-08-24. With the flag, the same
-benchmark run reports **zero** dropped uploads.
-
-The compliance being traded away is writing into a buffer the GPU may still be
-reading from the previous frame: a tear on one frame of one texture. It is the
-same trade patch 0001 makes when an allocation fails, made unconditionally.
-
-Note the flag changes `struct texture`, so **`make clean` first** — an
-incremental build links objects that disagree about the layout.
-
----
-
-## 0001 — what a failed allocation costs
-
-`_glTexSubImage2D` clones a texture before modifying it, if the GPU used that
-texture within the last `FRAME_PURGE_FREQ` frames:
+`update_scissor_test` and `glClear` reserve a slice of GXM's default uniform
+buffer and then write into it:
 
 ```c
-void *texture_data = gpu_alloc_mapped_for_gpu(size);
-vgl_fast_memcpy(texture_data, tex->data, size);   /* <- no check */
+void *vertex_buffer;
+sceGxmReserveVertexDefaultUniformBuffer(gxm_context, &vertex_buffer);
+sceGxmSetUniformDataF(vertex_buffer, clear_position, 0, 4, &clear_vertices->x);
 ```
 
-`gpu_alloc_mapped_for_gpu` can and does return NULL: it tries VRAM, RAM,
-PHYCONT and BUDGET in turn, then runs the garbage collector up to
-`FRAME_PURGE_FREQ` times, and then gives up. When it gives up, that `memcpy`
-writes to address zero.
+The reservation can be refused — the scene's pool is finite, and it is refused
+outright outside a scene. On refusal `vertex_buffer` is never written, so
+`sceGxmSetUniformDataF` gets whatever was on the stack, and GXM writes through
+it. vitaGL does not check the return value in any of the three places it calls
+these functions.
 
-**On this console that is not an app crash.** A data abort runs no user code,
-so nothing releases the GXM context: the PS button stops responding and only
-the power button recovers the machine ([ADR-0014](../../docs/adr/0014-gpu-backend-via-vitagl.md)).
-It happened on 2026-08-24 during a benchmark run, with `size` = 0x3FFFC0 —
-4 MB, a 2048×2048 A8 glyph atlas, which is exactly what Skia hands to
-`glTexSubImage2D` as text comes and goes.
+flutter-vita took that data abort four times between 2026-08-30 and
+2026-09-01: `SceGxm@1 + 0x1e638`, always on the raster thread, always
+`R4 = 0`, always `R11 = 0x70100250` — which the core dump shows holds
+`{-1.0, 1.0, 1.0, -1.0}`, these very clear vertices, in GXM-mapped memory.
 
-The patch skips the clone instead. The cost is writing into a buffer the GPU
-may still be reading this frame: a tear on one frame of one texture, against a
-power cycle. Three sibling paths in `gpu_utils.c` — the paletted allocator and
-two mipmap reallocation fallbacks — had the same shape and are guarded the same
-way, though Skia does not appear to reach them.
+**It reproduces in one tap**: open an overflow menu in a Flutter app on the GL
+path. With the guard, the same tap survives twenty cycles and the log reads
+`GXM refused 12 uniform-buffer reservations`. The same tap used to freeze the
+app inside twenty-two seconds when it did not kill it outright; two minutes
+with the menu open is now quiet.
 
-A dropped upload is invisible otherwise, and invisible is how a benchmark ends
-up measuring a picture of a frame rather than a frame. vitaGL's own `vgl_log`
-is `sceClibPrintf`, readable only with a kernel plugin this port deliberately
-does not use, so the patch adds `unsigned int vgl_oom_count` and the embedder
-prints it alongside its periodic loop statistics.
+Skipping the draw costs the scissor stencil for one frame, so a clip lands one
+frame late. The alternative is the console going down.
 
-### The second half: a flat second of sleep
+The patch also clamps an empty or negative scissor before it reaches
+`sceGxmSetRegionClip` — whose bounds are **unsigned**, so a zero width puts
+xMax one below xMin — and a zero-size viewport before `sceGxmSetViewport` gets
+a scale of zero. Those are real defects found while chasing this one. They were
+**not** the cause: the fault reproduced with them in and the counter at zero.
+They stay because an inverted region clip is not something to leave in.
 
-Reaching that NULL was not free either. `gpu_alloc_mapped_aligned_unsafe_for_*`
-asks the collector to run and then waits for it like this:
-
-```c
-sceKernelSignalSema(gc_mutex[0], 1);
-sceKernelDelayThread(1000000);          /* one second */
-```
-
-It retries itself up to `FRAME_PURGE_FREQ` times, so a single contended
-allocation froze the raster thread for four seconds — the log showed an 8 s
-frame, two such calls back to back — while the collector's actual work is
-freeing a pointer list and destroying a few render targets.
-
-The collector already signals `gc_mutex[1]` at the end of every cycle, which is
-the event the caller wants. The patch waits on it with a 50 ms ceiling and
-hands the slot straight back, leaving the credit accounting unchanged. Worst
-observed frame gap across a full benchmark run went from **8145 ms to 66 ms**,
-and `route_bare` — an empty page pushed onto the navigator — went from stalling
-to holding 60 fps outright.
-
-## 0002 and what it did not fix
-
-`update_scissor_test` computes `region.w` as `active_w - region.x` and never
-clamps the result, so a scissor whose origin is past the display makes it
-negative; a scissor with no area leaves it at zero. Both then reach
-
-```c
-sceGxmSetRegionClip(gxm_context, SCE_GXM_REGION_CLIP_OUTSIDE,
-                    region.x, region.y,
-                    region.x + region.w - 1, region.y + region.h - 1);
-```
-
-whose parameters are **unsigned**. Zero width puts xMax one below xMin; a
-negative width puts it near 2^32. GXM computes tile ranges from those without
-range-checking them. `glViewport` has the same shape of gap: a zero-size
-viewport gives `sceGxmSetViewport` a scale of zero.
-
-That is a real defect and the clamps stay. **It is not the cause of the
-SceGxm+0x1e638 data abort**, which reproduced on 2026-09-01 with this patch
-applied and the counter compiled in — same one tap on an overflow menu. See
+Full account in
 [docs/results/localsend-gxm-abort-2026-08-31.md](../../docs/results/localsend-gxm-abort-2026-08-31.md).
-Kept, described honestly, and not to be cited as the fix for that fault.

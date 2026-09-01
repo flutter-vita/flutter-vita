@@ -92,6 +92,15 @@ ELF: same PC, same `R0`, same `R11`, same `LR` of 1, and the stack under it
 resolves to vitaGL's `glViewport` and `update_scissor_test`. See
 [localsend-gxm-abort-2026-08-31.md](localsend-gxm-abort-2026-08-31.md).
 
+**Same bug, 2026-09-01.** Not two after all. vitaGL wrote through a null
+uniform buffer GXM had refused to give it; depending on what sat at address
+zero that either faulted or wedged the pipeline, and the wedge is this
+document. That is why nothing was ever wrong with the threads. One tap on an
+overflow menu reproduced both outcomes, and
+[patches/vitagl/0002](../../patches/vitagl/0002-the-reservation-vitagl-never-checked.patch)
+ends them. **The memory slide across nine transfers below is not explained by
+this and stays open.**
+
 ## Dump discipline, which cost the diagnosis twice
 
 53 dumps on the card. **22 are `.tmp`** -- the console renames only when the
