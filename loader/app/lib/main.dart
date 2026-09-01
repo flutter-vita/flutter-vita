@@ -1064,12 +1064,25 @@ class _AppRow extends StatelessWidget {
   Widget build(BuildContext context) => ListRow(
         selected: confirming,
         children: [
+          // The name leads. The title id is what the machine needs and the
+          // name is what you are looking for, and a column of FVTA0000n does
+          // not tell you which row is the gallery.
+          Expanded(
+            flex: 3,
+            child: Text(
+              app.name,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: mono.copyWith(color: fg, fontWeight: FontWeight.w600),
+            ),
+          ),
+          const SizedBox(width: 12),
           SizedBox(
             width: 110,
-            child: Text(app.titleId,
-                style: mono.copyWith(color: fg, fontWeight: FontWeight.w600)),
+            child: Text(app.titleId, style: mono.copyWith(color: muted)),
           ),
           Expanded(
+            flex: 2,
             child: Text(
               app.present
                   ? 'data ${humanBytes(app.cacheBytes)}'

@@ -320,10 +320,18 @@ Future<int> clearCrashes(void Function(int done, int total) onProgress) async {
 
 /// A title this loader installed, and how much of ux0:data it is holding.
 class InstalledApp {
-  InstalledApp(this.titleId, this.cacheBytes, {required this.present});
+  InstalledApp(this.titleId, this.cacheBytes,
+      {required this.present, required this.name});
 
   final String titleId;
   final int cacheBytes;
+
+  /// What the LiveArea calls it, from the title's own param.sfo, or the title
+  /// id again when there is nothing to read.
+  ///
+  /// Six rows reading FVTA0000n tell you nothing about which is the gallery
+  /// and which is localsend, and the id is the part you never chose.
+  final String name;
 
   /// Whether ux0:app/<id> is actually there.
   ///
@@ -349,10 +357,61 @@ List<InstalledApp> listInstalled(String self) {
     final id = raw.trim();
     if (id.isEmpty || id == self || !seen.add(id)) continue;
     out.add(InstalledApp(id, _dirBytes('ux0:data/$id'),
-        present: Directory('ux0:app/$id').existsSync()));
+        present: Directory('ux0:app/$id').existsSync(),
+        name: appTitle(id) ?? id));
   }
-  out.sort((a, b) => a.titleId.compareTo(b.titleId));
+  // By what the row shows. A list ordered by a column that is no longer first
+  // looks unordered.
+  out.sort((a, b) {
+    final byName = a.name.toLowerCase().compareTo(b.name.toLowerCase());
+    return byName != 0 ? byName : a.titleId.compareTo(b.titleId);
+  });
   return out;
+}
+
+/// The TITLE field out of `ux0:app/<id>/sce_sys/param.sfo`, or null.
+///
+/// SFO is a small binary table: a header giving where the key and data tables
+/// start and how many entries there are, then fixed 16-byte index entries. No
+/// parser ships with the SDK and the format is four fields wide, so it is read
+/// here rather than shelled out to.
+///
+/// Every failure returns null. This runs on files written by other people's
+/// installers, and the loader must not be the thing that cannot start because
+/// one of them is malformed.
+String? appTitle(String titleId) {
+  try {
+    final f = File('ux0:app/$titleId/sce_sys/param.sfo');
+    if (!f.existsSync()) return null;
+    final b = f.readAsBytesSync();
+    if (b.length < 20) return null;
+    final d = ByteData.sublistView(b);
+    if (d.getUint32(0, Endian.little) != 0x46535000) return null;  // "\0PSF"
+    final keyTable = d.getUint32(8, Endian.little);
+    final dataTable = d.getUint32(12, Endian.little);
+    final count = d.getUint32(16, Endian.little);
+    if (count > 1024) return null;
+    for (var i = 0; i < count; i++) {
+      final at = 20 + i * 16;
+      if (at + 16 > b.length) return null;
+      final keyAt = keyTable + d.getUint16(at, Endian.little);
+      final len = d.getUint32(at + 4, Endian.little);
+      final dataAt = dataTable + d.getUint32(at + 12, Endian.little);
+      if (keyAt >= b.length || dataAt + len > b.length) continue;
+      var end = keyAt;
+      while (end < b.length && b[end] != 0) end++;
+      if (String.fromCharCodes(b, keyAt, end) != 'TITLE') continue;
+      var stop = dataAt;
+      final limit = dataAt + len;
+      while (stop < limit && b[stop] != 0) stop++;
+      final title = utf8.decode(b.sublist(dataAt, stop), allowMalformed: true)
+          .trim();
+      return title.isEmpty ? null : title;
+    }
+    return null;
+  } catch (_) {
+    return null;
+  }
 }
 
 int _dirBytes(String path) {
