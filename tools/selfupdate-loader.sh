@@ -6,7 +6,8 @@
 #
 #   --title-id ID   which loader to replace   (default FVTA00001)
 #   --updater ID    the updater's title id    (default FVTA00009)
-#   --keep-updater  leave the updater installed afterwards
+#   --keep-updater    leave the updater installed afterwards (the default)
+#   --remove-updater  delete it -- see the note by KEEP_UPDATER first
 #   --port N        the port to talk to       (default 1341)
 #   --build-port N  the port to build for     (default: build-loader.sh's)
 #   --no-build      require the vpk argument
@@ -48,13 +49,19 @@ VPK=""
 # on the scratch loader's port.
 BUILD_PORT=""
 UPDATER_VPK="$ROOT/loader/updater/build/flutter_vita_updater.vpk"
-KEEP_UPDATER=0
+# Kept, until a delete stops taking the loader down with it. Removing the
+# updater is the right end state -- it is a bubble whose only function is to
+# overwrite the loader -- but on 2026-09-01 the delete dropped this console to
+# the LiveArea home screen three times, and an update that ends there is worse
+# than an updater left installed. --remove-updater asks for it anyway.
+KEEP_UPDATER=1
 
 while [ $# -gt 0 ]; do
   case "$1" in
     --title-id) TITLE_ID="$2"; shift 2 ;;
     --updater)  UPDATER="$2"; shift 2 ;;
     --keep-updater) KEEP_UPDATER=1; shift ;;
+    --remove-updater) KEEP_UPDATER=0; shift ;;
     --port)       PORT="$2"; shift 2 ;;
     --build-port) BUILD_PORT="$2"; shift 2 ;;
     --host)     HOST="$2"; shift 2 ;;
