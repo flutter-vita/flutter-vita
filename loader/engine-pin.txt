@@ -9,7 +9,7 @@ flutter          3.44.8
 framework_rev    058e0af2c2b57e369d905a03ac9748b0ebf543c6
 engine           058e0af2c2b57e369d905a03ac9748b0ebf543c6
 dart             d684a576a6aa954ae107a03b2b4e1d61c3bebe93
-archive_sha256   b1f20d13d62189abe1ecf47f158db6bc180ba8a7b6c19e3bc305e057a60a1683
-blessed_at       2026-08-31T05:40:26Z
+archive_sha256   e3022d954e15a9faa31a0324f2d09efb432a6b211c249343e2e903a028b317d5
+blessed_at       2026-09-01T16:17:12Z
 blessed_from     out/artifacts/flutter-engine-vita-3.44.8
-reason           mDNS answers flutter-vita.local and flutter.vita.local; ls/rm in the shared dev server so any app can install and clean another title
+reason           sceKernelPowerTick on the platform loop so the loader stops letting the console suspend; mDNS counters in devserver.c; vita/shell channel
