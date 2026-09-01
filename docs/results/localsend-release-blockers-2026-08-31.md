@@ -145,7 +145,14 @@ device.
 This console drops its Wi-Fi and comes back on a different lease often enough
 that the loader exists partly to report it. localsend will not notice.
 
-### 6. wakelock_plus throws on every toggle
+### 6. wakelock_plus throws on every toggle — and nothing on this port stays awake
+
+The Dart side of a hole that runs all the way down. Until 2026-09-01 **nothing
+in the Flutter app path called `sceKernelPowerTick`**, so the console suspended
+itself on its idle timeout and took the network with it. The embedder now ticks
+from its platform loop behind `flutter_vita_keep_awake`; a `wakelock_plus`
+implementation finally has something real to call. Full account in
+[the-console-was-asleep-2026-09-01.md](the-console-was-asleep-2026-09-01.md).
 
     Unhandled Exception: PlatformException(channel-error, Unable to establish
     connection on channel: "dev.flutter.pigeon.wakelock_plus_platform_interface

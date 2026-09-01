@@ -240,10 +240,10 @@ index 00000000..a5e0625d
 +}  // extern "C"
 diff --git a/engine/src/flutter/shell/platform/embedder/vita_embedder.cc b/engine/src/flutter/shell/platform/embedder/vita_embedder.cc
 new file mode 100644
-index 00000000..43e8fc98
+index 00000000..bbf8f039
 --- /dev/null
 +++ b/engine/src/flutter/shell/platform/embedder/vita_embedder.cc
-@@ -0,0 +1,3907 @@
+@@ -0,0 +1,3933 @@
 +// Copyright (c) 2026, the Flutter Authors. All rights reserved.
 +// Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
@@ -355,6 +355,26 @@ index 00000000..43e8fc98
 +// exactly that: a switch it has to read is a switch that can be missing on the
 +// one device where that matters most.
 +extern "C" __attribute__((weak)) int flutter_vita_force_software = 0;
++
++// Keep the console out of standby while the app is in the foreground.
++//
++// The Vita suspends itself after its idle timeout when nothing reports user
++// activity, and suspending kills the network with it. `spikes/m1-vpk` has ticked
++// for exactly this reason since M1 -- "no suspend (it would kill the network and
++// the deploy loop with it)" -- and the Flutter app path never got the same
++// treatment. Nothing in the embedder or in templates/vita-app called
++// sceKernelPowerTick at all.
++//
++// The cost of that was paid all through 2026-09-01 and misread every time: the
++// console would go quiet during a build, the app's port would stop answering,
++// its mDNS responder would go with it, and it read as the Wi-Fi dropping. It was
++// the console going to sleep because nobody had touched it in ten minutes.
++//
++// Weak so a shipping build can turn it off. A handheld that never sleeps while
++// an app is open is user-hostile, and an app that is genuinely idle should be
++// allowed to; what must not happen is the console sleeping under a transfer or
++// under a bench run. See docs/results/the-console-was-asleep-2026-09-01.md.
++extern "C" __attribute__((weak)) int flutter_vita_keep_awake = 1;
 +
 +// The loader and the app must not share a log file.
 +//
@@ -4099,6 +4119,12 @@ index 00000000..43e8fc98
 +    // Cheap unless the screen has actually frozen: one subtraction against a
 +    // timestamp the present path already keeps.
 +    CheckForStall();
++
++    // Sixty times a second is what the M1 spike does and it costs nothing
++    // measurable; the call exists to reset a timer.
++    if (flutter_vita_keep_awake) {
++      sceKernelPowerTick(SCE_KERNEL_POWER_TICK_DEFAULT);
++    }
 +
 +    // Is the platform thread keeping up with the panel, and is it doing the
 +    // engine's work or its own? A loop period well over 16.6 ms means this
