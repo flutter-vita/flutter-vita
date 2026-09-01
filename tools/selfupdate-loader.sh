@@ -156,6 +156,18 @@ for _ in $(seq 1 40); do
       if [ "$KEEP_UPDATER" -eq 0 ]; then
         echo "==> removing $UPDATER"
         say "$PORT" "delete $UPDATER" 60 | sed 's/^/    /' || true
+        # The loader restarts itself after a delete -- see restart_after_delete
+        # in loader/src/loader_dev.c. Waiting for it here so this script never
+        # returns while the console is mid-handover and nothing answers.
+        echo "==> waiting for the loader to come back"
+        for _ in $(seq 1 20); do
+          sleep 3
+          BACK="$(say "$PORT" ping 5 2>/dev/null || true)"
+          case "$BACK" in pong\ loader*) echo "    $BACK"; exit 0 ;; esac
+        done
+        echo "!! it did not come back after the delete." >&2
+        echo "   $UPDATER is gone, so hold-L rescue is not available." >&2
+        exit 1
       fi
       exit 0 ;;
   esac
