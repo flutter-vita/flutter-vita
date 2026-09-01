@@ -711,6 +711,13 @@ static int supervisor_enabled(void) {
 // It does not fix Wi-Fi dropping. When the console falls off the network the
 // name stops resolving with it. What it removes is having to ask what the
 // address is, not having to reconnect.
+//
+// It announces on a timer as well as answering queries. Answering alone was
+// enough only for a console that hears the multicast group, and this one does
+// not appear to: on 2026-09-01 it served TCP for twenty minutes while the name
+// resolved for the first two, which is exactly the shape of two startup
+// announcements ageing out of the host's cache with nothing renewing them.
+// Every diagnosis I made in that window blamed Wi-Fi and every one was wrong.
 #define MDNS_PORT 5353
 #define MDNS_GROUP "224.0.0.251"
 #define MDNS_TTL 120
@@ -727,6 +734,41 @@ static const char* const kMdnsNames[] = {"flutter-vita", "flutter.vita"};
 #define MDNS_NAME_COUNT ((int)(sizeof kMdnsNames / sizeof kMdnsNames[0]))
 
 static int g_mdns_sock = -1;
+
+// What the responder has actually done, written to disk so the loader's panel
+// can show it. Every mDNS failure this project has had looked identical from
+// the host -- the name stops resolving -- and the four possible causes need
+// four different fixes. Counting them on the console is the only way to tell
+// a console that never joined the group from one whose announcement simply
+// aged out.
+#define MDNS_STATUS_PATH "ux0:data/flutter-vita/mdns.txt"
+static int g_mdns_joined = 0;    // did ADD_MEMBERSHIP succeed
+static int g_mdns_announced = 0; // A records we have sent unasked
+static int g_mdns_queries = 0;   // queries we have answered
+static SceInt64 g_mdns_last_query = -1;  // usec, process time
+
+// Under the 120 s TTL with room for a lost packet. Announcing rather than
+// waiting to be asked is what makes the name survive a console that cannot
+// hear multicast, which is the case this console appears to be: on 2026-09-01
+// it answered TCP for twenty minutes while the name resolved for the first two.
+#define MDNS_ANNOUNCE_EVERY_US (30 * 1000 * 1000)
+
+static void mdns_write_status(void) {
+  char buf[160];
+  const SceInt64 now = (SceInt64)sceKernelGetProcessTimeWide();
+  const int ago = g_mdns_last_query < 0
+                      ? -1
+                      : (int)((now - g_mdns_last_query) / 1000000);
+  const int n = snprintf(buf, sizeof buf,
+                         "joined %d\nannounced %d\nqueries %d\nlast %d\n",
+                         g_mdns_joined, g_mdns_announced, g_mdns_queries, ago);
+  const SceUID fd =
+      sceIoOpen(MDNS_STATUS_PATH, SCE_O_WRONLY | SCE_O_CREAT | SCE_O_TRUNC,
+                0777);
+  if (fd < 0) return;
+  sceIoWrite(fd, buf, (SceSize)n);
+  sceIoClose(fd);
+}
 
 // Writes `name` plus `local` in DNS wire format -- each label prefixed by its
 // length, the whole thing terminated by a zero byte. Dots in `name` separate
@@ -844,12 +886,29 @@ static int mdns_thread(SceSize args, void* argp) {
   for (int i = 0; i < 2; i++) {
     for (int n = 0; n < MDNS_NAME_COUNT; n++) {
       mdns_respond(kMdnsNames[n]);
+      g_mdns_announced++;
     }
     sceKernelDelayThread(1000 * 1000);
   }
+  SceInt64 next_announce =
+      (SceInt64)sceKernelGetProcessTimeWide() + MDNS_ANNOUNCE_EVERY_US;
+  mdns_write_status();
 
   unsigned char pkt[512];
   for (;;) {
+    // Re-announce on a timer instead of only when asked. The receive below has
+    // a one-second timeout, so this runs whether or not anything reaches us --
+    // which is the point: a console that cannot hear the multicast group can
+    // still keep its own name alive by talking.
+    const SceInt64 now = (SceInt64)sceKernelGetProcessTimeWide();
+    if (now >= next_announce) {
+      for (int n = 0; n < MDNS_NAME_COUNT; n++) {
+        mdns_respond(kMdnsNames[n]);
+        g_mdns_announced++;
+      }
+      next_announce = now + MDNS_ANNOUNCE_EVERY_US;
+      mdns_write_status();
+    }
     SceNetSockaddrIn from;
     unsigned int fromlen = sizeof from;
     const int n = sceNetRecvfrom(g_mdns_sock, pkt, sizeof pkt, 0,
@@ -877,6 +936,9 @@ static int mdns_thread(SceSize args, void* argp) {
       const int qtype = (pkt[after] << 8) | pkt[after + 1];
       if (qtype == 1 || qtype == 255) {  // A, or ANY
         mdns_respond(hit);
+        g_mdns_queries++;
+        g_mdns_last_query = (SceInt64)sceKernelGetProcessTimeWide();
+        mdns_write_status();
       }
       break;  // one question is all anything asks us
     }
@@ -915,8 +977,10 @@ static void start_mdns(void) {
   mreq.imr_interface.s_addr = sceNetHtonl(SCE_NET_INADDR_ANY);
   if (sceNetSetsockopt(g_mdns_sock, SCE_NET_IPPROTO_IP,
                        SCE_NET_IP_ADD_MEMBERSHIP, &mreq, sizeof mreq) < 0) {
-    logf_("  [dev] mdns could not join %s; name will not resolve\n",
+    logf_("  [dev] mdns could not join %s; queries will not reach us\n",
           MDNS_GROUP);
+  } else {
+    g_mdns_joined = 1;
   }
 
   // A receive timeout rather than non-blocking: this thread has nothing to do
