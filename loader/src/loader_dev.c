@@ -128,6 +128,15 @@ static void release_gpu(void) {
 // single watcher thread -- so this is guarded by nothing more than that fact
 // and the atomic rename at the end of publish().
 
+// When a host last sent this loader a command, in process time. Negative
+// means never.
+//
+// The badge said "Waiting" through every unreachable stretch of 2026-09-01 and
+// it was telling the truth: the console had an address and the socket was
+// listening. What it could not say was that nothing had reached it for twenty
+// minutes, which is the difference between idle and lost.
+static SceInt64 g_last_cmd = -1;
+
 static char g_status[24] = "Starting";
 static char g_detail[80] = "";
 static char g_ip[24] = "";
@@ -143,15 +152,22 @@ static char g_lines[LOG_LINES][LOG_WIDTH];
 static int g_line_count = 0;  // total ever, not the ring size
 static unsigned g_seq = 0;
 
+// Seconds since a host last spoke, or -1 if none ever has.
+static int last_cmd_age(void) {
+  if (g_last_cmd < 0) return -1;
+  const SceInt64 now = (SceInt64)sceKernelGetProcessTimeWide();
+  return (int)((now - g_last_cmd) / 1000000);
+}
+
 static void publish(void) {
   g_seq++;
   char buf[LOG_LINES * LOG_WIDTH + 512];
   int n = snprintf(buf, sizeof buf,
                    "seq %u\nip %s\nport %d\ntarget %s\nstatus %s\ndetail %s\n"
-                   "self %s\nrecv %d %d\n",
+                   "self %s\nrecv %d %d\nlastcmd %d\n",
                    g_seq, g_ip[0] ? g_ip : "-", LOADER_PORT, g_target,
                    g_status, g_detail, LOADER_SELF_TITLEID, g_recv_done,
-                   g_recv_total);
+                   g_recv_total, last_cmd_age());
   // Oldest first, so the Dart side can append without reversing.
   const int have = g_line_count < LOG_LINES ? g_line_count : LOG_LINES;
   const int start = g_line_count - have;
@@ -1113,6 +1129,7 @@ static void cmd_ls(int sock, const char* path) {
 // ------------------------------------------------------------- the dispatch
 
 static int handle(int sock, const char* line, int* stop) {
+  g_last_cmd = (SceInt64)sceKernelGetProcessTimeWide();
   // Shadows the dev server's own `pong`, so that a reply identifies what
   // answered. tools/update-loader.sh greps for it, and the alternative --
   // a bare "pong" from whatever happens to hold the port -- is how you
@@ -1302,6 +1319,7 @@ static int watcher(SceSize args, void* argp) {
   (void)args;
   (void)argp;
   char last[24] = "";
+  unsigned ticks = 0;
   for (;;) {
     SceNetCtlInfo info;
     const int r =
@@ -1330,6 +1348,12 @@ static int watcher(SceSize args, void* argp) {
       set_status("No network", "check Wi-Fi on the console");
     }
     serve_request();
+
+    // Republish on a slow tick so "last heard from a host" ages on screen
+    // instead of freezing at whatever it said when something last happened.
+    // Every fifth pass, not every one: this is a write to the memory card and
+    // the number it refreshes is measured in minutes.
+    if (++ticks % 5 == 0) publish();
     sceKernelDelayThread(2 * 1000 * 1000);
   }
   return 0;  // not reached; sceKernelCreateThread wants the signature
