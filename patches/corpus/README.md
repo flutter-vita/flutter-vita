@@ -17,6 +17,20 @@ Apply with `git apply` from inside the app's checkout.
 `<app>-NNNN-<what>.patch`, numbered in the order they were needed, which is also
 the order the app failed in.
 
+## localsend-0002
+
+Worth a note because it reaches outside the app. "Open" and "Show in folder"
+both called `open_filex`, which takes its Linux branch here and
+`DynamicLibrary.open('libc.so.6')` to reach `system()`. It **throws** rather
+than returning a failure, so the app's own `CannotOpenFileDialog` was never
+reached and the tap did nothing at all.
+
+The patch catches that, and adds a button that opens VitaShell in the file's
+folder through the `vita/shell` channel added to the embedder in the same
+commit. The string on that button is a literal rather than a slang key: adding
+one means regenerating the whole catalogue for a control that exists on one
+platform.
+
 ## A wrinkle worth knowing
 
 Some of these touch files the upstream app **gitignores** — `keklist-0001` adds

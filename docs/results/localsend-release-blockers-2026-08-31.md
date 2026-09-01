@@ -9,7 +9,33 @@ whole point after the transfer completes, and it fails silently.
 
 ## Blockers
 
-### 1. Tapping a received file does nothing, and throws
+### 1. Tapping a received file does nothing, and throws — FIXED 2026-09-01
+
+The throw is caught and the console now has somewhere to send you. Details at
+the end of this section; the original diagnosis follows because the reasoning
+is what produced the fix.
+
+#### The fix
+
+`OpenFilex.open` threw before its result was ever inspected, so
+`CannotOpenFileDialog` -- which already existed, was translated, and named the
+file -- was never reached. Catching it is most of the repair: a tap now raises
+an alert with the path, a "delete from history" button, and Close.
+
+Beyond that, VitaShell can be opened **in the file's own folder**. It has no
+deep link -- its `main()` takes argc and argv and ignores both, and it registers
+no URI scheme -- but `browser.c` reads `ux0:VitaShell/internal/lastdir.txt` at
+startup and navigates there, so the embedder writes that file and then launches
+`psgm:play?titleid=VITASHELL`. The button is hidden when `ux0:app/VITASHELL` is
+absent, and it is labelled "closes app" because it does: the Vita runs one
+application at a time.
+
+What this is not is an in-app viewer. Showing a received photo without leaving
+the app is still the better answer for the common case, and
+`packages/vita_file_browser` already draws a file browser in Flutter if a
+folder view is wanted without quitting.
+
+#### The original diagnosis
 
 Receive history → tap any entry. No navigation, no dialog, no feedback. The log:
 
@@ -179,8 +205,8 @@ by the shell over every application, not something localsend or the port does.
 
 ## Order to fix
 
-3 is fixed, and 2 with it; 3b is fixed and left 3c behind. Of what is left, 1 is the release blocker for what the app is *for*,
-and needs a product decision before any code. 6 is a two-line stub with a real
+3 is fixed, and 2 with it; 3b is fixed and left 3c behind; 1 is fixed. Of what is
+left, 6 is a two-line stub with a real
 consequence. 4 and 5 are small plugins of the kind already in `packages/`. 7 is
 the long-standing one and the only one that is a research task rather than a
 job.

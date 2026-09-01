@@ -240,10 +240,10 @@ index 00000000..a5e0625d
 +}  // extern "C"
 diff --git a/engine/src/flutter/shell/platform/embedder/vita_embedder.cc b/engine/src/flutter/shell/platform/embedder/vita_embedder.cc
 new file mode 100644
-index 00000000..4911e175
+index 00000000..43e8fc98
 --- /dev/null
 +++ b/engine/src/flutter/shell/platform/embedder/vita_embedder.cc
-@@ -0,0 +1,3814 @@
+@@ -0,0 +1,3907 @@
 +// Copyright (c) 2026, the Flutter Authors. All rights reserved.
 +// Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
@@ -283,6 +283,8 @@ index 00000000..4911e175
 +#include <psp2/io/stat.h>
 +#include <psp2/kernel/sysmem.h>
 +#include <psp2/apputil.h>
++#include <psp2/appmgr.h>
++#include <psp2/kernel/processmgr.h>
 +#include <psp2/common_dialog.h>
 +#include <psp2/power.h>
 +
@@ -3541,6 +3543,97 @@ index 00000000..4911e175
 +      FlutterEngineSendPlatformMessageResponse(
 +          g_engine, message->response_handle,
 +          reinterpret_cast<const uint8_t*>(reply), std::strlen(reply));
++    }
++    return;
++  }
++
++  if (message->channel != nullptr &&
++      std::strcmp(message->channel, "vita/shell") == 0) {
++    // Handing a folder to VitaShell, which is the console's file manager and
++    // is somebody else's application.
++    //
++    // There is no deep link to it. Its main() takes argc and argv and ignores
++    // both, it registers no URI scheme, and the only launch parameter it reads
++    // is its own title id. What it *does* do, at browser.c:796, is read
++    // ux0:VitaShell/internal/lastdir.txt on startup and navigate there. So the
++    // way to open it at a path is to write that file and then launch it.
++    //
++    // Three things the source says about that, all of which this honours:
++    //
++    //   * change_to_directory() begins with checkFolderExist(), so the value
++    //     has to be a directory. A file path is rejected outright and the user
++    //     lands in `home`.
++    //   * It is written as strlen(path) + 1 bytes, NUL included, because
++    //     VitaShell's ReadFile() reads into an uninitialised stack buffer and
++    //     does not terminate a short read.
++    //   * VitaShell rewrites the file on every navigation and on exit, so this
++    //     is consumed rather than left behind.
++    //
++    // Launching it ends this process. The Vita runs one application at a time,
++    // and the shell asks "close the current application?" if we are still
++    // running when the launch lands -- so the exit is immediate and nothing
++    // goes between it and the launch. Same sequence as the crash bailout in
++    // templates/vita-app/bailout.c.
++    const char* body = reinterpret_cast<const char*>(message->message);
++    const size_t len = message->message_size;
++    const char* m = JsonFindValue(body, len, "method");
++    char method[32] = {0};
++    if (m != nullptr) JsonUnescape(m, body + len, method, sizeof method);
++
++    bool ok = false;
++    bool leaving = false;
++    char folder[512] = {0};
++
++    // Whether VitaShell is installed at all. It is homebrew; plenty of
++    // consoles have it and a caller must be able to hide the button on the
++    // ones that do not.
++    SceIoStat st;
++    std::memset(&st, 0, sizeof st);
++    const bool installed =
++        sceIoGetstat("ux0:app/VITASHELL", &st) >= 0 && SCE_S_ISDIR(st.st_mode);
++
++    if (std::strcmp(method, "available") == 0) {
++      ok = installed;
++    } else if (std::strcmp(method, "openFolder") == 0) {
++      const char* p = JsonFindValue(body, len, "path");
++      if (p != nullptr) JsonUnescape(p, body + len, folder, sizeof folder);
++      if (installed && folder[0] != '\0') {
++        // Trailing separator trimmed: checkFolderExist is happier without one
++        // and VitaShell writes its own paths back without.
++        size_t fl = std::strlen(folder);
++        while (fl > 1 && folder[fl - 1] == '/') folder[--fl] = '\0';
++
++        // Best effort. If VitaShell has ever run these exist; if the write
++        // fails the launch still happens and lands in `home`, which is a worse
++        // answer than the right folder and a much better one than nothing.
++        sceIoMkdir("ux0:VitaShell", 0777);
++        sceIoMkdir("ux0:VitaShell/internal", 0777);
++        const SceUID fd =
++            sceIoOpen("ux0:VitaShell/internal/lastdir.txt",
++                      SCE_O_WRONLY | SCE_O_CREAT | SCE_O_TRUNC, 0777);
++        if (fd >= 0) {
++          sceIoWrite(fd, folder, fl + 1);
++          sceIoClose(fd);
++        }
++        ok = true;
++        leaving = true;
++      }
++    }
++
++    if (message->response_handle != nullptr && g_engine != nullptr) {
++      const char* reply = ok ? "[true]" : "[false]";
++      FlutterEngineSendPlatformMessageResponse(
++          g_engine, message->response_handle,
++          reinterpret_cast<const uint8_t*>(reply), std::strlen(reply));
++    }
++
++    if (leaving) {
++      VLog("flutter-vita: handing off to VitaShell at %s\n", folder);
++      flutter_vita_gpu_shutdown();
++      sceKernelDelayThread(200 * 1000);
++      sceAppMgrLaunchAppByUri(0xFFFFF, "psgm:play?titleid=VITASHELL");
++      // Nothing may go between the launch and this line.
++      sceKernelExitProcess(0);
 +    }
 +    return;
 +  }
