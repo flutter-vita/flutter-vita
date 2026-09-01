@@ -171,6 +171,33 @@ List<BenchResult> readResults() {
     if (y == null) return 1;
     return x.compareTo(y);
   });
+  return _dedupe(out);
+}
+
+/// Drop the legacy copy of a run that is also under bench/.
+///
+/// Suites write both: bench-result.json for the host tools and
+/// bench/<title>-<suite>.json for this hub. Listing both showed one run twice,
+/// which across a sweep of thirty-four scenes would make the panel unreadable.
+/// Same suite and same `taken` is the same run; the bench/ copy wins because
+/// it is the one that survives a second suite being added.
+List<BenchResult> _dedupe(List<BenchResult> rows) {
+  final seen = <String>{};
+  final out = <BenchResult>[];
+  for (final r in rows.where((r) => r.source != 'bench-result.json')) {
+    seen.add('${r.suite}|${r.when?.toIso8601String()}');
+    out.add(r);
+  }
+  for (final r in rows.where((r) => r.source == 'bench-result.json')) {
+    if (seen.add('${r.suite}|${r.when?.toIso8601String()}')) out.add(r);
+  }
+  out.sort((a, b) {
+    final x = b.when, y = a.when;
+    if (x == null && y == null) return a.source.compareTo(b.source);
+    if (x == null) return -1;
+    if (y == null) return 1;
+    return x.compareTo(y);
+  });
   return out;
 }
 
@@ -235,6 +262,10 @@ bool startRun(BenchEntry entry) {
   if (!entry.present) return false;
   try {
     File(entry.switchPath).writeAsStringSync('1', flush: true);
+    // Tells the suite the hub is waiting for it, so it hands the console back
+    // when it finishes. A host-started run writes the same bench.on and must
+    // not hand back, which is why this is a separate file rather than a flag.
+    File('$dataDir/bench.from-loader').writeAsStringSync('1', flush: true);
     // Cleared so a marker left by the previous run cannot be mistaken for this
     // one finishing. Same reason tools/bench.sh clears it.
     File('$dataDir/bench-done').writeAsStringSync('0', flush: true);

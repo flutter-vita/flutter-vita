@@ -34,6 +34,15 @@ const String kSoftwareSwitchPath = '$kDataDir/software.on';
 /// vanish.
 const String kBenchDir = '$kDataDir/bench';
 
+/// Written by the loader's TESTS tab before it launches this app, and by
+/// nothing else. Its presence is the only way to tell a run the hub asked for
+/// from one a host script started: both write bench.on.
+const String kFromLoaderPath = '$kDataDir/bench.from-loader';
+
+/// Asking the dev server to give the console back. See HANDOFF_REQUEST in
+/// devserver.c -- Dart cannot launch a title itself.
+const String kHandoffPath = '$kDataDir/handoff.request';
+
 /// The engine receipt, shipped inside the vpk by templates/vita-app.
 const String kEngineManifest = 'app0:/engine.txt';
 
@@ -421,6 +430,27 @@ class BenchRunner {
       // The hub copy is a convenience. Losing it must not lose the run.
     }
     File(kDonePath).writeAsStringSync('1', flush: true);
+    _handBackIfAsked();
+  }
+
+  /// Give the console back to the loader, if the loader is what started this.
+  ///
+  /// A run launched from the TESTS tab used to end with the app sitting on its
+  /// results and the loader gone, so the hub that asked for the run was not
+  /// there to show it. Host-started runs are left alone: tools/bench.sh wants
+  /// the app alive afterwards to read the numbers off it.
+  void _handBackIfAsked() {
+    try {
+      final marker = File(kFromLoaderPath);
+      if (!marker.existsSync()) return;
+      marker.deleteSync();
+      // Last, and after bench-done: the dev server acts on this within half a
+      // second, and anything written afterwards would not be written.
+      File(kHandoffPath).writeAsStringSync('', flush: true);
+    } catch (_) {
+      // Staying in the app is a worse ending, not a broken one. The results
+      // are already on the card.
+    }
   }
 
   /// Write via a .part file and a rename, the only atomic operation here.

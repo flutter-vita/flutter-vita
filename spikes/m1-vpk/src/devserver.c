@@ -282,6 +282,75 @@ static void cmd_rm(int sock, const char* path) {
   send_str(sock, m);
 }
 
+// Give the console to `loader` and end this process. Never returns.
+//
+// Split out of the `handoff` verb so a run that nobody is watching can do the
+// same thing. A benchmark started from the loader's TESTS tab used to end with
+// the app sitting on the results and the loader gone, so the hub that asked
+// for the run could not show it.
+static void hand_over_to(const char* loader) {
+  logf_("  [dev] handing off to %s\n", loader);
+  release_gpu();
+  sceKernelDelayThread(200 * 1000);
+  char uri[64];
+  snprintf(uri, sizeof uri, "psgm:play?titleid=%s", loader);
+  sceAppMgrLaunchAppByUri(0xFFFFF, uri);
+  // Exit immediately. Lingering here is what produced the "close the current
+  // application?" prompt: the shell only asks because we are still running.
+  // Launchers that switch silently (HEXFlow, RetroFlow) all exit straight
+  // after issuing the launch.
+  sceKernelExitProcess(0);
+  for (;;) {
+    sceKernelDelayThread(1000 * 1000);
+  }
+}
+
+// A handoff the app can ask for itself, by writing a file.
+//
+// Dart cannot call sceAppMgrLaunchAppByUri and there is no platform channel on
+// this path -- ADR-0016 keeps the reliability-critical half free of one. A file
+// is what the rest of this project already uses to cross that line, so it is
+// what this uses too. The contents are an optional title id; empty means the
+// same resolution order the verb uses.
+#define HANDOFF_REQUEST "ux0:data/flutter-vita/handoff.request"
+
+static int handoff_thread(SceSize args, void* argp) {
+  (void)args; (void)argp;
+  for (;;) {
+    sceKernelDelayThread(500 * 1000);
+    const SceUID fd = sceIoOpen(HANDOFF_REQUEST, SCE_O_RDONLY, 0777);
+    if (fd < 0) continue;
+    char buf[16] = {0};
+    const int n = sceIoRead(fd, buf, sizeof buf - 1);
+    sceIoClose(fd);
+    // Removed before acting, so a handoff that fails cannot be replayed on
+    // every boot from here on.
+    sceIoRemove(HANDOFF_REQUEST);
+    for (int i = 0; i < n; i++) {
+      if (buf[i] <= ' ') { buf[i] = '\0'; break; }
+    }
+    char loader[16];
+    if (buf[0] != '\0') {
+      snprintf(loader, sizeof loader, "%s", buf);
+    } else if (!read_loader_titleid(loader, sizeof loader)) {
+      snprintf(loader, sizeof loader, "%s", DEVSERVER_DEFAULT_LOADER);
+    }
+    logf_("  [dev] handoff requested by the app\n");
+    hand_over_to(loader);
+  }
+  return 0;
+}
+
+static void start_handoff_watch(void) {
+  const SceUID th = sceKernelCreateThread("fvita-handoff", handoff_thread,
+                                          0x60, 0x2000, 0, 0, NULL);
+  if (th < 0) {
+    logf_("  [dev] handoff watch failed: 0x%08X\n", (unsigned)th);
+    return;
+  }
+  sceKernelStartThread(th, 0, NULL);
+}
+
 static int serve(int sock, const char* log_path, const char* eboot_path) {
   char line[256];
   for (;;) {
@@ -498,20 +567,7 @@ static int serve(int sock, const char* log_path, const char* eboot_path) {
       snprintf(msg, sizeof msg, "OK handing off to %s\n", loader);
       send_str(sock, msg);
       sceNetSocketClose(sock);
-      logf_("  [dev] handing off to %s\n", loader);
-      release_gpu();
-      sceKernelDelayThread(200 * 1000);
-      char uri[64];
-      snprintf(uri, sizeof uri, "psgm:play?titleid=%s", loader);
-      sceAppMgrLaunchAppByUri(0xFFFFF, uri);
-      // Exit immediately. Lingering here is what produced the "close the
-      // current application?" prompt: the shell only asks because we are still
-      // running. Launchers that switch silently (HEXFlow, RetroFlow) all exit
-      // straight after issuing the launch.
-      sceKernelExitProcess(0);
-      for (;;) {
-        sceKernelDelayThread(1000 * 1000);
-      }
+      hand_over_to(loader);
     } else if (strcmp(line, "relaunch") == 0) {
       send_str(sock, "OK relaunching\n");
       sceNetSocketClose(sock);
@@ -1043,6 +1099,7 @@ int dev_server_run(void (*log_line)(const char* msg),
   }
   sceNetCtlInit();
   start_mdns();
+  start_handoff_watch();
 
   SceNetCtlInfo info;
   if (sceNetCtlInetGetInfo(SCE_NETCTL_INFO_GET_IP_ADDRESS, &info) >= 0) {
