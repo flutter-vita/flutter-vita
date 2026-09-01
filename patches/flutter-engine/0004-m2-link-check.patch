@@ -240,10 +240,10 @@ index 00000000..a5e0625d
 +}  // extern "C"
 diff --git a/engine/src/flutter/shell/platform/embedder/vita_embedder.cc b/engine/src/flutter/shell/platform/embedder/vita_embedder.cc
 new file mode 100644
-index 00000000..62960107
+index 00000000..cd2f6814
 --- /dev/null
 +++ b/engine/src/flutter/shell/platform/embedder/vita_embedder.cc
-@@ -0,0 +1,3604 @@
+@@ -0,0 +1,3633 @@
 +// Copyright (c) 2026, the Flutter Authors. All rights reserved.
 +// Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
@@ -397,6 +397,17 @@ index 00000000..62960107
 +// means the guard in patches/vitagl/0003 caught the write that used to be a
 +// data abort at SceGxm+0x1e638.
 +extern "C" unsigned int vgl_reserve_failed;
++// How many cached shader binaries were refused as truncated or malformed. A
++// zero-byte .gxp is what a crash between compile_shader's open and its write
++// leaves behind, and the read path used to trust it.
++extern "C" unsigned int vgl_bad_shader_cache;
++// How many shader compiles libshacccg refused. Worth a line of its own: a
++// refused compile is a draw that will not be drawn, and until 2026-09-01
++// vitaGL followed it by serializing from a null pointer.
++extern "C" unsigned int vgl_failed_compiles;
++// How many programs vitaGL refused to link because a shader behind them does
++// not exist.
++extern "C" unsigned int vgl_failed_links;
 +
 +// Paragraph timing, defined in lib/ui/text/paragraph.cc. ADR-0017: 48 Text
 +// widgets cost 41 ms of UI thread and one Text holding the same 48 glyphs
@@ -410,7 +421,7 @@ index 00000000..62960107
 +
 +namespace {
 +
-+static unsigned int g_vgl_oom_reported = 0;
++
 +
 +// The Vita's panel. ADR-0006 records that native resolution cannot hold 60 fps
 +// and that 720x408 upscaled reaches 68 -- when the reduced-resolution path
@@ -1443,6 +1454,45 @@ index 00000000..62960107
 +// report them would be unmeasurable -- which is the one thing ADR-0006 does
 +// not allow. row_bytes and height are the surface the frame was drawn into;
 +// under GL that is the display target rather than a CPU allocation.
++// vitaGL's counters, reported within a frame of changing.
++//
++// These used to be flushed from the platform loop's 300-iteration report,
++// which is once every five seconds -- and every one of them counts something
++// that happens immediately before the app is likely to die. Three crashes on
++// 2026-09-01 took the explanation with them because the count had not been
++// printed yet.
++//
++// Called from the raster thread, which is the thread that increments all of
++// them, so the `static unsigned` below need no locking.
++void ReportGlCounters() {
++  struct Counter {
++    const char* fmt;
++    unsigned* live;
++    unsigned reported;
++  };
++  static Counter counters[] = {
++      {"flutter-vita: vitaGL dropped %u texture uploads (%u total) -- out of "
++       "GPU memory\n", &vgl_oom_count, 0},
++      {"flutter-vita: vitaGL clamped %u empty scissors (%u total)\n",
++       &vgl_degenerate_scissor, 0},
++      {"flutter-vita: GXM refused %u uniform-buffer reservations (%u total) "
++       "-- vitaGL skipped the draw instead of writing through a null\n",
++       &vgl_reserve_failed, 0},
++      {"flutter-vita: vitaGL refused %u corrupt shader cache entries (%u "
++       "total) -- deleted, recompiling\n", &vgl_bad_shader_cache, 0},
++      {"flutter-vita: libshacccg refused %u shader compiles (%u total) -- "
++       "those draws will not appear\n", &vgl_failed_compiles, 0},
++      {"flutter-vita: vitaGL refused %u program links (%u total) -- a shader "
++       "behind them does not exist\n", &vgl_failed_links, 0},
++  };
++  for (Counter& c : counters) {
++    const unsigned now = *c.live;
++    if (now == c.reported) continue;
++    VLog(c.fmt, now - c.reported, now);
++    c.reported = now;
++  }
++}
++
 +void NotePresent(size_t row_bytes, size_t height) {
 +  // A black panel has two very different causes and this separates them: the
 +  // engine never producing a frame, or producing frames that are themselves
@@ -1881,12 +1931,14 @@ index 00000000..62960107
 +    n += std::snprintf(g_diag_text + n, cap - n,
 +                       "flutter-vita:   mem user=%dK cdram=%dK phycont=%dK"
 +                       " heap=%uM/%uM vgl_oom=%u bad_scissor=%u"
-+                       " reserve_fail=%u\n",
++                       " reserve_fail=%u bad_cache=%u no_compile=%u\n",
 +                       mem.size_user / 1024, mem.size_cdram / 1024,
 +                       mem.size_phycont / 1024, HeapUsedMb(), HeapArenaMb(),
 +                       static_cast<unsigned>(vgl_oom_count),
 +                       static_cast<unsigned>(vgl_degenerate_scissor),
-+                       static_cast<unsigned>(vgl_reserve_failed));
++                       static_cast<unsigned>(vgl_reserve_failed),
++                       static_cast<unsigned>(vgl_bad_shader_cache),
++                       static_cast<unsigned>(vgl_failed_compiles));
 +  }
 +
 +  // Whether the console is idle or busy, independent of this process. A stall
@@ -2466,6 +2518,7 @@ index 00000000..62960107
 +    g_gl_frame_start_us = 0;
 +  }
 +  NotePresent(static_cast<size_t>(kPitch) * 4, kHeight);
++  ReportGlCounters();
 +
 +  // Everything after this point is the swap, and the swap is where the frame
 +  // rate actually comes from: vitaGL waits for vblank, so `active` reads 60 fps
@@ -3811,33 +3864,9 @@ index 00000000..62960107
 +        vita_para_count = 0;
 +      }
 +
-+      // Every 300 loop iterations, so a run says whether the scissor clamps
-+      // ever fired without anyone having to ask for a diag.
-+      static unsigned reported_bad_scissor = 0;
-+      if (vgl_degenerate_scissor != reported_bad_scissor) {
-+        VLog("flutter-vita: vitaGL clamped %u empty scissors (%u total)\n",
-+             static_cast<unsigned>(vgl_degenerate_scissor -
-+                                   reported_bad_scissor),
-+             static_cast<unsigned>(vgl_degenerate_scissor));
-+        reported_bad_scissor = vgl_degenerate_scissor;
-+      }
 +
-+      static unsigned reported_reserve_fail = 0;
-+      if (vgl_reserve_failed != reported_reserve_fail) {
-+        VLog("flutter-vita: GXM refused %u uniform-buffer reservations "
-+             "(%u total) -- vitaGL skipped the draw instead of writing "
-+             "through a null\n",
-+             static_cast<unsigned>(vgl_reserve_failed - reported_reserve_fail),
-+             static_cast<unsigned>(vgl_reserve_failed));
-+        reported_reserve_fail = vgl_reserve_failed;
-+      }
 +
-+      if (vgl_oom_count != g_vgl_oom_reported) {
-+        VLog("flutter-vita: vitaGL dropped %u texture uploads -- out of GPU "
-+             "memory\n",
-+             static_cast<unsigned>(vgl_oom_count - g_vgl_oom_reported));
-+        g_vgl_oom_reported = vgl_oom_count;
-+      }
++
 +
 +      g_loop_iterations = 0;
 +      g_loop_tasks_run = 0;

@@ -73,6 +73,14 @@ thread states. Holding the menu open for two minutes used to freeze it in
 twenty-two seconds and now does not. The memory slide across nine transfers in
 that write-up is a separate observation and stays open.
 
+### 3b. A shader libshacccg will not compile, and the row that holds it
+
+Scrolling to the receive-history row with a JPEG in it: 29 fps to 5, and a
+blank thumbnail where the preview belongs. `link failed but did not provide an
+info log`, on Skia's image draw with a rounded-rect clip and a colour-space
+transform. It used to crash; now it is slow and visibly wrong. Full account in
+[shader-compile-failures-2026-09-01.md](shader-compile-failures-2026-09-01.md).
+
 ## Missing plugins, failing silently
 
 Each of these is a feature that looks present and does nothing.
