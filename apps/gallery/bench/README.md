@@ -50,10 +50,11 @@ runs of the same binary:
   cost scales with how much a scene allocates. On 2026-09-01 a better one
   turned up -- the heap filling underneath the run. `ZoomPageTransitionsBuilder`
   is Material's default for `TargetPlatform.linux`, which is what this port
-  reports, and it grows the native heap about 4.4 MB per push and never gives
-  it back; `route_wrap` and `route_spans` between them reached the 159 MB
-  ceiling in twelve seconds. `route_wrap` was scene 12 of 18 in the order these
-  numbers were taken in. See
+  reports, and after the first nine push-and-pop cycles it grows the native heap
+  4-6 MB per cycle and never gives it back; `route_wrap` and `route_spans`
+  between them reached the 159 MB ceiling in twelve seconds. `route_wrap` was
+  scene 12 of 18 in the order these numbers were taken in, which puts it just
+  past the threshold. See
   [page-transitions-2026-09-01.md](../../../docs/results/page-transitions-2026-09-01.md).
 
   The original wording follows, because the reasoning still applies to whatever
