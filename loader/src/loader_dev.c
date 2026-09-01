@@ -128,15 +128,6 @@ static void release_gpu(void) {
 // single watcher thread -- so this is guarded by nothing more than that fact
 // and the atomic rename at the end of publish().
 
-// When a host last sent this loader a command, in seconds of process time.
-//
-// The panel's badge said "Waiting" through every unreachable stretch tonight,
-// and it was telling the truth: the console had an address and the socket was
-// listening. What it could not say was that nothing had reached it for twenty
-// minutes, which is the one thing that separates "idle" from "the host has
-// lost me". Negative means never.
-static SceInt64 g_last_cmd = -1;
-
 static char g_status[24] = "Starting";
 static char g_detail[80] = "";
 static char g_ip[24] = "";
@@ -152,22 +143,15 @@ static char g_lines[LOG_LINES][LOG_WIDTH];
 static int g_line_count = 0;  // total ever, not the ring size
 static unsigned g_seq = 0;
 
-// Seconds since a host last spoke, or -1 if none ever has.
-static int last_cmd_age(void) {
-  if (g_last_cmd < 0) return -1;
-  const SceInt64 now = (SceInt64)sceKernelGetProcessTimeWide();
-  return (int)((now - g_last_cmd) / 1000000);
-}
-
 static void publish(void) {
   g_seq++;
   char buf[LOG_LINES * LOG_WIDTH + 512];
   int n = snprintf(buf, sizeof buf,
                    "seq %u\nip %s\nport %d\ntarget %s\nstatus %s\ndetail %s\n"
-                   "self %s\nrecv %d %d\nlastcmd %d\n",
+                   "self %s\nrecv %d %d\n",
                    g_seq, g_ip[0] ? g_ip : "-", LOADER_PORT, g_target,
                    g_status, g_detail, LOADER_SELF_TITLEID, g_recv_done,
-                   g_recv_total, last_cmd_age());
+                   g_recv_total);
   // Oldest first, so the Dart side can append without reversing.
   const int have = g_line_count < LOG_LINES ? g_line_count : LOG_LINES;
   const int start = g_line_count - have;
@@ -1060,11 +1044,9 @@ static void cmd_rmtree(int sock, const char* path) {
 static void restart_after_delete(void) {
   note("restarting after a delete");
   set_status("Restarting", "after a delete");
-  // Short. The reply is one datagram and it has already been handed to the
-  // stack; the panel's last frame is worth less than the seconds this is
-  // racing. 600 ms was the courteous number and courtesy is what lost the
-  // third console drop.
-  sceKernelDelayThread(150 * 1000);
+  // Long enough for the reply to leave and for one publish-and-poll, so the
+  // last frame on screen says what is happening.
+  sceKernelDelayThread(600 * 1000);
   hand_over(LOADER_SELF_TITLEID);
   // Only reached if the launch was refused, which for our own title id means
   // ux0:app/<self> has gone -- there is nothing to hand to, so stay up.
@@ -1095,29 +1077,10 @@ static void cmd_delete(int sock, const char* titleid) {
   if (!promoter_up(sock)) return;
   set_status("Deleting", "removing %s", titleid);
   note("delete %s", titleid);
-
-  // Fire, answer, and leave. Deliberately *not* through promoter_finish.
-  //
-  // Every other promoter call polls GetState to completion and reads
-  // GetResult, and delete did too for about an hour on 2026-09-01. That is the
-  // correct shape and here it is the fatal one: this process dies a few
-  // seconds after DeletePkg, and promoter_finish waits up to sixty. The wait
-  // is spent inside the window that kills us, so the restart below never ran
-  // and the console landed on the LiveArea home screen a third time.
-  //
-  // What is given up is the result. `OK delete accepted` means accepted and
-  // nothing more, which is why the name says so -- ask `exist <titleid>` after
-  // the loader is back to learn whether it worked.
-  const int r = scePromoterUtilityDeletePkg(titleid);
-  char m[224];
-  snprintf(m, sizeof m, "%s delete accepted %s 0x%08X (loader restarting)\n",
-           r >= 0 ? "OK" : "ERR", titleid, (unsigned)r);
-  reply(sock, m);
+  // NULL: promoter_finish records a title id as *installed* on success, which
+  // is the opposite of what happened here.
+  promoter_finish(sock, "delete", scePromoterUtilityDeletePkg(titleid), NULL);
   forget_installed(titleid);
-  if (r < 0) {
-    set_status("Waiting", NULL);
-    return;
-  }
   restart_after_delete();
 }
 
@@ -1150,7 +1113,6 @@ static void cmd_ls(int sock, const char* path) {
 // ------------------------------------------------------------- the dispatch
 
 static int handle(int sock, const char* line, int* stop) {
-  g_last_cmd = (SceInt64)sceKernelGetProcessTimeWide();
   // Shadows the dev server's own `pong`, so that a reply identifies what
   // answered. tools/update-loader.sh greps for it, and the alternative --
   // a bare "pong" from whatever happens to hold the port -- is how you
@@ -1315,10 +1277,9 @@ static void serve_request(void) {
       note("delete %s: promoter would not start", titleid);
       return;
     }
-    const int r = scePromoterUtilityDeletePkg(titleid);
-    note("panel delete %s accepted 0x%08X", titleid, (unsigned)r);
+    promoter_finish(-1, "delete", scePromoterUtilityDeletePkg(titleid), NULL);
     forget_installed(titleid);
-    if (r >= 0) restart_after_delete();
+    restart_after_delete();
   } else if (strncmp(buf, "launch ", 7) == 0) {
     const char* titleid = buf + 7;
     if (strcmp(titleid, LOADER_SELF_TITLEID) == 0) {
@@ -1341,7 +1302,6 @@ static int watcher(SceSize args, void* argp) {
   (void)args;
   (void)argp;
   char last[24] = "";
-  unsigned ticks = 0;
   for (;;) {
     SceNetCtlInfo info;
     const int r =
@@ -1370,12 +1330,6 @@ static int watcher(SceSize args, void* argp) {
       set_status("No network", "check Wi-Fi on the console");
     }
     serve_request();
-
-    // Republish on a slow tick so the panel's "last heard from a host" ages
-    // on screen instead of freezing at whatever it said when something last
-    // happened. Every tenth pass rather than every one: this is a write to the
-    // memory card, and the number it refreshes is measured in minutes.
-    if (++ticks % 5 == 0) publish();
     sceKernelDelayThread(2 * 1000 * 1000);
   }
   return 0;  // not reached; sceKernelCreateThread wants the signature
