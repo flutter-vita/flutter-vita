@@ -34,6 +34,7 @@ these patches are the artifact.
 | 0001 | [what-a-failed-allocation-costs](0001-what-a-failed-allocation-costs.patch) | A texture upload that memcpy'd into NULL, and a collector wait that slept a flat second |
 | 0002 | [the-reservation-vitagl-never-checked](0002-the-reservation-vitagl-never-checked.patch) | `sceGxmReserveVertexDefaultUniformBuffer` can refuse, and vitaGL wrote through the null it left. Four data aborts. Also clamps an empty scissor and a zero-size viewport |
 | 0003 | [a-shader-that-failed-is-not-a-shader](0003-a-shader-that-failed-is-not-a-shader.patch) | Three more null-pointer paths behind a shader that did not compile, plus a shader cache that trusted a zero-byte file and a writer that created one |
+| 0004 | [the-define-that-renamed-every-s](0004-the-define-that-renamed-every-s.patch) | `#define s x` in the Cg header renamed every variable called `s`, and Skia has one. The shader that would not link |
 
 ## 0002, the one that took the console down
 

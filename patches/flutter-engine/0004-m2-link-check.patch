@@ -240,10 +240,10 @@ index 00000000..a5e0625d
 +}  // extern "C"
 diff --git a/engine/src/flutter/shell/platform/embedder/vita_embedder.cc b/engine/src/flutter/shell/platform/embedder/vita_embedder.cc
 new file mode 100644
-index 00000000..cd2f6814
+index 00000000..4911e175
 --- /dev/null
 +++ b/engine/src/flutter/shell/platform/embedder/vita_embedder.cc
-@@ -0,0 +1,3633 @@
+@@ -0,0 +1,3814 @@
 +// Copyright (c) 2026, the Flutter Authors. All rights reserved.
 +// Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
@@ -408,6 +408,10 @@ index 00000000..cd2f6814
 +// How many programs vitaGL refused to link because a shader behind them does
 +// not exist.
 +extern "C" unsigned int vgl_failed_links;
++// Makes vitaGL's GLSL translator write its Cg output beside the probe. Armed
++// only while the probe is running a shader, because it is a file write per
++// compile.
++extern "C" unsigned int vgl_dump_translated;
 +
 +// Paragraph timing, defined in lib/ui/text/paragraph.cc. ADR-0017: 48 Text
 +// widgets cost 41 ms of UI thread and one Text holding the same 48 glyphs
@@ -1493,6 +1497,178 @@ index 00000000..cd2f6814
 +  }
 +}
 +
++// Compile a shader pair on demand, from the raster thread, and say what
++// happened.
++//
++// libshacccg refuses one of the programs Skia generates for an image draw and
++// gives no reason: "link failed but did not provide an info log". Finding which
++// construct it objects to means compiling variants, and libshacccg is a Vita
++// module -- there is no host copy to bisect against. So the bisection happens
++// here.
++//
++// Put a vertex and fragment shader beside a `go` marker and this compiles them
++// on the next present and writes the answer back. One rebuild, then the loop is
++// two file transfers:
++//
++//   put ux0:data/flutter-vita/shadertest/v.glsl
++//   put ux0:data/flutter-vita/shadertest/f.glsl
++//   put ux0:data/flutter-vita/shadertest/go
++//   get ux0:data/flutter-vita/shadertest/result.txt
++//
++// It has to run on this thread: vitaGL is driven from the raster thread and
++// nothing else in the process may touch GL.
++constexpr const char* kProbeDir = "ux0:data/flutter-vita/shadertest";
++
++char* ReadWholeFile(const char* path, int* out_len) {
++  const SceUID fd = sceIoOpen(path, SCE_O_RDONLY, 0777);
++  if (fd < 0) return nullptr;
++  const int len = static_cast<int>(sceIoLseek(fd, 0, SCE_SEEK_END));
++  sceIoLseek(fd, 0, SCE_SEEK_SET);
++  if (len <= 0 || len > 256 * 1024) {
++    sceIoClose(fd);
++    return nullptr;
++  }
++  char* buf = static_cast<char*>(std::malloc(len + 1));
++  if (buf == nullptr) {
++    sceIoClose(fd);
++    return nullptr;
++  }
++  const int got = sceIoRead(fd, buf, len);
++  sceIoClose(fd);
++  if (got != len) {
++    std::free(buf);
++    return nullptr;
++  }
++  buf[len] = '\0';
++  if (out_len != nullptr) *out_len = len;
++  return buf;
++}
++
++void ProbeAppend(char* out, int cap, int* n, const char* fmt, ...) {
++  if (*n >= cap - 1) return;
++  va_list ap;
++  va_start(ap, fmt);
++  const int wrote = std::vsnprintf(out + *n, cap - *n, fmt, ap);
++  va_end(ap);
++  if (wrote > 0) *n += wrote < cap - *n ? wrote : cap - *n - 1;
++}
++
++void ProbeShaderLog(GLuint obj, bool program, char* out, int cap, int* n,
++                    const char* label) {
++  GLint len = 0;
++  if (program) {
++    glGetProgramiv(obj, GL_INFO_LOG_LENGTH, &len);
++  } else {
++    glGetShaderiv(obj, GL_INFO_LOG_LENGTH, &len);
++  }
++  if (len <= 1) {
++    ProbeAppend(out, cap, n, "%s log: (empty)\n", label);
++    return;
++  }
++  if (len > 4096) len = 4096;
++  char* log = static_cast<char*>(std::malloc(len + 1));
++  if (log == nullptr) return;
++  log[0] = '\0';
++  if (program) {
++    glGetProgramInfoLog(obj, len, nullptr, log);
++  } else {
++    glGetShaderInfoLog(obj, len, nullptr, log);
++  }
++  log[len] = '\0';
++  ProbeAppend(out, cap, n, "%s log: %s\n", label, log);
++  std::free(log);
++}
++
++void RunShaderProbe() {
++  char path[256];
++  std::snprintf(path, sizeof path, "%s/go", kProbeDir);
++  SceIoStat st;
++  if (sceIoGetstat(path, &st) < 0) return;
++  sceIoRemove(path);
++
++  static char out[8192];
++  int n = 0;
++  out[0] = '\0';
++
++  char vpath[256], fpath[256];
++  std::snprintf(vpath, sizeof vpath, "%s/v.glsl", kProbeDir);
++  std::snprintf(fpath, sizeof fpath, "%s/f.glsl", kProbeDir);
++  char* vsrc = ReadWholeFile(vpath, nullptr);
++  char* fsrc = ReadWholeFile(fpath, nullptr);
++  if (vsrc == nullptr || fsrc == nullptr) {
++    ProbeAppend(out, sizeof out, &n, "MISSING %s\n",
++                vsrc == nullptr ? "v.glsl" : "f.glsl");
++  } else {
++    // An optimisation level for this compile only, if one was asked for.
++    //
++    // vitaGL leaves shacccg at SHARK_OPT_FAST (O3) and nothing in this port
++    // overrides it. O3 inlines hard, which is the usual way a shader stops
++    // fitting the register file -- so the level has to be one of the things
++    // the bisection can vary, and rebuilding the app five times to try five
++    // levels is not that.
++    int level = -1;
++    char opt_path[256];
++    std::snprintf(opt_path, sizeof opt_path, "%s/opt", kProbeDir);
++    if (char* opt = ReadWholeFile(opt_path, nullptr)) {
++      level = std::atoi(opt);
++      std::free(opt);
++      if (level < SHARK_OPT_SLOW || level > SHARK_OPT_UNSAFE) level = -1;
++    }
++    if (level >= 0) {
++      vglSetupRuntimeShaderCompiler(static_cast<shark_opt>(level), GL_TRUE,
++                                    GL_FALSE, GL_TRUE);
++    }
++
++    vgl_dump_translated = 1;
++    const uint64_t t0 = sceKernelGetSystemTimeWide();
++    const GLuint vs = glCreateShader(GL_VERTEX_SHADER);
++    const GLuint fs = glCreateShader(GL_FRAGMENT_SHADER);
++    const char* vp = vsrc;
++    const char* fp = fsrc;
++    glShaderSource(vs, 1, &vp, nullptr);
++    glShaderSource(fs, 1, &fp, nullptr);
++    glCompileShader(vs);
++    glCompileShader(fs);
++    const GLuint prog = glCreateProgram();
++    glAttachShader(prog, vs);
++    glAttachShader(prog, fs);
++    glLinkProgram(prog);
++    const uint64_t took = sceKernelGetSystemTimeWide() - t0;
++
++    GLint linked = 0;
++    glGetProgramiv(prog, GL_LINK_STATUS, &linked);
++    static const char* const kLevels[] = {"SLOW/O0", "SAFE/O1", "DEFAULT/O2",
++                                          "FAST/O3", "UNSAFE/Ofast"};
++    ProbeAppend(out, sizeof out, &n, "LINK %s in %u us at opt %s\n",
++                linked ? "OK" : "FAILED", static_cast<unsigned>(took),
++                level >= 0 ? kLevels[level] : "FAST/O3 (default)");
++    ProbeShaderLog(vs, false, out, sizeof out, &n, "vertex");
++    ProbeShaderLog(fs, false, out, sizeof out, &n, "fragment");
++    ProbeShaderLog(prog, true, out, sizeof out, &n, "program");
++
++    vgl_dump_translated = 0;
++    glDeleteProgram(prog);
++    glDeleteShader(vs);
++    glDeleteShader(fs);
++    // Put the compiler back however it was, so a probe cannot change what the
++    // app itself compiles afterwards.
++    if (level >= 0) {
++      vglSetupRuntimeShaderCompiler(SHARK_OPT_FAST, GL_TRUE, GL_FALSE, GL_TRUE);
++    }
++  }
++  std::free(vsrc);
++  std::free(fsrc);
++
++  std::snprintf(path, sizeof path, "%s/result.txt", kProbeDir);
++  const SceUID fd =
++      sceIoOpen(path, SCE_O_CREAT | SCE_O_WRONLY | SCE_O_TRUNC, 0777);
++  if (fd >= 0) {
++    sceIoWrite(fd, out, std::strlen(out));
++    sceIoClose(fd);
++  }
++  VLogRaw(out, std::strlen(out));
++}
++
 +void NotePresent(size_t row_bytes, size_t height) {
 +  // A black panel has two very different causes and this separates them: the
 +  // engine never producing a frame, or producing frames that are themselves
@@ -2264,6 +2440,8 @@ index 00000000..cd2f6814
 +  vglSetShaderCachePath(kShaderCachePath);
 +  sceIoMkdir("ux0:data", 0777);
 +  sceIoMkdir(kShaderCachePath, 0777);
++  sceIoMkdir("ux0:data/flutter-vita", 0777);
++  sceIoMkdir(kProbeDir, 0777);
 +  for (int v = 0; v < 8; v++) {
 +    char p[64];
 +    std::snprintf(p, sizeof p, "%s/v%d", kShaderCachePath, v);
@@ -2519,6 +2697,9 @@ index 00000000..cd2f6814
 +  }
 +  NotePresent(static_cast<size_t>(kPitch) * 4, kHeight);
 +  ReportGlCounters();
++  // One stat every sixty frames, which is nothing next to a frame.
++  static unsigned probe_tick = 0;
++  if (++probe_tick % 60 == 0) RunShaderProbe();
 +
 +  // Everything after this point is the swap, and the swap is where the frame
 +  // rate actually comes from: vitaGL waits for vblank, so `active` reads 60 fps

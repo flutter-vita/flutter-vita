@@ -73,13 +73,29 @@ thread states. Holding the menu open for two minutes used to freeze it in
 twenty-two seconds and now does not. The memory slide across nine transfers in
 that write-up is a separate observation and stays open.
 
-### 3b. A shader libshacccg will not compile, and the row that holds it
+### 3b. A shader libshacccg would not compile — FIXED 2026-09-01
 
-Scrolling to the receive-history row with a JPEG in it: 29 fps to 5, and a
-blank thumbnail where the preview belongs. `link failed but did not provide an
-info log`, on Skia's image draw with a rounded-rect clip and a colour-space
-transform. It used to crash; now it is slow and visibly wrong. Full account in
+Scrolling to the receive-history row with a JPEG in it took 29 fps to 5, with
+`link failed but did not provide an info log` on Skia's image draw.
+
+The cause was in vitaGL, not Skia: `#define s x` in the Cg translation header
+renamed every variable called `s` in every shader, and Skia's colour transfer
+function declares one inside a function taking `x`. Fixed in
+[patches/vitagl/0004](../../patches/vitagl/0004-the-define-that-renamed-every-s.patch).
+That row now holds 29.0 fps with the raster thread at 8% and refuses no links.
+Full account in
 [shader-compile-failures-2026-09-01.md](shader-compile-failures-2026-09-01.md).
+
+**The thumbnail on that row is still blank**, and it is now item 3c.
+
+### 3c. The JPEG thumbnail never appears
+
+Neither a picture nor the file-type icon: an empty rounded tile, while the HEIC
+row beside it draws the icon through the same widget's `errorBuilder`. Nothing
+in the log — no refused link, no decode error. `SmartFileThumbnail` calls
+`Image.file(File(path), cacheWidth: 64)`, and an empty tile is what `Image`
+draws while a decode is pending, so the scaled decode of a 4 MB JPEG is neither
+completing nor failing. Not measured further.
 
 ## Missing plugins, failing silently
 
@@ -163,7 +179,7 @@ by the shell over every application, not something localsend or the port does.
 
 ## Order to fix
 
-3 is fixed, and 2 with it. Of what is left, 1 is the release blocker for what the app is *for*,
+3 is fixed, and 2 with it; 3b is fixed and left 3c behind. Of what is left, 1 is the release blocker for what the app is *for*,
 and needs a product decision before any code. 6 is a two-line stub with a real
 consequence. 4 and 5 are small plugins of the kind already in `packages/`. 7 is
 the long-standing one and the only one that is a research task rather than a

@@ -1,8 +1,8 @@
 diff --git a/source/custom_shaders.c b/source/custom_shaders.c
-index f84d9c6..fa3c714 100644
+index f84d9c6..23b46d3 100644
 --- a/source/custom_shaders.c
 +++ b/source/custom_shaders.c
-@@ -579,23 +579,107 @@ void *serialize_shader(void *out, size_t *sz, shader *s, GLboolean save_bindings
+@@ -579,23 +579,111 @@ void *serialize_shader(void *out, size_t *sz, shader *s, GLboolean save_bindings
  	return _out;
  }
  
@@ -37,6 +37,10 @@ index f84d9c6..fa3c714 100644
 +// How many programs were refused a link because a shader behind them does not
 +// exist. GL says a link can fail; vitaGL had no path for it.
 +unsigned int vgl_failed_links = 0;
++
++// Set by the embedder to make the GLSL translator write the Cg it produces to
++// the card. Off by default; it is a whole shader written per compile.
++unsigned int vgl_dump_translated = 0;
 +
 +// Shaders libshacccg has already refused, this run.
 +//
@@ -111,7 +115,7 @@ index f84d9c6..fa3c714 100644
  	s->size = sz - ((uintptr_t)buf - (uintptr_t)in);
  	s->prog = (SceGxmProgram *)vglMalloc(s->size);
  	vgl_fast_memcpy((SceGxmProgram *)s->prog, buf, s->size);
-@@ -611,6 +695,7 @@ void unserialize_shader(void *in, size_t sz, shader *s, GLboolean load_bindings)
+@@ -611,6 +699,7 @@ void unserialize_shader(void *in, size_t sz, shader *s, GLboolean load_bindings)
  			s->mat = m;
  		}
  	}
@@ -119,7 +123,7 @@ index f84d9c6..fa3c714 100644
  }
  
  #ifdef HAVE_SHADER_CACHE
-@@ -661,12 +746,45 @@ static inline __attribute__((always_inline)) void compile_shader(shader *s, GLbo
+@@ -661,12 +750,45 @@ static inline __attribute__((always_inline)) void compile_shader(shader *s, GLbo
  #endif
  	shark_clear_output();
  #ifdef HAVE_SHADER_CACHE
@@ -169,7 +173,7 @@ index f84d9c6..fa3c714 100644
  #endif
  }
  
-@@ -1758,26 +1876,48 @@ void glCompileShader(GLuint handle) {
+@@ -1758,26 +1880,48 @@ void glCompileShader(GLuint handle) {
  	
  #ifdef HAVE_SHADER_CACHE
  	char fname[256];
@@ -226,7 +230,7 @@ index f84d9c6..fa3c714 100644
  }
  
  void glDeleteShader(GLuint shad) {
-@@ -2135,48 +2275,94 @@ void glLinkProgram(GLuint progr) {
+@@ -2135,48 +2279,94 @@ void glLinkProgram(GLuint progr) {
  #ifdef HAVE_SHADER_CACHE
  		char frag_fname[256], vert_fname[256];
  		char *fname;
@@ -334,7 +338,7 @@ index f84d9c6..fa3c714 100644
  			}
  		}
  
-@@ -2197,6 +2383,20 @@ void glLinkProgram(GLuint progr) {
+@@ -2197,6 +2387,20 @@ void glLinkProgram(GLuint progr) {
  		vgl_log("%s:%d: %s: A program has been re-linked. vitaGL doesn't support re-linking, glitches may happen.\n", __FILE__, __LINE__, __func__);
  		return;
  	}
