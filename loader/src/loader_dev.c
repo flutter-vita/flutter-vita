@@ -89,6 +89,18 @@ int flutter_vita_debug_overlay = 0;
 // is not the crash risk ADR-0016 decision 7 named. It is that the panel is not
 // legible under GL on the blessed engine.
 //
+// Back to 0 on 2026-09-01. The caveat below -- that the blessed engine is
+// deliberately older than the tree, so this may already be fixed -- stopped
+// being a caveat when the pin was bumped to today's engine that evening. The
+// blessed engine and the engine apps use are now the same build, so if the
+// panel is still illegible it is a live defect in the GL path and reproducing
+// it here is as good as reproducing it in an app.
+//
+// The user's call, and the reason is not about the loader: software rendering
+// is not something anyone would choose on this console, so the port should not
+// keep a component on it. What follows from that is that the alpha-blending
+// artefact below is now a bug to fix rather than a reason to opt out.
+//
 // Seen on the console: the status pill and every Btn render as a filled
 // rectangle with no text in them, while the rail labels and body text next to
 // them are fine. What the blank ones have in common is a translucent
@@ -106,7 +118,7 @@ int flutter_vita_debug_overlay = 0;
 // Apps are unaffected and stay on the GPU: ux0:data/flutter-vita/software.on
 // is 0 on this console, and the gallery came up "GL up -- OpenGL ES 2.0
 // VitaGL / SGX543MP4+" on the current engine.
-int flutter_vita_force_software = 1;
+int flutter_vita_force_software = 0;
 
 // Defined by the embedder when it is running the GL path, absent otherwise --
 // hence weak, the same declaration devserver.c and bailout.c carry. Every exit

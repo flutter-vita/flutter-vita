@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
 # Run the gallery's benchmark on both renderers and compare. ADR-0017.
 #
-#   ./tools/bench.sh                       software and GPU, then diff
-#   ./tools/bench.sh --only sw|gl          one renderer
-#   ./tools/bench.sh --baseline            write the result in as the baseline
+#   ./tools/bench.sh                       the GPU, which is the only renderer
+                                         anyone runs
+  ./tools/bench.sh --only sw             software, to localise a GL defect
+# #   ./tools/bench.sh --baseline            write the result in as the baseline
 #   ./tools/bench.sh --relaunch            reuse the installed build, skip the deploy
 #   ./tools/bench.sh --leave sw|gl         renderer the console rests on (default gl)
 #   ./tools/bench.sh --scenes a,b,c        run only these scenes
@@ -33,7 +34,14 @@ LDR=1341
 APP_VPK="$ROOT/apps/gallery/build/vita/gallery.vpk"
 BASELINE_DIR="$ROOT/apps/gallery/bench"
 OUT_DIR="$ROOT/out/bench"
-ONLY=""
+# GPU only, unless asked otherwise.
+#
+# Every run used to do software and GPU and diff them. The comparison stopped
+# earning its keep on 2026-09-01: nobody ships software rendering on this
+# console, nobody would choose it as a user, and running it doubled the time of
+# every measurement to produce a column nobody acts on. --only sw still works
+# for the rare case of asking whether a defect is in the GL path at all.
+ONLY="gl"
 # Which renderer the console is left on when the run finishes. See the note
 # beside the write at the bottom.
 LEAVE=gl

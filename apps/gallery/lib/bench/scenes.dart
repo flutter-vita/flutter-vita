@@ -71,6 +71,36 @@ Future<void> prepareAssets() async {
 }
 
 final List<AnimatedScene> animatedScenes = <AnimatedScene>[
+  // Not a benchmark. A picture that answers one question.
+  //
+  // On 2026-09-01 the loader's panel was unreadable under GL: its status pill
+  // and buttons rendered as solid rectangles with the text gone. Sampling the
+  // framebuffer showed the fills at exactly full opacity -- 0xFF4B8FD6 where
+  // a 16% accent over the page background should be (21, 40, 61). The text is
+  // the same colour as its background by design, so losing the alpha loses
+  // the text.
+  //
+  // Software renders the same widgets correctly, so the colour survives Dart
+  // and the embedder and is dropped in the GL path. This narrows where.
+  //
+  //   row 1  Color.fromARGB(41, ...)      the old, plain construction
+  //   row 2  base.withValues(alpha: 0.16) the API the loader actually uses
+  //   row 3  Opacity(0.16) over an opaque fill   a different route to the
+  //                                              same pixel
+  //
+  // Each row is drawn over the same dark background with white text on top.
+  // If rows 1 and 2 both come out opaque, the colour API is exonerated and
+  // the bug is in how a translucent solid fill reaches vitaGL. If row 3 is
+  // correct while 1 and 2 are not, the layer path blends and the direct fill
+  // does not, which is a much smaller place to look.
+  AnimatedScene(
+    name: 'alpha_probe',
+    stresses: Stresses.fill,
+    builder: (context, t) => const ColoredBox(
+      color: Color(0xFF0B1420),
+      child: Center(child: _AlphaProbe()),
+    ),
+  ),
   // The baseline. Everything else is read against this: if a solid fill
   // stalls, the problem is not the scene.
   AnimatedScene(
@@ -762,3 +792,40 @@ final List<DrivenScene> drivenScenes = <DrivenScene>[
     },
   ),
 ];
+
+/// Three ways of asking for the same 16%-opaque blue. See `alpha_probe`.
+class _AlphaProbe extends StatelessWidget {
+  const _AlphaProbe();
+
+  static const _base = Color(0xFF4B8FD6);
+
+  Widget _row(String label, Widget swatch) => Padding(
+        padding: const EdgeInsets.symmetric(vertical: 6),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            SizedBox(
+              width: 150,
+              child: Text(label,
+                  style: const TextStyle(
+                      fontSize: 12, color: Color(0xFFE6EDF5))),
+            ),
+            SizedBox(width: 220, height: 34, child: swatch),
+          ],
+        ),
+      );
+
+  @override
+  Widget build(BuildContext context) => Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          _row('fromARGB(41)',
+              const ColoredBox(color: Color.fromARGB(41, 75, 143, 214))),
+          _row('withValues(0.16)',
+              ColoredBox(color: _base.withValues(alpha: 0.16))),
+          _row('Opacity(0.16)',
+              const Opacity(opacity: 0.16, child: ColoredBox(color: _base))),
+          _row('opaque, for scale', const ColoredBox(color: _base)),
+        ],
+      );
+}

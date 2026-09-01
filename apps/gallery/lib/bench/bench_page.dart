@@ -127,6 +127,22 @@ class _BenchPageState extends State<BenchPage> with TickerProviderStateMixin {
             tag: 'bench-hero',
             child: SizedBox(width: 1, height: 1),
           ),
+          // Four ways of asking for the same 16%-opaque blue, on the page
+          // rather than in a scene.
+          //
+          // It started as the alpha_probe scene and could not be photographed:
+          // a scene lasts about five seconds and one `shot` moves two
+          // megabytes, so every capture landed on the results screen instead.
+          // A diagnostic you cannot photograph is not a diagnostic. Here it
+          // holds still.
+          //
+          // What it is for: on 2026-09-01 the loader's panel was unreadable
+          // under GL, its pills and buttons rendering at full opacity where
+          // 16% was asked for. Software draws them correctly.
+          const Padding(
+            padding: EdgeInsets.symmetric(horizontal: 12),
+            child: _AlphaProbeRow(),
+          ),
           if (results.isEmpty)
             Expanded(
               child: Center(
@@ -168,4 +184,36 @@ class _BenchPageState extends State<BenchPage> with TickerProviderStateMixin {
       ),
     );
   }
+}
+
+/// See the note at its use site.
+class _AlphaProbeRow extends StatelessWidget {
+  const _AlphaProbeRow();
+
+  static const _base = Color(0xFF4B8FD6);
+
+  Widget _swatch(String label, Widget box) => Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          SizedBox(width: 92, height: 26, child: box),
+          Text(label,
+              style: const TextStyle(fontSize: 9, color: Colors.white70)),
+        ],
+      );
+
+  @override
+  Widget build(BuildContext context) => Row(
+        children: [
+          _swatch('fromARGB(41)',
+              const ColoredBox(color: Color.fromARGB(41, 75, 143, 214))),
+          const SizedBox(width: 8),
+          _swatch('withValues(.16)',
+              ColoredBox(color: _base.withValues(alpha: 0.16))),
+          const SizedBox(width: 8),
+          _swatch('Opacity(.16)',
+              const Opacity(opacity: 0.16, child: ColoredBox(color: _base))),
+          const SizedBox(width: 8),
+          _swatch('opaque', const ColoredBox(color: _base)),
+        ],
+      );
 }
