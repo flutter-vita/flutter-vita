@@ -240,10 +240,10 @@ index 00000000..a5e0625d
 +}  // extern "C"
 diff --git a/engine/src/flutter/shell/platform/embedder/vita_embedder.cc b/engine/src/flutter/shell/platform/embedder/vita_embedder.cc
 new file mode 100644
-index 00000000..8e12f894
+index 00000000..193f4dc1
 --- /dev/null
 +++ b/engine/src/flutter/shell/platform/embedder/vita_embedder.cc
-@@ -0,0 +1,3470 @@
+@@ -0,0 +1,3588 @@
 +// Copyright (c) 2026, the Flutter Authors. All rights reserved.
 +// Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
@@ -389,6 +389,10 @@ index 00000000..8e12f894
 +// module that was not resident. If a build ever stops linking vitaGL this
 +// should fail at link time, where the message is legible.
 +extern "C" unsigned int vgl_oom_count;
++// How many glScissor calls arrived with no area, or with an origin past the
++// display. Patched into vitaGL alongside the clamps that stop those reaching
++// sceGxmSetRegionClip as an inverted unsigned range; see patches/vitagl.
++extern "C" unsigned int vgl_degenerate_scissor;
 +
 +// Paragraph timing, defined in lib/ui/text/paragraph.cc. ADR-0017: 48 Text
 +// widgets cost 41 ms of UI thread and one Text holding the same 48 glyphs
@@ -1757,10 +1761,76 @@ index 00000000..8e12f894
 +  }
 +}
 +
++// A backtrace for a thread that is not this one.
++//
++// Nothing on this console can ask another thread where it is. There is no
++// ptrace, no kernel plugin (and there will not be one), and the crash dump --
++// the only thing that has ever produced a thread list here -- needs the
++// process to be dying first. A stall is the case where it is not.
++//
++// So: read the thread's stack out of our own address space, which is the same
++// address space, and pick out the values that look like return addresses.
++// sceKernelGetThreadStackFreeSize gives the live portion, so this scans the
++// frames that are actually there rather than the whole megabyte of history
++// underneath them.
++//
++// "Looks like a return address" is: odd, because every function in this build
++// is Thumb and bit 0 is the interworking bit, and inside the range user
++// modules load into. System modules live up at 0xE0000000 and are excluded --
++// they would be the more interesting half if they could be symbolicated, and
++// they cannot.
++//
++// It is a heuristic and it prints stale frames alongside live ones. It is also
++// the difference between "io.flutter.ui is waiting on something" and knowing
++// what it called to get there.
++constexpr uintptr_t kUserTextLo = 0x81000000u;
++constexpr uintptr_t kUserTextHi = 0x88000000u;
++constexpr int kMaxFrames = 10;
++
++int ScanStack(const SceKernelThreadInfo& info, SceUID uid, uintptr_t* out,
++              int* reported_free) {
++  const uintptr_t base = reinterpret_cast<uintptr_t>(info.stack);
++  const uintptr_t top = base + static_cast<uintptr_t>(info.stackSize);
++  if (reported_free != nullptr) *reported_free = 0;
++  if (base == 0 || info.stackSize <= 0) return 0;
++
++  // Free space is measured from the base, and the stack grows down towards it,
++  // so base + free is where this thread's live frames start.
++  const int free_bytes = sceKernelGetThreadStackFreeSize(uid);
++  if (reported_free != nullptr) *reported_free = free_bytes;
++  uintptr_t sp;
++  if (free_bytes > 0 && static_cast<uintptr_t>(free_bytes) < info.stackSize) {
++    sp = base + static_cast<uintptr_t>(free_bytes);
++  } else {
++    // The call is documented but not promised for a thread that is not this
++    // one. Without it the live region is unknown, so take the top 32 KB: deep
++    // enough for any frame stack this port produces, shallow enough that the
++    // scan is mostly live rather than mostly history.
++    const uintptr_t window = 32u * 1024u;
++    sp = info.stackSize > static_cast<SceInt32>(window) ? top - window : base;
++  }
++  sp &= ~static_cast<uintptr_t>(3);
++  if (sp < base || sp >= top) return 0;
++
++  int n = 0;
++  uintptr_t last = 0;
++  for (uintptr_t a = sp; a < top && n < kMaxFrames; a += 4) {
++    const uintptr_t v = *reinterpret_cast<const uintptr_t*>(a);
++    if ((v & 1) == 0) continue;
++    if (v < kUserTextLo || v >= kUserTextHi) continue;
++    // Consecutive duplicates are one frame's address spilled twice, not two
++    // frames.
++    if (v == last) continue;
++    last = v;
++    out[n++] = v;
++  }
++  return n;
++}
++
 +// One buffer, because both callers want the same text and neither wants to own
 +// it: the platform loop prints it, and the dev server's `diag` returns it.
 +std::mutex g_diag_mutex;
-+char g_diag_text[6144];
++char g_diag_text[16384];
 +uint64_t g_diag_last_us = 0;      // when the last sample was taken
 +uint64_t g_sys_idle_us[4] = {0};  // per-CPU idle clocks at that sample
 +uint32_t g_sys_switches = 0;
@@ -1777,6 +1847,18 @@ index 00000000..8e12f894
 +  int n = 0;
 +  const int cap = static_cast<int>(sizeof g_diag_text);
 +
++  // Every runtime address below is relative to wherever the kernel loaded this
++  // module, which is not the ELF's vaddr -- 0x8104b000 against 0x81000000 on
++  // 2026-08-31. Printing the runtime address of one known symbol lets the host
++  // subtract: elf = runtime - anchor + nm(BuildDiag). Cheaper than asking the
++  // kernel for a module list, and it cannot go stale.
++  n += std::snprintf(g_diag_text + n, cap - n,
++                     "flutter-vita:   anchor BuildDiag=0x%08X%s\n",
++                     static_cast<unsigned>(
++                         reinterpret_cast<uintptr_t>(&BuildDiag)),
++                     g_diag_last_us == 0 ? "  (first sample: deltas below are"
++                                           " since launch, not a window)"
++                                         : "");
 +  n += std::snprintf(g_diag_text + n, cap - n,
 +                     "flutter-vita: %s %u ms since present #%u"
 +                     " -- raster phase %s for %u ms, loop iter %u\n",
@@ -1794,10 +1876,11 @@ index 00000000..8e12f894
 +  if (sceKernelGetFreeMemorySize(&mem) >= 0) {
 +    n += std::snprintf(g_diag_text + n, cap - n,
 +                       "flutter-vita:   mem user=%dK cdram=%dK phycont=%dK"
-+                       " heap=%uM/%uM vgl_oom=%u\n",
++                       " heap=%uM/%uM vgl_oom=%u bad_scissor=%u\n",
 +                       mem.size_user / 1024, mem.size_cdram / 1024,
 +                       mem.size_phycont / 1024, HeapUsedMb(), HeapArenaMb(),
-+                       static_cast<unsigned>(vgl_oom_count));
++                       static_cast<unsigned>(vgl_oom_count),
++                       static_cast<unsigned>(vgl_degenerate_scissor));
 +  }
 +
 +  // Whether the console is idle or busy, independent of this process. A stall
@@ -1854,15 +1937,37 @@ index 00000000..8e12f894
 +
 +    n += std::snprintf(
 +        g_diag_text + n, cap - n,
-+        "flutter-vita:   thr %-18s 0x%08X %-7s %s:0x%08X ran +%u"
-+        " (%u%%) pre +%u cpu %d\n",
++        "flutter-vita:   thr %-18s 0x%08X %-7s %s(%u):0x%08X ran +%u us"
++        " (%u%%) pre +%u cpu %d entry 0x%08X\n",
 +        g_watched[i].label[0] != '\0' ? g_watched[i].label : info.name,
 +        static_cast<unsigned>(uid), StatusName(info.status),
-+        WaitName(info.waitType), static_cast<unsigned>(info.waitId),
++        WaitName(info.waitType), static_cast<unsigned>(info.waitType),
++        static_cast<unsigned>(info.waitId),
 +        static_cast<unsigned>(ran),
 +        window_us != 0 ? static_cast<unsigned>(ran * 100 / window_us) : 0u,
 +        static_cast<unsigned>(preempts),
-+        static_cast<int>(info.lastExecutedCpuId));
++        static_cast<int>(info.lastExecutedCpuId),
++        static_cast<unsigned>(reinterpret_cast<uintptr_t>(info.entry)));
++
++    uintptr_t frames[kMaxFrames];
++    int reported_free = 0;
++    const int frame_count = ScanStack(info, uid, frames, &reported_free);
++    if (n < cap - 96) {
++      n += std::snprintf(g_diag_text + n, cap - n,
++                         "flutter-vita:     stk 0x%08X+%u free %d frames %d\n",
++                         static_cast<unsigned>(
++                             reinterpret_cast<uintptr_t>(info.stack)),
++                         static_cast<unsigned>(info.stackSize), reported_free,
++                         frame_count);
++    }
++    if (frame_count > 0 && n < cap - 128) {
++      n += std::snprintf(g_diag_text + n, cap - n, "flutter-vita:     at");
++      for (int f = 0; f < frame_count && n < cap - 16; f++) {
++        n += std::snprintf(g_diag_text + n, cap - n, " %08X",
++                           static_cast<unsigned>(frames[f]));
++      }
++      n += std::snprintf(g_diag_text + n, cap - n, "\n");
++    }
 +  }
 +  g_diag_last_us = now;
 +}
@@ -1907,7 +2012,9 @@ index 00000000..8e12f894
 +
 +  std::lock_guard<std::mutex> lock(g_diag_mutex);
 +  BuildDiag("STALL", since);
-+  VLog("%s", g_diag_text);
++  // Not VLog: its buffer is 512 bytes and a report is thousands, which cut
++  // every line after the third one straight through the middle.
++  VLogRaw(g_diag_text, std::strlen(g_diag_text));
 +  g_stall_reported_us = now;
 +  g_stall_reports++;
 +}
@@ -3696,6 +3803,17 @@ index 00000000..8e12f894
 +        vita_para_build_us = 0;
 +        vita_para_layout_us = 0;
 +        vita_para_count = 0;
++      }
++
++      // Every 300 loop iterations, so a run says whether the scissor clamps
++      // ever fired without anyone having to ask for a diag.
++      static unsigned reported_bad_scissor = 0;
++      if (vgl_degenerate_scissor != reported_bad_scissor) {
++        VLog("flutter-vita: vitaGL clamped %u empty scissors (%u total)\n",
++             static_cast<unsigned>(vgl_degenerate_scissor -
++                                   reported_bad_scissor),
++             static_cast<unsigned>(vgl_degenerate_scissor));
++        reported_bad_scissor = vgl_degenerate_scissor;
 +      }
 +
 +      if (vgl_oom_count != g_vgl_oom_reported) {

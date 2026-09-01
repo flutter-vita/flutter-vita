@@ -32,6 +32,7 @@ these patches are the artifact.
 | # | Patch | What it does |
 |---|---|---|
 | 0001 | [what-a-failed-allocation-costs](0001-what-a-failed-allocation-costs.patch) | A texture upload that memcpy'd into NULL, and a collector wait that slept a flat second |
+| 0002 | [an-empty-scissor-is-not-an-inverted-one](0002-an-empty-scissor-is-not-an-inverted-one.patch) | Clamps a zero or negative scissor and a zero-size viewport, and counts them. **Did not stop the SceGxm abort it was aimed at** |
 
 ## Applying
 
@@ -123,3 +124,26 @@ hands the slot straight back, leaving the credit accounting unchanged. Worst
 observed frame gap across a full benchmark run went from **8145 ms to 66 ms**,
 and `route_bare` — an empty page pushed onto the navigator — went from stalling
 to holding 60 fps outright.
+
+## 0002 and what it did not fix
+
+`update_scissor_test` computes `region.w` as `active_w - region.x` and never
+clamps the result, so a scissor whose origin is past the display makes it
+negative; a scissor with no area leaves it at zero. Both then reach
+
+```c
+sceGxmSetRegionClip(gxm_context, SCE_GXM_REGION_CLIP_OUTSIDE,
+                    region.x, region.y,
+                    region.x + region.w - 1, region.y + region.h - 1);
+```
+
+whose parameters are **unsigned**. Zero width puts xMax one below xMin; a
+negative width puts it near 2^32. GXM computes tile ranges from those without
+range-checking them. `glViewport` has the same shape of gap: a zero-size
+viewport gives `sceGxmSetViewport` a scale of zero.
+
+That is a real defect and the clamps stay. **It is not the cause of the
+SceGxm+0x1e638 data abort**, which reproduced on 2026-09-01 with this patch
+applied and the counter compiled in — same one tap on an overflow menu. See
+[docs/results/localsend-gxm-abort-2026-08-31.md](../../docs/results/localsend-gxm-abort-2026-08-31.md).
+Kept, described honestly, and not to be cited as the fix for that fault.

@@ -128,10 +128,40 @@ interaction rather than arriving at random, and `R2 = -1.0f` is what
 `y_scale = -(height >> 1)` produces for a two-pixel-high viewport -- the sort
 of size a menu passes through on its way open.
 
-**Not yet reproduced.** The console went off the network before this could be
-tested, and a defensive clamp that has never been shown to change anything is
-not a fix. The test is: open the overflow menu on a receive-history row, on
-the GPU path, and see whether it dies.
+### Reproduced, 2026-09-01, in one tap
+
+Open the receive history, tap the overflow menu on a row. That is the whole
+recipe. It does not need a transfer, it does not need hours of uptime, and it
+does not need the menu to be tapped a second time -- the 08-31 fault came after
+**Show in folder**, but the one on 09-01 arrived with the menu merely open.
+
+Two runs, two outcomes from the same tap:
+
+| run | outcome |
+|---|---|
+| 09-01 08:4x | the app **stalled**: no present for 70 s, raster parked at `ran +0`, a tap injected into the freeze produced no frame |
+| 09-01 08:50 | the app **faulted**: `psp2core-1788245394`, `SceGxm@1 + 0x1e638`, `R0 0x70100254`, `R11 0x70100250`, `LR 1` |
+
+The fault is the third with those registers, and the first with a stack that
+could be resolved on the spot: `glViewport` at `misc.c:342` and
+`update_scissor_test` at `tests.c:334`, the same two frames at the same offsets
+as 08-31. The crashing thread is `0x4001019B`, which the watchdog's own table
+had already named `io.flutter.raster` -- previously that was an inference from
+thread creation order.
+
+### The clamp did not fix it
+
+[patches/vitagl/0002](../../patches/vitagl/0002-an-empty-scissor-is-not-an-inverted-one.patch)
+clamps `region.w`/`region.h` at zero, skips the tile clipper for an empty
+region, and clamps a zero-size viewport to 1x1. Built into `libvitaGL.a`,
+linked (`nm` confirms `vgl_degenerate_scissor` in the shipped ELF), deployed.
+
+**Same tap, same death.** So the inverted region clip is a real defect and not
+this one. The patch stays, described as what it is.
+
+What that rules out matters as much: the fault is not the *arguments* vitaGL
+computes for the clip. It is in `sceGxmSetViewport` or in the state the context
+is in when it gets there.
 
 ## Where to look next
 

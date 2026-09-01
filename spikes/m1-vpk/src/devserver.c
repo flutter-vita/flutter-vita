@@ -136,6 +136,20 @@ static void send_str(int sock, const char* s) {
   sceNetSend(sock, s, strlen(s), 0);
 }
 
+// send_str for something that will not fit in one datagram's worth of socket
+// buffer. sceNetSend is allowed to take less than it was offered, and a diag
+// report is sixteen kilobytes, so the short write is not hypothetical -- it
+// silently truncates the one output that exists to be read closely.
+static void send_all(int sock, const char* s) {
+  int len = (int)strlen(s);
+  int sent = 0;
+  while (sent < len) {
+    const int n = sceNetSend(sock, s + sent, len - sent, 0);
+    if (n <= 0) return;
+    sent += n;
+  }
+}
+
 void dev_server_send(int sock, const char* s) {
   send_str(sock, s);
 }
@@ -318,11 +332,15 @@ static int serve(int sock, const char* log_path, const char* eboot_path) {
       // the useful thing to do with this verb is call it twice.
       if (flutter_vita_diag == NULL) {
         send_str(sock, "ERR no watchdog in this build\n");
-      } else {
-        static char diag[6144];
-        flutter_vita_diag(diag, sizeof diag);
-        send_str(sock, diag);
+        continue;
       }
+      static char diag[16384];
+      flutter_vita_diag(diag, sizeof diag);
+      send_all(sock, diag);
+      // Close, like `log` does. Without it nc sits on the connection until its
+      // own idle timeout, and two samples five seconds apart came back
+      // measuring a ten-second window.
+      return 0;
     } else if (strncmp(line, "ls ", 3) == 0) {
       cmd_ls(sock, line + 3);
     } else if (strncmp(line, "rm ", 3) == 0) {
