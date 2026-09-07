@@ -223,7 +223,7 @@ spelling returns the same, and the C receiver fails identically.
 > promoter imports from PAF, and PAF was not resident in our process. Load PAF
 > first — with its argument block, which is not optional — and the promoter
 > loads and initialises. No taiHEN and no kernel module. See
-> [`spikes/promoter`](../../spikes/promoter/); the fix is in
+> [`experiments/promoter`](../../experiments/promoter/); the fix is in
 > `receiver/src/receiver_dev.c`.
 >
 > Two other conclusions in this ADR rest on the old reading. A new receiver does

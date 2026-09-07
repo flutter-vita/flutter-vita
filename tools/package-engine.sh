@@ -172,7 +172,7 @@ cp "$ENGINE_SRC/flutter/shell/platform/embedder/embedder.h" "$STAGE/include/"
 # is deliberate for now: it is the piece most likely to be swapped out — a
 # shipping app wants no listening socket at all, and can link a stub instead.
 mkdir -p "$STAGE/src"
-cp "$ROOT/spikes/m1-vpk/src/devserver.c" "$ROOT/spikes/m1-vpk/src/devserver.h" "$STAGE/src/"
+cp "$ROOT/experiments/m1-vpk/src/devserver.c" "$ROOT/experiments/m1-vpk/src/devserver.h" "$STAGE/src/"
 cp "$ENGINE_SRC/flutter/third_party/icu/flutter/icudtl.dat" "$STAGE/data/"
 cp "$ENGINE_SRC/flutter/txt/third_party/fonts/Roboto-Regular.ttf" "$STAGE/data/"
 # Emoji, as a system font rather than an app asset.

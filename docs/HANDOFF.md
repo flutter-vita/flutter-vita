@@ -47,16 +47,16 @@ ninja -C third_party/sdk/out/host gen_snapshot_product_vita_arm
 ninja -C third_party/sdk/out/host vm_platform_product.dill
 
 # 4. hello.dart -> kernel (build.sh points --platform at the dill from step 3)
-./spikes/b1-aot-snapshot/build.sh
+./experiments/b1-aot-snapshot/build.sh
 
 # 5. kernel -> snapshot.S  (app-aot-assembly; ADR-0005 option A)
 third_party/sdk/out/host/gen_snapshot_product_vita_arm \
   --snapshot_kind=app-aot-assembly \
-  --assembly=spikes/m1-snapshot/out/snapshot.S \
-  spikes/b1-aot-snapshot/out/hello.dill
+  --assembly=experiments/m1-snapshot/out/snapshot.S \
+  experiments/b1-aot-snapshot/out/hello.dill
 
 # 6. link everything into a vpk
-./spikes/m1-vpk/build.sh
+./experiments/m1-vpk/build.sh
 ```
 
 **Steps 1 and 2 must be rebuilt together.** Dart hashes its VM sources into the
@@ -90,7 +90,7 @@ ux0:data/flutter-vita/m1.log     harness checkpoints
 ux0:data/flutter-vita/dart.log   VitaTrace + Dart's Syslog
 ```
 
-[`spikes/m1-vpk/deploy.sh`](../spikes/m1-vpk/deploy.sh) scripts this with
+[`experiments/m1-vpk/deploy.sh`](../experiments/m1-vpk/deploy.sh) scripts this with
 `USE_COMPANION=0`.
 
 **Do not suggest taiHEN plugins.** vitacompanion destabilised the device (it
@@ -214,12 +214,12 @@ No DevTools, no profiler, no timeline, no on-device debugger — all disabled or
 impossible. What exists instead:
 
 - **Crash dumps.** The Vita writes `psp2core-*.psp2dmp` to `ux0:data/` on every
-  fault. [`spikes/m1-vpk/analyse-crash.sh`](../spikes/m1-vpk/analyse-crash.sh)
+  fault. [`experiments/m1-vpk/analyse-crash.sh`](../experiments/m1-vpk/analyse-crash.sh)
   symbolicates one against `build/flutter_vita_m1` (the ELF, **not** eboot.bin).
   This has been the single most effective tool — it found the BSS problem in one
   run after four rounds of trace-point bisection got nowhere. Needs
   `pyelftools==0.29` in a venv and a py3 patch to `util.py`, both already done
-  under `spikes/m1-vpk/out/`.
+  under `experiments/m1-vpk/out/`.
 - **`VitaTrace`** in `syslog_vita.cc` — writes straight to `sceIo` and syncs
   every line, works before the VM can log anything.
 - **Checkpoints** in the harness, flushed before every risky call.
@@ -285,7 +285,7 @@ prerequisite, not a curiosity.
 **GC stress: FIXED.** `gcStress() = 1999000` on hardware — 2000 iterations, ~8 MB of churn, where it previously died at ~200 every time. `gcStress()` allocates ~8 MB in a tight loop
 and dies with a data abort in `DRT_AllocateArray`, sometimes preceded by a
 spurious-looking `StackOverflowError`. **Currently disabled** behind `#if 0` in
-`spikes/m1-vpk/src/main.c` because it takes down the app that hosts the dev
+`experiments/m1-vpk/src/main.c` because it takes down the app that hosts the dev
 server, costing a manual relaunch every cycle.
 
 `OSThread::GetCurrentStackBounds` was the leading suspect and has been
@@ -382,7 +382,7 @@ uses it, and it faults on the first unlock.
 | without the flag | every `thread_local` is one shared global |
 | with the flag | uninitialised mutex, crash at startup |
 
-`-u pthread_cancel` has been removed from `spikes/m1-vpk/CMakeLists.txt`, with
+`-u pthread_cancel` has been removed from `experiments/m1-vpk/CMakeLists.txt`, with
 this reasoning recorded there so it is not restored on its own.
 
 **The fix: patch 0009, written and verified on hardware.** `Thread::Current()` must not depend

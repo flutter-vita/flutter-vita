@@ -43,7 +43,7 @@ reintroduced by hand exactly the human step ADR-0011 removed.
 > rejected on sight, is about what the test apps measures, not about how many
 > title ids we could afford — but "we cannot" was never true, and a future
 > reader should not take the number five as forced. See
-> [`spikes/promoter`](../../spikes/promoter/).
+> [`experiments/promoter`](../../experiments/promoter/).
 
 ## Decision
 

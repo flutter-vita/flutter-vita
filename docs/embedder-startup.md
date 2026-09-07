@@ -210,7 +210,7 @@ python3 tools/generate_package_config.py          # gclient sync does not create
 ninja -C third_party/sdk/out/host vm_platform_product.dill
 ```
 
-`spikes/b1-aot-snapshot/build.sh` now points `--platform` at that file instead of
+`experiments/b1-aot-snapshot/build.sh` now points `--platform` at that file instead of
 FVM's copy. That is worth doing on its own merits: the runtime is built from
 `third_party/sdk`, so the SDK sources compiled into the snapshot should come
 from there too, rather than from a separate checkout that merely happens to be

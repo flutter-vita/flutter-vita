@@ -249,7 +249,7 @@ for the AOT snapshot.
    `crtbegin.o` are not PIC, and correctly so — homebrew is statically linked).
    A shared link would also *tolerate* undefined symbols, so passing it would
    prove nothing. M2 needs an executable that pulls in the object closure, in a
-   new `spikes/m2-link-check/`, following the pattern `spikes/m1-vpk` already
+   new `experiments/m2-link-check/`, following the pattern `experiments/m1-vpk` already
    uses for Dart.
 
 ## Things to carry forward from Phase 1
@@ -455,7 +455,7 @@ Flags:   0x5000400, Version5 EABI, hard-float ABI
 
 `nm -u` reports nothing, and 422 engine symbols (`FlutterEngineRun`, `SkCanvas`,
 `Dart_Initialize`) are present. The hard-float flag is the same `0x...400` that
-Phase 0.5 spike B5 measured on VitaSDK's own libraries, so the ABI matches.
+Phase 0.5 experiment B5 measured on VitaSDK's own libraries, so the ABI matches.
 
 **`.text` is 6.26 MiB** — and that number should not be compared to the roadmap's
 12.41 MiB armv7 reference as though Ganesh came for free. This binary is linked
@@ -606,7 +606,7 @@ outcome and not worth working around.
 # First run on hardware: a data abort
 
 The engine reached the device and crashed. Dump kept at
-`spikes/m3-vpk/out/dumps/psp2core-1786386797-…psp2dmp`.
+`experiments/m3-vpk/out/dumps/psp2core-1786386797-…psp2dmp`.
 
 ```
 Stop reason: 0x30004 (Data abort exception)
@@ -639,7 +639,7 @@ strong enough that someone will reach for it again.
    prints a frame chain and it was not read.
 2. **`0xb7be22` is a module-relative offset**, already slide-adjusted by the
    tool, so it can go straight to `addr2line` against
-   `spikes/m3-vpk/build/flutter_vita_m3`. Do not subtract a slide again — Phase 1
+   `experiments/m3-vpk/build/flutter_vita_m3`. Do not subtract a slide again — Phase 1
    lost time to exactly that, resolving an address to obvious nonsense.
 3. **Suspect the thread pool before the mutex.** The engine starts four task
    runners immediately; M1 ran essentially single-threaded. `MessageLoopVita` is
@@ -862,7 +862,7 @@ calls `pthread_cond_wait` for real, which locks the mutex it is handed for
 real, and that mutex was a pointer to `.rodata`. The `strex` in
 `pte_osAtomicExchange` then wrote to a read-only page.
 
-The fix is one linker flag, in `spikes/m3-vpk/CMakeLists.txt`:
+The fix is one linker flag, in `experiments/m3-vpk/CMakeLists.txt`:
 
 ```
 "-Wl,-u,pthread_cancel"
@@ -902,7 +902,7 @@ usefully:
    it transfers only when it changes.
 2. `Dart_LookupLibrary: library 'dart:ui' not found`, then
    `Check failed: !CheckAndHandleError(http_connection_hook_closure)`. Expected:
-   the snapshot is built from `spikes/b1-aot-snapshot/out/hello.dill`, a plain
+   the snapshot is built from `experiments/b1-aot-snapshot/out/hello.dill`, a plain
    Dart program. A Flutter app kernel has to come from the flutter frontend
    server, with `dart:ui` in it, alongside a real `flutter_assets`.
 

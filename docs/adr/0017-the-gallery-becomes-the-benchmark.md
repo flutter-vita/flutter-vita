@@ -240,7 +240,7 @@ The rest of it decomposes, and the parts add up:
 Three controls make the text number hard to argue with. One `Text` holding the
 same 48 glyphs costs 1.0 ms, so it is not the amount of text. Forty-eight
 *identical* strings cost the same as forty-eight unique ones, so it is not
-shaping cache misses. And the spikes land at frames 5, 43, 81, 119 and 267 of
+shaping cache misses. And the experiments land at frames 5, 43, 81, 119 and 267 of
 291 — one per push, every push — so it is not a warm-up.
 
 For scale, a `Container` in `route_wrap` costs about 25 us. A `Text` is

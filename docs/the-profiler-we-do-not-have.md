@@ -128,7 +128,7 @@ the same LAN. Bind `0.0.0.0`, not localhost, and connect with
 
 A thread that wakes on a timer, reads the UI thread's PC, and appends it to a
 buffer the dev server can `get`. Symbolicate on the host against the unstripped
-ELF — [spikes/m1-vpk/analyse-crash.sh](../spikes/m1-vpk/analyse-crash.sh)
+ELF — [experiments/m1-vpk/analyse-crash.sh](../experiments/m1-vpk/analyse-crash.sh)
 already does exactly that for crash dumps, so half of it exists.
 
 Crude, and it answers both Tier 3 questions anyway, because both are "which

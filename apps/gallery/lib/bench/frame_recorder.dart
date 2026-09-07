@@ -36,7 +36,7 @@ class FrameSample {
     required this.rasterMs,
   });
 
-  /// Position in the scene, so a spike can be located -- first frame of every
+  /// Position in the scene, so an experiment can be located -- first frame of every
   /// repeat reads very differently from three scattered frames.
   final int index;
 

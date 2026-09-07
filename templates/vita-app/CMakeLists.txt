@@ -1,6 +1,6 @@
 # Build any Flutter app into a Vita .vpk.
 #
-# The counterpart to spikes/m3-vpk, with the spike taken out: no hardcoded app,
+# The counterpart to experiments/m3-vpk, with the experiment taken out: no hardcoded app,
 # no hardcoded asset path, and the engine comes from a packaged artifact rather
 # than a local object tree. Driven by tools/build-vita-app.sh, which passes
 # everything in as cache variables.

@@ -23,7 +23,7 @@
 # Title id resolution: --title-id, then pubspec vita.title_id, then a value
 # derived from the package name if a vita: block exists, then FVTA00002 -- the
 # slot the dev receiver installs into, which is what the counter app and the
-# spikes want.
+# experiments want.
 #
 # This is the whole pipeline in one place: Dart to kernel, kernel to armv7
 # assembly, assembly plus engine to an ELF, ELF to a signed .vpk. It is what a
@@ -166,7 +166,7 @@ PKG_NAME="$(grep -m1 '^name:' "$APP_DIR/pubspec.yaml" | sed 's/^name: *//' | tr 
 #
 # Only for apps with a vita: block. Without one, the default stays FVTA00002,
 # which is the slot the dev receiver installs into: deriving there would break the
-# edit-run loop for the counter app and every spike.
+# edit-run loop for the counter app and every experiment.
 derive_title_id() {
   local n l1 l2
   n=$((16#$(printf '%s' "$1" | shasum -a 1 | cut -c1-8)))

@@ -6,8 +6,8 @@ build/
 *.dill
 *.snapshot
 
-# Phase 0.5 spike outputs — regenerate with the scripts, don't commit binaries
-spikes/**/out/
+# Phase 0.5 experiment outputs — regenerate with the scripts, don't commit binaries
+experiments/**/out/
 
 # Vendored third-party trees (Phase 2). Pinned in VERSIONS.md, patched via patches/.
 # These are large; they are checked out by tooling, not committed.
@@ -21,14 +21,14 @@ eboot.bin
 
 .DS_Store
 
-# CMake build trees inside spikes
-spikes/**/build/
+# CMake build trees inside experiments
+experiments/**/build/
 
 # Link-check outputs
-spikes/p1-link-check/out/
-spikes/m1-snapshot/out/
-spikes/m1-vpk/build/
-spikes/m1-vpk/out/
+experiments/p1-link-check/out/
+experiments/m1-snapshot/out/
+experiments/m1-vpk/build/
+experiments/m1-vpk/out/
 
 # Packaged engine artifacts — 20 MB tarball plus a 1.1 GB staging tree.
 # Built by tools/package-engine.sh and published as a release, not committed.

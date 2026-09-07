@@ -219,7 +219,7 @@ a loop, which is immediately.
 
 A real `fml/platform/vita/message_loop_vita.{cc,h}` is required before anything
 runs. Linux's is `timerfd`-backed; the Vita equivalent is the event-flag wait
-already written for the M1 timer thread (`spikes/m1-vpk/src/main.c`), so the
+already written for the M1 timer thread (`experiments/m1-vpk/src/main.c`), so the
 mechanism is known. Tracked as a Phase 3 prerequisite, recorded here because a
 silent `nullptr` is exactly the kind of thing that gets found on hardware at the
 worst moment.
@@ -265,7 +265,7 @@ always null here — the GL, Vulkan and Metal surfaces that override
 ## Keeping the two Dart trees identical
 
 `third_party/sdk` (Phase 1's standalone checkout, still used by
-`spikes/m1-vpk`) and `third_party/flutter/engine/src/flutter/third_party/dart`
+`experiments/m1-vpk`) and `third_party/flutter/engine/src/flutter/third_party/dart`
 are the same pinned commit and must carry the same changes.
 
 ```bash

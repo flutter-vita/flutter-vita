@@ -156,7 +156,7 @@ Future<int> _doctor(Map<String, String> opts) async {
     stdout.writeln('       and enable the terminal you are running from.');
     stdout.writeln();
     stdout.writeln('       The shell tools work meanwhile: they use nc, which is');
-    stdout.writeln('       already permitted. tools/install-vpk.sh, spikes/m1-vpk/dev.sh');
+    stdout.writeln('       already permitted. tools/install-vpk.sh, experiments/m1-vpk/dev.sh');
     ok = false;
   }
 

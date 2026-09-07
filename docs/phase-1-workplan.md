@@ -67,7 +67,7 @@ the sampling profiler, and it needs POSIX signals the Vita does not have.
 **A full Dart build needs `depot_tools` and a multi-gigabyte `gclient sync`.**
 None of `gclient`, `gn` or `ninja` is installed, and standing all that up is
 really Phase 2 work. So Phase 1 uses a lighter loop:
-[`spikes/p1-compile-check/check.sh`](../spikes/p1-compile-check/check.sh)
+[`experiments/p1-compile-check/check.sh`](../experiments/p1-compile-check/check.sh)
 compiles individual runtime sources with `arm-vita-eabi-g++` against the real
 headers. It does not link and is no substitute for the GN build, but it catches
 most mistakes immediately instead of after a multi-GB bring-up.
@@ -110,7 +110,7 @@ rather than after.
 | `thread_interrupter_vita.cc` | ✅ **done** | patch 0003 — stubs |
 
 **All seven Vita files compile.** Verified by
-[`spikes/p1-compile-check/check.sh`](../spikes/p1-compile-check/check.sh):
+[`experiments/p1-compile-check/check.sh`](../experiments/p1-compile-check/check.sh):
 
 ```
   probe.cc                           OK

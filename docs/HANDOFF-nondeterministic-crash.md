@@ -173,7 +173,7 @@ Bisect by removing, not by counting. In rough order of cost:
 1. **Pure Dart, no Flutter.** An app that runs the probe loop and journals, with
    no `runApp`, no widgets, no rendering. Dies → the VM or `dart:io`. Survives →
    the engine. This single result halves the search space and the
-   [M1 spike](../spikes/m1-snapshot/) already proves pure-Dart AOT runs here.
+   [M1 experiment](../experiments/m1-snapshot/) already proves pure-Dart AOT runs here.
 2. **Flutter with a trivial tree.** `runApp(Container())` plus the journal loop.
    Isolates the widget/render layers from the VM.
 3. **Engine with no Dart.** The embedder rendering a fixed buffer in a loop, no
@@ -212,7 +212,7 @@ Note the resume point is deliberately the index *after* the probe that died, so
 a crashing probe is stepped over rather than re-entered. The cost is that it
 goes unmeasured: `tls/handshake, no verify` has no result for that reason.
 
-To force a run from the top: `./spikes/m1-vpk/dev.sh rm ux0:data/flutter-vita/resume.txt`.
+To force a run from the top: `./experiments/m1-vpk/dev.sh rm ux0:data/flutter-vita/resume.txt`.
 
 ### b. Return to the receiver without a human — API fixed, shell blocks it
 
@@ -268,7 +268,7 @@ the receiver installed on the device predates `rm`.
 
 Nothing we control can add a title to that database: `ScePromoterUtil` refuses
 to load with `MODULEMGR_NO_LIB` (`0x8002D003`), the same refusal
-[the tooling notes](../spikes/vita-tooling/README.md) recorded — and *not*
+[the tooling notes](../experiments/vita-tooling/README.md) recorded — and *not*
 because of the safe-self mistake, since this was measured under UNSAFE.
 
 **So the background app is not reachable from a side-loaded build**, and no
@@ -284,7 +284,7 @@ which is what let the probe list finish at all.
 
 ### c. Receiver `rm` — **DONE**
 
-`rm <path>`, plus `./spikes/m1-vpk/dev.sh rm <path>`. No glob and no recursion:
+`rm <path>`, plus `./experiments/m1-vpk/dev.sh rm <path>`. No glob and no recursion:
 this deletes on a device with one homebrew slot and a lifeline app living in it.
 
 The same round also hardened `put`, which accepted a size of zero and so
@@ -297,7 +297,7 @@ against a receiver that answered `ls` a second later.
 
 `touch ux0:app/FVTA00003/x` returns `0x8001000D`, EACCES, from the receiver
 itself, while `ux0:app/FVTA00002` is freely writable by it. That settles a
-question `spikes/vita-tooling/README.md` left open as *"untested under UNSAFE;
+question `experiments/vita-tooling/README.md` left open as *"untested under UNSAFE;
 possibly also false."* It is true, and it is why the supervisor ships with the
 app rather than the receiver: the app slot is the only directory anything we
 control can write, and the receiver cannot update itself.

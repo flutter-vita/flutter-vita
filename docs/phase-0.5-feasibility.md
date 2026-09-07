@@ -44,11 +44,11 @@ history.
 
 ### Track A — needs real hardware
 
-**A1. Make your hello-world *be* the VM domain spike.**
+**A1. Make your hello-world *be* the VM domain experiment.**
 
 Phase 0 already calls for "a plain C hello world `.vpk`" to establish the
 FTP-deploy and network-logging loop. Do not write that, prove the loop, and then
-throw it away. **Write the [VM domain spike](adr/0005-aot-snapshot-delivery.md)
+throw it away. **Write the [VM domain experiment](adr/0005-aot-snapshot-delivery.md)
 as the hello world.** It is the same C harness, the same deploy path, the same
 log capture — and it returns the single highest-value answer in the project
 instead of the word "hello".
@@ -143,7 +143,7 @@ sides, no mismatch.** See B5 results below.
 ### ✅ B1 result — done 2026-08-06
 
 **The host half of M1 works.** Reproducible via
-[`spikes/b1-aot-snapshot/build.sh`](../spikes/b1-aot-snapshot/build.sh).
+[`experiments/b1-aot-snapshot/build.sh`](../experiments/b1-aot-snapshot/build.sh).
 
 ```
 out/hello-armv7.elf: ELF 32-bit LSB shared object, ARM, EABI5 version 1 (SYSV)
@@ -179,7 +179,7 @@ Which form ships on Vita is still [ADR-0005](adr/0005-aot-snapshot-delivery.md).
 **The 16 MiB cap is not a problem.** A stock Flutter counter app, compiled to
 armv7 AOT with `--target=flutter --aot --tfa` against the Flutter patched
 product SDK. Reproducible via
-[`spikes/b2-flutter-snapshot/build.sh`](../spikes/b2-flutter-snapshot/build.sh).
+[`experiments/b2-flutter-snapshot/build.sh`](../experiments/b2-flutter-snapshot/build.sh).
 
 | | `.text` (instructions) | `.rodata` (heap image) |
 |---|---|---|
@@ -397,7 +397,7 @@ count alone suggests.
 
 Both bugs shipped because the harness was written to *report* rather than to
 *check itself*. A benchmark that can print a number faster than the memory bus
-allows should say so. Sanity bounds are now part of what a spike must include.
+allows should say so. Sanity bounds are now part of what an experiment must include.
 
 ### ✅ Track A run 3 — 2026-08-07: Phase 0.5 closed
 
@@ -455,7 +455,7 @@ of work from above.
 
 | criterion | |
 |---|---|
-| 1. VM domain spike | ✅ works, ARM and Thumb |
+| 1. VM domain experiment | ✅ works, ARM and Thumb |
 | 2. Raster throughput | ✅ measured, bar set in [ADR-0006](adr/0006-performance-bar-set-from-measurement.md) |
 | 3. Real size numbers | ✅ engine 12.41 MiB, counter app 2.11 MiB |
 | 4. Memory budget | ✅ 188 MiB contiguous — single-region Dart heap is fine |
@@ -524,7 +524,7 @@ memory anxiety relative to its CPU anxiety.
 
 Each item names the artefact that proves it.
 
-### 1. VM domain spike — *blocks [ADR-0005](adr/0005-aot-snapshot-delivery.md), reshapes Phases 3 and 4*
+### 1. VM domain experiment — *blocks [ADR-0005](adr/0005-aot-snapshot-delivery.md), reshapes Phases 3 and 4*
 
 A plain C `.vpk`, no Dart, on **real hardware**, that:
 
@@ -537,7 +537,7 @@ A plain C `.vpk`, no Dart, on **real hardware**, that:
 
 > **This one cannot be done on Vita3K.** `sceKernelOpenVMDomain` and
 > `sceKernelCloseVMDomain` are `UNIMPLEMENTED()` there and return success, and
-> the 16 MiB cap is not enforced — so the spike passes on the emulator while
+> the 16 MiB cap is not enforced — so the experiment passes on the emulator while
 > proving nothing. See [Vita3K as a target](vita3k-as-a-target.md).
 
 ### 2. Raster throughput number — *blocks [ADR-0006](adr/0006-performance-bar-set-from-measurement.md)*

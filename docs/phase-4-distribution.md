@@ -133,7 +133,7 @@ shipped with the target artifacts. A Linux user needs their own.
 
 ### Verified, not just produced
 
-`spikes/m3-vpk` accepts `-DENGINE_ARCHIVE=<path>` and links the archive instead
+`experiments/m3-vpk` accepts `-DENGINE_ARCHIVE=<path>` and links the archive instead
 of globbing the local object tree. Both paths were compared:
 
 | | archive | objects |
@@ -173,7 +173,7 @@ engine compiles to a no-op. See [phase-2-workplan.md](phase-2-workplan.md).
 ==> Counter.vpk  13M
 ```
 
-`templates/vita-app` is `spikes/m3-vpk` with the spike removed: no hardcoded
+`templates/vita-app` is `experiments/m3-vpk` with the experiment removed: no hardcoded
 app, no hardcoded asset list, and the engine comes from the packaged artifact
 rather than a local object tree. `tools/build-vita-app.sh` runs the whole
 pipeline — `flutter build bundle`, frontend_server to a kernel, `gen_snapshot`
@@ -266,7 +266,7 @@ value derived from the *package* name if a `vita:` block exists, then
 
 The last step is why an existing app keeps working untouched. `FVTA00002` is
 the slot the dev receiver installs into, so deriving unconditionally would break
-the edit-run loop for the counter app and every spike. Adding a `vita:` block
+the edit-run loop for the counter app and every experiment. Adding a `vita:` block
 is the signal that this is a real app wanting a real identity.
 
 Derivation is `FV` plus two letters and five digits from a SHA-1 of the package

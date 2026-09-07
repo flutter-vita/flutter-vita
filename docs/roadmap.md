@@ -18,7 +18,7 @@ by comparison.
 ```mermaid
 flowchart TD
     A["Phase 0.5 measurements<br/><i>sizes, ABI, toolchain proven</i>"]:::done
-    B["Track A hardware spike<br/><i>days — decides the architecture</i>"]:::todo
+    B["Track A hardware experiment<br/><i>days — decides the architecture</i>"]:::todo
     C["Phase 1 — Dart runtime port<br/><i>5 files → M1</i>"]:::todo
     D["Phase 2 — engine cross-compile<br/><i>GN toolchain → M2</i>"]:::todo
     E["Phase 3 — embedder<br/><i>renderer + input → M3</i>"]:::todo
@@ -112,4 +112,4 @@ evidence these two will.
 - [Phase 0.5](phase-0.5-feasibility.md) — the current gate and all measurements
 - [ADR-0005](adr/0005-aot-snapshot-delivery.md) — decides how the snapshot gets in
 - [ADR-0007](adr/0007-enable-partial-repaint-in-software-path.md) — may become required in Phase 3
-- [Vita3K as a target](vita3k-as-a-target.md) — why the spike must run on hardware
+- [Vita3K as a target](vita3k-as-a-target.md) — why the experiment must run on hardware

@@ -38,9 +38,9 @@ It logs **once**, at warn level, and **returns 0 — success**. `STUBBED()` does
 the same. An unimplemented API is therefore indistinguishable from a working one
 unless you are reading the log.
 
-### This directly defeats the [ADR-0005](adr/0005-aot-snapshot-delivery.md) spike
+### This directly defeats the [ADR-0005](adr/0005-aot-snapshot-delivery.md) experiment
 
-The VM-domain spike is the highest-value experiment in Phase 0.5. Here is how
+The VM-domain experiment is the highest-value experiment in Phase 0.5. Here is how
 Vita3K handles the four calls it depends on (from `vita3k/modules/SceSysmem/SceSysmem.cpp`):
 
 | Call | Vita3K status |
@@ -59,9 +59,9 @@ emulator that isn't modelling the MMU's execute bit — and you get:
 - **`AllocMemBlockForVM` does not enforce the 16 MiB cap**, so a 64 MiB
   allocation that hardware would refuse succeeds cleanly
 
-**The spike would pass perfectly on Vita3K and tell you nothing.** Worse, it
+**The experiment would pass perfectly on Vita3K and tell you nothing.** Worse, it
 would tell you the *wrong* thing about the one decision that shapes Phases 3
-and 4. This spike must run on hardware. There is no substitute.
+and 4. This experiment must run on hardware. There is no substitute.
 
 ---
 
@@ -96,7 +96,7 @@ Vita3K run as a finding to be recorded, not log noise. Grep for it in CI.
 - **Any performance number.** The host CPU is orders of magnitude faster than a
   333–500 MHz Cortex-A9. The [ADR-0006](adr/0006-performance-bar-set-from-measurement.md)
   raster measurement is meaningless here. Never quote a Vita3K fps figure.
-- **The VM domain spike.** See above.
+- **The VM domain experiment.** See above.
 - **Memory budget behaviour.** Vita3K does not enforce Sony's per-process
   budgets, so "it fits" means nothing.
 - **Threading, timing, and race conditions.** Scheduling differs from the real

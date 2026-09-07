@@ -1,7 +1,7 @@
 // Flutter Vita Receiver — the other half of the deploy loop.
 //
 // Why this exists: a running app can never replace its own eboot.bin. Measured,
-// not assumed (spikes/vita-tooling/README.md) —
+// not assumed (experiments/vita-tooling/README.md) —
 //
 //   * from inside FVTA00002, ux0:app/FVTA00002/ is ENOENT, because an app's own
 //     directory is not in its sandbox; the same content is mounted read-only as

@@ -20,7 +20,7 @@
 # you are hunting something intermittent, keep build/vita/cmake/flutter_vita_app
 # somewhere before you go looking for the crash.
 #
-# spikes/m1-vpk/analyse-crash.sh is the ancestor of this and still works for m1.
+# experiments/m1-vpk/analyse-crash.sh is the ancestor of this and still works for m1.
 # What is here that is not there: fetching over the dev server rather than FTP,
 # and the pyelftools pin below.
 set -euo pipefail
@@ -29,7 +29,7 @@ HERE="$(cd "$(dirname "$0")" && pwd)"
 ROOT="$(cd "$HERE/.." && pwd)"
 HOST="${VITA_HOST:-flutter-vita.local}"
 PORT="${DEV_PORT:-1339}"
-TOOL="$ROOT/spikes/m1-vpk/out/vita-parse-core"
+TOOL="$ROOT/experiments/m1-vpk/out/vita-parse-core"
 # vita-parse-core imports elftools.common.py3compat, which pyelftools dropped.
 # Pinned rather than patched: the tool is vendored from a third party and a
 # local edit to it is a local edit nobody will remember making.

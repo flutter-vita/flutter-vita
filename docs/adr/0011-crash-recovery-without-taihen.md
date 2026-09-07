@@ -23,7 +23,7 @@ It is worth stating explicitly because the console **does** have taiHEN —
 HENkaku is what allows UNSAFE selfs to run at all — and the receiver already
 links `taihen_stub` and carries `kload` and `inject` commands. There is even a
 SceShell module already written for exactly this problem
-(`spikes/vita-shell-launcher`, commit `d1ec483`), abandoned one unresolved pid
+(`experiments/vita-shell-launcher`, commit `d1ec483`), abandoned one unresolved pid
 short. The capability is present; using it is what is declined.
 
 The reasons: a module inside SceShell can hang the shell, two earlier
@@ -54,7 +54,7 @@ unbootable*. An in-process hook can do neither. It cannot touch SceShell, it
 does not survive a reboot, and there is nothing to write into `config.txt`.
 
 Measured rather than argued: `shark_init(NULL)` returns **0** on this console
-from an UNSAFE self, and `spikes/g1-vitagl` then passes every check including a
+from an UNSAFE self, and `experiments/g1-vitagl` then passes every check including a
 correct green readback out of an FBO.
 
 **Decided 2026-08-21: the constraint is narrowed to what it meant.**
@@ -80,8 +80,8 @@ See [ADR-0014](0014-gpu-backend-via-vitagl.md) for the evidence.
 | A user-mode fault handler | **Impossible.** `excpmgr.h` exists only in `psp2kern`. newlib declares `signal()` but nothing wires hardware faults to it. |
 | An SDK setting to suppress the crash dialog | **Does not exist.** The dialog is SceShell's; changing it means shell code. |
 | A SceShell plugin | Excluded by the constraint above. |
-| vitacompanion | Independently dead on this console — two clean attempts, `spikes/vita-tooling/README.md`, "do not retry". |
-| Background app (`eboot2.bin`) | ~~Blocked~~ **Unblocked 2026-08-31.** The shell resolves it through its installed-titles database, and `ScePromoterUtil` was read as refusing to load (`MODULEMGR_NO_LIB`). It does not refuse: it imports from PAF, which was not resident. Load PAF first and the promoter works, so no VitaShell install is needed. See [`spikes/promoter`](../../spikes/promoter/). |
+| vitacompanion | Independently dead on this console — two clean attempts, `experiments/vita-tooling/README.md`, "do not retry". |
+| Background app (`eboot2.bin`) | ~~Blocked~~ **Unblocked 2026-08-31.** The shell resolves it through its installed-titles database, and `ScePromoterUtil` was read as refusing to load (`MODULEMGR_NO_LIB`). It does not refuse: it imports from PAF, which was not resident. Load PAF first and the promoter works, so no VitaShell install is needed. See [`experiments/promoter`](../../experiments/promoter/). |
 
 ## Decision
 
@@ -178,7 +178,7 @@ That rule is for the next hand-rolled ABI function, not for the current ones.
 ## Related
 
 - [ADR-0001](0001-aot-only-no-jit.md) — no taiHEN as a *product* dependency
-- `spikes/vita-tooling/README.md` — vitacompanion, and what UNSAFE selfs can
+- `experiments/vita-tooling/README.md` — vitacompanion, and what UNSAFE selfs can
   and cannot write
 - [HANDOFF-nondeterministic-crash.md](../HANDOFF-nondeterministic-crash.md) —
   the emutls crash, and why it is the model for the conversion above

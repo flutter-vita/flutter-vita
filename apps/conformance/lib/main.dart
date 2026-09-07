@@ -183,7 +183,7 @@ class _ProbeRunnerState extends State<ProbeRunner>
   /// over. It is also the file that must survive when the journal does not.
   ///
   /// Delete it to force a run from the top:
-  ///     ./spikes/m1-vpk/dev.sh rm ux0:data/flutter-vita/resume.txt
+  ///     ./experiments/m1-vpk/dev.sh rm ux0:data/flutter-vita/resume.txt
   ///
   /// Or overwrite it with anything that is not a number, which works on a
   /// device whose installed receiver has no `rm`.

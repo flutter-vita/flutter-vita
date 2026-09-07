@@ -51,7 +51,7 @@ target_link_libraries(${PROJECT_NAME}
 # is what forced BGFTP into the deploy loop.
 # No -u pthread_cancel here, unlike m1-vpk. This app does not link libpthread,
 # so the flag would resolve to nothing, and it has no thread_local of its own.
-# See spikes/m1-vpk/CMakeLists.txt for what that flag is for.
+# See experiments/m1-vpk/CMakeLists.txt for what that flag is for.
 vita_create_self(${PROJECT_NAME}.self ${PROJECT_NAME} UNSAFE)
 # The supervisor ships inside the same vpk as eboot2.bin, which is the file
 # sceBgAppUtilStartBgApp(1) starts as a background application. It survives the

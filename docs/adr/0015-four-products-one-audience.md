@@ -120,8 +120,8 @@ them.** The forcing functions to watch are named in the revisit trigger below.
 - **The CLI's `repoRoot` path-walking must go.** It is the blocker on shipping
   the CLI anywhere, independent of channel, and it is now on the critical path
   rather than a cleanup item.
-- **The receiver graduates out of `spikes/`.** It is a product component with a
-  named audience, and leaving it filed as a spike misrepresents what it is.
+- **The receiver graduates out of `experiments/`.** It is a product component with a
+  named audience, and leaving it filed as an experiment misrepresents what it is.
 - **Two documentation audiences, kept apart.** The 14 ADRs and ~20 design docs
   are contributor-facing and stay that way. User docs are Getting Started and
   an API/tool reference — a manual, not an internals treatise.

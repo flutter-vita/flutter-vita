@@ -43,5 +43,5 @@ The Vita joins the `__native_client__ || __myriad2__ || __EMSCRIPTEN__` branch,
 which uses the `_timezone` and `_tzname` globals that VitaSDK *does* export.
 The tradeoff is the one those platforms already accept: **the DST offset is
 assumed to be exactly one hour.** Worth remembering alongside the parked NTP
-work in `spikes/vita-ntp/` — the Vita's wall clock is already approximate, and
+work in `experiments/vita-ntp/` — the Vita's wall clock is already approximate, and
 this makes its timezone handling approximate too.

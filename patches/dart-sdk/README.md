@@ -26,14 +26,14 @@ disposable; these patches are the real artifact.
 | 0012 | [socket-event-mask-follows-intent](0012-socket-event-mask-follows-intent.patch) | `setListening` sent the event mask **once**, and always asked for both `readEvent` and `writeEvent` whatever its own arguments said; the arguments only set Dart-side booleans that discard events after they arrive. Harmless on every other POSIX backend, which is edge-triggered (`eventhandler_linux.cc` registers `EPOLLET`). This one polls, and `poll()` is level-triggered: an idle connected socket is writable every trip round, so the event handler posted **2255 write events in two seconds per socket** to the root isolate, each costing a task on Flutter's UI thread. A `Timer(Duration.zero)` cost 744 µs with one socket open and 43418 µs with eight, against 215 µs with none; all three are now ~200 µs. HTTPS 963 → 1269 KB/s. **Affects the platform dill** — rebuild `flutter_patched_sdk` |
 
 > **Two trees now hold this series.** `third_party/sdk` is Phase 1's standalone
-> checkout, still used by `spikes/m1-vpk`; `third_party/flutter/engine/src/flutter/third_party/dart`
+> checkout, still used by `experiments/m1-vpk`; `third_party/flutter/engine/src/flutter/third_party/dart`
 > is the engine's, at the same pinned commit. They must stay byte-identical, and
 > there is a one-liner that checks it — see
 > [the engine patch notes](../flutter-engine/README.md#keeping-the-two-dart-trees-identical).
 > Patch 0008 was found stale exactly this way.
 
 All three are verified to compile with
-[`spikes/p1-compile-check/check.sh`](../../spikes/p1-compile-check/check.sh).
+[`experiments/p1-compile-check/check.sh`](../../experiments/p1-compile-check/check.sh).
 
 ## The rule: never return a sentinel from a non-nullable contract
 
@@ -173,7 +173,7 @@ arm-vita-eabi-g++ -std=c++20 -c probe.cc \
 ```
 
 compiles a translation unit including `vm/virtual_memory.h` cleanly. Reproduce
-with [`spikes/p1-compile-check/check.sh`](../../spikes/p1-compile-check/check.sh).
+with [`experiments/p1-compile-check/check.sh`](../../experiments/p1-compile-check/check.sh).
 
 **Note C++20 is required** — Dart uses `std::bit_cast`, `std::has_single_bit`
 and `std::bit_ceil`. C++17 fails with a wall of unrelated-looking errors.

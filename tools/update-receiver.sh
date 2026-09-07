@@ -16,16 +16,16 @@
 #
 # So the update goes the other way round, and this is the whole trick: the
 # receiver installs an app, and the app installs the receiver. Any app with the dev
-# server in it will do. `spikes/m1-vpk` is the small one kept around for exactly
+# server in it will do. `experiments/m1-vpk` is the small one kept around for exactly
 # this -- 2.5 MB, no engine, same dev server -- and the conformance or gallery
 # app works just as well when one of those happens to be the thing installed.
 #
-#   ./tools/deploy.sh --vpk spikes/m1-vpk/build/flutter_vita_m1.vpk \
+#   ./tools/deploy.sh --vpk experiments/m1-vpk/build/flutter_vita_m1.vpk \
 #       --receiver-port 1342          # receiver installs the app
 #   ./tools/update-receiver.sh        # app installs the receiver
 #
 # This used to go through the promoter instead. The promoter turned out to be
-# reachable after all (see spikes/promoter), but loading it takes the console
+# reachable after all (see experiments/promoter), but loading it takes the console
 # down about ten seconds later, so nothing here uses it. Nothing here needs to:
 # the promoter is required to register a *new* title id, and updating one that
 # already exists is a file copy.
@@ -71,7 +71,7 @@ done
 [ "$alive" -eq 1 ] || {
   echo "!! nothing answers on $HOST:$PORT" >&2
   echo "   This needs an *app* running, not the receiver. Install one first:" >&2
-  echo "     ./tools/deploy.sh --vpk spikes/m1-vpk/build/flutter_vita_m1.vpk \\" >&2
+  echo "     ./tools/deploy.sh --vpk experiments/m1-vpk/build/flutter_vita_m1.vpk \\" >&2
   echo "         --receiver-port 1342" >&2
   exit 1; }
 
@@ -109,7 +109,7 @@ DEST="ux0:app/$TITLE_ID"
 LISTING="$(say "$PORT" "ls $DEST" 20)"
 printf '%s\n' "$LISTING" | grep -q 'eboot.bin' || {
   echo "!! $DEST has no eboot.bin, so there is no receiver there to update." >&2
-  echo "   Registering a fresh title id needs the promoter (spikes/promoter)" >&2
+  echo "   Registering a fresh title id needs the promoter (experiments/promoter)" >&2
   echo "   or one manual VitaShell install. This script only replaces files." >&2
   printf '%s\n' "$LISTING" | sed 's/^/   /' >&2
   exit 1; }

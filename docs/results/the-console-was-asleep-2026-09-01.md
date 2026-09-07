@@ -43,7 +43,7 @@ not crashed. It had stopped, hours after the last dump, with no fault recorded.
 the console suspends on its idle timeout, and suspending takes the network with
 it. Grepping for it found exactly one caller:
 
-    spikes/m1-vpk/src/main.c:216:  sceKernelPowerTick(SCE_KERNEL_POWER_TICK_DEFAULT);
+    experiments/m1-vpk/src/main.c:216:  sceKernelPowerTick(SCE_KERNEL_POWER_TICK_DEFAULT);
 
 with a comment that describes this exact failure, written months earlier:
 
@@ -51,14 +51,14 @@ with a comment that describes this exact failure, written months earlier:
 > and the deploy loop with it) and no system-driven display off.
 
 Nothing in `vita_embedder.cc` and nothing in `templates/vita-app` called it. The
-M1 spike solved this and the Flutter app path never inherited the fix. Every
+M1 experiment solved this and the Flutter app path never inherited the fix. Every
 stretch of ten-plus minutes spent building -- which is most of them -- was long
 enough for the console to put itself away.
 
 ## The fix
 
 The platform loop now ticks once per iteration, about sixty times a second,
-which is what the M1 spike does and costs nothing measurable: the call resets a
+which is what the M1 experiment does and costs nothing measurable: the call resets a
 timer.
 
 It is behind `flutter_vita_keep_awake`, weak-defaulted to 1 in the embedder, the

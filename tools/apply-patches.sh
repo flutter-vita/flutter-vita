@@ -41,7 +41,7 @@ head_() { printf '\n\033[1m%s\033[0m\n' "$*"; }
 # ---------------------------------------------------------------- the manifest
 #
 # Where each vendored repo lives. The standalone Dart checkout (third_party/sdk,
-# Phase 1, still used by spikes/m1-vpk) and the engine's DEPS-managed copy are
+# Phase 1, still used by experiments/m1-vpk) and the engine's DEPS-managed copy are
 # separate repos carrying the same series -- that duplication is why checks 5
 # and 6 below exist. They replace tools/check-dart-trees.sh, which asked the
 # same question but could not tell a deliberate difference from drift.

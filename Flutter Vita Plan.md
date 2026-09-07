@@ -217,7 +217,7 @@ flutter-vita/
 │   ├── adr/
 │   └── embedder-startup.md
 ├── patches/dart-sdk/          # ordered *.patch series (0001–0008)
-├── spikes/                    # each measurement behind a script
+├── experiments/                    # each measurement behind a script
 │   ├── b1-aot-snapshot/       # hello.dart -> kernel
 │   ├── m1-snapshot/           # kernel -> snapshot.S
 │   └── m1-vpk/                # the M1 harness and vpk

@@ -67,4 +67,4 @@ is marginal, and 720×408 upscaled reaches 68 fps for the same work.
   factually incorrect and had to be replaced.
 - Performance and behaviour claims name the hardware they came from. Vita3K
   results say so explicitly. Real hardware is ground truth.
-- Measurements are reproducible: each lives behind a script in `spikes/`.
+- Measurements are reproducible: each lives behind a script in `experiments/`.

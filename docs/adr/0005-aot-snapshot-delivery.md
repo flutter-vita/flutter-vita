@@ -133,7 +133,7 @@ Informed speculation on the origin, not verified: the VM domain looks like
 Sony's provision for **PlayStation Mobile**, which ran C#/Mono with a JIT on
 retail Vitas. If so, 16 MiB is a product decision rather than a hardware one,
 which would make it a fixed number rather than something varying with firmware
-or memory pressure. The A1 spike measures the real obtainable maximum anyway.
+or memory pressure. The A1 experiment measures the real obtainable maximum anyway.
 
 ### Option A — bake in (`gen_snapshot --snapshot-kind=app-aot-assembly`)
 
@@ -180,10 +180,10 @@ Cost and risk:
 
 ## Decision
 
-**Not yet made.** Option B is strongly preferred if the spike clears, because it
+**Not yet made.** Option B is strongly preferred if the experiment clears, because it
 is the difference between shipping a runtime and shipping a build system.
 
-## Phase 0.5 spike (blocks this ADR)
+## Phase 0.5 experiment (blocks this ADR)
 
 A standalone C `.vpk`, no Dart involved, that:
 

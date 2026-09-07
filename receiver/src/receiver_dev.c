@@ -725,11 +725,11 @@ static void cmd_launch(int sock) {
 // SCE_KERNEL_ERROR_MODULEMGR_NO_LIB -- which is what this receiver, and the C one
 // before it, and three ADRs, all read as "the promoter is unavailable on this
 // console". It is not. The error was naming its own cause. See
-// spikes/promoter, which walks every route and shows the promoter loading and
+// experiments/promoter, which walks every route and shows the promoter loading and
 // initialising the moment PAF goes first.
 //
 // The argument block is not optional. The plain
-// sceSysmoduleLoadModuleInternal(PAF) faults the process; the spike did it
+// sceSysmoduleLoadModuleInternal(PAF) faults the process; the experiment did it
 // twice. These values are VitaShell's verbatim -- 0x180000 is the heap PAF is
 // being given -- and note that buf[0] is a *size*, not flags, which is why
 // zeroing a SceSysmoduleOpt and filling in only `result` was never the same
@@ -771,15 +771,15 @@ static int g_pu_up = 0;
 // and the wrong shape for an investigation, because every run tested five
 // things at once and the console went down about ten seconds after each.
 //
-// What the dumps say (spikes/promoter): PAF starts a thread of its own, called
+// What the dumps say (experiments/promoter): PAF starts a thread of its own, called
 // `ScePaf EntryCall`, and *that* thread takes a data abort six bytes into the
 // PAF module while our threads sit idle. Every run that died had unmapped PAF
 // first, by unloading it or by exiting. No run has yet kept it resident and
 // survived, so that is the cell to fill in, and filling it in needs the load
 // and the unload to be separate commands.
 //
-// It is driven from here rather than from the spike for a second reason. The
-// spike draws with debugScreen, which writes the framebuffer directly and
+// It is driven from here rather than from the experiment for a second reason. The
+// experiment draws with debugScreen, which writes the framebuffer directly and
 // initialises no display subsystem; VitaShell, which does all of this safely,
 // is a vita2d app with a live GXM context. The receiver is the only thing here
 // with VitaShell's shape -- a real context, a dev server, and no exit of its

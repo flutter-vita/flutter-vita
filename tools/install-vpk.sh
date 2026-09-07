@@ -32,7 +32,7 @@
 #   PAF must be resident before the promoter loads, and must *stay* resident.
 #   Unloading it kills the console about ten seconds later -- PAF runs a thread
 #   of its own and unmapping the module under it is a data abort. See
-#   spikes/promoter.
+#   experiments/promoter.
 #
 #   The staging directory is ux0:data/pkg and not somewhere of your choosing.
 #   PromotePkg tolerates an arbitrary path; PromotePkgWithRif, the one that

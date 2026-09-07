@@ -1,6 +1,6 @@
 # ADR-0014: The raster pass is the bottleneck, so the GPU becomes the target
 
-**Status:** Accepted — direction settled by measurement; the gating spike
+**Status:** Accepted — direction settled by measurement; the gating experiment
 passed all four exit criteria on hardware on 2026-08-22
 **Date:** 2026-08-21
 
@@ -115,7 +115,7 @@ instead, which is more work in the embedder but is the supported, upstream way.
 
 ## Criterion 1: passed on hardware, 2026-08-21
 
-`spikes/g1-vitagl` runs on the console and reports:
+`experiments/g1-vitagl` runs on the console and reports:
 
 ```
 GL_VENDOR                   Rinnegatamante
@@ -241,7 +241,7 @@ static auto* bus = new SkMessageBus<...>();
 ```
 
 — a function-local static with a dynamic initialiser, and no GL or Skia in it.
-A probe added to the spike shows a plain `new` succeeding and the identical
+A probe added to the experiment shows a plain `new` succeeding and the identical
 allocation behind a function-local static killing the process: **libstdc++'s
 `__cxa_guard_acquire` faults in this statically linked VitaSDK build.**
 Supplying the ARM EABI pair by hand — the guard is a 32-bit word whose low bit
@@ -252,13 +252,13 @@ Skia's own statics then use it too.
 This is a much larger fact than the GPU work. Every dynamically initialised
 function-local static anywhere in the engine goes through those guards, and it
 is a candidate explanation for the intermittent hard fault that has been open
-since the test apps work. The spike's version is correct for single-threaded
+since the test apps work. The experiment's version is correct for single-threaded
 initialisation and nothing more; the engine needs a real one, and it is the
 first item of the engine work below.
 
 ## Criteria 3 and 4: passed on hardware, 2026-08-22
 
-`spikes/g2-ganesh` now draws the three operations from the measurement above,
+`experiments/g2-ganesh` now draws the three operations from the measurement above,
 on a 960×544 Ganesh render target and on an `SkSurfaces::Raster` of the same
 size and colour type, and compares both the pixels and the clock. A baseline
 draw — the same image, unscaled, unfiltered, no offscreen — runs alongside so
@@ -332,7 +332,7 @@ overhead, it is the operation.
 The Vita's SGX543 is a **tile-based deferred renderer**. Every render-target
 switch resolves the tile buffer to memory and reloads it, so an offscreen costs
 a full framebuffer round trip that an immediate-mode GPU does not pay. The
-consequences section below predicted this would be where the spike got hard and
+consequences section below predicted this would be where the experiment got hard and
 named readbacks; it is the same mechanism, one step earlier.
 
 So the win is not "the GPU is faster". It is narrower and worth stating
@@ -388,7 +388,7 @@ paints. That is evidence for these five operations and not a general result.
 
 The embedder now has both paths. `shell_enable_gl = true`, a
 `FlutterOpenGLRendererConfig` in `vita_embedder.cc`, the six shims and the
-suffix-stripping receiver moved out of the spike into a proc resolver, and
+suffix-stripping receiver moved out of the experiment into a proc resolver, and
 vitaGL owning GXM and the display in place of this file's own CDRAM
 framebuffer. Which path runs is decided at startup: GL unless
 `ux0:data/flutter-vita/software.on` holds a `1`, and software automatically if
@@ -397,7 +397,7 @@ vitaGL cannot bring a context up.
 Three things had to be fixed before any of it linked, and only the first is
 about the Vita:
 
-- **A thread-safe `__cxa_guard_acquire`.** The spike's was three lines and
+- **A thread-safe `__cxa_guard_acquire`.** The experiment's was three lines and
   correct only for single-threaded initialisation. The engine has a platform
   thread, a UI thread, a raster thread, an IO thread and Dart's workers, any of
   which can be first to touch a given static. `vita_cxa_guard.cc` is the real
@@ -437,7 +437,7 @@ switched between paths at run time:
 | present | 1,304 us | 196 us |
 
 **Raster fell by 30×, from 156 ms to 5.1 ms, and the frame got no faster.** The
-spike's 36× was not wrong — the raster column is the spike's prediction landing
+experiment's 36× was not wrong — the raster column is the experiment's prediction landing
 almost exactly — but it was the answer to a question that turned out not to be
 the binding one at the app level.
 
@@ -494,7 +494,7 @@ room for:
 Two paths whose raster differs by 30× land 6% apart, which is the proof on its
 own.
 
-**None of this makes the GPU decision wrong.** The spike predicted the raster
+**None of this makes the GPU decision wrong.** The experiment predicted the raster
 pass would collapse and it collapsed, by 30×, on hardware, in a real app. What
 changes is the claim that could be made afterwards: *localsend is not slow
 because of the rasteriser.* It is slow because Dart takes 150 ms to build a
@@ -536,8 +536,8 @@ is nothing to hand back. Under GL it leaves a live GXM context and queued flips
 naming memory the kernel is about to reclaim, and the shell composites through
 the same driver — so the console goes, not just the app.
 
-`spikes/g2-ganesh` hit this and fixed it with `sceGxmDisplayQueueFinish()` and
-`sceGxmTerminate()` before the launch. The spike had the easy version: one
+`experiments/g2-ganesh` hit this and fixed it with `sceGxmDisplayQueueFinish()` and
+`sceGxmTerminate()` before the launch. The experiment had the easy version: one
 thread, nothing else running. Here the exit is requested on the dev server's
 thread while the *raster* thread is inside vitaGL, so the same two calls from
 the caller would be the identical use-after-free one level up. The raster
@@ -688,7 +688,7 @@ Two things this fixes that the software path could not:
 - **Raster stops tracking area.** 11,956 us to 2,034 us on the same content.
 
 So the honest summary across both apps is that the GPU does exactly what the
-spike said, and whether that shows up as frame rate depends on which stage was
+experiment said, and whether that shows up as frame rate depends on which stage was
 slowest to begin with — which is the ordinary answer for a pipelined renderer
 and should have been the expectation going in.
 
@@ -696,7 +696,7 @@ and should have been the expectation going in.
 
 Checked on device: `ux0:data/shader_cache/v0/v` holds 14 programs and `.../f`
 holds 20. vitaGL creates the directory tree itself in `vglInitExtended`, so the
-manual `sceIoMkdir` loop this embedder inherited from the g1 spike is
+manual `sceIoMkdir` loop this embedder inherited from the g1 experiment is
 redundant — and it was creating the wrong names anyway. Two caches exist and
 they are not the same shape:
 
@@ -737,7 +737,7 @@ new route is the whole cost, it is Dart, and no renderer change reaches it. GL
 feeling identical to the CPU here is the correct outcome rather than a defect.
 
 The second and third columns are the other half of the answer: on a screen's
-**first** paint under GL, raster spikes to 110–366 ms, and repeating the exact
+**first** paint under GL, raster experiments to 110–366 ms, and repeating the exact
 same navigation in the same process drops it to 5–21 ms. That is the one-time
 cost of a new paint configuration — criterion 0's "a freeze every time a new
 widget first paints", landing exactly where it was predicted. It does not
@@ -812,7 +812,7 @@ the thing it was trying to save.
 - Screenshots still work, because `sceDisplayGetFrameBuf` asks the hardware
   what it is scanning out and does not care who allocated it.
 
-## Three findings that cost the spike four runs
+## Three findings that cost the experiment four runs
 
 **1. The shader compiler works, and the taiHEN chain under it is real but not
 a blocker.** Removing one layer at a time from the link line gives:
@@ -842,13 +842,13 @@ ADR-0011's rule is written flat.
 **2. A safe self fails in ways that look like hardware limits.**
 `vita_create_self` builds a *safe* self by default, and a safe self cannot read
 `ur0:` or resolve taiHEN's user hooks — regardless of the HENkaku "unsafe
-homebrew" setting. The spike was built safe while the receiver and the app
+homebrew" setting. The experiment was built safe while the receiver and the app
 template have always been `UNSAFE`. The symptom was `vglInit` returning
 `GL_FALSE` on a console with 182 MB free and the module correctly installed,
 which reads as a platform limitation and is a missing keyword.
 
 **3. `vglInit` returns `GL_FALSE` on a context that works.** Every check above
-passes immediately after it. Removing the spike's own `shark_init` call did not
+passes immediately after it. Removing the experiment's own `shark_init` call did not
 change the return value, so it is not induced by the probe. Three runs treated
 the boolean as authoritative and exited without calling a single GL entry
 point; what contradicted them was the console itself, showing vitaGL's splash
@@ -868,9 +868,9 @@ then hung the console inside `glLinkProgram`.
 the route.** GLES2 is reordered from "Phase 5 optimisation" to the next major
 engine work item, which is the reordering ADR-0003 asked to be made explicit.
 
-**Engine work is gated on a spike**, because the feasibility table above
+**Engine work is gated on an experiment**, because the feasibility table above
 establishes that nothing *forbids* this and says nothing about whether vitaGL
-serves what Ganesh asks for. The spike is not the port; it is the smallest
+serves what Ganesh asks for. The experiment is not the port; it is the smallest
 program that answers that. Exit criteria, all on real hardware:
 
 1. ~~A vitaGL GLES2 context initialises, and `libshacccg.suprx` compiles a
@@ -893,12 +893,12 @@ program that answers that. Exit criteria, all on real hardware:
    **PASSED 2026-08-22 at 36.1×** on the composite widget — with one operation,
    `saveLayer`, coming out *slower* on the GPU.
 
-**The spike has passed, and the engine work is unblocked**: a
+**The experiment has passed, and the engine work is unblocked**: a
 `FlutterOpenGLRendererConfig` path in `vita_embedder.cc`,
 `populate_existing_damage` against GXM's buffering, the GN branch above
 rewritten with its stale premise removed, and — first, because nothing else
 runs without it — a thread-safe `__cxa_guard_acquire` for the engine build. The
-spike's is correct for single-threaded initialisation only, and the engine has
+experiment's is correct for single-threaded initialisation only, and the engine has
 a UI thread, a raster thread, an IO thread and Dart's workers.
 
 ## Consequences
@@ -917,7 +917,7 @@ a UI thread, a raster thread, an IO thread and Dart's workers.
   is a download-size concern, not a device one.
 - The Vita's GPU is a **tile-based deferred renderer**. Skia's GL backend
   assumes immediate-mode in places, and readbacks are disproportionately
-  expensive on TBDR. Expect this to be where the spike actually gets hard.
+  expensive on TBDR. Expect this to be where the experiment actually gets hard.
 - [ADR-0002](0002-skia-not-impeller.md) is untouched: this is Ganesh, Skia's
   GPU backend, not Impeller. Impeller has a GLES backend and is where upstream
   is investing, which is a real argument to revisit — but not one to take on
@@ -1010,7 +1010,7 @@ which path an installed app actually took.
 
 ## Revisit trigger
 
-- **The spike fails criterion 4.** If vitaGL plus Ganesh is under 10× on those
+- **The experiment fails criterion 4.** If vitaGL plus Ganesh is under 10× on those
   three operations, this ADR is wrong and the answer is per-workload work:
   reduced resolution for fill-bound screens, and a `psvita` lint or widget set
   that steers apps away from the operations that hurt.

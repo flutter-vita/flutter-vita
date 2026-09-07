@@ -41,7 +41,7 @@ are not it. The surcharge belongs to the timer path.
 
 ## What it was not
 
-**The wait.** `spikes/t1-timers` section M measures the primitive dart:io's
+**The wait.** `experiments/t1-timers` section M measures the primitive dart:io's
 event handler blocks on when no socket is registered:
 
     M waitflag   1->1.0  8->8.0  16->16.0  33->33.0  100->100.0
