@@ -181,10 +181,10 @@ behaviour is.
 
 ### The evidence that already exists
 
-This is not hypothetical. The Linux identity has already cost a corpus patch:
+This is not hypothetical. The Linux identity has already cost a test apps patch:
 
 ```dart
-// patches/corpus/localsend-0001-pure-dart-pin-vita-plugins-no-desktop.patch
+// patches/test-apps/localsend-0001-pure-dart-pin-vita-plugins-no-desktop.patch
  bool checkPlatformIsDesktop() {
 -  return checkPlatform([TargetPlatform.linux, TargetPlatform.windows, TargetPlatform.macOS]);
 +  // The Vita reports itself as TargetPlatform.linux (ADR-0008), which is right
@@ -217,7 +217,7 @@ against the port as it now exists:
 
 | Claim | Status |
 |---|---|
-| "right for **paths**" | **Does not hold.** We ship `path_provider_vita` ([ADR-0009](adr/0009-plugins-via-non-endorsed-vita-implementations.md)) and every corpus app registers it explicitly. Paths never route through the platform identity |
+| "right for **paths**" | **Does not hold.** We ship `path_provider_vita` ([ADR-0009](adr/0009-plugins-via-non-endorsed-vita-implementations.md)) and every test apps registers it explicitly. Paths never route through the platform identity |
 | "right for **fonts**" | **Does not hold.** The font manager is `txt/src/txt/platform_vita.cc`, selected by `is_vita` in GN at build time. Identity-independent |
 | "desktop text-editing shortcuts... right for a handheld with physical buttons" | **Backwards.** The physical buttons synthesize arrows and scroll, not modifiers. Desktop shortcuts need a Ctrl key that does not exist |
 | "no mobile overscroll glow" | **Holds** — and on a software rasterizer it is worth more than it sounds |
@@ -242,12 +242,12 @@ not; a Vita is capability-wise a phone with buttons. It is:
    Linux branch usually leads toward pure Dart, which we can actually run — and
    [ADR-0009](adr/0009-plugins-via-non-endorsed-vita-implementations.md)'s
    whole opt-in model is built on substituting pure-Dart implementations.
-3. **Switching now invalidates the corpus.** Four apps carry patches written
+3. **Switching now invalidates the test apps.** Four apps carry patches written
    against the Linux identity, and every performance number in `docs/results/`
    was taken under it.
 
 Point 2 is the one that would survive an argument. Points 1 and 3 are real but
-contingent — 3 expires as soon as someone is willing to re-run the corpus.
+contingent — 3 expires as soon as someone is willing to re-run the test apps.
 
 ## How much of this is overridable without changing the identity
 
@@ -330,7 +330,7 @@ an aspiration.
 ADR-0008's trigger was "an app that cannot work under the Linux identity". Two
 sharper ones, from what is now known:
 
-- **A second corpus app dies before `runApp` on a desktop-capability check.**
+- **A second test apps dies before `runApp` on a desktop-capability check.**
   One is an anecdote; two is a pattern, and it means the failure mode is
   systematically early and fatal rather than late and catchable.
 - **Text selection turns out to be the blocker.** It is the one substantial

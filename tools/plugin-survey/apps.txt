@@ -3,7 +3,7 @@
 # Format: owner/repo[#subdir][@ref]
 #
 # These are public repositories, listed by URL only -- nothing is vendored and
-# no app source is committed. The list is the committed half of the app corpus
+# no app source is committed. The list is the committed half of the test apps
 # (see the glossary): the checkouts are disposable, the list is not, because a
 # bug found in an app you cannot name again is a bug you cannot regression-test.
 #

@@ -4,7 +4,7 @@
 without VitaShell?
 
 **Answer: yes, and the mechanism is plain SQLite — but it was not exercised.**
-The corpus needs one slot and we already own one, so the risk of writing the
+The test apps needs one slot and we already own one, so the risk of writing the
 shell's database on the only console here bought nothing today. Written down so
 the next person does not re-derive it.
 
@@ -91,8 +91,8 @@ failure range is: edit silently ignored, stale bubble, or a shell that dislikes
 the row at boot. Recovery for the worst case is safe-mode **Rebuild Database**,
 which regenerates `app.db` from `ux0:app`. Disruptive, not a brick.
 
-## Consequence for the corpus
+## Consequence for the test apps
 
-None, deliberately. [ADR-0012](../adr/0012-app-corpus-as-measurement-instrument.md)
+None, deliberately. [ADR-0012](../adr/0012-test-apps-as-measurement-instrument.md)
 already calls for a single shared slot, and `FVTA00002` is registered, so the
-corpus needs no new title at all.
+test apps needs no new title at all.

@@ -1,3 +1,3 @@
-# Third-party app checkouts. See apps/README.md and corpus/manifest.txt.
-corpus/*
-!corpus/manifest.txt
+# Third-party app checkouts. See apps/README.md and test-apps/manifest.txt.
+test-apps/*
+!test-apps/manifest.txt

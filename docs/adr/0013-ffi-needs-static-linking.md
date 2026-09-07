@@ -35,7 +35,7 @@ char* dlerror(void) { return "Dynamic libraries are not supported on this platfo
 ```
 
 This came up as a concrete decision, not a hypothetical: spotube was proposed
-for the app corpus, and eleven of its twelve pre-`runApp` awaits go through FFI.
+for the test apps, and eleven of its twelve pre-`runApp` awaits go through FFI.
 
 ## Decision
 
@@ -48,7 +48,7 @@ today and both are honest work rather than research: our `dlopen` returns null
 for *every* input, including the self-handle case that lookup needs, and each
 package's binding has to be patched at its `DynamicLibrary.open` call.
 
-**Admission test for the corpus, and triage rule generally — the question is
+**Admission test for the test apps, and triage rule generally — the question is
 never "does it use FFI", it is these two:**
 
 1. *Is the C library small enough to cross-compile and statically link?*
@@ -60,7 +60,7 @@ never "does it use FFI", it is these two:**
 
 An app failing (1) is rejected — the work is a cross-compilation project and
 teaches nothing about Flutter. An app failing only (2) is a judgement call.
-An app passing both is ordinary corpus material.
+An app passing both is ordinary test apps material.
 
 This is what dropped spotube and admitted `flutter_manga_reader`, whose drift
 and sqlite3 sit behind lazy initialisation while both of its *pre-frame*
@@ -72,13 +72,13 @@ blockers are plugins we have already implemented.
   need an implementation; it does not separate the ones we *can* implement from
   the ones that need a C library cross-compiled first. Those are different
   costs by an order of magnitude and the survey reports them as one.
-- Any future "the corpus is unrepresentative" objection is partly correct by
+- Any future "the test apps is unrepresentative" objection is partly correct by
   construction: FFI-heavy apps are systematically excluded, and the excluded set
   includes most of the database, media and machine-learning ecosystem.
-- Rejecting an app on this basis is a *finding*, not a gap in the corpus, and
+- Rejecting an app on this basis is a *finding*, not a gap in the test apps, and
   belongs in the results table as one.
 - The rule cuts the other way too: an FFI package whose C is small and whose
-  calls are lazy is a *better* corpus candidate than a channel-heavy one,
+  calls are lazy is a *better* test apps candidate than a channel-heavy one,
   because it exercises the AOT and linking path rather than the plugin path.
 
 ## Revisit trigger
@@ -93,4 +93,4 @@ one C file, and drift, sqflite and isar all land on it.
 [ADR-0004](0004-static-single-binary.md) — the reason there is no receiver.
 [ADR-0009](0009-plugins-via-non-endorsed-vita-implementations.md) — the path
 that works for the other kind of package.
-[ADR-0012](0012-app-corpus-as-measurement-instrument.md) — where the test is applied.
+[ADR-0012](0012-test-apps-as-measurement-instrument.md) — where the test is applied.

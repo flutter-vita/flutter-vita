@@ -11,10 +11,10 @@ real risk; the rest is tidying. I checked each claim below against the tree on
 | **Licence** | `LICENSE`, BSD-3-Clause. |
 | **Attribution** | `NOTICE`, which explains why it exists: a `.vpk` links Flutter, Skia, the Dart runtime, ICU and HarfBuzz into `eboot.bin` at build time, so every build distributes BSD-3 software and clause 2 travels with it. |
 | **Documentation** | 20 documents and 18 ADRs behind [an index](README.md) that names a starting point. Decisions carry their reasoning, including the ones I got wrong. See the corrections in [ADR-0014](adr/0014-gpu-backend-via-vitagl.md). |
-| **No secrets** | I grepped every tracked file. One hit is credential-shaped: `patches/corpus/keklist-0001-dotenv-placeholders.patch`, which holds dummies and says so in a comment. The rest are the word "token" in prose. |
+| **No secrets** | I grepped every tracked file. One hit is credential-shaped: `patches/test-apps/keklist-0001-dotenv-placeholders.patch`, which holds dummies and says so in a comment. The rest are the word "token" in prose. |
 | **Size** | 240 tracked files, 17 MB of history. The 12 GB vendored engine stays gitignored and the patch series rebuilds it. |
 | **Reproducible vendoring** | 46 patches across six trees. `tools/apply-patches.sh --verify` checks that one patch owns each file and that every patch reverses back out of its tree. |
-| **Reproducible corpus** | Third-party apps stay out of the tree. `apps/corpus/manifest.txt` pins each one to a URL and a commit SHA, so anyone can regression-test a bug found in it. |
+| **Reproducible test apps** | Third-party apps stay out of the tree. `apps/test-apps/manifest.txt` pins each one to a URL and a commit SHA, so anyone can regression-test a bug found in it. |
 | **Third-party assets** | `assets/fonts/` carries Noto Emoji with its OFL and a README recording where it came from. |
 
 ## What is missing
@@ -97,7 +97,7 @@ Check the author email in commit metadata during the same pass.
   developers that: they unpack a 23 MB artifact and link against it.
 - **`libshacccg.suprx`.** The GPU path wants a module the user installs. Vita
   homebrew already depends on it. See [ADR-0014](adr/0014-gpu-backend-via-vitagl.md).
-- **Corpus app licences.** Nothing redistributes those apps. The tree carries
+- **Test apps licences.** Nothing redistributes those apps. The tree carries
   patches against pinned SHAs, which is ordinary practice.
 - **Incompleteness.** Audio has not started, controls are designed and unbuilt,
   and an ADR blocks Bluetooth. [`roadmap-capabilities.md`](roadmap-capabilities.md)

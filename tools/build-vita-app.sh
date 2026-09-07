@@ -54,7 +54,7 @@ FLUTTER_DIR="$HOME/fvm/versions/$FLUTTER_PIN"
 OUT_DIR=""
 # Flavors are the norm outside sample apps: the entry point is lib/main_prod.dart
 # or lib/main_dev.dart and lib/main.dart does not exist. Hard-coding it made the
-# corpus unbuildable for an app whose only sin was shipping three build flavors.
+# test apps unbuildable for an app whose only sin was shipping three build flavors.
 ENTRY_POINT="lib/main.dart"
 # Product-specific C, and whether to ship the crash supervisor. Both exist for
 # the receiver (ADR-0016), which is an ordinary app from this same script plus a
@@ -278,7 +278,7 @@ ASSETS="$APP_DIR/build/flutter_assets"
 # with `workspace:` listing its members -- resolves once for the whole tree and
 # writes a single package_config.json at the root, leaving each member's own
 # .dart_tool without one. flutter/samples is laid out that way, so the control
-# app of the corpus was the app that found this.
+# app of the test apps was the app that found this.
 #
 # The failure it produced is worth recording, because it looks like anything but
 # a missing file: frontend_server falls back to a *relative* .dart_tool, finds

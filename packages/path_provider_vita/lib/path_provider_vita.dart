@@ -84,7 +84,7 @@ class PathProviderVita extends PathProviderPlatform {
   ///
   /// This returned null until 2026-08-21, on the reasoning that "there is no
   /// Downloads folder, and no browser or mail client that would fill one".
-  /// Both halves were wrong. localsend fills one, and it is the corpus app
+  /// Both halves were wrong. localsend fills one, and it is the test apps app
   /// this port cares most about; and the claim that "callers already handle
   /// null" did not survive contact with a real caller:
   ///

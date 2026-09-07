@@ -63,7 +63,7 @@ them available *by name*, which is a different thing. An application that wants
 a codepoint Roboto lacks must bundle a font that has it and name that family —
 `fontFamilyFallback` in `ThemeData`, or `fontFamily` on the specific style.
 
-[keklist](../patches/corpus/keklist-0004-emoji-font-fallback.patch) is the
+[keklist](../patches/test-apps/keklist-0004-emoji-font-fallback.patch) is the
 worked example: `NotoColorEmoji.ttf` (4.7 MB, already in the engine checkout
 beside Roboto) declared in `pubspec.yaml` and named in both themes, which takes
 its `.vpk` from 18 MB to 22 MB. Colour survives the trip — the font is
@@ -286,14 +286,14 @@ costs two taps; nothing user-mode can catch a data abort.
 
 ## Ongoing, not phases
 
-- **App corpus** — **active as of 2026-08-18.** Five real apps, one per axis,
-  pinned in [apps/corpus/manifest.txt](../apps/corpus/manifest.txt). Phase 6 and
+- **App test apps** — **active as of 2026-08-18.** Five real apps, one per axis,
+  pinned in [apps/test-apps/manifest.txt](../apps/test-apps/manifest.txt). Phase 6 and
   Phase 8 both landing is what made it worth doing: apps now get far enough to
   fail interestingly. Run as boot-and-observe against one shared title id, with
   a plugin-free control that must pass; the output is a patch series and a
   ranked list of engine work items annotated with how many apps each unblocks.
   That ranking is what should reorder the phases below.
-  [ADR-0012](adr/0012-app-corpus-as-measurement-instrument.md),
+  [ADR-0012](adr/0012-test-apps-as-measurement-instrument.md),
   [ADR-0013](adr/0013-ffi-needs-static-linking.md).
 - **Open-sourcing** — deferred, with
   [a cost recorded in the ADR index](adr/README.md).

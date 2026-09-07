@@ -1,7 +1,7 @@
 # Two build failures the control app found before it ever ran
 
-`material_3_demo` is the corpus control under
-[ADR-0012](../adr/0012-app-corpus-as-measurement-instrument.md): plugin-free,
+`material_3_demo` is the test apps control under
+[ADR-0012](../adr/0012-test-apps-as-measurement-instrument.md): plugin-free,
 one line of `main()`, the app that must work or no other result means anything.
 It failed to build twice, and neither failure was about the app.
 

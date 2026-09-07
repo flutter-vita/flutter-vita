@@ -192,12 +192,12 @@ chasing item 6 further -- it is an engine-side omission with a named fix.
 
 The green frame counter is `flutter_vita_debug_overlay`, weak-defaulted to 1 in
 the embedder. `templates/vita-app/release.c` defines it strong at 0, and the
-corpus build is not passing `--release`.
+test apps build is not passing `--release`.
 
 ### 10. LiveArea art is the template's
 
 localsend gets the shared Vita-with-Flutter-logo icon and gate. Fine for a
-corpus app under test, wrong for anything called a release.
+test apps under test, wrong for anything called a release.
 
 ## What is not a bug
 

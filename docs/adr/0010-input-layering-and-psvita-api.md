@@ -128,7 +128,7 @@ abstract final class Vita {
 
 ## Revisit trigger
 
-Revisit the layer-1 defaults if the app corpus shows real apps fighting them —
+Revisit the layer-1 defaults if the test apps shows real apps fighting them —
 the failure mode is an app that handles arrow keys itself and now behaves oddly.
 If that turns out to be common rather than rare, the default flips to off and
 navigation becomes opt-in through the `vita:` block.

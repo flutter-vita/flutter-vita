@@ -1,14 +1,14 @@
 # Wonderous: the assets fit, and it found a missing embedder API
 
-Wonderous is the corpus's asset-weight axis under
-[ADR-0012](../adr/0012-app-corpus-as-measurement-instrument.md): a finished
+Wonderous is the test apps's asset-weight axis under
+[ADR-0012](../adr/0012-test-apps-as-measurement-instrument.md): a finished
 showcase app, deliberately heavy on imagery. The question was whether the bundle
 even fits before anything runs.
 
 ## It fits
 
 ```
-apps/corpus/wonderous/build/vita/wonders.vpk   58M
+apps/test-apps/wonderous/build/vita/wonders.vpk   58M
 .text  17,566,002
 ```
 
@@ -22,7 +22,7 @@ page indicator — no missing glyphs, no failed decodes.
 where `flutter_localizations` now requires 0.20.2, and past that it uses
 `DecoderCallback` and `UnmodifiableUint8ListView` — both removed — plus a
 `go_router` predating mixin classes. That is an app three years behind the SDK,
-with nothing to say about this port, so the corpus follows upstream's own
+with nothing to say about this port, so the test apps follows upstream's own
 Flutter 3.41.9 update at `747b945` instead. Recorded in the manifest with the
 reason, because a pin that moves silently is not a pin.
 
@@ -55,7 +55,7 @@ Fixed in the embedder: one display, `single_display`, 960x544, pixel ratio 1.0,
 port achieves — an app asking what the display *does* should not be told what
 the software is currently managing.
 
-**This is the first corpus finding that changes the engine rather than the app**,
+**This is the first test apps finding that changes the engine rather than the app**,
 and it would not have come from the control: material_3_demo never asks.
 
 ## Score

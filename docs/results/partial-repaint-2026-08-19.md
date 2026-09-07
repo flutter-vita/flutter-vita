@@ -111,7 +111,7 @@ MEM 53M  MAX 51 MS
 ```
 
 It lives in the embedder, not in Dart: it costs the app nothing, needs no
-widget, and works identically in every app in the corpus without a line of
+widget, and works identically in every app in the test apps without a line of
 source. It is drawn after the blit and straight into the display buffer, which
 is also what makes it survive partial repaint — the blit restores app pixels
 underneath and the HUD goes back on top in the same call.

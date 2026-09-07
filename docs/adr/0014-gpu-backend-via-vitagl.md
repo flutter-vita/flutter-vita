@@ -252,7 +252,7 @@ Skia's own statics then use it too.
 This is a much larger fact than the GPU work. Every dynamically initialised
 function-local static anywhere in the engine goes through those guards, and it
 is a candidate explanation for the intermittent hard fault that has been open
-since the corpus work. The spike's version is correct for single-threaded
+since the test apps work. The spike's version is correct for single-threaded
 initialisation and nothing more; the engine needs a real one, and it is the
 first item of the engine work below.
 
@@ -373,7 +373,7 @@ CPU. A screen with ten layers and no expensive per-pixel work would be *slower*
 on the GPU than it is today.
 
 That is not an argument against the direction — the operations that actually
-hurt are 20× to 54× better, and they are the ones the corpus found. It is an
+hurt are 20× to 54× better, and they are the ones the test apps found. It is an
 argument that the embedder needs the software path kept and selectable, which
 [ADR-0003](0003-software-rendering-first.md) already requires for a different
 reason, and that layer count becomes a thing to measure. It is added to the
@@ -425,7 +425,7 @@ at 60 fps, which is the vsync ceiling rather than a measurement.
 
 ### localsend: 30× on raster, and no change to the frame rate
 
-The corpus app that motivated this whole ADR, measured on hardware, same build,
+The test apps app that motivated this whole ADR, measured on hardware, same build,
 switched between paths at run time:
 
 | | software | GL |
@@ -514,7 +514,7 @@ that cost 199 ms a frame on the CPU.*
   library screen — 5% damage costing the same 13,933 us as 89% damage — is the
   clean case, and it has not been run under GL yet.
 - **A different next question.** ADR-0006's bar is now a UI-thread question for
-  at least one corpus app, which is Dart AOT performance on a 444 MHz Cortex-A9
+  at least one test apps, which is Dart AOT performance on a 444 MHz Cortex-A9
   and a completely different investigation from this one.
 
 ### Still unexplained
@@ -1038,4 +1038,4 @@ which path an installed app actually took.
 - [ADR-0004](0004-static-single-binary.md) — why vitaGL being a static archive matters
 - [ADR-0006](0006-performance-bar-set-from-measurement.md) — the bar this is measured against
 - [ADR-0007](0007-enable-partial-repaint-in-software-path.md) — made the blit small, and thereby obsoleted the NEON-blit recommendation
-- [corpus-localsend-2026-08-19.md](../results/corpus-localsend-2026-08-19.md) — the raster attribution in full
+- [test apps-localsend-2026-08-19.md](../results/test apps-localsend-2026-08-19.md) — the raster attribution in full

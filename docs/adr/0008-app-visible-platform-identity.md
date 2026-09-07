@@ -115,7 +115,7 @@ for the same reason.
 > unreachable input, because [ADR-0010](0010-input-layering-and-psvita-api.md)
 > synthesizes arrows and scroll but no modifier keys. Android and linux differ
 > in **43 of 93** exhaustive switches, and the Linux identity has already cost
-> one corpus patch — localsend's `checkPlatformIsDesktop()` returned true,
+> one test apps patch — localsend's `checkPlatformIsDesktop()` returned true,
 > `window_manager` threw during `preInit`, and the app never reached `runApp`.
 >
 > **The decision is unchanged**, but the surviving reason is different: the
@@ -148,7 +148,7 @@ exists, and `psvita` can land without any plugin infrastructure.
 
 ## Revisit trigger
 
-Adopt **Option B** — not C — if the app corpus turns up a real app that cannot
+Adopt **Option B** — not C — if the test apps turns up a real app that cannot
 work under the Linux identity and cannot be fixed from `psvita`. B is one line
 and breaks nothing in the ecosystem; its only cost is the forked SDK, which at
 that point would have been shown to be worth paying.

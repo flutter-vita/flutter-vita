@@ -162,8 +162,8 @@ Every figure above is from the gallery's benchmark scenes, which are synthetic
 by design (ADR-0017 decision 1): they isolate one cost each, which is what
 makes them attributable and also what makes them unrepresentative.
 
-**The corpus check on a real app is still outstanding.** `keklist` — 242 `Text`
-call sites, "long lists" its axis in the corpus — was deployed on 2026-08-25
+**The test apps check on a real app is still outstanding.** `keklist` — 242 `Text`
+call sites, "long lists" its axis in the test apps — was deployed on 2026-08-25
 and holds **60 fps under GL**, but on a main screen whose notes list is empty.
 It never exercised the cost. Its startup windows report 1852–2607 us per
 paragraph against the gallery's 260, and those are **not** quotable as a

@@ -1,11 +1,11 @@
-# Corpus patches
+# Test apps patches
 
-One patch series per app in [`apps/corpus/manifest.txt`](../../apps/corpus/manifest.txt),
+One patch series per app in [`apps/test-apps/manifest.txt`](../../apps/test-apps/manifest.txt),
 applied to that app's pinned commit. No third-party source lives in this
 repository; a diff against a pinned upstream is a complete and reproducible
 description of what had to change.
 
-**Patch count and lines changed are the score** ([ADR-0012](../../docs/adr/0012-app-corpus-as-measurement-instrument.md)).
+**Patch count and lines changed are the score** ([ADR-0012](../../docs/adr/0012-test-apps-as-measurement-instrument.md)).
 Pass/fail is not available to us: ADR-0009's `registerWith()` is itself an app
 edit, so no app here runs unmodified and the only honest question is *how much*
 had to change.

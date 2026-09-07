@@ -75,7 +75,7 @@ targets_for() {
     patches/abseil/*)             echo "e_abseil" ;;
     patches/boringssl/*)          echo "e_ssl" ;;
     patches/vitagl/*)             echo "vitagl" ;;
-    patches/corpus/*)             echo "EXTERNAL" ;;
+    patches/test-apps/*)             echo "EXTERNAL" ;;
     *) return 1 ;;
   esac
 }
@@ -209,7 +209,7 @@ done < <(all_patches)
 # patch must reverse-apply cleanly.
 head_ "One file, one patch"
 for series in patches/*/; do
-  s="${series%/}"; [ "$s" = "patches/corpus" ] && continue
+  s="${series%/}"; [ "$s" = "patches/test-apps" ] && continue
   dup="$(for p in "$s"/*.patch; do owned "$p" | sed "s|^|$(basename "$p")\t|"; done \
          | sort -k2 | awk -F'\t' '{if ($2==prev) print prevp" and "$1" both own "$2; prev=$2; prevp=$1}')"
   if [ -n "$dup" ]; then

@@ -1,4 +1,4 @@
-# Corpus app 1: keklist
+# Test apps 1: keklist
 
 **Result: reaches its own UI and is navigable.** A 60-dependency production
 journal app, on hardware, in **31 added lines** across three patches — one of
@@ -56,7 +56,7 @@ migrations and the DI container had all succeeded — so the app sat on a spinne
 forever while the log blamed a purchase API for a journal app failing to open.
 
 Worth generalising: **real apps do not degrade when a plugin is missing.** They
-`await` it during startup and die. This will recur in every corpus app, and it
+`await` it during startup and die. This will recur in every test apps, and it
 is the app's bug on any platform the plugin has not shipped for — but it is
 *our* symptom to recognise.
 

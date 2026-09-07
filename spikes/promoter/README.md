@@ -122,7 +122,7 @@ promoter:
 | Register a **fresh** title id | promoter | loads, then the console dies |
 
 The receiver update loop needs only the first. Fresh title ids — a receiver at
-FVTA00001, one id per corpus app (ADR-0012), the background supervisor
+FVTA00001, one id per test apps (ADR-0012), the background supervisor
 (ADR-0011) — need the second, and can be bought instead with one manual
 VitaShell install per id.
 

@@ -119,7 +119,7 @@ class FilePickerVita extends FilePickerPlatform {
   }) async {
     // The user picks the directory; the name comes from the caller. Typing a
     // name here would mean the on-screen keyboard over a file list on a 544 px
-    // screen, and every caller in the corpus already generates a name.
+    // screen, and every caller in the test apps already generates a name.
     final String name = fileName ?? 'untitled';
     final List<String>? picked = await browseForPaths(
       mode: FileBrowserMode.saveInDirectory,

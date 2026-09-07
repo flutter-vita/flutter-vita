@@ -1,4 +1,4 @@
-# ADR-0012: The app corpus is an instrument, and its output is a diff
+# ADR-0012: The test apps is an instrument, and its output is a diff
 
 **Status:** Accepted
 **Date:** 2026-08-18
@@ -17,7 +17,7 @@ real apps depend on. It cannot tell us what breaks behind the packages: fonts,
 isolates, the emutls table under a real thread load. Those only appear when
 something large actually runs.
 
-Three facts about this port shaped how the corpus had to be built, and two of
+Three facts about this port shaped how the test apps had to be built, and two of
 them were discovered by checking rather than assumed.
 
 **Nothing here can run an app unmodified.** ADR-0009's non-endorsed mechanism
@@ -40,7 +40,7 @@ reintroduced by hand exactly the human step ADR-0011 removed.
 > **Corrected 2026-08-31.** The promoter loads once PAF is loaded first, so a
 > new title id costs nothing manual. This constraint no longer applies. The
 > decision below still stands on its own merits — one app per axis, overlap
-> rejected on sight, is about what the corpus measures, not about how many
+> rejected on sight, is about what the test apps measures, not about how many
 > title ids we could afford — but "we cannot" was never true, and a future
 > reader should not take the number five as forced. See
 > [`spikes/promoter`](../../spikes/promoter/).
@@ -48,7 +48,7 @@ reintroduced by hand exactly the human step ADR-0011 removed.
 ## Decision
 
 **Five apps, one per axis**, pinned by commit in
-[`apps/corpus/manifest.txt`](../../apps/corpus/manifest.txt): a plugin-free
+[`apps/test-apps/manifest.txt`](../../apps/test-apps/manifest.txt): a plugin-free
 control, animation-and-assets, storage-and-dependency-breadth, networking, and
 remote-content-with-codegen. Overlap is rejected on sight — two apps that fail
 the same way cost two deploys and teach one lesson.
@@ -61,7 +61,7 @@ lookup away — the cost would be real and the privacy would not.
 
 **A control is mandatory.** `material_3_demo` is plugin-free and pure framework.
 It is the app that *must* pass. Without it, five failures cannot distinguish
-"this port cannot run real apps" from "the corpus harness is broken", and the
+"this port cannot run real apps" from "the test apps harness is broken", and the
 whole exercise reports a number it has not earned.
 
 **Boot and observe, not push-to-usable.** Build, deploy, screenshot, record the
@@ -70,13 +70,13 @@ decision to be taken *after* the breadth pass says which app deserves it.
 
 **One title id, `FVTA00002`**, shared by all five and swapped in place by the
 existing receiver path. A title id buys a separate LiveArea bubble and nothing
-else, and the corpus does not need five bubbles. `FVTA00002` specifically
-because it is **already registered** with the shell, so the corpus needs no new
+else, and the test apps does not need five bubbles. `FVTA00002` specifically
+because it is **already registered** with the shell, so the test apps needs no new
 title and never has to touch the installed-titles database
 ([the registration investigation](../results/title-registration-2026-08-18.md)
 found that door open, and deliberately left it shut).
 
-**The deliverable is a patch series** under `patches/corpus/`, and
+**The deliverable is a patch series** under `patches/test-apps/`, and
 **lines-changed-to-first-frame is the score.** No third-party source enters this
 repository; the diff against a pinned upstream commit is a complete and
 reproducible description of what had to change.
@@ -96,13 +96,13 @@ reproducible description of what had to change.
   claims; this one is for existence claims.
 - The control can fail. If it does, everything stops until it passes, and no
   other result from that run may be quoted.
-- Sharing one title id means the corpus cannot have two apps installed at once.
+- Sharing one title id means the test apps cannot have two apps installed at once.
   Comparing two apps means two deploys, which the receiver already makes cheap.
 
 ## Revisit trigger
 
 If the breadth pass produces fewer than three actionable engine work items, the
-corpus is not earning its deploys and the effort belongs in the survey instead.
+test apps is not earning its deploys and the effort belongs in the survey instead.
 
 If any app needs more than a few hundred patched lines to reach first frame,
 that app is measuring our willingness to patch rather than the port, and it
@@ -111,6 +111,6 @@ should be dropped the way spotube was ([ADR-0013](0013-ffi-needs-static-linking.
 ## Related
 
 [ADR-0009](0009-plugins-via-non-endorsed-vita-implementations.md) — why every
-corpus app needs at least a two-line edit.
+test apps needs at least a two-line edit.
 [ADR-0011](0011-crash-recovery-without-taihen.md) — why one title id matters.
 [ADR-0013](0013-ffi-needs-static-linking.md) — the admission test.

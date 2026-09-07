@@ -3,7 +3,7 @@
 2026-08-19. Device: PCH-2000, 192.168.0.32. Pin `fd8140b6` (v1.15.4, the last
 release with no Rust in it).
 
-localsend was the corpus app that scored worst — 75 lines of modernization just
+localsend was the test apps app that scored worst — 75 lines of modernization just
 to build — and it turned out to be the most useful, because it is the only one
 that exercises `dart:io` past the point where a toy does. Four separate defects
 came out of it, three of them mine.
@@ -202,7 +202,7 @@ protocol handshake and the write all work.
 
 Two notes for whoever reads this next. The premise in `path_provider_vita` was
 not merely unlucky — *"callers already handle null"* is the kind of claim that
-should be tested against a caller before it is written down, and the corpus
+should be tested against a caller before it is written down, and the test apps
 existed precisely to test it. And this is the second time the Linux identity
 has produced an **early, fatal** failure rather than a late catchable one, which
 is the pattern

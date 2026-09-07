@@ -21,21 +21,21 @@ itself and reports 45/45 with no human involved, which is what makes it
 runnable on every deploy. A widget either looks right or it does not, and no
 app can assess that about itself.
 
-## `corpus/` — checkouts gitignored, manifest committed
+## `test-apps/` — checkouts gitignored, manifest committed
 
 Real third-party apps, cloned for bug-finding — the bugs the conformance app
 structurally cannot find, because it was written by the people who wrote the
-engine. Checkouts are disposable; `corpus/manifest.txt` is not, because a bug
+engine. Checkouts are disposable; `test-apps/manifest.txt` is not, because a bug
 found in an app you cannot name again is a bug you cannot regression-test.
 
 Five apps, one per axis, and one of them is a plugin-free **control** that must
 pass. Without it, five failures cannot tell a broken port from a broken
 harness. All five share one title id -- `FVTA00002`, because it is already registered --
 and the deliverable is a patch series
-under `patches/corpus/` — no third-party source enters this repository, and
+under `patches/test-apps/` — no third-party source enters this repository, and
 lines-changed-to-first-frame is the score rather than pass/fail.
 
-See [ADR-0012](../docs/adr/0012-app-corpus-as-measurement-instrument.md) for how
+See [ADR-0012](../docs/adr/0012-test-apps-as-measurement-instrument.md) for how
 it is run and what it is allowed to conclude, and
 [ADR-0013](../docs/adr/0013-ffi-needs-static-linking.md) for the test an app has
 to pass to be admitted at all.

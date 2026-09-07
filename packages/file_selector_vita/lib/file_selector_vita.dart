@@ -91,7 +91,7 @@ class FileSelectorVita extends FileSelectorPlatform {
   }) async {
     // The browser picks one directory at a time: multi-select across a tree
     // needs a selection model the confirm bar has no room for, and no caller in
-    // the corpus asks for more than one. One in a list is honest; throwing
+    // the test apps asks for more than one. One in a list is honest; throwing
     // would fail a caller that can work with one.
     final String? single = await getDirectoryPath(
       initialDirectory: initialDirectory,

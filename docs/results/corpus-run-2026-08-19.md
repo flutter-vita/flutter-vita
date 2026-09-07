@@ -1,8 +1,8 @@
-# The corpus, run end to end
+# The test apps, run end to end
 
-All five apps from [`apps/corpus/manifest.txt`](../../apps/corpus/manifest.txt)
+All five apps from [`apps/test-apps/manifest.txt`](../../apps/test-apps/manifest.txt)
 built and put on hardware, 2026-08-19. Under
-[ADR-0012](../adr/0012-app-corpus-as-measurement-instrument.md) the score is
+[ADR-0012](../adr/0012-test-apps-as-measurement-instrument.md) the score is
 lines changed to reach first frame, because ADR-0009's `registerWith()` is
 itself an app edit and no app here can run unmodified.
 
@@ -21,7 +21,7 @@ Four of five reach their own UI. The control needed no app edit at all.
 **material_3_demo — 0 lines.** It depends on `url_launcher`, so it is not quite
 the plugin-free app the manifest claims, but the call is behind a tap and never
 runs at startup. Both of its failures were in *our* toolchain and are written up
-in [corpus-build-failures](corpus-build-failures-2026-08-19.md) — one of them
+in [test apps-build-failures](test apps-build-failures-2026-08-19.md) — one of them
 was silently shipping day-old snapshots for every app.
 
 **wonderous — 16 lines**, the ADR-0009 registrations for `path_provider` and
@@ -29,7 +29,7 @@ was silently shipping day-old snapshots for every app.
 never called `FlutterEngineNotifyDisplayUpdate`, so
 `PlatformDispatcher.instance.displays` was empty and `displays.first` threw
 during the first build. See
-[corpus-wonderous](corpus-wonderous-2026-08-19.md).
+[test apps-wonderous](test apps-wonderous-2026-08-19.md).
 
 **keklist — 31 lines**, unchanged from 2026-08-18, and it now survives a
 15-minute soak with 777 tab switches: heap flat at 9 MB of a 12 MB arena, frame
@@ -38,12 +38,12 @@ rate steady at 24–27 fps throughout with no degradation.
 **flutter_manga_reader — 17 lines.** The same registrations, plus a one-line
 `intl` override because `flutter_localizations` pins 0.20.2 and the app asks for
 ^0.20.3. It reaches its Library screen with a working bottom navigation and no
-unhandled exceptions. **Cheapest real app in the corpus.**
+unhandled exceptions. **Cheapest real app in the test apps.**
 
 > **Superseded the same day.** localsend was repinned to v1.15.4, the last
 > release with no Rust in it, and now runs: it serves HTTPS, announces itself
 > and answers peers. See
-> [corpus-localsend-2026-08-19.md](corpus-localsend-2026-08-19.md). What
+> [test apps-localsend-2026-08-19.md](test apps-localsend-2026-08-19.md). What
 > follows describes the old pin and is kept because the ADR-0013 prediction it
 > tested is the reason the repin was possible.
 

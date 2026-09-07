@@ -7,7 +7,7 @@
 # Format: owner/repo <commit-sha> [# note]
 #
 # Selected 2026-08-18. Every app is public, so anyone can reproduce a result
-# here from this file alone. See ADR-0012 for how the corpus is run and what it
+# here from this file alone. See ADR-0012 for how the test apps is run and what it
 # is allowed to conclude; ADR-0013 for why FFI decides admission.
 #
 # Each app is here for a different axis. Overlap is waste: two apps that fail

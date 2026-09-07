@@ -371,7 +371,7 @@ static GrGLFuncPtr vita_get_proc(void*, const char name[]) {
 // ---------------------------------------------------------------------------
 
 static constexpr int kW = 960;    // the Vita's screen, so the numbers compare
-static constexpr int kH = 544;    // directly with the corpus measurements
+static constexpr int kH = 544;    // directly with the test apps measurements
 static constexpr int kIters = 20;
 static constexpr int kWarm = 3;
 static constexpr SkScalar kCx = 480, kCy = 272;
@@ -555,7 +555,7 @@ static void bench_gpu(GrDirectContext* ctx, SkSurface* s, OpFn fn, Result* r) {
 
 // Criterion 3. "The output is correct" has no oracle on this console, so
 // correctness is defined as agreement with the software rasteriser, which is
-// the path the port ships today and the one the corpus screenshots came from.
+// the path the port ships today and the one the test apps screenshots came from.
 //
 // The non-blank counts are load-bearing: two identical blank surfaces agree
 // perfectly, and that is the failure this check exists to catch.
