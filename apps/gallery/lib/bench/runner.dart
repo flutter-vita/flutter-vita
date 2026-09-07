@@ -35,7 +35,7 @@ const String kSoftwareSwitchPath = '$kDataDir/software.on';
 const String kBenchDir = '$kDataDir/bench';
 
 /// Written by the receiver's TESTS tab before it launches this app, and by
-/// nothing else. Its presence is the only way to tell a run the hub asked for
+/// nothing else. Its presence is the only way to tell a run the TESTS tab asked for
 /// from one a host script started: both write bench.on.
 const String kFromReceiverPath = '$kDataDir/bench.from-receiver';
 
@@ -422,12 +422,12 @@ class BenchRunner {
     Directory(kDataDir).createSync(recursive: true);
     _writeAtomic(kResultPath, text);
     // Also under bench/, one file per app per suite, which is what the
-    // receiver's hub lists. The legacy path stays for the host tools.
+    // receiver lists. The legacy path stays for the host tools.
     try {
       Directory(kBenchDir).createSync(recursive: true);
       _writeAtomic('$kBenchDir/FVTA00002-gallery.json', text);
     } catch (_) {
-      // The hub copy is a convenience. Losing it must not lose the run.
+      // The TESTS-tab copy is a convenience. Losing it must not lose the run.
     }
     File(kDonePath).writeAsStringSync('1', flush: true);
     _handBackIfAsked();
@@ -436,7 +436,7 @@ class BenchRunner {
   /// Give the console back to the receiver, if the receiver is what started this.
   ///
   /// A run launched from the TESTS tab used to end with the app sitting on its
-  /// results and the receiver gone, so the hub that asked for the run was not
+  /// results and the receiver gone, so the TESTS tab that asked for the run was not
   /// there to show it. Host-started runs are left alone: tools/bench.sh wants
   /// the app alive afterwards to read the numbers off it.
   void _handBackIfAsked() {

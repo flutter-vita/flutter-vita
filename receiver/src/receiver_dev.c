@@ -87,12 +87,12 @@ int flutter_vita_debug_overlay = 0;
 //
 // Back to 1 on 2026-08-31, hours after the 0 that replaced it, and the reason
 // is not the crash risk ADR-0016 decision 7 named. It is that the panel is not
-// legible under GL on the blessed engine.
+// legible under GL on the pinned engine.
 //
-// Back to 0 on 2026-09-01. The caveat below -- that the blessed engine is
+// Back to 0 on 2026-09-01. The caveat below -- that the pinned engine is
 // deliberately older than the tree, so this may already be fixed -- stopped
 // being a caveat when the pin was bumped to today's engine that evening. The
-// blessed engine and the engine apps use are now the same build, so if the
+// pinned engine and the engine apps use are now the same build, so if the
 // panel is still illegible it is a live defect in the GL path and reproducing
 // it here is as good as reproducing it in an app.
 //
@@ -110,10 +110,10 @@ int flutter_vita_debug_overlay = 0;
 // than a layout that moved.
 //
 // Not necessarily a bug in the GL path as it stands today. The receiver links
-// the *blessed* engine (decision 2), b1f20d13d621, which is deliberately older
+// the *pinned* engine (decision 2), b1f20d13d621, which is deliberately older
 // than the tree -- so this may already be fixed in the engine apps use, and
 // the way to find out is to reproduce it in an app rather than to keep
-// re-blessing under a receiver nobody can read.
+// re-pinning under a receiver nobody can read.
 //
 // Apps are unaffected and stay on the GPU: ux0:data/flutter-vita/software.on
 // is 0 on this console, and the gallery came up "GL up -- OpenGL ES 2.0

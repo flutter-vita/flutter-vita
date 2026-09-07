@@ -563,9 +563,9 @@ String humanBytes(int n) {
 ///
 /// The panel is a screen you press, and the one thing that cannot press it is
 /// the machine building it. `tap` exists in the dev server but not in minimal
-/// mode, and minimal mode's allowlist is compiled into the blessed engine
+/// mode, and minimal mode's allowlist is compiled into the pinned engine
 /// (ADR-0016 decision 2), so reaching the CRASHES tab from the host would mean
-/// re-blessing an engine to debug a layout.
+/// re-pinning an engine to debug a layout.
 ///
 /// This is the same trick as receiver-request.txt pointed at the other half:
 /// `put` one line onto the card, the panel picks it up within 500 ms and

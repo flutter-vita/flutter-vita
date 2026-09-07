@@ -286,7 +286,7 @@ static void cmd_rm(int sock, const char* path) {
 //
 // Split out of the `handoff` verb so a run that nobody is watching can do the
 // same thing. A benchmark started from the receiver's TESTS tab used to end with
-// the app sitting on the results and the receiver gone, so the hub that asked
+// the app sitting on the results and the receiver gone, so the TESTS tab that asked
 // for the run could not show it.
 static void hand_over_to(const char* receiver) {
   logf_("  [dev] handing off to %s\n", receiver);
@@ -378,10 +378,10 @@ static int serve(int sock, const char* log_path, const char* eboot_path) {
     // reach the CRASHES tab can only verify the first thing the panel draws.
     //
     // Not in the receiver yet. This file is compiled from the engine package
-    // (package-engine.sh copies it there), and the receiver links the blessed
-    // one -- so minimal mode gains tap at the next bless, not at the next
+    // (package-engine.sh copies it there), and the receiver links the pinned
+    // one -- so minimal mode gains tap at the next pin, not at the next
     // receiver build. Deliberate: ADR-0016 decision 2 is that nothing reaches
-    // the receiver's engine without someone choosing to re-bless.
+    // the receiver's engine without someone choosing to re-pin.
     if (g_minimal && strcmp(line, "ping") != 0 && strcmp(line, "probe") != 0 &&
         strcmp(line, "log") != 0 && strncmp(line, "get ", 4) != 0 &&
         strncmp(line, "put ", 4) != 0 && strcmp(line, "shot") != 0 &&

@@ -1,18 +1,18 @@
 #!/usr/bin/env bash
-# Bless an engine artifact as the one the receiver links against.
+# Pin an engine artifact as the one the receiver links against.
 #
-#   ./tools/bless-receiver-engine.sh [--engine DIR] [--reason "..."]
+#   ./tools/pin-receiver-engine.sh [--engine DIR] [--reason "..."]
 #
 # ADR-0016 decision 2. The receiver is the tool used to deploy a fix, so it must
 # not link the engine that fix is fixing: an engine change that breaks an app
 # would otherwise break the only way to replace that app. The pin is bumped by
 # running this, deliberately, and never as a side effect of a rebuild.
 #
-# What it does is a copy and a receipt. The blessed tree is out/artifacts/
+# What it does is a copy and a receipt. The pinned tree is out/artifacts/
 # receiver-engine/, which is gitignored -- what is committed is receiver/
 # engine-pin.txt, recording exactly which engine that tree is supposed to be.
 # tools/build-receiver.sh checks one against the other and refuses a mismatch,
-# so a blessed tree that quietly drifts is a build error rather than a subtle
+# so a pinned tree that quietly drifts is a build error rather than a subtle
 # runtime difference between the receiver and everything else.
 set -euo pipefail
 
@@ -47,7 +47,7 @@ SHA="$(shasum -a 256 "$LIB" | cut -d' ' -f1)"
 if [ -f "$PIN" ]; then
   OLD="$(grep -m1 '^archive_sha256 ' "$PIN" | awk '{print $2}' || true)"
   if [ "$OLD" = "$SHA" ]; then
-    echo "    already blessed; refreshing the tree only"
+    echo "    already pinned; refreshing the tree only"
   else
     echo "    bumping the pin"
     echo "      was $OLD"
@@ -63,9 +63,9 @@ cp -R "$SRC" "$DEST"
 cat > "$PIN" <<EOF
 # The engine the receiver links against -- ADR-0016 decision 2.
 #
-# Written by tools/bless-receiver-engine.sh; read by tools/build-receiver.sh, which
+# Written by tools/pin-receiver-engine.sh; read by tools/build-receiver.sh, which
 # refuses to build if out/artifacts/receiver-engine does not match. Bump it by
-# running the bless script, never by editing this file: the sha is what makes
+# running the pin script, never by editing this file: the sha is what makes
 # the check mean anything.
 
 flutter          $(key flutter)
@@ -73,8 +73,8 @@ framework_rev    $(key framework_rev)
 engine           $(key engine)
 dart             $(key dart)
 archive_sha256   $SHA
-blessed_at       $(date -u +%Y-%m-%dT%H:%M:%SZ)
-blessed_from     ${SRC#"$ROOT/"}
+pinned_at        $(date -u +%Y-%m-%dT%H:%M:%SZ)
+pinned_from      ${SRC#"$ROOT/"}
 reason           ${REASON:-no reason recorded}
 EOF
 

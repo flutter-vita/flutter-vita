@@ -211,9 +211,9 @@ the Flutter receiver can reach `FVTA00003`.~~
 > inheritance from whichever slot had been created by hand, and is now a choice.
 > `tools/build-receiver.sh` defaults to it.
 >
-> One stale default remains and is harmless: the *blessed* engine's
+> One stale default remains and is harmless: the *pinned* engine's
 > `devserver.h` still says `FVTA00003`, and it is a pinned artifact that only
-> `bless-receiver-engine.sh` refreshes. `ux0:data/flutter-vita/receiver.titleid`
+> `pin-receiver-engine.sh` refreshes. `ux0:data/flutter-vita/receiver.titleid`
 > overrides it at runtime and now reads `FVTA00001`. `sceSysmoduleLoadModuleInternal(SCE_SYSMODULE_INTERNAL_PROMOTER_UTIL)`
 returns `SCE_KERNEL_ERROR_MODULEMGR_NO_LIB` (`0x8002D003`), the `WithArg`
 spelling returns the same, and the C receiver fails identically.

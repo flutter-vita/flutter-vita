@@ -1,6 +1,6 @@
 // The panel's palette and the three widgets every tab builds out of.
 //
-// No Material. The receiver links the blessed engine and runs on the CPU
+// No Material. The receiver links the pinned engine and runs on the CPU
 // rasteriser (ADR-0016 decisions 2 and 7), and Material's ink, shadows and
 // implicit animations are all things this rasteriser pays for on a screen
 // nobody is looking at for longer than a deploy takes.

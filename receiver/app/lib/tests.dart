@@ -1,4 +1,4 @@
-// The benchmark hub. One place to start a suite and one place to read what it
+// The TESTS tab. One place to start a suite and one place to read what it
 // said, in the only process on this console that is always up.
 //
 // ## Why here, and why out of process
@@ -12,14 +12,14 @@
 // The receiver is the one process that survives that -- surviving an app crash is
 // the job it exists for. So it starts a run by *launching the app* and getting
 // out of the way, exactly the way the APPS tab does. Nothing runs inside the
-// receiver. A suite that takes its app down leaves the hub standing, which is the
+// receiver. A suite that takes its app down leaves the TESTS tab standing, which is the
 // whole point.
 //
 // ## Nothing here may throw
 //
 // Every file this reads is written by something else, some of it while a
 // process was dying. The receiver is the recovery mechanism; a receiver that
-// crashes on a truncated JSON file is worse than no hub at all. Every read is
+// crashes on a truncated JSON file is worse than no TESTS tab at all. Every read is
 // guarded and every parse falls back to "unknown" rather than propagating.
 
 import 'dart:convert';
@@ -35,18 +35,18 @@ import 'device.dart';
 const benchDir = '$dataDir/bench';
 
 /// What gallery has always written. Read as well as the directory above, so the
-/// hub is useful before any app has been changed.
+/// the TESTS tab is useful before any app has been changed.
 const legacyResultPath = '$dataDir/bench-result.json';
 
 /// The list of suites, on the memory card rather than compiled in here.
 ///
 /// Adding a benchmark must not mean rebuilding the receiver. Reflashing it is the
-/// riskiest routine operation in this project -- there is a bless-and-promote
+/// riskiest routine operation in this project -- there is a pin-and-promote
 /// flow around it precisely because a bad receiver strands the console -- and
 /// "we added a scene" is not worth paying that.
 const manifestPath = '$dataDir/benchmarks.txt';
 
-/// A suite the hub can start.
+/// A suite the TESTS tab can start.
 class BenchEntry {
   const BenchEntry({
     required this.titleId,
@@ -177,7 +177,7 @@ List<BenchResult> readResults() {
 /// Drop the legacy copy of a run that is also under bench/.
 ///
 /// Suites write both: bench-result.json for the host tools and
-/// bench/<title>-<suite>.json for this hub. Listing both showed one run twice,
+/// bench/<title>-<suite>.json for this tab. Listing both showed one run twice,
 /// which across a sweep of thirty-four scenes would make the panel unreadable.
 /// Same suite and same `taken` is the same run; the bench/ copy wins because
 /// it is the one that survives a second suite being added.
@@ -262,7 +262,7 @@ bool startRun(BenchEntry entry) {
   if (!entry.present) return false;
   try {
     File(entry.switchPath).writeAsStringSync('1', flush: true);
-    // Tells the suite the hub is waiting for it, so it hands the console back
+    // Tells the suite the TESTS tab is waiting for it, so it hands the console back
     // when it finishes. A host-started run writes the same bench.on and must
     // not hand back, which is why this is a separate file rather than a flag.
     File('$dataDir/bench.from-receiver').writeAsStringSync('1', flush: true);

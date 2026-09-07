@@ -46,8 +46,8 @@ out/artifacts/
 # right answer: another machine cannot know what is on this console.
 out/.pushed/
 
-# The blessed engine the receiver links against. 73 MB, reproduced by
-# tools/bless-receiver-engine.sh; receiver/engine-pin.txt is the committed record.
+# The pinned engine the receiver links against. 73 MB, reproduced by
+# tools/pin-receiver-engine.sh; receiver/engine-pin.txt is the committed record.
 out/artifacts/receiver-engine/
 
 # Crash dumps and framebuffer captures pulled off the device.

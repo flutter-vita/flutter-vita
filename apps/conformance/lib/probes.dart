@@ -792,7 +792,7 @@ List<Probe> buildProbes() => [
     return _rate(bytes, sw);
   }, timeout: const Duration(seconds: 180)),
 
-  // -- The two blessed plugins. Not a test of the packages so much as of the
+  // -- The two pinned plugins. Not a test of the packages so much as of the
   //    claim in ADR-0009 that they are shallow: if the filesystem works, these
   //    should be constants and a mkdir, and anything else here is a surprise.
   Probe('plugin', 'path_provider docs', () async {

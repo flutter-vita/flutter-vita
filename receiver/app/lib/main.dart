@@ -1237,12 +1237,12 @@ class _Dot extends StatelessWidget {
 }
 
 
-/// The benchmark hub.
+/// The TESTS tab.
 ///
 /// Starting a run means launching the app that owns the suite and getting out
 /// of the way -- see the note at the top of tests.dart for why nothing runs
 /// inside the receiver. The bottom half is every result on the card, which is the
-/// part that makes this a hub rather than a second RUN button.
+/// part that makes this a tab rather than a second RUN button.
 class _TestsTab extends StatefulWidget {
   const _TestsTab({required this.command});
 

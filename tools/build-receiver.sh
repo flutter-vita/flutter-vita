@@ -48,16 +48,16 @@ done
 
 # ------------------------------------------------------------- the pin check
 #
-# ADR-0016 decision 2: the receiver links a blessed engine, not the one under
+# ADR-0016 decision 2: the receiver links a pinned engine, not the one under
 # development, so that a broken engine can cost you your app and never your
 # ability to replace it. The sha is what makes that mean anything -- without
-# it "the blessed tree" is just a directory someone could have rsynced over.
+# it "the pinned tree" is just a directory someone could have rsynced over.
 [ -f "$PIN" ] || {
-  echo "No $PIN. Run tools/bless-receiver-engine.sh." >&2; exit 1; }
+  echo "No $PIN. Run tools/pin-receiver-engine.sh." >&2; exit 1; }
 [ -d "$ENGINE" ] || {
-  echo "No blessed engine at $ENGINE." >&2
-  echo "  It is gitignored, so a fresh checkout has to bless one:" >&2
-  echo "    ./tools/bless-receiver-engine.sh --reason 'restoring the pin'" >&2
+  echo "No pinned engine at $ENGINE." >&2
+  echo "  It is gitignored, so a fresh checkout has to pin one:" >&2
+  echo "    ./tools/pin-receiver-engine.sh --reason 'restoring the pin'" >&2
   echo "  Check it produces the sha in $PIN before trusting the result." >&2
   exit 1
 }
@@ -65,12 +65,12 @@ done
 WANT="$(grep -m1 '^archive_sha256 ' "$PIN" | awk '{print $2}')"
 HAVE="$(shasum -a 256 "$ENGINE/lib/libflutter_engine_vita.a" | cut -d' ' -f1)"
 if [ "$WANT" != "$HAVE" ]; then
-  echo "!! the blessed engine does not match the pin." >&2
+  echo "!! the pinned engine does not match the pin." >&2
   echo "   $PIN says  $WANT" >&2
   echo "   $ENGINE has $HAVE" >&2
   echo >&2
   echo "   Either the tree was overwritten, or the pin should be bumped." >&2
-  echo "   Bumping is deliberate: ./tools/bless-receiver-engine.sh --reason '...'" >&2
+  echo "   Bumping is deliberate: ./tools/pin-receiver-engine.sh --reason '...'" >&2
   exit 1
 fi
 echo "==> pinned engine $(grep -m1 '^flutter ' "$PIN" | awk '{print $2}') ($(echo "$HAVE" | cut -c1-12))"

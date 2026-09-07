@@ -92,14 +92,14 @@ title.
 - Endorsement would remove the extra dependency line, but requires a PR to each
   upstream plugin adding `vita:` to its platforms map. Not attempted — Samsung
   did not get it either, on a far better-resourced platform.
-- The blessed set is a maintenance commitment. Three packages tracking three
+- The pinned set is a maintenance commitment. Three packages tracking three
   upstreams across Flutter releases, on top of the engine artifact.
 - Title IDs need an allocation story once more than one app exists. Deriving one
   from a hash of the package name is deterministic, collision-unlikely, and
   never asks the developer to pick — but it is not decided here.
 - `tools/plugin-survey` is committed as a tool, not a one-off: the number moves
   as the ecosystem does, and the greedy cover should be re-derived before any
-  future decision to extend the blessed set.
+  future decision to extend the pinned set.
 
 ## Revisit trigger
 

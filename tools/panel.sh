@@ -10,8 +10,8 @@
 # to press something remotely is to see the result.
 #
 # `tap x y` exists in the dev server and is refused in minimal mode, and that
-# allowlist is compiled into the blessed engine -- so reaching the CRASHES tab
-# from the host would mean re-blessing an engine to look at a layout. The panel
+# allowlist is compiled into the pinned engine -- so reaching the CRASHES tab
+# from the host would mean re-pinning an engine to look at a layout. The panel
 # reads one line out of ux0:data/flutter-vita/panel-request.txt instead.
 set -euo pipefail
 
