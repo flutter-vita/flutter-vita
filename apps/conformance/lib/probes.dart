@@ -72,7 +72,7 @@ void _mark(String s) {
 ///   printf 'put 12 ux0:data/flutter-vita/bench.host\n192.168.0.26' \
 ///     | nc <vita> 1339
 ///
-/// Same shape as `handoff` reading loader.titleid, and for the same reason.
+/// Same shape as `handoff` reading receiver.titleid, and for the same reason.
 /// The constant stays as the fallback so a card with no file still runs.
 final String _benchHost = _readBenchHost();
 

@@ -1,6 +1,6 @@
 // fvita_launcher — a SceShell module whose only job is to launch an app.
 //
-// Why it exists: when the foreground app crashes, both M1 and the loader are
+// Why it exists: when the foreground app crashes, both M1 and the receiver are
 // gone, and nothing left on the device can start anything. Recovery needs a
 // physical tap, once per crash, and Phase 2 will produce many. SceShell keeps
 // running through all of it, so a module living inside SceShell can relaunch

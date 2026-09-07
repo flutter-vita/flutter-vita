@@ -1,4 +1,4 @@
-// Clean exit to the loader, for failures the program can see coming.
+// Clean exit to the receiver, for failures the program can see coming.
 //
 // See bailout.c for why this exists and what it can and cannot catch.
 #ifndef VITA_BAILOUT_H
@@ -8,14 +8,14 @@
 extern "C" {
 #endif
 
-// Record `reason`, launch the dev loader, and exit the process cleanly.
+// Record `reason`, launch the dev receiver, and exit the process cleanly.
 //
 // Call it anywhere continuing would mean a fault -- a NULL that the caller
 // cannot check, an allocation that failed, a table that is full. Does not
 // return.
 //
 // The point is the *clean* exit. A faulting process puts an error dialog on
-// the console and needs a person to dismiss it and then find the loader; a
+// the console and needs a person to dismiss it and then find the receiver; a
 // process that exits normally does neither.
 void vita_bail_to_loader(const char* reason);
 

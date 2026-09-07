@@ -12,8 +12,8 @@
 #define DEVSERVER_PORT 1339
 
 // Where `handoff` goes when nothing overrides it. Overridable at runtime by
-// ux0:data/flutter-vita/loader.titleid, and per-command by `handoff <titleid>`
-// -- because a hardcoded slot is wrong the moment the loader is reinstalled
+// ux0:data/flutter-vita/receiver.titleid, and per-command by `handoff <titleid>`
+// -- because a hardcoded slot is wrong the moment the receiver is reinstalled
 // somewhere else, and every app on the card would otherwise need rebuilding.
 #define DEVSERVER_DEFAULT_LOADER "FVTA00001"
 
@@ -79,7 +79,7 @@ void dev_server_set_overlay_handler(void (*overlay)(int on));
 
 // --- Extension points, for a product that embeds this server -------------
 //
-// The loader (ADR-0016) is a Flutter app built from the same template as any
+// The receiver (ADR-0016) is a Flutter app built from the same template as any
 // other, so it links this same server rather than carrying a private copy.
 // What it needs on top is a different port, three commands of its own, and a
 // much smaller surface than an app under development wants. All three are
@@ -110,7 +110,7 @@ void dev_server_log(const char* msg);
 // This exists because there is no other safe moment. Registration happens in a
 // constructor, which runs before main() and therefore long before any of that
 // -- and a Vita stub for a module that is not resident is not a stub that
-// returns an error, it is address zero. The loader's first attempt at watching
+// returns an error, it is address zero. The receiver's first attempt at watching
 // the IP called sceNetCtlInetGetInfo from its constructor and took the process
 // down with a prefetch abort at PC 0.
 void dev_server_set_ready_handler(void (*ready)(void));
@@ -118,10 +118,10 @@ void dev_server_set_ready_handler(void (*ready)(void));
 // Serve only the deploy and debug loop: ping, probe, log, get, put, plus
 // whatever the command handler adds. Everything else is refused.
 //
-// ADR-0016 decision 9. The loader is the component that recovers from
+// ADR-0016 decision 9. The receiver is the component that recovers from
 // crashes, so it carries the least surface of anything here -- no handoff, no
 // relaunch, no deliberate fault, and no crash supervisor either, since the
-// supervisor's job is to bring the loader back.
+// supervisor's job is to bring the receiver back.
 void dev_server_set_minimal(int minimal);
 
 #endif  // DEVSERVER_H

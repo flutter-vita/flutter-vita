@@ -1,9 +1,9 @@
 // Why ScePromoterUtil will not load for us, when it loads for everyone else.
 //
-// VitaShell, VitaDB Downloader and NeoVitaDB all register fresh title ids on
+// VitaShell, VitaDB Downreceiver and NeoVitaDB all register fresh title ids on
 // this console. We cannot: sceSysmoduleLoadModuleInternal(0x80000024) returns
 // SCE_KERNEL_ERROR_MODULEMGR_NO_LIB (0x8002D003). That has been measured three
-// times -- under UNSAFE, in both spellings, and from the 91 KB C loader as well
+// times -- under UNSAFE, in both spellings, and from the 91 KB C receiver as well
 // as the 14 MB Flutter one, which is what rules out a memory budget. See
 // spikes/vita-tooling/README.md and ADR-0016.
 //
@@ -19,11 +19,11 @@
 //
 //   A  IsLoadedInternal first    if the module is already resident, NO_LIB from
 //                                a load means something other than we assumed
-//   B  LoadModuleInternal        the call the loader makes, for the baseline
+//   B  LoadModuleInternal        the call the receiver makes, for the baseline
 //   C  WithArg, NULL option      what most homebrew passes. Ours returns
 //                                INVALID_MEMORY_ACCESS for NULL, which is
 //                                itself odd and worth pinning down
-//   D  WithArg, real option      the spelling the loader ended up using
+//   D  WithArg, real option      the spelling the receiver ended up using
 //   E  after DestroyOtherApp     some homebrew frees the other app first
 //   F  IsLoaded again            state after all of the above
 //
@@ -121,7 +121,7 @@ int main(void) {
   if (d >= 0) loaded = 1;
 
   // Some homebrew frees the other app before promoting. Harmless here: there is
-  // no other app, this spike having been launched from the loader.
+  // no other app, this spike having been launched from the receiver.
   const int e0 = sceAppMgrDestroyOtherApp();
   report("E DestroyOtherApp", e0);
   const int e1 = sceSysmoduleLoadModuleInternal(SCE_SYSMODULE_INTERNAL_PROMOTER_UTIL);
@@ -272,15 +272,15 @@ int main(void) {
   // anything. The only new variable is that PAF has been in this process.
   //
   // That distinction decides whether any of this is usable, because the two
-  // things that will actually call the promoter -- VitaShell, and our loader --
+  // things that will actually call the promoter -- VitaShell, and our receiver --
   // are both long-lived. Neither exits afterwards. If sitting here forever is
   // stable, the reboot is an artefact of a spike tidying up after itself and
-  // the loader is unaffected.
+  // the receiver is unaffected.
   //
-  // So it holds instead, and somebody taps the loader. One tap to learn whether
+  // So it holds instead, and somebody taps the receiver. One tap to learn whether
   // a whole capability is safe to use is a good trade.
   lg("\nholding, not exiting. The reboot happens after this point.\n");
-  lg("Open the loader when you have read this.\n");
+  lg("Open the receiver when you have read this.\n");
   // Two minutes of heartbeat, then quiet. Long enough to prove it survived
   // well past the point run 5 died at, short enough not to fill the card while
   // the console sits on a screen nobody is watching.

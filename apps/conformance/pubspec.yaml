@@ -18,7 +18,7 @@ dependencies:
   shared_preferences_vita:
     path: ../../packages/shared_preferences_vita
 
-# Pinned to the dev loader's slot on purpose. The loader installs into
+# Pinned to the dev receiver's slot on purpose. The receiver installs into
 # FVTA00002 and nothing else, so a derived id would build a correct .vpk that
 # the fast loop cannot deploy. Also exercises the vita: block itself.
 vita:

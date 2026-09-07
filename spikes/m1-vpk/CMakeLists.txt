@@ -87,7 +87,7 @@ target_link_libraries(${PROJECT_NAME}
 )
 
 # UNSAFE so this app can write ux0:app too, which is what lets it install a new
-# loader. Without it only the loader could update M1, and updating the loader
+# receiver. Without it only the receiver could update M1, and updating the receiver
 # itself would still need an FTP server.
 # -u pthread_cancel is REMOVED, and must not be restored on its own.
 #

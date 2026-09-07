@@ -69,7 +69,7 @@ first thing that breaks in the running app. Depth on a single app is a separate
 decision to be taken *after* the breadth pass says which app deserves it.
 
 **One title id, `FVTA00002`**, shared by all five and swapped in place by the
-existing loader path. A title id buys a separate LiveArea bubble and nothing
+existing receiver path. A title id buys a separate LiveArea bubble and nothing
 else, and the corpus does not need five bubbles. `FVTA00002` specifically
 because it is **already registered** with the shell, so the corpus needs no new
 title and never has to touch the installed-titles database
@@ -97,7 +97,7 @@ reproducible description of what had to change.
 - The control can fail. If it does, everything stops until it passes, and no
   other result from that run may be quoted.
 - Sharing one title id means the corpus cannot have two apps installed at once.
-  Comparing two apps means two deploys, which the loader already makes cheap.
+  Comparing two apps means two deploys, which the receiver already makes cheap.
 
 ## Revisit trigger
 

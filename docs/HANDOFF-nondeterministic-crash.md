@@ -184,7 +184,7 @@ Each is an app-only build. None needs the engine rebuilt.
 ## 4. The dev loop is the real bottleneck — fix it first
 
 **Every crash currently costs a human walking to the console and opening the
-loader.** That is the constraint on iteration speed, not build time (builds are
+receiver.** That is the constraint on iteration speed, not build time (builds are
 12–20 s; an engine object is 1 s).
 
 Two fixes, both worth doing, neither attempted yet:
@@ -214,12 +214,12 @@ goes unmeasured: `tls/handshake, no verify` has no result for that reason.
 
 To force a run from the top: `./spikes/m1-vpk/dev.sh rm ux0:data/flutter-vita/resume.txt`.
 
-### b. Return to the loader without a human — API fixed, shell blocks it
+### b. Return to the receiver without a human — API fixed, shell blocks it
 
 There was already a supervisor for this — `templates/vita-app/supervisor.c`,
 built as `eboot2.bin` and started as a background application, a separate
 process that outlives the foreground app dying. It had never run, and
-`loader.log` had been saying so on every boot since 2026-08-10:
+`receiver.log` had been saying so on every boot since 2026-08-10:
 
 ```
 supervisor start: sysmodule=0x00000000 start=0x80106501
@@ -248,7 +248,7 @@ installed-titles database.**
 |---|---|
 | `FVSV00003` — registered to nothing | app runs; call returns 0; shell puts "could not find app" on the panel; `eboot2.bin` never runs |
 | `FVTA00002` — the app's own | **the app does not launch** |
-| `FVTA00003` — the loader's, registered to another app | **the app does not launch** |
+| `FVTA00003` — the receiver's, registered to another app | **the app does not launch** |
 
 Three ids, and the pattern closes the door. The shell reads `param2.sfo`
 **at app launch, before any of our code runs** — so an id belonging to another
@@ -264,7 +264,7 @@ launch. `dev_server_run` reads
 first byte is `1`. A file rather than a build flag, so flipping it costs one
 `put` instead of a rebuild and a 12 MB upload — and its *contents* rather than
 its existence, because turning it back off would otherwise need a delete, and
-the loader installed on the device predates `rm`.
+the receiver installed on the device predates `rm`.
 
 Nothing we control can add a title to that database: `ScePromoterUtil` refuses
 to load with `MODULEMGR_NO_LIB` (`0x8002D003`), the same refusal
@@ -282,25 +282,25 @@ Whether that is worth doing is a judgement, not a blocker. Resume already took
 the loop from "a crash loses the run" to "a crash costs one tap and continues",
 which is what let the probe list finish at all.
 
-### c. Loader `rm` — **DONE**
+### c. Receiver `rm` — **DONE**
 
 `rm <path>`, plus `./spikes/m1-vpk/dev.sh rm <path>`. No glob and no recursion:
 this deletes on a device with one homebrew slot and a lifeline app living in it.
 
 The same round also hardened `put`, which accepted a size of zero and so
 truncated its target and answered `OK` — a shell expansion that came out blank
-destroyed `eboot2.bin` that way. And the liveness checks now retry: the loader's
-listener is non-blocking, and a single `ping` reported "no loader" three times
-against a loader that answered `ls` a second later.
+destroyed `eboot2.bin` that way. And the liveness checks now retry: the receiver's
+listener is non-blocking, and a single `ping` reported "no receiver" three times
+against a receiver that answered `ls` a second later.
 
 ### An app cannot write its own directory
 
-`touch ux0:app/FVTA00003/x` returns `0x8001000D`, EACCES, from the loader
+`touch ux0:app/FVTA00003/x` returns `0x8001000D`, EACCES, from the receiver
 itself, while `ux0:app/FVTA00002` is freely writable by it. That settles a
 question `spikes/vita-tooling/README.md` left open as *"untested under UNSAFE;
 possibly also false."* It is true, and it is why the supervisor ships with the
-app rather than the loader: the app slot is the only directory anything we
-control can write, and the loader cannot update itself.
+app rather than the receiver: the app slot is the only directory anything we
+control can write, and the receiver cannot update itself.
 
 ## 5. What is done and not at risk
 

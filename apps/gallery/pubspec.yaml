@@ -10,7 +10,7 @@ dependencies:
   flutter:
     sdk: flutter
 
-# Its own slot, so both apps can sit on the LiveArea at once. The loader takes
+# Its own slot, so both apps can sit on the LiveArea at once. The receiver takes
 # a title id on install and launch now; a new slot still needs one VitaShell
 # install of the .vpk to register the title with the shell, because
 # ScePromoterUtil will not load for us.

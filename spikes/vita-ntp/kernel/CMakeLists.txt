@@ -29,7 +29,7 @@ target_link_libraries(vitantp_kernel
 set_target_properties(vitantp_kernel PROPERTIES LINK_FLAGS "-nostdlib")
 # No UNSAFE here. That flag is for *user* selfs that need extended permissions;
 # a kernel module is already kernel-side, and building one unsafe produced a
-# self that faulted taiHEN's loader rather than loading. Every kernel module in
+# self that faulted taiHEN's receiver rather than loading. Every kernel module in
 # the wild (vitacompanion's included) is a plain CONFIG self.
 vita_create_self(vitantp_kernel.skprx vitantp_kernel
   CONFIG ${CMAKE_SOURCE_DIR}/vitantp_kernel.yml

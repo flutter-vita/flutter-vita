@@ -1,8 +1,8 @@
-// Turn a fatal error into a clean exit that returns to the loader.
+// Turn a fatal error into a clean exit that returns to the receiver.
 //
 // The dev loop's real cost is not build time -- builds are twenty seconds --
 // it is that a crash needs a person. The console puts up an error dialog, and
-// somebody has to walk over, tap OK, find the loader bubble and open it. That
+// somebody has to walk over, tap OK, find the receiver bubble and open it. That
 // is two manual steps per crash, and a port under development produces many.
 //
 // Nothing can catch a hardware fault here. `excpmgr.h` exists only in
@@ -19,12 +19,12 @@
 //
 // Those paths do not have to become dialogs. A process that exits cleanly
 // produces no dialog at all, so there is nothing to dismiss and nothing to
-// recover from: this launches the loader and exits, and the next thing the
-// developer sees is the loader already listening. Both manual steps disappear
+// recover from: this launches the receiver and exits, and the next thing the
+// developer sees is the receiver already listening. Both manual steps disappear
 // for every failure the program can see coming.
 //
 // This is dev-loop infrastructure and belongs with the dev server. A shipping
-// app links neither -- an app that relaunches a development loader when it
+// app links neither -- an app that relaunches a development receiver when it
 // hits an assertion is obviously wrong -- and dropping this file from the
 // build is all that takes.
 
@@ -46,18 +46,18 @@
 #define VITA_LOADER_TITLEID "FVTA00001"
 #endif
 
-// Which loader to bail out to, read the same way the dev server's `handoff`
-// reads it -- ux0:data/flutter-vita/loader.titleid, falling back to the
+// Which receiver to bail out to, read the same way the dev server's `handoff`
+// reads it -- ux0:data/flutter-vita/receiver.titleid, falling back to the
 // compiled-in default. Duplicated here rather than shared, because this file
 // runs after something has already gone wrong and deliberately depends on
 // nothing but sceIo: a helper reached through the engine is a helper that can
 // be part of the fault.
 //
 // Returns a pointer to a static buffer, valid until the next call.
-static const char* loader_titleid(void) {
+static const char* receiver_titleid(void) {
   static char id[16];
   const SceUID fd =
-      sceIoOpen("ux0:data/flutter-vita/loader.titleid", SCE_O_RDONLY, 0777);
+      sceIoOpen("ux0:data/flutter-vita/receiver.titleid", SCE_O_RDONLY, 0777);
   if (fd < 0) return VITA_LOADER_TITLEID;
   char buf[16];
   const int n = sceIoRead(fd, buf, sizeof buf - 1);
@@ -145,7 +145,7 @@ void vita_bail_to_loader(const char* reason) {
   record(reason != NULL ? reason : "(no reason given)");
   record_memory();
 
-  // 0xFFFFF rather than the documented 0x20000, matching what the loader
+  // 0xFFFFF rather than the documented 0x20000, matching what the receiver
   // itself uses to launch the app; it is the value known to work on this
   // console.
   if (flutter_vita_gpu_shutdown != NULL) {
@@ -154,7 +154,7 @@ void vita_bail_to_loader(const char* reason) {
 
   {
     char uri[48];
-    snprintf(uri, sizeof uri, "psgm:play?titleid=%s", loader_titleid());
+    snprintf(uri, sizeof uri, "psgm:play?titleid=%s", receiver_titleid());
     sceAppMgrLaunchAppByUri(0xFFFFF, uri);
   }
 
@@ -165,15 +165,15 @@ void vita_bail_to_loader(const char* reason) {
   // tenth of a second costs nothing on a path that is already ending". The
   // tenth of a second cost a prompt on every single bail, which is the whole
   // thing this file exists to avoid, and the answer was already written down
-  // in the loader that does the same switch in the other direction:
+  // in the receiver that does the same switch in the other direction:
   //
   //     Exit at once rather than lingering. The "close the current
   //     application?" prompt appears only because the outgoing app is still
   //     alive; launchers that switch silently exit straight after issuing the
   //     launch.
-  //         -- loader/src/main.c, cmd_launch
+  //         -- receiver/src/main.c, cmd_launch
   //
-  // The loader launches an app on every deploy and has never prompted. This
+  // The receiver launches an app on every deploy and has never prompted. This
   // did, on every bail, and the only difference was the sleep.
   //
   // There is nothing left to race, either: record() above already called

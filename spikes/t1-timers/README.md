@@ -13,8 +13,8 @@ refuted two hypotheses before landing on the answer.
 VITA_HOST=<ip> ../../tools/deploy.sh --vpk build/flutter_vita_t1.vpk --no-launch
 ```
 
-Then `launch` on the loader. The spike runs for about five seconds, writes
-`ux0:data/flutter-vita/t1.log`, and hands the console back to the loader, so a
+Then `launch` on the receiver. The spike runs for about five seconds, writes
+`ux0:data/flutter-vita/t1.log`, and hands the console back to the receiver, so a
 run costs no taps. Title ID is `FVTA00002`, the same slot every app deploys
 into — installing this replaces whatever app is there, which is fine and
 expected.

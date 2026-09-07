@@ -1,7 +1,7 @@
 // Generated. Every function name GrGLInterface::validate() can require,
 // extracted from GrGLInterfaceAutogen.cpp. The spike probes each through
 // vglGetProcAddress, because what the archive *defines* and what the
-// loader will *hand out* are different sets -- which is what made an
+// receiver will *hand out* are different sets -- which is what made an
 // offline symbol-table diff disagree with the console.
 static const char* const kRequiredNames[] = {
   "glActiveTexture",

@@ -10,7 +10,7 @@
 // question from whether it links.
 //
 // Reports over TCP and exits, same as g1: the app returns to LiveArea when it
-// finishes, which leaves the loader closed and nothing to read the file with.
+// finishes, which leaves the receiver closed and nothing to read the file with.
 #include <cstdarg>
 #include <cstdio>
 #include <cstdlib>
@@ -103,8 +103,8 @@ static void check(const char* what, bool ok, const char* detail) {
   if (!ok) g_fail++;
 }
 
-// Hand the console back to the loader, exactly as templates/vita-app/bailout.c
-// does. Exiting to LiveArea instead leaves the loader closed, so the next
+// Hand the console back to the receiver, exactly as templates/vita-app/bailout.c
+// does. Exiting to LiveArea instead leaves the receiver closed, so the next
 // deploy stalls waiting for somebody to walk over and tap it -- which is the
 // cost ADR-0011 exists to remove, reintroduced by a spike.
 //
@@ -114,7 +114,7 @@ static void check(const char* what, bool ok, const char* detail) {
 // removed from bailout.c.
 #define VITA_LOADER_TITLEID "FVTA00003"
 
-static void hand_back_to_loader(void) {
+static void hand_back_to_receiver(void) {
   // Let go of the GPU before asking the shell to switch.
   //
   // bailout.c does the launch-then-exit with nothing in between and never
@@ -143,8 +143,8 @@ static void hand_back_to_loader(void) {
 //
 // This used to run a TCP server and sit on it for up to 45 seconds so the
 // report could be collected before the process ended. That was necessary only
-// while the spike exited to LiveArea, which left no loader to read the file
-// with. Now that it bails to the loader, the loader's own `get` command serves
+// while the spike exited to LiveArea, which left no receiver to read the file
+// with. Now that it bails to the receiver, the receiver's own `get` command serves
 // the report -- so the server was duplicating a facility that already existed,
 // and the only thing it added was an app that sat on screen doing nothing.
 //
@@ -152,13 +152,13 @@ static void hand_back_to_loader(void) {
 //   printf 'get REPORT\n' | nc -w 12 <vita> 1341
 static void finish_and_hand_back(void) {
   if (g_out) { fclose(g_out); g_out = nullptr; }
-  hand_back_to_loader();
+  hand_back_to_receiver();
 }
 
 
 // Skia asks for entry points by name; vitaGL resolves them. This is the whole
 // bridge between the two, and it is the piece with no precedent -- vitaGL is
-// normally used by code that calls gl* directly rather than through a loader.
+// normally used by code that calls gl* directly rather than through a receiver.
 // vitaGL is an incomplete GLES2: three functions Skia requires *unconditionally*
 // are declared in GLES2/gl2.h and not implemented. Found by diffing the 92
 // names in GrGLInterface::validate's unconditional block against the archive's
@@ -819,7 +819,7 @@ int main() {
 
   // One run, complete answer. Iterating validate()'s branches a deploy at a
   // time found three gaps and was going to find more; this reports every name
-  // the loader will not resolve, so the shim list can be written once.
+  // the receiver will not resolve, so the shim list can be written once.
   say("-- names vglGetProcAddress will not resolve --\n");
   int unresolved = 0;
   for (size_t i = 0; i < sizeof kRequiredNames / sizeof kRequiredNames[0]; i++) {

@@ -2,7 +2,7 @@
 //
 // ADR-0005 Option A: the snapshot is assembled by gen_snapshot into snapshot.S
 // and linked straight into eboot.bin, so the four images are ordinary symbols
-// and the Vita's loader places each section with the right protection.
+// and the Vita's receiver places each section with the right protection.
 //
 // That is the whole reason this file no longer allocates a VM domain block.
 // Option B loaded the snapshot at runtime and worked right up until Dart wrote

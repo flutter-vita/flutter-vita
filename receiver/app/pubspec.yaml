@@ -1,0 +1,21 @@
+name: flutter_vita_receiver
+description: >
+  The Vita's deploy receiver, as a Flutter app. It receives a build over TCP,
+  writes it into the app slot, launches it, and shows you where it is while it
+  waits. See docs/adr/0016-the-receiver-becomes-a-flutter-app.md.
+publish_to: none
+version: 1.0.0
+
+environment:
+  sdk: ^3.9.0
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+vita:
+  title_id: FVTA00003
+  name: Flutter Vita Receiver
+
+flutter:
+  uses-material-design: false

@@ -7,7 +7,7 @@ Two results, and the second is why this is parked rather than finished.
 `sceSysmoduleLoadModuleInternal(SCE_SYSMODULE_INTERNAL_PROMOTER_UTIL)` returns
 `SCE_KERNEL_ERROR_MODULEMGR_NO_LIB` (`0x8002D003`). That has been measured
 correctly and repeatedly since August — under UNSAFE, in both spellings, from
-the 91 KB C loader as well as the 14 MB Flutter one — and read as "this console
+the 91 KB C receiver as well as the 14 MB Flutter one — and read as "this console
 will not let us have the promoter". Three ADRs are built on it.
 
 `NO_LIB` means a **library could not be linked**. The promoter imports from PAF.
@@ -42,7 +42,7 @@ VitaShell's `package_installer.c`, which does one thing first that we never did:
 PAF's argument block is not optional — the plain
 `sceSysmoduleLoadModuleInternal(PAF)` faults the process, twice on the way here.
 And `buf[0]` is a **size**, not flags, which is why zeroing a `SceSysmoduleOpt`
-and filling in only `result` was never the same call the loader thought it was
+and filling in only `result` was never the same call the receiver thought it was
 making.
 
 ## 2. Ten seconds after touching PAF, the console goes down
@@ -118,18 +118,18 @@ promoter:
 
 | goal | route | status |
 |------|-------|--------|
-| Update an **existing** title | plain file copy from any running app | **works.** `put 5 ux0:app/FVTA00004/probe.txt` from FVTA00002 returns OK, against EACCES when the loader tries its own directory. `ux0:app/<self>` is the read-only `app0:` mount; every other title is ordinary storage |
+| Update an **existing** title | plain file copy from any running app | **works.** `put 5 ux0:app/FVTA00004/probe.txt` from FVTA00002 returns OK, against EACCES when the receiver tries its own directory. `ux0:app/<self>` is the read-only `app0:` mount; every other title is ordinary storage |
 | Register a **fresh** title id | promoter | loads, then the console dies |
 
-The loader update loop needs only the first. Fresh title ids — a loader at
+The receiver update loop needs only the first. Fresh title ids — a receiver at
 FVTA00001, one id per corpus app (ADR-0012), the background supervisor
 (ADR-0011) — need the second, and can be bought instead with one manual
 VitaShell install per id.
 
 ## Answered on the console, 2026-08-31
 
-All of it from the loader rather than from this spike, for the reason the
-section above gives: the loader is a Flutter app with a live GXM context, a dev
+All of it from the receiver rather than from this spike, for the reason the
+section above gives: the receiver is a Flutter app with a live GXM context, a dev
 server, and no exit of its own, which is VitaShell's shape and not
 `debugScreen`'s. `promote` was split into `paf on|off|state`, `promoter on|off`,
 `promote`, `promoterif`, `import` and `exist`, so each step can be driven and
@@ -188,7 +188,7 @@ measurements, in order:
    before it inspects anything, so the fix is a layout or a struct field rather
    than a signature.
 3. **Which variable made PAF safe** -- not unloading it, or the display context.
-   Only matters if something other than the loader ever needs the promoter.
+   Only matters if something other than the receiver ever needs the promoter.
 
 `tools/analyse-crash.sh` read the dumps that got this far, and reading the next
 one is one command.
@@ -197,7 +197,7 @@ Then the packaging, which is untouched and is its own piece of work. VitaShell
 extracts a vpk to a staging directory, builds `sce_sys/package/head.bin` from an
 embedded template with three HMAC-SHA1 signatures, calls
 `scePromoterUtilityPromotePkgWithRif(path, 1)` — **not** `PromotePkg`, which is
-what `loader/src/loader_dev.c` calls — and deletes the staging directory
+what `receiver/src/receiver_dev.c` calls — and deletes the staging directory
 afterwards. Their implementation is GPLv3 and this repo is BSD-3-Clause, so it
 cannot be copied; the format is published and a clean-room version is fine.
 

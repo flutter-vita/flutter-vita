@@ -63,7 +63,7 @@
 //                                  event handler can simply stop using it.
 //
 // The report goes to ux0:data/flutter-vita/t1.log and to the screen, and then
-// the console is handed back to the loader, so a run costs no taps.
+// the console is handed back to the receiver, so a run costs no taps.
 
 #include <psp2/appmgr.h>
 #include <psp2/io/fcntl.h>
@@ -679,7 +679,7 @@ static void background_section(void) {
 static void handoff(void) {
   char titleid[16] = "FVTA00004";
   const SceUID fd =
-      sceIoOpen("ux0:data/flutter-vita/loader.titleid", SCE_O_RDONLY, 0777);
+      sceIoOpen("ux0:data/flutter-vita/receiver.titleid", SCE_O_RDONLY, 0777);
   if (fd >= 0) {
     char buf[32] = {0};
     const int n = sceIoRead(fd, buf, sizeof buf - 1);

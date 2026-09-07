@@ -75,7 +75,7 @@ scene after them ran on a full heap. Four minutes later the UI thread was here
 and had produced no frame since:
 
     sk_realloc_throw
-    ft_mem_qrealloc -> ft_mem_realloc -> FT_GlyphLoader_CheckPoints
+    ft_mem_qrealloc -> ft_mem_realloc -> FT_GlyphReceiver_CheckPoints
     cf2_builder_lineTo -> cf2_glyphpath_hintPoint -> cf2_builder_moveTo
 
 Blocked asking FreeType for memory that was not there. Raster idle, all four

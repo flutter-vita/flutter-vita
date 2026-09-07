@@ -77,7 +77,7 @@
 |   - sceTouch -> FlutterPointerEvent                           |
 |   - sceCtrl (buttons/sticks) -> platform channel "vita/input" |
 |   - sceImeDialog -> TextInput channel                         |
-|   - asset bundle loader (app0:/assets)                        |
+|   - asset bundle receiver (app0:/assets)                        |
 +---------------------------------------------------------------+
 | Vita OS (sceKernel, sceGxm, sceDisplay, sceTouch, sceCtrl)    |
 +---------------------------------------------------------------+

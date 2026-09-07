@@ -21,7 +21,7 @@ assumption:
 > *"Returning a non-const uword\* is safe because we're translating from the
 > start of the instructions (read-only) to the start of the BSS (read-write)."*
 
-Every other platform's ELF loader satisfies that by mapping `.text` as `R-X` and
+Every other platform's ELF receiver satisfies that by mapping `.text` as `R-X` and
 `.bss` as `RW-` — different protections within one image. **The Vita's VM domain
 is all-or-nothing:** `Open` is writable, `Close` is executable, and there is no
 state where instructions execute while the BSS inside them stays writable.
@@ -127,7 +127,7 @@ SceUID sceKernelAllocMemBlockForVM(const char *name, SceSize size);
   blocks at once so several may exist, but Dart needs one contiguous mapping for
   its instructions, so blocks cannot be stitched together past 16 MiB.
 - **Under Option A the cap is irrelevant** — instructions land in `.text` of the
-  main ELF and the OS loader maps them executable, with no VM domain involved.
+  main ELF and the OS receiver maps them executable, with no VM domain involved.
 
 Informed speculation on the origin, not verified: the VM domain looks like
 Sony's provision for **PlayStation Mobile**, which ran C#/Mono with a JIT on
@@ -138,7 +138,7 @@ or memory pressure. The A1 spike measures the real obtainable maximum anyway.
 ### Option A — bake in (`gen_snapshot --snapshot-kind=app-aot-assembly`)
 
 Assemble the snapshot with the VitaSDK assembler and statically link it into
-`eboot.bin`. Instructions land in `.text`, which the loader maps executable. No
+`eboot.bin`. Instructions land in `.text`, which the receiver maps executable. No
 runtime executable-memory question at all.
 
 Cost: **the Dart app is part of the engine binary.** Every app build is a full

@@ -279,7 +279,7 @@ The story is worth reading for the method, not the bug:
 [HANDOFF-nondeterministic-crash.md](HANDOFF-nondeterministic-crash.md).
 
 **The dev loop no longer needs a person for it either.** Failures the program
-can see coming exit cleanly into the loader — no error dialog, so nothing to
+can see coming exit cleanly into the receiver — no error dialog, so nothing to
 dismiss and no bubble to find. See
 [ADR-0011](adr/0011-crash-recovery-without-taihen.md). A wild pointer still
 costs two taps; nothing user-mode can catch a data abort.

@@ -11,7 +11,7 @@
 //   the debug HUD    frame rate, damaged area, blit cost and free memory, drawn
 //                    over the top-right corner of every frame
 //   bailout.c        turns an abort into "launch FVTA00001 and exit", which on
-//                    a console with no development loader on it means the app
+//                    a console with no development receiver on it means the app
 //                    vanishes to LiveArea for no reason the user can see
 //
 // Dropping the first and third is a matter of leaving two files out of the

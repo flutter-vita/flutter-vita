@@ -136,7 +136,7 @@ class _BenchPageState extends State<BenchPage> with TickerProviderStateMixin {
           // A diagnostic you cannot photograph is not a diagnostic. Here it
           // holds still.
           //
-          // What it is for: on 2026-09-01 the loader's panel was unreadable
+          // What it is for: on 2026-09-01 the receiver's panel was unreadable
           // under GL, its pills and buttons rendering at full opacity where
           // 16% was asked for. Software draws them correctly.
           const Padding(

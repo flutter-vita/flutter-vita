@@ -49,7 +49,7 @@ void dev_server_set_overlay_handler(void (*overlay)(int on)) {
   g_overlay = overlay;
 }
 
-// See devserver.h: the loader (ADR-0016) links this same server and needs a
+// See devserver.h: the receiver (ADR-0016) links this same server and needs a
 // different port, three commands of its own, and a smaller surface.
 static int g_port = DEVSERVER_PORT;
 static int (*g_extra)(int, const char*, int*) = NULL;
@@ -103,7 +103,7 @@ void dev_server_set_framebuffer_source(
 }
 
 // Defined next to the supervisor switch, used by `handoff` well above it.
-static int read_loader_titleid(char* out, int max);
+static int read_receiver_titleid(char* out, int max);
 
 static void logf_(const char* fmt, ...) {
   if (g_log == NULL) return;
@@ -230,20 +230,20 @@ static void cmd_log(int sock, const char* log_path) {
 // One connection, one or more commands. Returns 1 if the caller should stop
 // serving (exit or relaunch), 0 to keep going.
 // `ls <path>` and `rm <path>`, in the shared server rather than only in the
-// loader's extras.
+// receiver's extras.
 //
 // An app has always been able to write any title but its own -- ux0:app/<self>
 // is the read-only app0: mount, and everything else is ordinary storage. That
-// asymmetry is what makes a loader possible at all, and it runs both ways:
-// FVTA00002 can write ux0:app/FVTA00004, which is the directory the loader
+// asymmetry is what makes a receiver possible at all, and it runs both ways:
+// FVTA00002 can write ux0:app/FVTA00004, which is the directory the receiver
 // itself gets EACCES on. Measured, not assumed.
 //
-// So the loader can be updated by any running app, with no scePromoterUtil --
+// So the receiver can be updated by any running app, with no scePromoterUtil --
 // which is just as well, because it refuses to load on this console
 // (MODULEMGR_NO_LIB, 0x8002D003, recorded three times now). What was missing
 // was not permission, it was that an app could write a file into another
 // title and then neither see it nor take it back. `put` alone can install a
-// loader; it cannot clean up after one.
+// receiver; it cannot clean up after one.
 //
 // No glob and no recursion in `rm`, deliberately. This deletes on a console
 // with one lifeline app installed on it.
@@ -282,18 +282,18 @@ static void cmd_rm(int sock, const char* path) {
   send_str(sock, m);
 }
 
-// Give the console to `loader` and end this process. Never returns.
+// Give the console to `receiver` and end this process. Never returns.
 //
 // Split out of the `handoff` verb so a run that nobody is watching can do the
-// same thing. A benchmark started from the loader's TESTS tab used to end with
-// the app sitting on the results and the loader gone, so the hub that asked
+// same thing. A benchmark started from the receiver's TESTS tab used to end with
+// the app sitting on the results and the receiver gone, so the hub that asked
 // for the run could not show it.
-static void hand_over_to(const char* loader) {
-  logf_("  [dev] handing off to %s\n", loader);
+static void hand_over_to(const char* receiver) {
+  logf_("  [dev] handing off to %s\n", receiver);
   release_gpu();
   sceKernelDelayThread(200 * 1000);
   char uri[64];
-  snprintf(uri, sizeof uri, "psgm:play?titleid=%s", loader);
+  snprintf(uri, sizeof uri, "psgm:play?titleid=%s", receiver);
   sceAppMgrLaunchAppByUri(0xFFFFF, uri);
   // Exit immediately. Lingering here is what produced the "close the current
   // application?" prompt: the shell only asks because we are still running.
@@ -329,14 +329,14 @@ static int handoff_thread(SceSize args, void* argp) {
     for (int i = 0; i < n; i++) {
       if (buf[i] <= ' ') { buf[i] = '\0'; break; }
     }
-    char loader[16];
+    char receiver[16];
     if (buf[0] != '\0') {
-      snprintf(loader, sizeof loader, "%s", buf);
-    } else if (!read_loader_titleid(loader, sizeof loader)) {
-      snprintf(loader, sizeof loader, "%s", DEVSERVER_DEFAULT_LOADER);
+      snprintf(receiver, sizeof receiver, "%s", buf);
+    } else if (!read_receiver_titleid(receiver, sizeof receiver)) {
+      snprintf(receiver, sizeof receiver, "%s", DEVSERVER_DEFAULT_LOADER);
     }
     logf_("  [dev] handoff requested by the app\n");
-    hand_over_to(loader);
+    hand_over_to(receiver);
   }
   return 0;
 }
@@ -372,16 +372,16 @@ static int serve(int sock, const char* log_path, const char* eboot_path) {
     // deleted from the dispatch below because both products link the same
     // file, and an app under development still wants the whole thing.
     //
-    // tap and swipe are on the list because the loader's screen became a
+    // tap and swipe are on the list because the receiver's screen became a
     // screen you press (ADR-0016): four tabs, a log viewer and a delete
     // button. A deploy tool that can read the panel with `shot` but cannot
     // reach the CRASHES tab can only verify the first thing the panel draws.
     //
-    // Not in the loader yet. This file is compiled from the engine package
-    // (package-engine.sh copies it there), and the loader links the blessed
+    // Not in the receiver yet. This file is compiled from the engine package
+    // (package-engine.sh copies it there), and the receiver links the blessed
     // one -- so minimal mode gains tap at the next bless, not at the next
-    // loader build. Deliberate: ADR-0016 decision 2 is that nothing reaches
-    // the loader's engine without someone choosing to re-bless.
+    // receiver build. Deliberate: ADR-0016 decision 2 is that nothing reaches
+    // the receiver's engine without someone choosing to re-bless.
     if (g_minimal && strcmp(line, "ping") != 0 && strcmp(line, "probe") != 0 &&
         strcmp(line, "log") != 0 && strncmp(line, "get ", 4) != 0 &&
         strncmp(line, "put ", 4) != 0 && strcmp(line, "shot") != 0 &&
@@ -477,7 +477,7 @@ static int serve(int sock, const char* log_path, const char* eboot_path) {
       return 0;
     } else if (strncmp(line, "put ", 4) == 0) {
       // put <size> <path>. M1 is an UNSAFE self too, so it can write ux0:app --
-      // which is how a new *loader* gets installed. Each app can now replace
+      // which is how a new *receiver* gets installed. Each app can now replace
       // the other, and no FTP server is involved in either direction.
       char* sp = strchr(line + 4, ' ');
       if (sp == NULL) { send_str(sock, "ERR put <size> <path>\n"); return 0; }
@@ -520,11 +520,11 @@ static int serve(int sock, const char* log_path, const char* eboot_path) {
       // abort(), which is the symbol the app overrides, so it also proves the
       // override is actually linked rather than merely compiled. Both should
       // look identical from here: the socket closes, no dialog appears on the
-      // panel, and the loader answers within a few seconds.
+      // panel, and the receiver answers within a few seconds.
       //
       // A recovery mechanism nobody can trigger is a recovery mechanism nobody
       // knows is broken. This one is checkable in ten seconds from the host.
-      send_str(sock, "OK bailing to the loader\n");
+      send_str(sock, "OK bailing to the receiver\n");
       sceNetSocketClose(sock);
       logf_("  [dev] bail requested\n");
       // Not before abort(): a deliberate abort is testing the crash path, and
@@ -546,28 +546,28 @@ static int serve(int sock, const char* log_path, const char* eboot_path) {
     } else if (strncmp(line, "handoff", 7) == 0 &&
                (line[7] == '\0' || line[7] == ' ')) {
       // The other half of the loop. We cannot replace our own eboot.bin, and
-      // while we run nobody else can either -- so hand control to the loader,
+      // while we run nobody else can either -- so hand control to the receiver,
       // which can do both once we are gone. It launches us back afterwards.
       //
-      // Which loader is not a constant any more. It used to be FVTA00003 and
+      // Which receiver is not a constant any more. It used to be FVTA00003 and
       // nothing else, which was true right up until that slot was emptied and
       // every handoff started launching a title that did not exist -- the
       // shell falls back to something, so the failure looks like a puzzle
       // rather than an error. Resolution order: the argument, then
-      // loader.titleid, then the historical default. The file is there so a
-      // console whose loader has moved can be corrected with one `put`,
+      // receiver.titleid, then the historical default. The file is there so a
+      // console whose receiver has moved can be corrected with one `put`,
       // without rebuilding and reinstalling every app on it.
-      char loader[16];
+      char receiver[16];
       if (line[7] == ' ' && line[8] != '\0') {
-        snprintf(loader, sizeof loader, "%s", line + 8);
-      } else if (!read_loader_titleid(loader, sizeof loader)) {
-        snprintf(loader, sizeof loader, "%s", DEVSERVER_DEFAULT_LOADER);
+        snprintf(receiver, sizeof receiver, "%s", line + 8);
+      } else if (!read_receiver_titleid(receiver, sizeof receiver)) {
+        snprintf(receiver, sizeof receiver, "%s", DEVSERVER_DEFAULT_LOADER);
       }
       char msg[64];
-      snprintf(msg, sizeof msg, "OK handing off to %s\n", loader);
+      snprintf(msg, sizeof msg, "OK handing off to %s\n", receiver);
       send_str(sock, msg);
       sceNetSocketClose(sock);
-      hand_over_to(loader);
+      hand_over_to(receiver);
     } else if (strcmp(line, "relaunch") == 0) {
       send_str(sock, "OK relaunching\n");
       sceNetSocketClose(sock);
@@ -687,7 +687,7 @@ static int serve(int sock, const char* log_path, const char* eboot_path) {
 //
 // A background process is not the foreground app, so it outlives this one
 // dying. That is what lets a crash be recovered without someone walking to the
-// console and tapping the loader -- which is the actual limit on how fast this
+// console and tapping the receiver -- which is the actual limit on how fast this
 // port can be debugged, since builds take twenty seconds and a human does not.
 //
 // Two things about the argument, both of which cost days. The mode is 0:
@@ -705,19 +705,19 @@ static int serve(int sock, const char* log_path, const char* eboot_path) {
 // switch is a file rather than a build flag so that flipping it costs one
 // `put` instead of a rebuild and a 12 MB upload -- and it reads the file's
 // *contents*, not its existence, because turning it back off would otherwise
-// need a delete, which the loader currently installed on the device cannot do.
+// need a delete, which the receiver currently installed on the device cannot do.
 //
 //   echo -n 1 > on  &&  dev.sh put on ux0:data/flutter-vita/supervisor.on
 // Which title `handoff` hands to. One line, no newline needed:
 //
-//   printf 'put 9 ux0:data/flutter-vita/loader.titleid\nFVTA00004' | nc <ip> 1339
+//   printf 'put 9 ux0:data/flutter-vita/receiver.titleid\nFVTA00004' | nc <ip> 1339
 //
 // Returns 0 when the file is absent or does not hold nine plausible
 // characters, so a truncated or half-written file falls back rather than
 // launching something arbitrary.
-static int read_loader_titleid(char* out, int max) {
+static int read_receiver_titleid(char* out, int max) {
   const SceUID fd =
-      sceIoOpen("ux0:data/flutter-vita/loader.titleid", SCE_O_RDONLY, 0777);
+      sceIoOpen("ux0:data/flutter-vita/receiver.titleid", SCE_O_RDONLY, 0777);
   if (fd < 0) return 0;
   char buf[16];
   const int n = sceIoRead(fd, buf, sizeof buf - 1);
@@ -791,7 +791,7 @@ static const char* const kMdnsNames[] = {"flutter-vita", "flutter.vita"};
 
 static int g_mdns_sock = -1;
 
-// What the responder has actually done, written to disk so the loader's panel
+// What the responder has actually done, written to disk so the receiver's panel
 // can show it. Every mDNS failure this project has had looked identical from
 // the host -- the name stops resolving -- and the four possible causes need
 // four different fixes. Counting them on the console is the only way to tell
@@ -1059,8 +1059,8 @@ static void start_mdns(void) {
 }
 
 static void start_supervisor(void) {
-  // Never for the loader. The supervisor's job is to relaunch the loader when
-  // an app dies; a loader that starts one is asking to be recovered to itself,
+  // Never for the receiver. The supervisor's job is to relaunch the receiver when
+  // an app dies; a receiver that starts one is asking to be recovered to itself,
   // and the two would contend for the same background title id besides.
   // ADR-0016 decision 8.
   if (g_minimal) return;

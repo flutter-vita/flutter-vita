@@ -8,7 +8,7 @@ import 'device.dart';
 /// A broadcast responder in the dev server would be tidier, but it would also
 /// mean every already-deployed app is undiscoverable until it is rebuilt. A
 /// TCP sweep needs no change on the device, so it works against what is
-/// running right now — including the loader, which is what you have after a
+/// running right now — including the receiver, which is what you have after a
 /// crash and exactly when you want to find the thing.
 ///
 /// 254 hosts times two ports, in windows of 16, against a 1.5 s connect

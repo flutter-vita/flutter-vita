@@ -25,15 +25,15 @@ The correct check separates them, and did:
 
     ping flutter-vita.local        -> answers
     nc 192.168.0.32 1339           -> silent          (the app)
-    nc 192.168.0.32 1341           -> pong, loader    (the loader)
+    nc 192.168.0.32 1341           -> pong, receiver    (the receiver)
 
 The console was up. The app was not.
 
 ## Why the app was gone
 
-`ux0:data/flutter-vita/loader-state.txt`:
+`ux0:data/flutter-vita/receiver-state.txt`:
 
-    log 09-01 16:45:22 ---- loader FVTA00001 up ----
+    log 09-01 16:45:22 ---- receiver FVTA00001 up ----
     log 09-01 16:45:22 - left FVTA00002
 
 and the newest core dump on the card was from 09:23 that morning. So the app had
@@ -81,6 +81,6 @@ single 90-second run with the console plainly awake.
 
 `tools/deploy.sh` reports *"nothing is answering — a hard crash, so this one
 needs a tap"* when a port goes quiet, and that message has the same three
-meanings the ping did. A quiet app port with a live loader port is the loader
+meanings the ping did. A quiet app port with a live receiver port is the receiver
 having taken over, which is a different event from a crash and a very different
 event from the console being away.

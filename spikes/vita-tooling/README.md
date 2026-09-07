@@ -54,7 +54,7 @@ see "What is actually possible" below.
 **The confinement was self-inflicted.** `vita_create_self` builds a *safe* self
 by default — it passes `-s` to `vita-make-fself` — and a safe self cannot see
 `ux0:app` at all, whatever "Enable unsafe homebrew" is set to. Adding `UNSAFE`
-to the loader's `vita_create_self` removed the flag, and with it every
+to the receiver's `vita_create_self` removed the flag, and with it every
 restriction this document previously recorded as a platform rule.
 
 So the loop is now two apps and one socket each:
@@ -62,15 +62,15 @@ So the loop is now two apps and one socket each:
 | | Port | Role |
 |---|---|---|
 | M1 (`FVTA00002`) | 1339 | the app under test; hands off, serves its log |
-| loader (`FVTA00003`) | 1341 | **UNSAFE self** — writes `ux0:app/FVTA00002/` and launches M1 |
+| receiver (`FVTA00003`) | 1341 | **UNSAFE self** — writes `ux0:app/FVTA00002/` and launches M1 |
 
 ```
-M1 --handoff--> loader --stage, install, launch--> M1
+M1 --handoff--> receiver --stage, install, launch--> M1
 ```
 
 `./dev.sh cycle` — **~5 seconds, no FTP, no taps.**
 
-Both apps are UNSAFE selfs, so **each can install the other**: the loader writes
+Both apps are UNSAFE selfs, so **each can install the other**: the receiver writes
 `ux0:app/FVTA00002/`, and M1's `put` writes `ux0:app/FVTA00003/`. Nothing
 external is needed to update either one.
 
@@ -89,14 +89,14 @@ assumption:
   boundary was safe vs unsafe self. BGFTP was never special.
 - *"An app cannot write its own `ux0:app` directory."* **Tested under UNSAFE on
   2026-08-15: it is true.** `touch ux0:app/FVTA00003/x` returns `0x8001000D`,
-  EACCES, from the loader itself, while `ux0:app/FVTA00002` is freely writable
+  EACCES, from the receiver itself, while `ux0:app/FVTA00002` is freely writable
   by it. An app's own install directory is the read-only `app0:` mount and no
-  amount of unsafe-ness changes that. So the loader cannot update itself, and
+  amount of unsafe-ness changes that. So the receiver cannot update itself, and
   the crash supervisor has to ship with the app instead.
 - *`ScePromoterUtil` is refused with `MODULEMGR_NO_LIB`.* **Wrong, and wrong for
   four months.** `sceSysmoduleLoadModuleInternal` does return `0x8002D003`, and
   that was re-measured correctly under UNSAFE, in both spellings, from the 91 KB
-  C loader as well as the Flutter one. The measurement was right; the conclusion
+  C receiver as well as the Flutter one. The measurement was right; the conclusion
   drawn from it was not. `NO_LIB` means a library could not be linked, and the
   library in question is PAF: the promoter imports from it, and it is not
   resident in our process. **Load PAF first and the promoter loads.** See
@@ -128,10 +128,10 @@ Three parties, each doing the one thing it is permitted to do:
 |---|---|---|
 | BGFTP | 1337 | write `ux0:app/` — it is a **SceShell plugin**, so it runs with shell permissions, and it stays reachable even while another app runs |
 | M1 (`FVTA00002`) | 1339 | hand off, serve its log |
-| loader (`FVTA00003`) | 1341 | **launch M1** — that is all, and it is enough |
+| receiver (`FVTA00003`) | 1341 | **launch M1** — that is all, and it is enough |
 
 ```
-M1 --handoff--> loader --(BGFTP writes eboot.bin)--> launch --> M1
+M1 --handoff--> receiver --(BGFTP writes eboot.bin)--> launch --> M1
 ```
 
 `./dev.sh cycle` runs it: hand off so the directory unlocks, upload over BGFTP,
@@ -153,16 +153,16 @@ from under it, and the launch was cancelled, leaving nothing running.
 
 A full cycle takes **~10 seconds** including a 2.4 MB upload.
 
-### The loader does not write anything
+### The receiver does not write anything
 
-The first design had the loader install the binary itself. It cannot: it gets
+The first design had the receiver install the binary itself. It cannot: it gets
 the **same `0x80010002` ENOENT** on `ux0:app/FVTA00002/` that M1 gets on its own
 directory. So the restriction is not "an app cannot see its own directory" — it
 is that **sandboxed homebrew cannot see `ux0:app/` at all**. BGFTP is exempt
 because it is a shell plugin, not an app.
 
 That was an inference I got wrong and the `probe` command caught in one round
-trip, before anything was built on top of it. The loader's `stage` and `install`
+trip, before anything was built on top of it. The receiver's `stage` and `install`
 commands survive in the binary but always fail; only `ping`, `probe` and
 `launch` do anything. Not worth a reinstall to remove.
 
@@ -175,7 +175,7 @@ commands survive in the binary but always fail; only `ping`, `probe` and
 
 The second test is sound because it measured both sides at once: port 1337 being
 open proves plugins are loaded, since that FTP server *is* a plugin, and on that
-same boot it wrote `ux0:app/FVTA00002/` while the loader could not see it.
+same boot it wrote `ux0:app/FVTA00002/` while the receiver could not see it.
 
 So the boundary is **sandboxed app vs. SceShell plugin**, not a setting and not
 a boot mode. BGFTP is not removable from the cycle without becoming a plugin
@@ -210,9 +210,9 @@ Together those kill self-update outright. The loop that remains:
 `./dev.sh deploy` chains the middle three. Launching needs a SceShell plugin,
 which is exactly what vitacompanion would have provided and cannot here.
 
-A fully automatic loop would need a second small "loader" vpk: our app writes
-the new binary to `ux0:data/` (writable), launches the loader by title id, and
-exits; the loader — now that the lock is gone — copies it into place and
+A fully automatic loop would need a second small "receiver" vpk: our app writes
+the new binary to `ux0:data/` (writable), launches the receiver by title id, and
+exits; the receiver — now that the lock is gone — copies it into place and
 launches FVTA00002. That is a real option if one tap per iteration becomes the
 bottleneck.
 
@@ -306,7 +306,7 @@ do with the display timers.
 the system. A kernel plugin could reach further, and plugins are off the table
 here.
 
-What the loader does instead is survive drops without help: it polls the net
+What the receiver does instead is survive drops without help: it polls the net
 state about once a second, tears the listener down when the link goes, and
 rebuilds it when the system reconnects. A drop used to leave a dead socket that
 needed a tap to clear; now it just goes quiet and comes back.
@@ -340,11 +340,11 @@ So **a genuine crash costs one tap**, and no amount of cleverness changes that.
 
 ### What actually mattered
 
-Most interruptions were never crashes. The loader would sit running on screen
+Most interruptions were never crashes. The receiver would sit running on screen
 with a dead socket, unreachable and holding its directory lock. `ping` answered
 with 0% loss the whole time — the device was fine and nothing was listening.
 
-That was a bug in the loader's own recovery: it rebuilt the listener only on a
+That was a bug in the receiver's own recovery: it rebuilt the listener only on a
 net-state *transition*, so a socket killed by a blip while the state still read
 CONNECTED was never rebuilt. Fixed — it now rebuilds on a persistently failing
 accept, and again after five minutes with no connection at all.

@@ -4,16 +4,16 @@
 #   ./tools/deploy.sh apps/conformance          build, then deploy
 #   ./tools/deploy.sh apps/gallery --no-build   deploy what is already built
 #   ./tools/deploy.sh --vpk path/to/app.vpk
-#   ./tools/deploy.sh --vpk x.vpk --loader-port 1342
+#   ./tools/deploy.sh --vpk x.vpk --receiver-port 1342
 #
 # The tap was never necessary while the app was alive. `handoff` has been in
-# the dev server since M1 -- the app launches the loader and exits, and the
-# loader can then replace an eboot.bin the app could not replace itself -- and
+# the dev server since M1 -- the app launches the receiver and exits, and the
+# receiver can then replace an eboot.bin the app could not replace itself -- and
 # every test script in this project has instead sat waiting for a human to open
-# the loader. That was a scripting mistake, not a missing feature, and it cost
+# the receiver. That was a scripting mistake, not a missing feature, and it cost
 # a tap per iteration for weeks.
 #
-# So the order is: hand off if the app is up, use the loader if it is up, and
+# So the order is: hand off if the app is up, use the receiver if it is up, and
 # only ask for a tap when neither answers -- which, with ADR-0011's clean exit
 # on foreseeable failures, now means a genuine wild-pointer crash.
 set -uo pipefail
@@ -28,9 +28,9 @@ HOST="${VITA_HOST:-flutter-vita.local}"
 
 # Resolve the name once, then work in addresses for the rest of the run.
 #
-# Not premature. This script hands the app off to the loader and then keeps
+# Not premature. This script hands the app off to the receiver and then keeps
 # talking, and the mDNS responder lives in whichever of the two is running --
-# so the name goes dark for the seconds between the app exiting and the loader
+# so the name goes dark for the seconds between the app exiting and the receiver
 # answering. The first deploy after adding mDNS failed exactly there: staged
 # fine, then "install failed", because the name stopped resolving mid-run.
 #
@@ -47,7 +47,7 @@ except OSError: pass" "$HOST" 2>/dev/null)"
       HOST="$RESOLVED"
     else
       echo "!! $HOST does not resolve." >&2
-      echo "   The responder runs inside the app or the loader, so nothing" >&2
+      echo "   The responder runs inside the app or the receiver, so nothing" >&2
       echo "   answers while neither is up. Set VITA_HOST to an address." >&2
       exit 1
     fi
@@ -64,9 +64,9 @@ LAUNCH=1
 while [ $# -gt 0 ]; do
   case "$1" in
     --host)      HOST="$2"; shift 2 ;;
-    # Which loader to deploy through. The Flutter loader (ADR-0016) is tested
+    # Which receiver to deploy through. The Flutter receiver (ADR-0016) is tested
     # from a scratch slot on 1342 before it ever replaces the one on 1341.
-    --loader-port) LDR="$2"; shift 2 ;;
+    --receiver-port) LDR="$2"; shift 2 ;;
     --vpk)       VPK="$2"; BUILD=0; shift 2 ;;
     --no-build)  BUILD=0; shift ;;
     --no-launch) LAUNCH=0; shift ;;
@@ -81,12 +81,12 @@ say()  { printf '%s\n' "$2" | nc -w "${3:-30}" "$HOST" "$1" 2>/dev/null; }
 # and a single probe races the accept loop.
 alive() {
   local port="$1" want="$2"
-  # Six, not three: measured on 2026-08-21, the loader answered on the fifth
-  # probe from a cold connect. Three tries reported a live loader as dead and
+  # Six, not three: measured on 2026-08-21, the receiver answered on the fifth
+  # probe from a cold connect. Three tries reported a live receiver as dead and
   # sent the script down the "wait for a human tap" path for no reason.
   for _ in 1 2 3 4 5 6; do
-    # "loader" matches both the C loader's bare reply and the Flutter
-    # loader's "pong loader <slot> <port>".
+    # "receiver" matches both the C receiver's bare reply and the Flutter
+    # receiver's "pong receiver <slot> <port>".
     say "$port" ping 6 | grep -q "$want" && return 0
     sleep 1
   done
@@ -106,26 +106,26 @@ fi
 
 echo "==> $(basename "$VPK")"
 
-# 1. Get to the loader, by whatever route needs the least of the human.
-if alive "$LDR" loader; then
-  echo "    loader already up"
+# 1. Get to the receiver, by whatever route needs the least of the human.
+if alive "$LDR" receiver; then
+  echo "    receiver already up"
 elif alive "$DEV" pong; then
-  echo "    app is up — handing off to the loader"
+  echo "    app is up — handing off to the receiver"
   say "$DEV" handoff 20 >/dev/null
   for i in $(seq 1 20); do
-    alive "$LDR" loader && break
+    alive "$LDR" receiver && break
     sleep 3
   done
-  alive "$LDR" loader || { echo "!! handoff did not bring the loader up" >&2; exit 1; }
-  echo "    loader up, no tap needed"
+  alive "$LDR" receiver || { echo "!! handoff did not bring the receiver up" >&2; exit 1; }
+  echo "    receiver up, no tap needed"
 else
   echo "    nothing is answering — a hard crash, so this one needs a tap"
-  echo "    >>> open Flutter Vita Loader; waiting up to 10 min"
+  echo "    >>> open Flutter Vita Receiver; waiting up to 10 min"
   for i in $(seq 1 200); do
-    alive "$LDR" loader && break
+    alive "$LDR" receiver && break
     sleep 3
   done
-  alive "$LDR" loader || { echo "!! loader never appeared" >&2; exit 1; }
+  alive "$LDR" receiver || { echo "!! receiver never appeared" >&2; exit 1; }
 fi
 
 WORK="$(mktemp -d)"
@@ -162,7 +162,7 @@ done
 # after one of those the stamps still said everything was pushed. The gallery
 # deployed clean, printed "==> data files", sent nothing, and died three
 # seconds in on "Must be able to initialize the ICU context. Tried:
-# app0:/icudtl.dat" -- with the loader cheerfully reporting success, because
+# app0:/icudtl.dat" -- with the receiver cheerfully reporting success, because
 # from its point of view nothing had failed.
 #
 # One `get` at the start and one `put` at the end. A wiped directory takes the

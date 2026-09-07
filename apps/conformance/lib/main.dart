@@ -186,7 +186,7 @@ class _ProbeRunnerState extends State<ProbeRunner>
   ///     ./spikes/m1-vpk/dev.sh rm ux0:data/flutter-vita/resume.txt
   ///
   /// Or overwrite it with anything that is not a number, which works on a
-  /// device whose installed loader has no `rm`.
+  /// device whose installed receiver has no `rm`.
   static const _resumePath = 'ux0:data/flutter-vita/resume.txt';
 
   /// Opens the journal and returns the probe index to start from, or null if
@@ -204,7 +204,7 @@ class _ProbeRunnerState extends State<ProbeRunner>
       if (f.existsSync()) {
         // Anything that is not a probe index means "start over", including
         // garbage. That is the right reading of a corrupt file, and it is also
-        // the only way to force a fresh run on a device whose loader predates
+        // the only way to force a fresh run on a device whose receiver predates
         // `rm`: overwrite this with a byte that is not a number.
         final n = int.tryParse(f.readAsStringSync().trim());
         if (n != null && n >= 0 && n <= _results.length) resumeAt = n;

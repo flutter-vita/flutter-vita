@@ -1,0 +1,102 @@
+------------------------
+   1	uniform float4 sk_RTAdjust;in float2 position;in float2 localCoord;out float2 vlocalCoord_S0;void main() {vlocalCoord_S0 = localCoord;sk_Position = position.xy01;}
+   2	uniform float uSrcTF_S0[7];uniform float3x3 uColorXform_S0;uniform float uDstTF_S0[7];uniform float4 uinnerRect_S1;uniform half2 uradiusPlusHalf_S1;sampler2D uTextureSampler_0_S0;
+   3	in float2 vlocalCoord_S0;float src_tf_S0(float x) {
+   4	float G = uSrcTF_S0[0];float A = uSrcTF_S0[1];float B = uSrcTF_S0[2];float C = uSrcTF_S0[3];float D = uSrcTF_S0[4];float E = uSrcTF_S0[5];float F = uSrcTF_S0[6];float s = sign(x);x = abs(x);x = (x < D) ? (C * x) + F : pow(A * x + B, G) + E;return s * x;}
+   5	
+   6	float dst_tf_S0(float x) {
+   7	float G = uDstTF_S0[0];float A = uDstTF_S0[1];float B = uDstTF_S0[2];float C = uDstTF_S0[3];float D = uDstTF_S0[4];float E = uDstTF_S0[5];float F = uDstTF_S0[6];float s = sign(x);x = abs(x);x = (x < D) ? (C * x) + F : pow(A * x + B, G) + E;return s * x;}
+   8	
+   9	float4 gamut_xform_S0(float4 color) {
+  10	color.rgb = (uColorXform_S0 * color.rgb);return color;}
+  11	
+  12	half4 color_xform_S0(float4 color) {
+  13	color.r = src_tf_S0(color.r);color.g = src_tf_S0(color.g);color.b = src_tf_S0(color.b);color = gamut_xform_S0(color);color.r = dst_tf_S0(color.r);color.g = dst_tf_S0(color.g);color.b = dst_tf_S0(color.b);return half4(color);}
+  14	
+  15	half4 CircularRRect_S1(half4 _input) {
+  16	float2 dxy0 = uinnerRect_S1.LT - sk_FragCoord.xy;float2 dxy1 = sk_FragCoord.xy - uinnerRect_S1.RB;float2 dxy = max(max(dxy0, dxy1), 0.0);half alpha = half(saturate(uradiusPlusHalf_S1.x - length(dxy)));return _input * alpha;}
+  17	
+  18	void main() {half4 outputColor_S0 = half4(1);float2 texCoord;texCoord = vlocalCoord_S0;outputColor_S0 = (blend_modulate(color_xform_S0(sample(uTextureSampler_0_S0, texCoord)), half4(1)));const half4 outputCoverage_S0 = half4(1);half4 output_S1;output_S1 = CircularRRect_S1(outputCoverage_S0);{
+  19	sk_FragColor = outputColor_S0 * output_S1;}}
+  20	#version 100
+  21	
+  22	precision mediump float;
+  23	precision mediump sampler2D;
+  24	uniform highp vec4 sk_RTAdjust;
+  25	attribute highp vec2 position;
+  26	attribute highp vec2 localCoord;
+  27	varying highp vec2 vlocalCoord_S0;
+  28	void main() {
+  29	vlocalCoord_S0 = localCoord;
+  30	gl_Position = vec4(position, 0.0, 1.0);
+  31	gl_Position = vec4(gl_Position.xy * sk_RTAdjust.xz + gl_Position.ww * sk_RTAdjust.yw, 0.0, gl_Position.w);
+  32	}
+  33	
+  34	#version 100
+  35	
+  36	uniform highp vec2 u_skRTFlip;
+  37	precision mediump float;
+  38	precision mediump sampler2D;
+  39	uniform highp float uSrcTF_S0[7];
+  40	uniform highp mat3 uColorXform_S0;
+  41	uniform highp float uDstTF_S0[7];
+  42	uniform highp vec4 uinnerRect_S1;
+  43	uniform mediump vec2 uradiusPlusHalf_S1;
+  44	uniform sampler2D uTextureSampler_0_S0;
+  45	varying highp vec2 vlocalCoord_S0;
+  46	highp float src_tf_S0_ff(highp float x) {
+  47	highp float G = uSrcTF_S0[0];
+  48	highp float A = uSrcTF_S0[1];
+flutter-vita: injected swipe 480,470 -> 480,120
+  49	highp float B = uSrcTF_S0[2];
+  50	highp float C = uSrcTF_S0[3];
+  51	highp float D = uSrcTF_S0[4];
+  52	highp float E = uSrcTF_S0[5];
+  53	highp float F = uSrcTF_S0[6];
+  54	highp float s = sign(x);
+  55	x = abs(x);
+  56	x = x < D ? C * x + F : pow(A * x + B, G) + E;
+  57	return s * x;
+  58	}
+  59	highp float dst_tf_S0_ff(highp float x) {
+  60	highp float G = uDstTF_S0[0];
+  61	highp float A = uDstTF_S0[1];
+  62	highp float B = uDstTF_S0[2];
+  63	highp float C = uDstTF_S0[3];
+  64	highp float D = uDstTF_S0[4];
+  65	highp float E = uDstTF_S0[5];
+  66	highp float F = uDstTF_S0[6];
+  67	highp float s = sign(x);
+  68	x = abs(x);
+  69	x = x < D ? C * x + F : pow(A * x + B, G) + E;
+  70	return s * x;
+  71	}
+  72	void main() {
+  73	highp     vec4 sk_FragCoord = vec4(gl_FragCoord.x, u_skRTFlip.x + u_skRTFlip.y * gl_FragCoord.y, gl_FragCoord.z, gl_FragCoord.w);
+  74	mediump vec4 outputColor_S0 = vec4(1.0);
+  75	highp vec2 texCoord = vlocalCoord_S0;
+  76	highp vec4 _1_color = texture2D(uTextureSampler_0_S0, texCoord, -0.475);
+  77	_1_color.x = src_tf_S0_ff(_1_color.x);
+  78	_1_color.y = src_tf_S0_ff(_1_color.y);
+  79	_1_color.z = src_tf_S0_ff(_1_color.z);
+  80	highp vec4 _2_color = _1_color;
+  81	_2_color.xyz = uColorXform_S0 * _2_color.xyz;
+  82	_1_color = _2_color;
+  83	_1_color.x = dst_tf_S0_ff(_1_color.x);
+  84	_1_color.y = dst_tf_S0_ff(_1_color.y);
+  85	_1_color.z = dst_tf_S0_ff(_1_color.z);
+  86	outputColor_S0 = _1_color;
+  87	highp vec2 _3_dxy0 = uinnerRect_S1.xy - sk_FragCoord.xy;
+  88	highp vec2 _4_dxy1 = sk_FragCoord.xy - uinnerRect_S1.zw;
+  89	highp vec2 _5_dxy = max(max(_3_dxy0, _4_dxy1), 0.0);
+  90	mediump float _6_alpha = clamp(uradiusPlusHalf_S1.x - length(_5_dxy), 0.0, 1.0);
+  91	mediump vec4 output_S1 = vec4(_6_alpha);
+  92	{
+  93	gl_FragColor = outputColor_S0 * output_S1;
+  94	}
+  95	}
+  96	
+  97	
+Errors:
+link failed but did not provide an info log
+flutter-vita: JANK frame #417 gap 403877 us (raster 380200 us, wait 23534 us)

@@ -59,7 +59,7 @@ upload() { # local remote
   curl -sS -T "$1" "$FTP/${APPDIR#ux0:}/$2" && printf '  %s\n' "$2"
 }
 # eboot.bin comes out of the vpk rather than the build tree: vita_create_vpk
-# packages the SELF, and that is the form the loader wants.
+# packages the SELF, and that is the form the receiver wants.
 mkdir -p out/staging && (cd out/staging && rm -f eboot.bin && unzip -o -q ../../build/flutter_vita_m1.vpk eboot.bin)
 upload out/staging/eboot.bin eboot.bin
 for b in vm_snapshot_data isolate_snapshot_data \

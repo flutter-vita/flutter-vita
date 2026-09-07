@@ -6,10 +6,10 @@
 # deploy.sh waits for the app to open its dev port, which a spike never does:
 # a spike runs, writes a file and ends, so that wait is pure latency, and when
 # the spike faults instead it is latency followed by a ten-minute prompt for a
-# tap. This installs, launches, and then watches the *loader* rather than the
-# app, because the loader coming back is the signal either way -- the spike
+# tap. This installs, launches, and then watches the *receiver* rather than the
+# app, because the receiver coming back is the signal either way -- the spike
 # handed the console over on its own, or it faulted and somebody opened the
-# loader. Both end with a readable report.
+# receiver. Both end with a readable report.
 #
 # Short timeouts throughout, deliberately. A crash is the expected outcome of a
 # spike, not an exception to plan around.
@@ -20,40 +20,40 @@ HERE="$(cd "$(dirname "$0")" && pwd)"
 # back on a different lease -- which it does, often. VITA_HOST still overrides
 # it, and an IP is still the right answer when the name will not resolve.
 HOST="${VITA_HOST:-flutter-vita.local}"
-# The loader's port. 1341 is the real one; a scratch loader (ADR-0016) answers
+# The receiver's port. 1341 is the real one; a scratch receiver (ADR-0016) answers
 # somewhere else, and a spike deployed through it needs to be told.
-LDR="${LOADER_PORT:-1341}"
+LDR="${RECEIVER_PORT:-1341}"
 VPK="${1:?usage: run-spike.sh <vpk> <report-path>}"
 REPORT="${2:?usage: run-spike.sh <vpk> <report-path>}"
 DEADLINE="${SPIKE_DEADLINE:-90}"
 
 ldr() { printf '%s\n' "$1" | nc -w 3 "$HOST" "$LDR" 2>/dev/null; }
 
-wait_loader() {
+wait_receiver() {
   local until=$((SECONDS + $1))
   while [ $SECONDS -lt $until ]; do
-    ldr ping | grep -q loader && return 0
+    ldr ping | grep -q receiver && return 0
   done
   return 1
 }
 
 echo "==> installing $(basename "$VPK")"
 VITA_HOST="$HOST" "$HERE/deploy.sh" --vpk "$VPK" --no-launch \
-  --loader-port "$LDR" >/dev/null 2>&1 || {
-  echo "!! install failed -- is the loader open?" >&2; exit 1; }
+  --receiver-port "$LDR" >/dev/null 2>&1 || {
+  echo "!! install failed -- is the receiver open?" >&2; exit 1; }
 
 echo "==> launching"
 ldr launch >/dev/null
 
-# The loader is gone the moment the app starts; waiting for it to disappear
+# The receiver is gone the moment the app starts; waiting for it to disappear
 # first avoids reading the report from the previous run.
 sleep 2
 
-echo "==> waiting for the loader (spike ends, or it crashes and you open it)"
-if wait_loader "$DEADLINE"; then
-  echo "    loader back"
+echo "==> waiting for the receiver (spike ends, or it crashes and you open it)"
+if wait_receiver "$DEADLINE"; then
+  echo "    receiver back"
 else
-  echo "!! loader did not return within ${DEADLINE}s -- open it and re-run with --report-only" >&2
+  echo "!! receiver did not return within ${DEADLINE}s -- open it and re-run with --report-only" >&2
   exit 2
 fi
 

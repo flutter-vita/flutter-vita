@@ -7,8 +7,8 @@
 // that finds out, and it deliberately runs before any Skia work: every check
 // here is cheaper to fail than a Skia build configuration is.
 //
-// Reports to ux0:data/flutter-vita/gl-spike.txt and then bails to the loader,
-// which is how the report gets read -- the loader's `get` command can stream a
+// Reports to ux0:data/flutter-vita/gl-spike.txt and then bails to the receiver,
+// which is how the report gets read -- the receiver's `get` command can stream a
 // file back, and nothing else is listening once this exits.
 //
 // The checks are ordered by what Ganesh needs, cheapest first:
@@ -41,14 +41,14 @@
 
 // Deliberately NOT bailout.h.
 //
-// vita_bail_to_loader launches the loader and exits, which is the right
+// vita_bail_to_loader launches the receiver and exits, which is the right
 // behaviour for a Flutter app and the wrong one here. A failed vglInit leaves
 // sceGxm and the display part-configured, and asking the shell to start
 // another app from that state wedged the console hard enough that the PS
 // button stopped responding and it took a 30-second power hold -- while the
 // report on disk showed the spike had already finished its work and reached
 // the bail. So this exits plainly and lets the console return to LiveArea.
-// One tap to reopen the loader beats any chance of repeating that.
+// One tap to reopen the receiver beats any chance of repeating that.
 #define REPORT "ux0:data/flutter-vita/gl-spike.txt"
 
 // vitaGL allocates from the newlib heap as well as from its own GPU pools, and
@@ -136,20 +136,20 @@ static GLuint compile(GLenum type, const char* src, const char* label) {
 // Serve the report over TCP, then exit. Called on every exit path.
 //
 // Without this the report is unreadable: the spike returns to LiveArea when it
-// exits, which leaves the loader closed, and the loader's `get` command is the
+// exits, which leaves the receiver closed, and the receiver's `get` command is the
 // only other way to pull a file off this console. Every iteration would need
-// somebody to walk over and tap the loader bubble -- the exact cost ADR-0011
+// somebody to walk over and tap the receiver bubble -- the exact cost ADR-0011
 // exists to remove, reintroduced through the back door.
 //
-// Deliberately NOT the bail-to-loader route. Launching another app after a
+// Deliberately NOT the bail-to-receiver route. Launching another app after a
 // half-completed vglInit is what wedged the console hard enough to need a
 // 30-second power hold; this touches no app manager at all.
 //
 // Bounded by kServeSeconds so a run nobody collects still returns the console
 // to LiveArea on its own rather than sitting on a listener forever.
 
-// Hand the console back to the loader, exactly as templates/vita-app/bailout.c
-// does. Exiting to LiveArea instead leaves the loader closed, so the next
+// Hand the console back to the receiver, exactly as templates/vita-app/bailout.c
+// does. Exiting to LiveArea instead leaves the receiver closed, so the next
 // deploy stalls waiting for somebody to walk over and tap it -- which is the
 // cost ADR-0011 exists to remove, reintroduced by a spike.
 //
@@ -159,7 +159,7 @@ static GLuint compile(GLenum type, const char* src, const char* label) {
 // removed from bailout.c.
 #define VITA_LOADER_TITLEID "FVTA00003"
 
-static void hand_back_to_loader(void) {
+static void hand_back_to_receiver(void) {
   // Let go of the GPU before asking the shell to switch.
   //
   // bailout.c does the launch-then-exit with nothing in between and never
@@ -188,8 +188,8 @@ static void hand_back_to_loader(void) {
 //
 // This used to run a TCP server and sit on it for up to 45 seconds so the
 // report could be collected before the process ended. That was necessary only
-// while the spike exited to LiveArea, which left no loader to read the file
-// with. Now that it bails to the loader, the loader's own `get` command serves
+// while the spike exited to LiveArea, which left no receiver to read the file
+// with. Now that it bails to the receiver, the receiver's own `get` command serves
 // the report -- so the server was duplicating a facility that already existed,
 // and the only thing it added was an app that sat on screen doing nothing.
 //
@@ -197,7 +197,7 @@ static void hand_back_to_loader(void) {
 //   printf 'get REPORT\n' | nc -w 12 <vita> 1341
 static void finish_and_hand_back(void) {
   if (g_out) { fclose(g_out); g_out = NULL; }
-  hand_back_to_loader();
+  hand_back_to_receiver();
 }
 
 

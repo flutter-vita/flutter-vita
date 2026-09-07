@@ -41,7 +41,7 @@ Worth reading before resuming — four of these were dead ends that each cost a
 launch.
 
 - **`UNSAFE` on the kernel self** — *was* a real bug. It faulted taiHEN's
-  loader outright. `UNSAFE` is for user selfs needing extended permissions; a
+  receiver outright. `UNSAFE` is for user selfs needing extended permissions; a
   kernel module is already kernel-side. Removing it turned a crash into a clean
   error. **Do not re-add it.**
 - **Extra imports** — the module linked `taihenForKernel_stub` and
@@ -60,7 +60,7 @@ launch.
 ## Where it stopped: the weak-stub hypothesis, untested
 
 The app linked `libvitantp_kernel_stub.a` — the **non-weak** stub — which bakes
-a hard import of `VitaNtpKernel` into the app binary. The loader tries to
+a hard import of `VitaNtpKernel` into the app binary. The receiver tries to
 resolve that when the *app* starts, long before the module is loaded on demand.
 vitacompanion gets away with the strong stub only because its kernel module is
 loaded at boot from `config.txt`; ours deliberately is not.

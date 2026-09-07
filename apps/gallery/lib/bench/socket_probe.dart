@@ -81,7 +81,7 @@ Future<SocketProbe> probeSockets({int reps = 20}) async {
 }
 
 // Each step announces itself before it runs. dart:io sockets have never been
-// exercised on this port, the first attempt took the app down, and the loader
+// exercised on this port, the first attempt took the app down, and the receiver
 // -- which is a Flutter app too, and writes the same m3.log -- erased the
 // evidence when it came up. A marker per step means the next hard fault names
 // the call that caused it in the log that survives.

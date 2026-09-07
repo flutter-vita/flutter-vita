@@ -34,10 +34,10 @@ const String kSoftwareSwitchPath = '$kDataDir/software.on';
 /// vanish.
 const String kBenchDir = '$kDataDir/bench';
 
-/// Written by the loader's TESTS tab before it launches this app, and by
+/// Written by the receiver's TESTS tab before it launches this app, and by
 /// nothing else. Its presence is the only way to tell a run the hub asked for
 /// from one a host script started: both write bench.on.
-const String kFromLoaderPath = '$kDataDir/bench.from-loader';
+const String kFromReceiverPath = '$kDataDir/bench.from-receiver';
 
 /// Asking the dev server to give the console back. See HANDOFF_REQUEST in
 /// devserver.c -- Dart cannot launch a title itself.
@@ -70,7 +70,7 @@ String? engineStamp() {
     final short = rev == null ? '?' : rev.substring(0, 10);
     return built == null ? short : '$short $built';
   } catch (_) {
-    // A receipt that cannot be read is a run without a stamp, which the loader
+    // A receipt that cannot be read is a run without a stamp, which the receiver
     // already shows as not comparable. It is not a reason to lose the numbers.
     return null;
   }
@@ -88,7 +88,7 @@ const String kOnlyPath = '$kDataDir/bench.only';
 /// True when the host has asked for an unattended run.
 ///
 /// Same shape as gl.on: a '1' in the first byte, not merely the file existing,
-/// because the loader can `put` a file and cannot delete one -- a switch
+/// because the receiver can `put` a file and cannot delete one -- a switch
 /// keyed on existence is a switch that cannot be turned off remotely.
 bool switchOn(String path) {
   try {
@@ -412,7 +412,7 @@ class BenchRunner {
       'software_on_requested': switchOn(kSoftwareSwitchPath),
       'dart_version': Platform.version.split(' ').first,
       // When, and by which engine. Both absent until today, which is why the
-      // loader's TESTS tab shows the one result on this card as "no engine
+      // receiver's TESTS tab shows the one result on this card as "no engine
       // stamp, not comparable" -- it was right to.
       'taken': DateTime.now().toIso8601String(),
       if (engineStamp() case final String e) 'engine': e,
@@ -422,7 +422,7 @@ class BenchRunner {
     Directory(kDataDir).createSync(recursive: true);
     _writeAtomic(kResultPath, text);
     // Also under bench/, one file per app per suite, which is what the
-    // loader's hub lists. The legacy path stays for the host tools.
+    // receiver's hub lists. The legacy path stays for the host tools.
     try {
       Directory(kBenchDir).createSync(recursive: true);
       _writeAtomic('$kBenchDir/FVTA00002-gallery.json', text);
@@ -433,15 +433,15 @@ class BenchRunner {
     _handBackIfAsked();
   }
 
-  /// Give the console back to the loader, if the loader is what started this.
+  /// Give the console back to the receiver, if the receiver is what started this.
   ///
   /// A run launched from the TESTS tab used to end with the app sitting on its
-  /// results and the loader gone, so the hub that asked for the run was not
+  /// results and the receiver gone, so the hub that asked for the run was not
   /// there to show it. Host-started runs are left alone: tools/bench.sh wants
   /// the app alive afterwards to read the numbers off it.
   void _handBackIfAsked() {
     try {
-      final marker = File(kFromLoaderPath);
+      final marker = File(kFromReceiverPath);
       if (!marker.existsSync()) return;
       marker.deleteSync();
       // Last, and after bench-done: the dev server acts on this within half a
@@ -456,7 +456,7 @@ class BenchRunner {
   /// Write via a .part file and a rename, the only atomic operation here.
   ///
   /// A reader that catches a half-written result must not be able to parse it
-  /// as a short one: the loader would show a run that lost most of its scenes
+  /// as a short one: the receiver would show a run that lost most of its scenes
   /// as a run that measured three.
   void _writeAtomic(String path, String text) {
     final tmp = File('$path.part');

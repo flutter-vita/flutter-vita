@@ -20,12 +20,12 @@ ADR-0001 through ADR-0004 are back-filled from §1 of `Flutter Vita Plan.md`
 | [0008](0008-app-visible-platform-identity.md) | How an app learns it is running on a Vita | **Option A** — keep the linux identity; B is one line if ever needed |
 | [0009](0009-plugins-via-non-endorsed-vita-implementations.md) | `pubspec.yaml` as opt-in surface: build config + three non-endorsed plugins | Accepted — 19% → 50% of surveyed apps |
 | [0010](0010-input-layering-and-psvita-api.md) | Input in two layers; only the second is a package | Accepted — D-pad navigation needs no dependency |
-| [0011](0011-crash-recovery-without-taihen.md) | A crash returns to the loader by exiting cleanly | Accepted — **amended 2026-08-21**: no kernel plugins or SceShell modules; in-process user hooks permitted |
+| [0011](0011-crash-recovery-without-taihen.md) | A crash returns to the receiver by exiting cleanly | Accepted — **amended 2026-08-21**: no kernel plugins or SceShell modules; in-process user hooks permitted |
 | [0012](0012-app-corpus-as-measurement-instrument.md) | The app corpus is an instrument, and its output is a diff | Accepted — five axes, one control, patch size is the score |
 | [0013](0013-ffi-needs-static-linking.md) | `dart:ffi` needs static linking, and that is the admission test | Accepted — decided one app in and one app out |
 | [0014](0014-gpu-backend-via-vitagl.md) | The raster pass is the bottleneck, so the GPU becomes the target | **Accepted** — raster is 97% of a frame; engine work gated on a spike |
 | [0015](0015-four-products-one-audience.md) | The toolchain is four products with one audience | Accepted — the product boundary ends at the `.vpk` |
-| [0016](0016-the-loader-becomes-a-flutter-app.md) | The loader becomes a Flutter app, and stops being invisible | Accepted — pinned engine, software rendering, C layer holds the port |
+| [0016](0016-the-receiver-becomes-a-flutter-app.md) | The receiver becomes a Flutter app, and stops being invisible | Accepted — pinned engine, software rendering, C layer holds the port |
 | [0017](0017-the-gallery-becomes-the-benchmark.md) | The gallery becomes the benchmark, and a scene is the unit | Accepted — scripted scenes, a stall is 2+ frames at or below 30 fps, gated on a committed baseline |
 
 ## Open questions not yet decided

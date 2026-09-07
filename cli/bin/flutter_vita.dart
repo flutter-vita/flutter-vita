@@ -140,7 +140,7 @@ Future<int> _doctor(Map<String, String> opts) async {
 
   final device = await _findDevice(opts, quiet: true);
   check('device', device != null,
-      'power on the Vita and open the loader, or pass --host');
+      'power on the Vita and open the receiver, or pass --host');
   if (device != null) {
     stdout.writeln('       $device');
   } else if (await _localNetworkBlocked()) {
@@ -168,7 +168,7 @@ Future<int> _devices(Map<String, String> opts) async {
   final found = await discover(subnet: opts['subnet']);
   if (found.isEmpty) {
     stdout.writeln('no devices found');
-    stdout.writeln('  the Vita must be awake with the loader or an app running');
+    stdout.writeln('  the Vita must be awake with the receiver or an app running');
     return 1;
   }
   for (final device in found) {
@@ -218,18 +218,18 @@ Future<int> _install(
   final vpk = await _build(args, opts);
   if (vpk == null) return 1;
 
-  // The loader is what installs, so hand off if the app is what is running.
+  // The receiver is what installs, so hand off if the app is what is running.
   var device = await _findDevice(opts);
   if (device == null) return 1;
   if (device.role == VitaRole.app) {
-    stdout.writeln('==> handing off to the loader');
+    stdout.writeln('==> handing off to the receiver');
     await device.handoff();
-    final loader = await VitaDevice.waitFor(device.host, VitaRole.loader);
-    if (loader == null) {
-      stderr.writeln('!! the loader never came up — tap it on the device');
+    final receiver = await VitaDevice.waitFor(device.host, VitaRole.receiver);
+    if (receiver == null) {
+      stderr.writeln('!! the receiver never came up — tap it on the device');
       return 1;
     }
-    device = loader;
+    device = receiver;
   }
 
   final result = await Process.start(
@@ -243,7 +243,7 @@ Future<int> _install(
   final app = await VitaDevice.waitFor(device.host, VitaRole.app);
   if (app == null) {
     stderr.writeln('!! the app never opened its port — it may have crashed');
-    stderr.writeln('   open the loader and run: flutter-vita logs');
+    stderr.writeln('   open the receiver and run: flutter-vita logs');
     return 1;
   }
   stdout.writeln('==> running on ${app.host}');
@@ -291,7 +291,7 @@ Future<int> _tap(List<String> args, Map<String, String> opts) async {
 /// Locate a device: an explicit --host, else a sweep.
 ///
 /// [role] narrows it when the command only makes sense against one — `logs`
-/// needs the app, and finding the loader instead should say so rather than
+/// needs the app, and finding the receiver instead should say so rather than
 /// failing on a refused connection.
 Future<VitaDevice?> _findDevice(
   Map<String, String> opts, {
@@ -316,11 +316,11 @@ Future<VitaDevice?> _findDevice(
 
   if (match == null && !quiet) {
     if (found.isEmpty) {
-      stderr.writeln('!! no Vita found — is it awake, with the loader open?');
+      stderr.writeln('!! no Vita found — is it awake, with the receiver open?');
     } else {
       stderr.writeln('!! found ${found.first} but this needs the ${role!.label}');
       stderr.writeln(
-          role == VitaRole.app ? '   launch the app first' : '   hand off to the loader first');
+          role == VitaRole.app ? '   launch the app first' : '   hand off to the receiver first');
     }
   }
   return match;

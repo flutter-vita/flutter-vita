@@ -12,7 +12,7 @@ project(flutter_vita_promoter C)
 include("${VITASDK}/share/vita.cmake" REQUIRED)
 
 set(VITA_APP_NAME "Flutter Vita Promoter")
-# The app slot, so this deploys down the same path as any app and the loader
+# The app slot, so this deploys down the same path as any app and the receiver
 # installs it with no special case.
 set(VITA_TITLEID  "FVTA00002")
 set(VITA_VERSION  "01.00")

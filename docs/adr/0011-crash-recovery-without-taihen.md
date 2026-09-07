@@ -1,4 +1,4 @@
-# ADR-0011: A crash returns to the loader by exiting cleanly, not by being caught
+# ADR-0011: A crash returns to the receiver by exiting cleanly, not by being caught
 
 **Status:** Accepted
 **Date:** 2026-08-15
@@ -7,7 +7,7 @@
 
 The dev loop's cost is not build time. Builds are twenty seconds and an engine
 object is one. The cost is that **a crash needs a person**: the console puts up
-an error dialog, and somebody has to walk to the Vita, tap OK, find the loader
+an error dialog, and somebody has to walk to the Vita, tap OK, find the receiver
 bubble and open it. Two manual steps, once per crash, and a port under
 development produces many — on 2026-08-15 it was one every twenty seconds.
 
@@ -20,7 +20,7 @@ Decided 2026-08-15. This is stronger than [ADR-0001](0001-aot-only-no-jit.md),
 which only promises that *end users* need no kernel plugin.
 
 It is worth stating explicitly because the console **does** have taiHEN —
-HENkaku is what allows UNSAFE selfs to run at all — and the loader already
+HENkaku is what allows UNSAFE selfs to run at all — and the receiver already
 links `taihen_stub` and carries `kload` and `inject` commands. There is even a
 SceShell module already written for exactly this problem
 (`spikes/vita-shell-launcher`, commit `d1ec483`), abandoned one unresolved pid
@@ -65,7 +65,7 @@ correct green readback out of an FBO.
 | SceShell modules (`inject`) | — |
 | Anything in `ur0:tai/config.txt` | — |
 
-The loader keeps its `kload` and `inject` commands and keeps not using them.
+The receiver keeps its `kload` and `inject` commands and keeps not using them.
 [ADR-0001](0001-aot-only-no-jit.md)'s product promise is unaffected: a console
 that can run homebrew at all already has taiHEN, and it is the same population
 that installs `libshacccg.suprx`.
@@ -85,15 +85,15 @@ See [ADR-0014](0014-gpu-backend-via-vitagl.md) for the evidence.
 
 ## Decision
 
-**Failures the program can see coming exit cleanly into the loader.**
+**Failures the program can see coming exit cleanly into the receiver.**
 
 `templates/vita-app/bailout.c` provides `vita_bail_to_loader(reason)`: record
-the reason, `sceAppMgrLaunchAppByUri` the loader, `sceKernelExitProcess`.
+the reason, `sceAppMgrLaunchAppByUri` the receiver, `sceKernelExitProcess`.
 
 The key property is that **a clean exit produces no dialog**. There is nothing
 to dismiss and nothing to recover from, so both manual steps disappear at once
 — which is strictly better than the background app would have managed even if
-it had worked, since that recovers the loader but leaves the dialog standing.
+it had worked, since that recovers the receiver but leaves the dialog standing.
 
 It hooks in at `abort()` and `__assert_func()`, and this needs **no engine
 rebuild**: `abort` is an *undefined* symbol in `libflutter_engine_vita.a` — the
@@ -105,8 +105,8 @@ anything in Skia or the embedder that aborts.
 Measured on hardware, 2026-08-15:
 
 ```
-=== TEST: abort() -> should exit clean, no dialog, loader returns ===
->>> LOADER CAME BACK BY ITSELF after 6s — no human involved
+=== TEST: abort() -> should exit clean, no dialog, receiver returns ===
+>>> RECEIVER CAME BACK BY ITSELF after 6s — no human involved
 ```
 
 `bail` and `abort` are dev-server commands, so the recovery path is checkable
@@ -163,13 +163,13 @@ That rule is for the next hand-rolled ABI function, not for the current ones.
 ## Consequences
 
 - A shipping app links neither `bailout.c` nor `devserver.c`. An app that
-  relaunches a development loader on an assertion is obviously wrong, and
+  relaunches a development receiver on an assertion is obviously wrong, and
   dropping both files is all that takes.
 - `abort()` no longer aborts. Anything that expected a core dump from
   `abort()` gets a clean exit and a line in
   `ux0:data/flutter-vita/bailout.txt` instead. Core dumps from real faults are
   unaffected, and those are the ones that have been worth reading.
-- The loader title id is compiled in (`VITA_LOADER_TITLEID`, default
+- The receiver title id is compiled in (`VITA_LOADER_TITLEID`, default
   `FVTA00003`).
 - The background-app work is not wasted but is parked: if the dialog ever
   needs surviving, a one-off VitaShell install of a promoted `.vpk` is the

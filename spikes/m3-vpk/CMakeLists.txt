@@ -15,11 +15,11 @@ set(VITA_APP_NAME "Flutter Vita")
 
 # FVTA00002 -- M1's slot, deliberately reused rather than taking a new one.
 #
-# The whole dev loop is built around this title id: the loader hard-codes
-# TARGET_TITLEID "FVTA00002" (loader/src/main.c:51) and dev.sh
-# drives that. Giving M3 its own id would mean changing the loader, rebuilding
-# it, and installing it -- and installing a loader is the one operation that
-# needs the old loader working, so a mistake there costs a manual recovery.
+# The whole dev loop is built around this title id: the receiver hard-codes
+# TARGET_TITLEID "FVTA00002" (receiver/src/main.c:51) and dev.sh
+# drives that. Giving M3 its own id would mean changing the receiver, rebuilding
+# it, and installing it -- and installing a receiver is the one operation that
+# needs the old receiver working, so a mistake there costs a manual recovery.
 #
 # M1 has served its purpose: Phase 1's exit criteria are all met and recorded.
 # Its .vpk can be rebuilt from spikes/m1-vpk at any time if a known-good
@@ -57,7 +57,7 @@ endif()
 #
 # Without it m3 is invisible while it runs: it opens no port, so `cycle` always
 # reported "CRASHED (never opened 1339)" even on a healthy run, and reading the
-# log meant asking a human to exit the app and tap the loader. On 2026-08-11
+# log meant asking a human to exit the app and tap the receiver. On 2026-08-11
 # that cost several round trips on the one question the log would have answered
 # in a second. The server gives back `ping`, `log`, `get` and `handoff` while
 # the engine is up, which is what makes the loop autonomous.

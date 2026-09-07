@@ -4,13 +4,13 @@ import 'dart:typed_data';
 
 /// A Vita on the network, and the two things that can be listening on it.
 ///
-/// The loader (port 1341) installs and launches; the app (port 1339) serves
+/// The receiver (port 1341) installs and launches; the app (port 1339) serves
 /// logs, screenshots and synthetic input while it runs. Only one is up at a
-/// time, because launching the app replaces the loader and `handoff` puts it
+/// time, because launching the app replaces the receiver and `handoff` puts it
 /// back. Which one answers is therefore a fact about the device's current
 /// state, not a configuration choice.
 enum VitaRole {
-  loader(1341, 'loader'),
+  receiver(1341, 'receiver'),
   app(1339, 'app');
 
   const VitaRole(this.port, this.label);
@@ -76,10 +76,10 @@ class VitaDevice {
 
   Future<String> tap(int x, int y) => _sendText('tap $x $y');
 
-  /// Exit the app and bring the loader back up.
+  /// Exit the app and bring the receiver back up.
   ///
-  /// The loader can take longer than the reply to appear, so callers wait for
-  /// [VitaRole.loader] to answer rather than trusting this returning.
+  /// The receiver can take longer than the reply to appear, so callers wait for
+  /// [VitaRole.receiver] to answer rather than trusting this returning.
   Future<String> handoff() => _sendText('handoff');
 
   Future<String> launch() => _sendText('launch');
@@ -158,11 +158,11 @@ class VitaDevice {
       // probe until its timeout and turn a sweep into minutes.
       final reply = String.fromCharCodes(await socket.first.timeout(timeout));
 
-      // The loader answers "loader" and the app answers "pong". Checking the
+      // The receiver answers "receiver" and the app answers "pong". Checking the
       // reply rather than just the open port matters: something else on the
       // network could hold 1339, and installing into it would be worse than
       // finding nothing.
-      final expected = role == VitaRole.loader ? 'loader' : 'pong';
+      final expected = role == VitaRole.receiver ? 'receiver' : 'pong';
       return reply.contains(expected) ? VitaDevice(host, role) : null;
     } on Exception {
       return null;

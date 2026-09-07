@@ -29,9 +29,9 @@ that:
 
 ## Title ID
 
-`FVTA00004`. `FVTA00002` is M1 and `FVTA00003` the loader — see
-`spikes/vita-tooling/README.md`. Note `FVTA00002` currently holds a *loader*
-binary, so the "Flutter Vita M1" icon launches a loader until someone runs
+`FVTA00004`. `FVTA00002` is M1 and `FVTA00003` the receiver — see
+`spikes/vita-tooling/README.md`. Note `FVTA00002` currently holds a *receiver*
+binary, so the "Flutter Vita M1" icon launches a receiver until someone runs
 `./dev.sh cycle` from `spikes/m1-vpk`.
 
 ## What is not in the package yet

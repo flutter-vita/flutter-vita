@@ -12,7 +12,7 @@ project(flutter_vita_g1 C)
 include("${VITASDK}/share/vita.cmake" REQUIRED)
 
 set(VITA_APP_NAME "Flutter Vita GL Spike")
-# FVTA00002 is the slot the dev loader installs into, so ./tools/deploy.sh
+# FVTA00002 is the slot the dev receiver installs into, so ./tools/deploy.sh
 # reaches this the same way it reaches everything else.
 set(VITA_TITLEID  "FVTA00002")
 set(VITA_VERSION  "01.00")
@@ -107,7 +107,7 @@ target_link_options(${PROJECT_NAME} PRIVATE -Wl,-u,pthread_cancel)
 # 182 MB free and the module correctly installed, and the failure looked like
 # a platform limitation rather than a missing keyword.
 #
-# The loader and the Flutter app template have always built UNSAFE. Only this
+# The receiver and the Flutter app template have always built UNSAFE. Only this
 # spike did not.
 vita_create_self(${PROJECT_NAME}.self ${PROJECT_NAME} UNSAFE)
 vita_create_vpk(${PROJECT_NAME}.vpk ${VITA_TITLEID} ${PROJECT_NAME}.self

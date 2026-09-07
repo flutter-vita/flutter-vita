@@ -11,7 +11,7 @@
 # ## The two routes
 #
 # **promote** (default) is a real install. The extracted package is staged under
-# ux0:data/pkg, a package header is generated for its title id, and the loader
+# ux0:data/pkg, a package header is generated for its title id, and the receiver
 # calls scePromoterUtilityPromotePkgWithRif. The title is registered with the
 # shell, a bubble appears, and the id does not have to have existed. It writes
 # nothing into any other app's directory.
@@ -24,8 +24,8 @@
 #
 # It does not need taiHEN, a kernel plugin, VitaShell, a card swap, or any
 # permission from the user beyond the console being unlocked. It does need the
-# loader, because scePromoterUtilityPromotePkgWithRif has to be called from a
-# process on the console, and the loader is the one with a socket on it.
+# receiver, because scePromoterUtilityPromotePkgWithRif has to be called from a
+# process on the console, and the receiver is the one with a socket on it.
 #
 # Three things were load-bearing and each cost an experiment to find:
 #
@@ -49,7 +49,7 @@ HERE="$(cd "$(dirname "$0")" && pwd)"
 # back on a different lease -- which it does, often. VITA_HOST still overrides
 # it, and an IP is still the right answer when the name will not resolve.
 HOST="${VITA_HOST:-flutter-vita.local}"
-PORT="${LOADER_PORT:-1341}"
+PORT="${RECEIVER_PORT:-1341}"
 STAGE="ux0:data/pkg"
 VPK=""
 TITLE_ID=""
@@ -74,17 +74,17 @@ VPK="$(cd "$(dirname "$VPK")" && pwd)/$(basename "$VPK")"
 
 say() { printf '%s\n' "$2" | nc -w "${3:-30}" "$HOST" "$1"; }
 
-# Retried, because one connect is not evidence. The loader's listener is
+# Retried, because one connect is not evidence. The receiver's listener is
 # non-blocking and a single ping races with its accept loop: it reported "no
-# loader" three times in a row on 2026-08-15 against a loader that answered
+# receiver" three times in a row on 2026-08-15 against a receiver that answered
 # `ls` on the same port a second later.
 alive=0
 for _ in 1 2 3; do
-  if say "$PORT" ping 8 2>/dev/null | grep -q loader; then alive=1; break; fi
+  if say "$PORT" ping 8 2>/dev/null | grep -q receiver; then alive=1; break; fi
   sleep 2
 done
 [ "$alive" -eq 1 ] || {
-  echo "!! no loader on $HOST:$PORT — open the loader" >&2; exit 1; }
+  echo "!! no receiver on $HOST:$PORT — open the receiver" >&2; exit 1; }
 
 WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
@@ -135,7 +135,7 @@ else
 
   # Cleared first. The promoter reads the whole staging directory, so a file
   # left by a previous install of something else becomes part of this package.
-  # `rmtree` is confined to ux0:data on the loader side; see cmd_rmtree.
+  # `rmtree` is confined to ux0:data on the receiver side; see cmd_rmtree.
   say "$PORT" "rmtree $STAGE" 120 | sed 's/^/    /'
 
   # The LiveArea art is staged nowhere and copied in after the promote.
@@ -149,7 +149,7 @@ else
   #
   # The shell reads the art out of ux0:app/<id>/sce_sys, not out of the
   # package, so putting it there afterwards gives the same result. An app may
-  # write any title's directory but its own, and the loader is neither.
+  # write any title's directory but its own, and the receiver is neither.
   echo "==> staging into $STAGE"
   ( cd "$WORK" && find . -type f | sed 's|^\./||' \
       | grep -v -e '^sce_sys/icon0\.png$' -e '^sce_sys/livearea/' | sort ) \
@@ -162,13 +162,13 @@ else
   # missing or misplaced header, 0x80871004 a bad digest, 0x80870005 a header
   # signed for a different title.
   # The title id is passed even though the promoter reads it out of head.bin:
-  # it is what the loader writes into its installed.txt, and the APPS tab lists
-  # that. Without it the registry only ever held the loader's own id.
+  # it is what the receiver writes into its installed.txt, and the APPS tab lists
+  # that. Without it the registry only ever held the receiver's own id.
   RESULT="$(say "$PORT" "promoterif $STAGE $TITLE_ID" 600 || true)"
   printf '    %s\n' "$RESULT"
   case "$RESULT" in
     OK*) ;;
-    *) echo "!! promote failed. More in the loader's log:" >&2
+    *) echo "!! promote failed. More in the receiver's log:" >&2
        echo "     printf 'log\\n' | nc $HOST $PORT | tail -20" >&2
        exit 1 ;;
   esac

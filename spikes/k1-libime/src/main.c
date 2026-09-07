@@ -155,7 +155,7 @@ static void dump_framebuffer(const char* path) {
 static void handoff(void) {
   char titleid[16] = "FVTA00004";
   const SceUID fd =
-      sceIoOpen("ux0:data/flutter-vita/loader.titleid", SCE_O_RDONLY, 0777);
+      sceIoOpen("ux0:data/flutter-vita/receiver.titleid", SCE_O_RDONLY, 0777);
   if (fd >= 0) {
     char buf[32] = {0};
     const int n = sceIoRead(fd, buf, sizeof buf - 1);

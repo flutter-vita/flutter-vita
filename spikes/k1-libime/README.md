@@ -17,7 +17,7 @@ assumed the modal dialog is the only system keyboard. It is not.
 VITA_HOST=<ip> ../../tools/deploy.sh --vpk build/flutter_vita_k1.vpk --no-launch
 ```
 
-Then `launch` on the loader. It runs ~14 s, prints every IME event to
+Then `launch` on the receiver. It runs ~14 s, prints every IME event to
 `ux0:data/flutter-vita/k1.log`, dumps a framebuffer at 6 s, and hands the
 console back. Title ID is `FVTA00002`, the same slot every app deploys into.
 

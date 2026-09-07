@@ -24,9 +24,9 @@ final create = lib.lookupFunction<...>('mpv_create');
 ```
 
 There is no message to intercept, because the package is not sending one. It
-wants the operating system's dynamic loader to find a shared object on disk and
+wants the operating system's dynamic receiver to find a shared object on disk and
 map it in. [ADR-0004](0004-static-single-binary.md) is one statically linked
-`eboot.bin`, and there is no dynamic loader for homebrew. Our shim says so
+`eboot.bin`, and there is no dynamic receiver for homebrew. Our shim says so
 honestly rather than failing somewhere less legible:
 
 ```c
@@ -90,7 +90,7 @@ one C file, and drift, sqflite and isar all land on it.
 
 ## Related
 
-[ADR-0004](0004-static-single-binary.md) — the reason there is no loader.
+[ADR-0004](0004-static-single-binary.md) — the reason there is no receiver.
 [ADR-0009](0009-plugins-via-non-endorsed-vita-implementations.md) — the path
 that works for the other kind of package.
 [ADR-0012](0012-app-corpus-as-measurement-instrument.md) — where the test is applied.

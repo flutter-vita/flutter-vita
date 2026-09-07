@@ -5,7 +5,7 @@
 #   ./tools/analyse-crash.sh <elf> --dump <file>    one already downloaded
 #   ./tools/analyse-crash.sh --list                 what dumps are on the card
 #
-#   --port N    where to fetch from: an app's 1339, a loader's 1341 or 1342
+#   --port N    where to fetch from: an app's 1339, a receiver's 1341 or 1342
 #   --keep N    delete all but the newest N dumps after fetching (default: off)
 #
 # The Vita writes psp2core-*.psp2dmp to ux0:data whenever a process faults, and

@@ -4,7 +4,7 @@
 #   ./tools/diag.sh                       two samples, five seconds apart
 #   ./tools/diag.sh --once                one sample
 #   ./tools/diag.sh --gap 15              a longer window between them
-#   ./tools/diag.sh --port 1341           the loader instead of an app
+#   ./tools/diag.sh --port 1341           the receiver instead of an app
 #   ./tools/diag.sh --elf path/to/elf     symbolicate the stack scans
 #
 # Two samples, not one, and that is the whole reason this script exists rather

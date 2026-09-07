@@ -94,14 +94,14 @@ add_executable(${PROJECT_NAME}
   ${SNAPSHOT_S}
   ${DEV_LOOP_SOURCES}
   ${CMAKE_CURRENT_SOURCE_DIR}/heap.c
-  # Product-specific C, compiled beside the dev server. The loader (ADR-0016)
+  # Product-specific C, compiled beside the dev server. The receiver (ADR-0016)
   # uses this to register its own commands and its own port from a constructor,
   # which is what lets it be an ordinary app built from this same template
   # rather than a private build path.
   ${EXTRA_SOURCES}
 )
 target_include_directories(${PROJECT_NAME} PRIVATE ${ENGINE_DIR}/src)
-# For EXTRA_SOURCES to be configured from the outside -- the loader builds
+# For EXTRA_SOURCES to be configured from the outside -- the receiver builds
 # twice, once into its real slot and once into a scratch one on a different
 # port, and the difference is two defines rather than two source trees.
 target_compile_definitions(${PROJECT_NAME} PRIVATE ${EXTRA_DEFINES})
@@ -184,12 +184,12 @@ target_link_libraries(${PROJECT_NAME}
   # vitaGL's vgl_memcpy goes through the DMAC for anything large.
   SceKernelDmacMgr_stub
   SceIme_stub SceAppUtil_stub
-  # For the loader's `promote`, which installs a whole extracted .vpk through
-  # the system promoter -- the only route by which the loader can replace
+  # For the receiver's `promote`, which installs a whole extracted .vpk through
+  # the system promoter -- the only route by which the receiver can replace
   # itself. A stub archive contributes nothing to an app that never calls into
   # it, so this is listed unconditionally rather than behind another switch.
   ScePromoterUtil_stub
-  # For the loader's timestamps on every deploy-log line. The clock is whatever
+  # For the receiver's timestamps on every deploy-log line. The clock is whatever
   # the console was last set to, which is why nothing sorts by it -- but a
   # wrong wall clock still tells you two lines are an hour apart.
   SceRtc_stub
@@ -202,7 +202,7 @@ vita_create_self(${PROJECT_NAME}.self ${PROJECT_NAME} UNSAFE)
 #
 # A background application: a separate process, started by this app at startup
 # and outliving it, so that when the app dies the console still has something
-# listening that can bring the loader back. Without it every crash costs a
+# listening that can bring the receiver back. Without it every crash costs a
 # human walking to the Vita and tapping a bubble, which is the real limit on
 # how fast this port can be debugged -- not build time.
 #
@@ -212,8 +212,8 @@ vita_create_self(${PROJECT_NAME}.self ${PROJECT_NAME} UNSAFE)
 # whole foreground app budget, and 2 MiB is far more than a socket and a 16 KiB
 # net pool need.
 #
-# Left out entirely when NO_SUPERVISOR is set. The loader is what the
-# supervisor recovers *to*, so a loader carrying one would contend for the same
+# Left out entirely when NO_SUPERVISOR is set. The receiver is what the
+# supervisor recovers *to*, so a receiver carrying one would contend for the same
 # background title id and have no stopping condition -- ADR-0016 decision 8.
 if(NOT NO_SUPERVISOR)
 add_executable(fvita_supervisor ${CMAKE_CURRENT_SOURCE_DIR}/supervisor.c)

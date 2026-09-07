@@ -357,7 +357,7 @@ conversion path rather than trying to make Skia supply the symbols.
 **2 are `sceSblDmac5HashTransform` and `taiGetModuleInfo`, and they are more
 interesting than they look.** They are not referenced by anything in the
 engine. They come from **`libdl.a`'s `dlsym`**, which VitaSDK implements on top
-of taiHEN — so linking `-ldl` on a platform with no dynamic loader drags in two
+of taiHEN — so linking `-ldl` on a platform with no dynamic receiver drags in two
 stub libraries to support a function that can never succeed.
 
 `-ldl` has been dropped from `runtime/vm/BUILD.gn` for vita, and verified gone
@@ -896,7 +896,7 @@ and a `w` is the defect.
 With threads working the engine started and failed twice more, each time
 usefully:
 
-1. `Check failed: context->IsValid() ... Tried: app0:/icudtl.dat`. The loader's
+1. `Check failed: context->IsValid() ... Tried: app0:/icudtl.dat`. The receiver's
    `install` replaces `eboot.bin` and nothing else, so the app directory still
    held M1's contents. `dev.sh` now pushes `icudtl.dat` after install, hashed so
    it transfers only when it changes.

@@ -2,7 +2,7 @@
 # Split an app-aot-elf snapshot into the four blobs Dart_CreateIsolateGroup wants.
 #
 # Why not load the ELF on device? Dart ships Dart_LoadELF_Memory, but
-# runtime/bin/elf_loader.cc pulls in bin/file.h, bin/mappable.h,
+# runtime/bin/elf_receiver.cc pulls in bin/file.h, bin/mappable.h,
 # bin/virtual_memory.h and <sys/mman.h> -- the dart:io layer this port
 # deliberately excludes, plus an mmap the Vita does not have. Writing an ELF
 # parser for the device instead would be a few hundred lines of untested C

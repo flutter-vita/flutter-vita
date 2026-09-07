@@ -10,7 +10,7 @@
 #   --out DIR         default <app-dir>/build/vita
 #   --entry-point F   default lib/main.dart; real apps use flavors
 #   --extra-source F  extra C/C++ compiled into the app; repeatable
-#   --no-supervisor   leave out eboot2.bin (the loader; ADR-0016)
+#   --no-supervisor   leave out eboot2.bin (the receiver; ADR-0016)
 #   --define K=V      preprocessor define for the extra sources; repeatable
 #   --release         no dev server, no debug HUD, no bailout, no supervisor
 #
@@ -22,7 +22,7 @@
 #
 # Title id resolution: --title-id, then pubspec vita.title_id, then a value
 # derived from the package name if a vita: block exists, then FVTA00002 -- the
-# slot the dev loader installs into, which is what the counter app and the
+# slot the dev receiver installs into, which is what the counter app and the
 # spikes want.
 #
 # This is the whole pipeline in one place: Dart to kernel, kernel to armv7
@@ -57,7 +57,7 @@ OUT_DIR=""
 # corpus unbuildable for an app whose only sin was shipping three build flavors.
 ENTRY_POINT="lib/main.dart"
 # Product-specific C, and whether to ship the crash supervisor. Both exist for
-# the loader (ADR-0016), which is an ordinary app from this same script plus a
+# the receiver (ADR-0016), which is an ordinary app from this same script plus a
 # translation unit that owns its port and its commands.
 EXTRA_SOURCES=""
 NO_SUPERVISOR="OFF"
@@ -65,7 +65,7 @@ EXTRA_DEFINES=""
 # Debug and release are the same pipeline with a different final link. What
 # release drops is everything that exists to serve the person developing the
 # app: the dev server's listening socket, the debug HUD over every frame, the
-# bailout that launches a development loader on abort, and the crash supervisor
+# bailout that launches a development receiver on abort, and the crash supervisor
 # that relaunches one. See templates/vita-app/release.c.
 #
 # It is not a Dart-level distinction. The kernel is already compiled with
@@ -88,8 +88,8 @@ while [ $# -gt 0 ]; do
       EXTRA_SOURCES="${EXTRA_SOURCES:+$EXTRA_SOURCES;}$src"; shift 2 ;;
     --no-supervisor) NO_SUPERVISOR="ON"; shift ;;
     # Implies --no-supervisor. The supervisor's whole job is relaunching the
-    # development loader when the app dies, and a release build is one that has
-    # no loader to relaunch.
+    # development receiver when the app dies, and a release build is one that has
+    # no receiver to relaunch.
     --release)  RELEASE="ON"; NO_SUPERVISOR="ON"; shift ;;
     --define) EXTRA_DEFINES="${EXTRA_DEFINES:+$EXTRA_DEFINES;}$2"; shift 2 ;;
     -h|--help)  sed -n '2,20p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
@@ -165,7 +165,7 @@ PKG_NAME="$(grep -m1 '^name:' "$APP_DIR/pubspec.yaml" | sed 's/^name: *//' | tr 
 # accumulates, and two different apps essentially never collide.
 #
 # Only for apps with a vita: block. Without one, the default stays FVTA00002,
-# which is the slot the dev loader installs into: deriving there would break the
+# which is the slot the dev receiver installs into: deriving there would break the
 # edit-run loop for the counter app and every spike.
 derive_title_id() {
   local n l1 l2
@@ -195,7 +195,7 @@ fi
 # The app's own, and that is deliberate even though Sony's sample and BGFTP both
 # give their background app a *distinct* id. Both of those are installed by the
 # promoter, which registers every title in the package; ours is side-loaded into
-# an app directory the loader can write, so the only id the shell has a record
+# an app directory the receiver can write, so the only id the shell has a record
 # of is the app's.
 #
 # Measured, not assumed. With a distinct id (FVSV00003) the call succeeded --

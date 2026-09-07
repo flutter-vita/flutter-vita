@@ -73,7 +73,7 @@ Future<void> prepareAssets() async {
 final List<AnimatedScene> animatedScenes = <AnimatedScene>[
   // Not a benchmark. A picture that answers one question.
   //
-  // On 2026-09-01 the loader's panel was unreadable under GL: its status pill
+  // On 2026-09-01 the receiver's panel was unreadable under GL: its status pill
   // and buttons rendered as solid rectangles with the text gone. Sampling the
   // framebuffer showed the fills at exactly full opacity -- 0xFF4B8FD6 where
   // a 16% accent over the page background should be (21, 40, 61). The text is
@@ -84,7 +84,7 @@ final List<AnimatedScene> animatedScenes = <AnimatedScene>[
   // and the embedder and is dropped in the GL path. This narrows where.
   //
   //   row 1  Color.fromARGB(41, ...)      the old, plain construction
-  //   row 2  base.withValues(alpha: 0.16) the API the loader actually uses
+  //   row 2  base.withValues(alpha: 0.16) the API the receiver actually uses
   //   row 3  Opacity(0.16) over an opaque fill   a different route to the
   //                                              same pixel
   //

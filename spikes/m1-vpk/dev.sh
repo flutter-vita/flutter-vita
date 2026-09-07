@@ -2,10 +2,10 @@
 # Drive the Vita. No FTP, no taps in the normal case.
 #
 #   APP=m1 (default) or APP=m3 selects which build is driven; both install into
-#   FVTA00002, because there is one slot and the loader hard-codes it.
+#   FVTA00002, because there is one slot and the receiver hard-codes it.
 #
 #   M1     FVTA00002, port 1339 — the app under test
-#   loader FVTA00003, port 1341 — installs and launches M1
+#   receiver FVTA00003, port 1341 — installs and launches M1
 #
 # Both are UNSAFE selfs, so each can write ux0:app and replace the other.
 # BGFTP is deliberately not used: the loop diagnoses itself through the `get`
@@ -21,7 +21,7 @@
 #   ./dev.sh watch     wait until either app appears, then say which
 #
 # On a crash the cycle says so, pulls the dump, and then WATCHES CONTINUOUSLY
-# for the loader rather than failing. Tap it whenever you notice; the wait is
+# for the receiver rather than failing. Tap it whenever you notice; the wait is
 # half an hour, so a tap is never missed and never has to be repeated.
 set -uo pipefail
 
@@ -34,8 +34,8 @@ HERE="$(cd "$(dirname "$0")" && pwd)"
 # Which app this drives. Defaults to M1, because that is what every existing
 # note and habit assumes; APP=m3 switches to the Flutter engine build.
 #
-# Both install into FVTA00002 -- there is one slot and the loader hard-codes it
-# (vita-loader/src/main.c:51). So this chooses which eboot.bin gets staged and,
+# Both install into FVTA00002 -- there is one slot and the receiver hard-codes it
+# (vita-receiver/src/main.c:51). So this chooses which eboot.bin gets staged and,
 # just as importantly, which ELF analyse-crash.sh symbolicates against. Pointing
 # a dump at the wrong ELF produces plausible, wrong function names, which cost
 # real time in Phase 1.
@@ -46,17 +46,17 @@ case "$APP" in
   *)  echo "APP must be m1 or m3, not '$APP'" >&2; exit 2 ;;
 esac
 APPDIR="$(cd "$APPDIR" && pwd)"
-# One slot, hard-coded in the loader at vita-loader/src/main.c:51. Named here
+# One slot, hard-coded in the receiver at vita-receiver/src/main.c:51. Named here
 # rather than repeated, because it is the destination for every file push.
 TITLEID="FVTA00002"
 
 EBOOT="$APPDIR/out/staging/eboot.bin"
 ELF="$APPDIR/build/$ELF_NAME"
 DUMPS="$APPDIR/out/dumps"
-# How long to keep watching for the loader after a crash.
+# How long to keep watching for the receiver after a crash.
 #
 # Was 1800. Cut to 45 on 2026-08-10, because the original reasoning was about a
-# user who might not be watching, and this one always is: the loader is opened
+# user who might not be watching, and this one always is: the receiver is opened
 # immediately after every crash, so it is answering within seconds. Half an hour
 # of waiting only delayed a dump that was already available.
 TAP_WAIT="${TAP_WAIT:-45}"
@@ -80,12 +80,12 @@ waitp() {
 # back to asking for a tap only when it is absent.
 wait_for_tap() {
   if open_ "$SUP"; then
-    echo "  supervisor is alive — relaunching the loader, no tap needed" >&2
+    echo "  supervisor is alive — relaunching the receiver, no tap needed" >&2
     say "$SUP" "launch FVTA00003" >/dev/null
-    waitp "$LDR" 45 && { echo "  loader is back" >&2; return 0; }
-    echo "  supervisor could not bring the loader back" >&2
+    waitp "$LDR" 45 && { echo "  receiver is back" >&2; return 0; }
+    echo "  supervisor could not bring the receiver back" >&2
   fi
-  echo "  >>> tap Flutter Vita Loader on the Vita" >&2
+  echo "  >>> tap Flutter Vita Receiver on the Vita" >&2
   echo "      watching continuously for up to $((TAP_WAIT / 60)) min — tap whenever you like" >&2
   local waited=0
   while [ "$waited" -lt "$TAP_WAIT" ]; do
@@ -229,10 +229,10 @@ cycle() {
   fi
 
   if open_ "$DEV"; then
-    echo "handoff M1 -> loader…"
+    echo "handoff M1 -> receiver…"
     say "$DEV" handoff >/dev/null
     if ! waitp "$LDR" 45; then
-      echo "!! the loader never came up after handoff" >&2
+      echo "!! the receiver never came up after handoff" >&2
       echo "   (M1 exited but the launch did not take -- see spikes/vita-tooling)" >&2
       wait_for_tap || return 1
     fi
@@ -276,7 +276,7 @@ cycle() {
 
 case "${1:-}" in
   sup)     open_ "$SUP" && say "$SUP" ping || echo "supervisor not running" ;;
-  who)     p="$(live)"; [ "$p" = "$DEV" ] && echo "M1 on $DEV" || { [ "$p" = "$LDR" ] && echo "loader on $LDR" || echo "nothing running"; } ;;
+  who)     p="$(live)"; [ "$p" = "$DEV" ] && echo "M1 on $DEV" || { [ "$p" = "$LDR" ] && echo "receiver on $LDR" || echo "nothing running"; } ;;
   log)     say "$DEV" log ;;
   probe)   p="$(live)"; say "$p" probe ;;
   handoff) say "$DEV" handoff ;;
