@@ -6,16 +6,12 @@
 #   ./tools/deploy.sh --vpk path/to/app.vpk
 #   ./tools/deploy.sh --vpk x.vpk --receiver-port 1342
 #
-# The tap was never necessary while the app was alive. `handoff` has been in
-# the dev server since M1 -- the app launches the receiver and exits, and the
-# receiver can then replace an eboot.bin the app could not replace itself -- and
-# every test script in this project has instead sat waiting for a human to open
-# the receiver. That was a scripting mistake, not a missing feature, and it cost
-# a tap per iteration for weeks.
+# The tap was never necessary while the app was alive. `handoff` has been in the
+# dev server since M1: the app launches the receiver and exits, and the receiver
+# can replace an eboot.bin the app could not replace itself.
 #
 # So the order is: hand off if the app is up, use the receiver if it is up, and
-# only ask for a tap when neither answers -- which, with ADR-0011's clean exit
-# on foreseeable failures, now means a genuine wild-pointer crash.
+# only ask for a tap when neither answers.
 set -uo pipefail
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
@@ -28,15 +24,13 @@ HOST="${VITA_HOST:-flutter-vita.local}"
 
 # Resolve the name once, then work in addresses for the rest of the run.
 #
-# Not premature. This script hands the app off to the receiver and then keeps
-# talking, and the mDNS responder lives in whichever of the two is running --
-# so the name goes dark for the seconds between the app exiting and the receiver
-# answering. The first deploy after adding mDNS failed exactly there: staged
-# fine, then "install failed", because the name stopped resolving mid-run.
+# This script hands the app off to the receiver and keeps talking, and the mDNS
+# responder lives in whichever of the two is running -- so the name goes dark
+# for the seconds between the app exiting and the receiver answering. The first
+# deploy after adding mDNS failed exactly there.
 #
-# Resolving once removes the window. It also means a console that drops off the
-# network mid-deploy fails with a connection error against a real address
-# rather than a name lookup, which is the more legible of the two.
+# Resolving once also makes a console that drops off the network fail with a
+# connection error against a real address rather than a name lookup.
 case "$HOST" in
   *[!0-9.]*)
     RESOLVED="$(python3 -c "import socket,sys
@@ -150,24 +144,18 @@ done
 # Data files, only the ones that changed.
 #
 # icudtl.dat and the fonts are 2.7 MiB between them and never change between
-# builds; re-sending them every cycle would add a transfer to every iteration
-# for nothing. The hash is recorded only after the device confirms, so a failed
-# push retries next time rather than being remembered as done.
+# builds. The hash is recorded only after the device confirms, so a failed push
+# retries next time rather than being remembered as done.
 #
-# The record lives on the console, not here, and that is the whole point.
-#
-# It used to be out/.pushed/<titleid>/ on this machine, which is a cache of
-# what the host believes the device holds -- and the host is not told when that
-# stops being true. Promoting a package replaces ux0:app/<id> wholesale, and
-# after one of those the stamps still said everything was pushed. The gallery
-# deployed clean, printed "==> data files", sent nothing, and died three
-# seconds in on "Must be able to initialize the ICU context. Tried:
-# app0:/icudtl.dat" -- with the receiver cheerfully reporting success, because
-# from its point of view nothing had failed.
+# The record lives on the console, not here, and that is the point. It used to
+# be out/.pushed/<titleid>/ on this machine, a cache of what the host believes
+# the device holds -- and the host is not told when that stops being true.
+# Promoting a package replaces ux0:app/<id> wholesale, and after one of those
+# the stamps still said everything was pushed: the gallery deployed clean, sent
+# nothing, and died on "Must be able to initialize the ICU context".
 #
 # One `get` at the start and one `put` at the end. A wiped directory takes the
-# manifest with it, so the next deploy finds nothing recorded and pushes
-# everything, which is exactly the behaviour that was missing.
+# manifest with it, so the next deploy pushes everything.
 MANIFEST="ux0:app/$TITLEID/.deploy-manifest"
 # Outside $WORK, because the file list below is a find over $WORK and these
 # two would be in it -- the first version of this pushed its own bookkeeping

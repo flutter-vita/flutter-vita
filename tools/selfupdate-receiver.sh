@@ -4,32 +4,24 @@
 #   ./tools/selfupdate-receiver.sh                    build and install
 #   ./tools/selfupdate-receiver.sh path/to.vpk        install a built one
 #
-#   --title-id ID   which receiver to replace   (default FVTA00001)
+#   --title-id ID   which receiver to replace (default FVTA00001)
 #   --updater ID    the updater's title id    (default FVTA00009)
 #   --keep-updater    leave the updater installed (the default)
-#   --remove-updater  delete it afterwards -- costs a visible restart
+#   --remove-updater  delete it afterwards, at the cost of a visible restart
 #   --port N        the port to talk to       (default 1341)
 #   --build-port N  the port to build for     (default: build-receiver.sh's)
 #   --no-build      require the vpk argument
 #
-# A running title cannot write its own directory -- app0: is the read-only
-# mount of ux0:app/<own id>, so the receiver is the one thing the receiver cannot
-# install. This drives the three-step way around it:
+# A running title cannot write its own directory, so the receiver is the one
+# thing the receiver cannot install. Three steps around it:
 #
-#   1. put the new build onto the card, into ux0:data/flutter-vita/receiver-update
+#   1. put the new build into ux0:data/flutter-vita/receiver-update
 #   2. launch FVTA00009, a 50 KB app with no engine whose only job is to copy
 #      that tree over ux0:app/<target> and launch the target back
-#   3. wait for the new receiver to answer on its port, then take FVTA00009
-#      back off the card
+#   3. wait for the new receiver, then take FVTA00009 back off the card
 #
-# It replaced tools/update-receiver.sh's route, which needed a working Flutter
-# app with a dev server in FVTA00002 -- so a broken app slot used to take the
-# receiver's update path down with it.
-#
-# The updater keeps the eboot it replaces in ux0:data/flutter-vita/receiver-backup
-# and puts it back on a short write. If the new receiver boots into nothing,
-# launch "Flutter Receiver Updater" from the LiveArea and hold L: it restores the
-# backup and launches the receiver that worked.
+# The updater keeps the eboot it replaces in receiver-backup. If the new build
+# boots into nothing, launch "Flutter Receiver Updater" holding L to restore it.
 set -euo pipefail
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
@@ -50,18 +42,13 @@ VPK=""
 BUILD_PORT=""
 UPDATER_VPK="$ROOT/receiver/updater/build/flutter_vita_updater.vpk"
 
-# The updater stays unless asked otherwise, and that is a deliberate reversal.
+# The updater stays installed unless asked otherwise.
 #
-# Deleting it is the tidy end state and it works: the receiver removes it,
-# restarts itself, and answers again about nine seconds later. Those nine
-# seconds are the problem. The receiver has to exit for the shell to relaunch it,
-# so the LiveArea home screen is on the television for all of them, on every
-# update. Watching that happen five times in one evening is what this costs,
-# and the thing being avoided is a 50 KB bubble.
+# Deleting it works: the receiver removes it, restarts, and answers again about
+# nine seconds later. Those nine seconds put the LiveArea home screen on the
+# television on every update, and the thing being avoided is a 50 KB bubble.
 #
-# It is also the rescue path: launching "Flutter Receiver Updater" holding L
-# restores the eboot it replaced, and that works when the receiver does not.
-# Deleting it after every update removes the recovery tool as routine.
+# It is also the rescue path, and it works when the receiver does not.
 #
 # --remove-updater when you actually want it gone.
 KEEP_UPDATER=1

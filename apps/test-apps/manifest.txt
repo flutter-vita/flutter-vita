@@ -1,17 +1,13 @@
 # Real Flutter apps cloned for bug-finding, by URL and pinned commit.
 #
 # The checkouts beside this file are gitignored; this list is not. An app that
-# exposed a bug has to stay identifiable, or the bug cannot be regression-tested
-# and the fix cannot be shown to have worked.
+# exposed a bug has to stay identifiable, or the bug cannot be regression-tested.
 #
 # Format: owner/repo <commit-sha> [# note]
 #
-# Selected 2026-08-18. Every app is public, so anyone can reproduce a result
-# here from this file alone. See ADR-0012 for how the test apps is run and what it
-# is allowed to conclude; ADR-0013 for why FFI decides admission.
-#
-# Each app is here for a different axis. Overlap is waste: two apps that fail
-# the same way cost two deploys and teach one lesson.
+# Every app is public, so anyone can reproduce a result here from this file.
+# Each app is here for a different axis: two apps that fail the same way cost
+# two deploys and teach one lesson.
 
 # --- The control. Plugin-free, one line of main(), pure framework. It is the
 # --- app that MUST work; if it does not, the harness is broken and no other
@@ -19,15 +15,11 @@
 flutter/samples                     0c5ca75d2985ddeca92417bb1235f361d8643e7b  # material_3_demo
     entry lib/main.dart  subdir material_3_demo
 
-# --- Animation and assets. A finished showcase app, deliberately heavy on
-# --- imagery -- the axis is whether the bundle even fits, before anything runs.
-# --- Answer: 58 MB of .vpk, and it fits.
-# --- Repinned 2026-08-19 from 123f4749, which cannot be built with the pinned
-# --- Flutter at all: it wants intl ^0.17 against flutter_localizations' 0.20.2,
-# --- and past that uses DecoderCallback and UnmodifiableUint8ListView, both
-# --- removed, plus a go_router that predates mixin classes. Modernising it is
-# --- app work with nothing to say about this port; 747b945 is upstream's own
-# --- Flutter 3.41.9 update and builds unchanged.
+# --- Animation and assets. A finished showcase app, heavy on imagery: the axis
+# --- is whether the bundle even fits. It does, at 58 MB of .vpk.
+# ---
+# --- Pinned to 747b945, upstream's own Flutter 3.41.9 update. The older
+# --- 123f4749 cannot be built with the pinned Flutter at all.
 gskinnerTeam/flutter-wonderous-app  747b945a7e5239356bf2664261aa2f3b020b8898
     entry lib/main.dart
 
@@ -39,19 +31,15 @@ gskinnerTeam/flutter-wonderous-app  747b945a7e5239356bf2664261aa2f3b020b8898
 resashkin/keklist_flutter           d3e02ac9357e31188e7028b022c2ddd182132874
     entry lib/main.dart
 
-# --- Networking. The one app with an await before runApp -- but it is wrapped
-# --- in a try/catch that renders an error screen, so a failure is visible
-# --- rather than black. That prediction held exactly: the first thing the
-# --- console showed was localsend's own stack trace, legibly.
+# --- Networking. The one app with an await before runApp, wrapped in a
+# --- try/catch that renders an error screen, so a failure is visible.
 # ---
-# --- Repinned 2026-08-19 from c53923df to v1.15.4, the last release with no
-# --- Rust in it. Every version from v1.16.0 onward loads a Rust cdylib through
-# --- flutter_rust_bridge and DynamicLibrary.open before runApp -- rhttp at
-# --- first, then the whole transfer core and the crypto. ADR-0004 links one
-# --- static ELF and there is no dlopen, and "statically link it instead" is
-# --- not available: the crate graph is tokio, hyper, reqwest, rustls and ring,
-# --- and tokio's I/O driver wants epoll, which this console does not have.
-# --- v1.15.4 is pure Dart end to end, so the networking axis is still real.
+# --- Pinned to v1.15.4, the last release with no Rust in it. Every version
+# --- from v1.16.0 loads a Rust cdylib through flutter_rust_bridge and
+# --- DynamicLibrary.open before runApp. This port links one static ELF and has
+# --- no dlopen, and static linking is not available either: the crate graph is
+# --- tokio, hyper, reqwest, rustls and ring, and tokio's I/O driver wants
+# --- epoll, which this console does not have.
 localsend/localsend                 fd8140b68813e968dc9253130a27abc1ff328fe5
     entry app/lib/main.dart
 

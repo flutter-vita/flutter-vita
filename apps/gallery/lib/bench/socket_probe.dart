@@ -1,43 +1,31 @@
-// Is it only the *timeout* that is coarse, or the whole wait? ADR-0017.
+// Is it only the timeout that is coarse, or the whole wait?
 //
 // Every Dart timer on this port fires on a 200 ms grid, and the frame-pumped
-// run in timer_probe.dart proved the UI thread's message loop is not to blame:
-// with vsync waking it every 16.7 ms the timers were still 200.0 ms. That puts
-// the delay on dart:io's event-handler thread, which waits out deadlines with
+// run in timer_probe.dart cleared the UI thread's message loop. That puts the
+// delay on dart:io's event-handler thread, which waits out deadlines with
 // poll() -- and VitaSDK's poll() is sceNetEpollCreate + sceNetEpollWait +
-// sceNetEpollDestroy, once per call, with the timeout passed straight through
-// as microseconds.
+// sceNetEpollDestroy, once per call.
 //
-// Two possibilities, and they want different fixes:
+// Two possibilities wanting different fixes:
 //
-//   a. sceNetEpollWait ignores short timeouts but still returns promptly when
-//      a socket becomes readable. Then the fix is the timerfd design done
-//      properly: a thread that sleeps out the deadline with
-//      sceKernelDelayThread and writes one byte to the interrupt socketpair,
-//      leaving poll() to block indefinitely. The event handler keeps its shape.
+//   a. sceNetEpollWait ignores short timeouts but returns promptly when a
+//      socket becomes readable. Then the fix is a thread that sleeps out the
+//      deadline and writes one byte to the interrupt socketpair.
+//   b. sceNetEpollWait returns on a 5 Hz grid whatever the reason. Then dart:io
+//      networking is also capped at 5 Hz and the event handler needs a wakeup
+//      channel that is not a socket.
 //
-//   b. sceNetEpollWait returns on a 5 Hz grid whatever the reason. Then poking
-//      the socketpair buys nothing, dart:io networking is also capped at 5 Hz,
-//      and the event handler needs a wakeup channel that is not a socket.
+// A loopback TCP round-trip separates them: a few milliseconds is (a), ~400 ms
+// is (b).
 //
-// A loopback TCP round-trip separates them. Both ends are on the console, both
-// are ordinary sockets, and the only thing between the write and the read is
-// the event-handler thread noticing readability -- no timer involved. If the
-// round-trip is a few milliseconds it is (a). If it is ~400 ms -- two grid
-// slots, one per direction -- it is (b).
+// It is neither. This prints bind, bound, connected, accepted and then nothing.
+// The first byte never comes back, and the 30 s timeout wrapped around the
+// function never fires either, because a timeout is a timer and the thread that
+// would deliver it is the one that is stuck. Registering a real socket does not
+// slow the event handler down, it stops it.
 //
-// It is neither. Run on 2026-08-25 it printed steps 1 to 4 -- bind, bound,
-// connected, accepted -- and then nothing, for as long as the console was left
-// alone. The first byte never came back. Worse, the 30 s timeout wrapped around
-// this whole function never fired either, and that is the finding: a timeout is
-// a timer, and the thread that would deliver it is the same thread that is
-// stuck. Registering a real socket does not slow the event handler down, it
-// stops it, and every timer in the isolate stops with it.
-//
-// So the 200 ms grid is not the whole bug, it is the mild end of it. Whatever
-// replaces this event handler has to make this probe print a round-trip, and
-// this file stays as the test for that. It is deliberately not wired into the
-// benchmark -- see runner.dart.
+// Whatever replaces the event handler has to make this probe print a
+// round-trip. Deliberately not wired into the benchmark; see runner.dart.
 
 import 'dart:async';
 import 'dart:io';

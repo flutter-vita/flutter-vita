@@ -9,11 +9,10 @@ import 'package:flutter/widgets.dart';
 /// The renderer primitive a scene leans on.
 ///
 /// A label, not a measurement, and the report says so. It exists so a red row
-/// points at something actionable -- ADR-0014 measured these operations
-/// individually, and a scene tagged `saveLayer` lands next to the finding that
-/// saveLayer is *slower* on this GPU than on the CPU, because every
-/// render-target switch on a tile-based deferred renderer is a full
-/// framebuffer round trip.
+/// points somewhere actionable: a scene tagged `saveLayer` lands next to the
+/// finding that saveLayer is slower on this GPU than on the CPU, because every
+/// render-target switch on a tile-based deferred renderer is a full framebuffer
+/// round trip.
 enum Stresses {
   /// Plain fills and blits. The baseline every other tag is read against.
   fill,
@@ -108,19 +107,16 @@ class RouteScene {
   final Stresses stresses;
   final WidgetBuilder page;
 
-  /// How the page is pushed. Null means [MaterialPageRoute], which is what
-  /// every scene used before 2026-09-01.
+  /// How the page is pushed. Null means [MaterialPageRoute].
   ///
-  /// It exists because the transition is a variable worth isolating. This port
-  /// reports `TargetPlatform.linux` (ADR-0008), and Material's default for
-  /// Linux is [ZoomPageTransitionsBuilder] -- the most expensive stock
-  /// transition there is, built out of offscreen layers that a tile-based
-  /// deferred GPU pays a full framebuffer round trip for (ADR-0014). Every
-  /// route number this suite ever produced was a Zoom number, with no way to
-  /// tell what belonged to the transition and what belonged to the page.
+  /// The transition is a variable worth isolating. This port reports
+  /// `TargetPlatform.linux`, and Material's Linux default is
+  /// [ZoomPageTransitionsBuilder], the most expensive stock transition there is:
+  /// offscreen layers, which a tile-based deferred GPU pays a full framebuffer
+  /// round trip for.
   ///
-  /// The scenes that use it push the *same page* through different builders,
-  /// so the difference between them is the transition and nothing else.
+  /// The scenes that use it push the same page through different builders, so
+  /// the difference between them is the transition and nothing else.
   final Route<void> Function(BuildContext context, WidgetBuilder page)? route;
 
   /// How long to hold after the push, and again after the pop.
@@ -142,14 +138,11 @@ class RouteScene {
 /// A scene the runner cannot drive with a controller or a push.
 ///
 /// Drawer, tab swipe, ballistic fling, ink splash: each is started by calling
-/// something and then waiting, and none of them exposes an [Animation] the
-/// bench can hold. They are the ones a person actually complains about, so
-/// leaving them out because they do not fit the other two shapes was the wrong
-/// trade.
+/// something and then waiting, and none exposes an [Animation] the bench can
+/// hold. They are also the ones people complain about.
 ///
-/// [stage] is mounted once and left up for the whole scene, so the widget
-/// tree's first build is not charged to the measurement -- same reason
-/// [AnimatedScene] settles for two frames first.
+/// [stage] is mounted once and left up for the whole scene, so the widget tree's
+/// first build is not charged to the measurement.
 class DrivenScene {
   const DrivenScene({
     required this.name,

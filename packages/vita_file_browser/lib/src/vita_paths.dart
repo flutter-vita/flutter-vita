@@ -4,24 +4,19 @@ import 'dart:io';
 ///
 /// Vita paths are `<mount>:<path>`, not POSIX. The colon is part of the mount
 /// name and there is no single root above them: `ux0:` and `ur0:` are siblings
-/// with nothing containing both. So the browser's top level is a list of
-/// mounts rather than a directory, which is why [roots] exists at all.
+/// with nothing containing both, which is why [roots] exists at all.
 ///
-/// The Dart runtime handles these because the port taught it to -- see the
-/// temp directory in `patches/dart-sdk/0010-runtime-bin-for-vita.patch`, which
-/// resolves to `ux0:data/<title-id>/tmp`. That spelling, with no slash after
-/// the colon, is the one this file follows.
+/// The spelling with no slash after the colon is the one dart:io uses on this
+/// port.
 abstract final class VitaPaths {
   /// Every mount the console can present, whether or not it is fitted.
   ///
   /// Most consoles have `ux0:` and `ur0:` only. `uma0:` appears when the second
-  /// slot holds a card, `imc0:` on the 1 GB models, and `xmc0:` on a Vita TV
-  /// with an SD card. Listing all of them and probing costs a handful of stats
-  /// and means the picker adapts to the hardware rather than assuming mine.
+  /// slot holds a card, `imc0:` on the 1 GB models, and `xmc0:` on a Vita TV.
   ///
-  /// `app0:` is deliberately absent. It is this application's own read-only
-  /// install mount, so nothing a user wants to import lives there, and offering
-  /// it invites picking a file that cannot be written back to.
+  /// `app0:` is deliberately absent: it is this application's own read-only
+  /// install mount, so offering it invites picking a file that cannot be
+  /// written back to.
   static const List<(String path, String label)> candidates = [
     ('ux0:', 'Memory card'),
     ('ur0:', 'Internal storage'),
@@ -33,16 +28,11 @@ abstract final class VitaPaths {
   /// Whether this is running on a Vita, asked of the filesystem.
   ///
   /// `Platform.operatingSystem` cannot answer: the port reports "linux" on
-  /// purpose, because a truthful "vita" stops the Flutter framework from
-  /// starting at all (see `patches/dart-sdk/0001-add-vita-host-and-target-os.patch`).
+  /// purpose, because a truthful "vita" stops the Flutter framework starting.
   ///
-  /// `app0:` is the running application's own read-only install mount. It
-  /// exists on every Vita, always, and on nothing else, which makes it a
-  /// sharper test than any of the storage mounts: those depend on what is
-  /// fitted.
-  ///
-  /// Callers use this to skip features the console cannot offer, so it is
-  /// worth having somewhere shared rather than re-derived per app.
+  /// `app0:` is the running application's own read-only install mount. It exists
+  /// on every Vita and on nothing else, which makes it sharper than any storage
+  /// mount, since those depend on what is fitted.
   static bool get isVita {
     try {
       return Directory('app0:').existsSync();

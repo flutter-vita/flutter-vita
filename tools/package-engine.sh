@@ -1,10 +1,9 @@
 #!/usr/bin/env bash
 # Package the built engine into something someone else can download.
 #
-# Building the engine for Vita currently costs a 12 GB gclient checkout, a
-# patched tree, and ~30 minutes. Nobody evaluates a port with that as step one,
-# so this turns a finished build into a tarball an app developer can unpack and
-# link against. It is the gate on every other distribution idea.
+# Building the engine for Vita costs a 12 GB gclient checkout, a patched tree,
+# and ~30 minutes. This turns a finished build into a tarball an app developer
+# can unpack and link against.
 #
 # Usage:  ./tools/package-engine.sh [output-dir]
 set -euo pipefail
@@ -22,37 +21,26 @@ export PATH="$VITASDK/bin:$PATH"
 
 # Refuse to package a build that is not finished.
 #
-# This exists because the archive is a directory scrape -- `find obj -name
-# '*.o'` -- which cannot tell a current object from a stale one, and every
-# stale object still links, still packages, and still deploys. You get a
-# working app that does not contain your change, and the next thing you measure
-# is the old code.
+# The archive is a directory scrape -- `find obj -name '*.o'` -- which cannot
+# tell a current object from a stale one, and every stale object still links,
+# packages and deploys. You get a working app that does not contain your change.
 #
-# It has happened twice, both times expensively:
+# It has happened twice:
 #
-#   1. `vpython3` missing from PATH. The engine's GN build shells out to it for
-#      the Impeller flatbuffers and Dart's version.cc; those actions failed with
-#      code=127, ninja stopped before reaching vita_embedder.o, and the previous
-#      object shipped. An embedder change appeared to have no effect at all.
+#   1. `vpython3` missing from PATH. GN's actions for the Impeller flatbuffers
+#      and Dart's version.cc failed with code=127, ninja stopped before
+#      vita_embedder.o, and the previous object shipped.
 #
-#   2. Editing embedder.h and rebuilding only the objects that obviously use it.
-#      A header change there invalidates **1950 objects**. Four were rebuilt.
-#      FlutterSoftwareRendererConfig had grown a field, so 1946 translation
-#      units disagreed about its size, and the engine died with `terminate
-#      called recursively` before the first frame -- a symptom pointing nowhere
-#      near the cause.
+#   2. Editing embedder.h and rebuilding only the obvious objects. That header
+#      invalidates 1950 objects; four were rebuilt. FlutterSoftwareRendererConfig
+#      had grown a field, so 1946 translation units disagreed about its size.
 #
-# `ninja -n` answers "is there work left" for the whole graph in about a second,
-# which is the cheapest possible insurance against both.
+# `ninja -n` answers "is there work left" for the whole graph in a second.
 if [ "${SKIP_FRESHNESS:-0}" != "1" ]; then
   # The *shipped* target, not `all`. GN's default target includes the JIT core
-  # snapshots (vm_isolate_snapshot.bin and friends), which this port does not
-  # build and cannot -- ADR-0001 puts JIT permanently out of scope, and that
-  # step fails with exitCode 254. Checking `all` would therefore report work
-  # pending forever and make this guard useless noise.
-  #
-  # This phony target is the embedder plus everything it links, which is
-  # precisely the set of objects the archive below scrapes up.
+  # snapshots, which this port cannot build (ADR-0001), so checking `all` would
+  # report work pending forever. This phony target is the embedder plus
+  # everything it links, which is what the archive below scrapes up.
   SHIP_TARGET="phony/flutter/shell/platform/embedder/vita_embedder"
   # depot_tools on PATH for the check too, not just for the build it tells you
   # to run. Without it `ninja -n` cannot resolve the host toolchain's generator
@@ -83,12 +71,10 @@ FLUTTER_VERSION="$(grep -m1 -oE '3\.[0-9]+\.[0-9]+' "$ROOT/VERSIONS.md" || echo 
 
 # The revision of the Flutter SDK these objects were built against.
 #
-# This is the artifact's compatibility key, and it has to be a revision rather
-# than a version string: dart:ui and the engine are one source tree cut in half,
-# so a framework that does not match this exactly is undefined behaviour at
-# runtime with no error at build time. Read from bin/cache/flutter.version.json
-# because that is the same file, in the same format, that the *consumer* reads
-# to identify their own SDK -- comparing like with like.
+# The artifact's compatibility key, and it has to be a revision: dart:ui and the
+# engine are one source tree cut in half, so a framework that does not match is
+# undefined behaviour at runtime with no error at build time. Read from
+# bin/cache/flutter.version.json, the same file the consumer reads.
 FLUTTER_DIR="${FLUTTER_DIR:-$HOME/fvm/versions/$FLUTTER_VERSION}"
 VERSION_JSON="$FLUTTER_DIR/bin/cache/flutter.version.json"
 read_json() { grep -o "\"$1\": *\"[^\"]*\"" "$VERSION_JSON" | sed 's/.*: *"//; s/"$//'; }
@@ -108,29 +94,20 @@ mkdir -p "$STAGE/lib" "$STAGE/include" "$STAGE/data"
 
 # Drop outputs the build no longer produces, before archiving anything.
 #
-# The archive is `find obj -name '*.o'`, which cannot tell a current object from
-# an orphan. Anything ninja stops building stays on disk forever and keeps
-# shipping, and `--whole-archive` then forces every orphan into the app.
-#
-# This has been wrong three times in one day. The worst was a TLS bisect:
-# BoringSSL was switched to pure C, 316 objects rebuilt cleanly, and 123
-# assembly objects from the previous configuration were still archived --
-# `ChaCha20_ctr32_neon` was in the final binary. The experiment would have run,
-# crashed, and produced the confident and wrong conclusion that assembly was
-# not the cause.
+# Anything ninja stops building stays on disk forever and keeps shipping, and
+# `--whole-archive` then forces every orphan into the app. This has been wrong
+# three times in one day. The worst: BoringSSL was switched to pure C, 316
+# objects rebuilt, and 123 assembly objects from the previous configuration were
+# still archived, so `ChaCha20_ctr32_neon` was in the final binary.
 #
 # `cleandead` reads the whole build graph rather than what was last built, so it
-# only removes genuinely orphaned outputs and is safe after a partial build.
+# is safe after a partial build.
 #
-# It does NOT protect against the opposite mistake: building *too much*. GN
-# emits the same source into several toolchain variants -- file_linux.cc has
-# six, one per target and host-targeting combination -- and only one belongs in
-# this archive. Asking ninja to build all six (easy to do by globbing `-t
-# targets`) produces five perfectly live objects that `cleandead` will never
-# touch, and `find obj -name '*.o'` then archives them all. With
-# --whole-archive the app fails to link on duplicate symbols, which at least is
-# loud. Build the specific object, and if in doubt count the variants: the live
-# family is the one with dozens of members, the orphans have exactly one each.
+# It does NOT protect against building *too much*. GN emits the same source into
+# several toolchain variants -- file_linux.cc has six -- and only one belongs
+# here. Building all six produces five live objects `cleandead` will never touch.
+# With --whole-archive the app then fails to link on duplicate symbols. Build the
+# specific object; the live family is the one with dozens of members.
 #
 #   ar t libflutter_engine_vita.a | sed -n 's/^\(libdart_builtin[a-z_]*\)\..*/\1/p' \
 #     | sort | uniq -c | sort -rn
@@ -145,10 +122,9 @@ echo "==> archiving engine objects"
 # The host-toolchain tree under clang_arm64/ is deliberately not here: those are
 # macOS binaries for the build machine, and they go in the host bundle below.
 #
-# vita_link_check.o carries its own main(), left over from M2. Archived
-# alongside vita_embedder.o it produces a duplicate-symbol error naming `main`,
-# which reads as a bug in the app rather than as two objects that were never
-# meant to meet.
+# vita_link_check.o carries its own main(), left over from M2. Archived here it
+# produces a duplicate-symbol error naming `main`, which reads as a bug in the
+# app rather than as two objects that were never meant to meet.
 find "$ENGINE_OUT/obj" -name '*.o' ! -name '*vita_link_check*' > "$OUT/.objs"
 COUNT=$(wc -l < "$OUT/.objs" | tr -d ' ')
 # `xargs -a` is a GNU extension; BSD xargs on macOS needs the redirect.
@@ -168,37 +144,32 @@ cp "$ENGINE_SRC/flutter/shell/platform/embedder/embedder.h" "$STAGE/include/"
 #
 #   U dev_server_run  dev_server_set_framebuffer_source  dev_server_set_tap_handler
 #
-# It lives in this repo rather than the engine tree, so it ships as source. That
-# is deliberate for now: it is the piece most likely to be swapped out — a
-# shipping app wants no listening socket at all, and can link a stub instead.
+# It ships as source, because it is the piece most likely to be swapped out: a
+# shipping app wants no listening socket and can link a stub instead.
 mkdir -p "$STAGE/src"
 cp "$ROOT/experiments/m1-vpk/src/devserver.c" "$ROOT/experiments/m1-vpk/src/devserver.h" "$STAGE/src/"
 cp "$ENGINE_SRC/flutter/third_party/icu/flutter/icudtl.dat" "$STAGE/data/"
 cp "$ENGINE_SRC/flutter/txt/third_party/fonts/Roboto-Regular.ttf" "$STAGE/data/"
 # Emoji, as a system font rather than an app asset.
 #
-# Roboto covers 896 codepoints and stops at U+FFFD, so every emoji in every app
-# was tofu until platform_vita.cc learned to answer
-# onMatchFamilyStyleCharacter. That hook can only find what app0:/fonts holds,
-# and an app cannot be asked to supply it: third-party apps run here unmodified.
+# Roboto covers 896 codepoints and stops at U+FFFD, so every emoji was tofu
+# until platform_vita.cc learned to answer onMatchFamilyStyleCharacter. That
+# hook can only find what app0:/fonts holds, and third-party apps run here
+# unmodified.
 #
-# Not the NotoColorEmoji.ttf sitting next to Roboto in the engine checkout. That
-# one is a May 2017 build covering Unicode 9, so everything newer rendered as a
-# rectangle, and its CBDT bitmaps cost 4550 us per emoji paragraph against 424
-# us for text. assets/fonts/README.md has the measurements.
+# Not the NotoColorEmoji.ttf next to Roboto in the engine checkout: a May 2017
+# build covering Unicode 9, whose CBDT bitmaps cost 4550 us per emoji paragraph
+# against 424 us for text. assets/fonts/README.md has the measurements.
 cp "$ROOT/assets/fonts/NotoEmoji-Regular.ttf" "$STAGE/data/"
 
 # The platform dill, built from *our* Dart SDK rather than stock Flutter's.
 #
-# Until now build-vita-app.sh compiled every app against the Flutter cache's
+# build-vita-app.sh used to compile every app against the Flutter cache's
 # flutter_patched_sdk_product, so the Dart half of dart:io came from upstream
-# while the native half came from this port. That worked only for as long as
-# the two agreed. It stopped the moment dart:io needed a new native
-# (SecureSocket_ProcessAllBuffersSync): the Dart side declaring it lives in our
-# tree, and nothing the app compiled against had ever seen it.
+# while the native half came from this port. That held until dart:io needed a
+# new native (SecureSocket_ProcessAllBuffersSync), declared only in our tree.
 #
-# Shipping ours removes the split. The app and the engine now come from one
-# Dart SDK, which is what the pinned revision in DEPS was always claiming.
+# Shipping ours removes the split.
 if [ -f "$ENGINE_OUT/flutter_patched_sdk/platform_strong.dill" ]; then
   mkdir -p "$STAGE/flutter_patched_sdk"
   cp "$ENGINE_OUT/flutter_patched_sdk/platform_strong.dill" \

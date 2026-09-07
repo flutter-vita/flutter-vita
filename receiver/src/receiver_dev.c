@@ -1,18 +1,16 @@
 // The receiver's C layer: the port, the commands, and the state the screen reads.
 //
 // ADR-0016. The receiver is an ordinary Flutter-Vita application built from
-// templates/vita-app, and this is the one translation unit that makes it a
-// receiver rather than an app. It registers itself from a constructor, which
-// runs before main() and therefore before the embedder's StartDevServer(),
-// so by the time the engine begins its ~3 second startup the socket is
-// already listening. If Flutter never comes up, the receiver still works and
-// only the screen is lost -- decision 3, and what makes decision 1 affordable.
+// templates/vita-app, and this is the translation unit that makes it a receiver
+// rather than an app. It registers from a constructor, which runs before main()
+// and therefore before the embedder's StartDevServer(), so the socket is
+// listening before the engine's ~3 second startup. If Flutter never comes up,
+// only the screen is lost -- decision 3, which is what makes decision 1
+// affordable.
 //
 // The Dart side never calls into any of this. It polls a small text file this
 // layer writes, which costs a rewrite per state change and buys not adding a
-// platform channel to the one component with the strongest reliability
-// requirement. dart:io reads it: apps/conformance measured that File and
-// Directory work against ux0:data.
+// platform channel to the component with the strongest reliability requirement.
 
 #include <psp2/appmgr.h>
 #include <psp2/io/dirent.h>
@@ -58,66 +56,15 @@
 #define DEPLOY_LOG DATA_DIR "/deploy.log"
 #define STATE_TMP DATA_DIR "/receiver-state.tmp"
 
-// The engine's debug HUD -- frame rate, damage, blit cost, free memory -- is
-// drawn over the top-right corner of every frame from a weak symbol, and a
-// strong definition here wins. Off for the receiver, and not because it is
-// noisy: this screen is the product (ADR-0016 decision 1), and a showcase
-// with a diagnostic overlay bolted to its corner is a worse advertisement
-// than no showcase. It can still be turned back on for a frame-rate question
-// by deleting this line and rebuilding.
+// The engine's debug HUD is drawn over every frame from a weak symbol, and a
+// strong definition here wins. Off for the receiver: this screen is the product
+// (ADR-0016 decision 1), and a showcase with a diagnostic overlay bolted to its
+// corner is a worse advertisement than no showcase.
 int flutter_vita_debug_overlay = 0;
 
 // The GPU, like every other app.
-//
-// ADR-0016 decision 7 said software, and the reason was sound at the time: a
-// hard crash under GL can wedge the console, and the receiver was the only thing
-// that could recover from a crash -- so it was the last component permitted to
-// cause an unrecoverable one. That premise expired when FVTA00009 shipped. The
-// updater is 50 KB of debugScreen with no engine and no GPU, it can rewrite
-// ux0:app/FVTA00001 from the memory card, and it restores the previous eboot
-// on L. Recovery no longer runs through this binary.
-//
-// Two things this switch drags with it, both handled below rather than
-// discovered later. sceGxm has to be released before handing over to another
-// title, or the console locks up hard enough to need the power button (see
-// flutter_vita_gpu_shutdown, and release_gpu here). And the engine picks its
-// log path off this very flag, so the receiver lands on app.log with everything
-// else and would truncate the log of the app that just crashed -- which is
-// what rotate_app_log in the constructor is for.
-//
-// Back to 1 on 2026-08-31, hours after the 0 that replaced it, and the reason
-// is not the crash risk ADR-0016 decision 7 named. It is that the panel is not
-// legible under GL on the pinned engine.
-//
-// Back to 0 on 2026-09-01. The caveat below -- that the pinned engine is
-// deliberately older than the tree, so this may already be fixed -- stopped
-// being a caveat when the pin was bumped to today's engine that evening. The
-// pinned engine and the engine apps use are now the same build, so if the
-// panel is still illegible it is a live defect in the GL path and reproducing
-// it here is as good as reproducing it in an app.
-//
-// The user's call, and the reason is not about the receiver: software rendering
-// is not something anyone would choose on this console, so the port should not
-// keep a component on it. What follows from that is that the alpha-blending
-// artefact below is now a bug to fix rather than a reason to opt out.
-//
-// Seen on the console: the status pill and every Btn render as a filled
-// rectangle with no text in them, while the rail labels and body text next to
-// them are fine. What the blank ones have in common is a translucent
-// container underneath -- withValues(alpha: 0.16) plus a border. A green '0'
-// also lands on top of the Flutter logo, and a grey band across the bottom of
-// the log panel, both of which read as an atlas being sampled wrong rather
-// than a layout that moved.
-//
-// Not necessarily a bug in the GL path as it stands today. The receiver links
-// the *pinned* engine (decision 2), b1f20d13d621, which is deliberately older
-// than the tree -- so this may already be fixed in the engine apps use, and
-// the way to find out is to reproduce it in an app rather than to keep
-// re-pinning under a receiver nobody can read.
-//
-// Apps are unaffected and stay on the GPU: ux0:data/flutter-vita/software.on
-// is 0 on this console, and the gallery came up "GL up -- OpenGL ES 2.0
-// VitaGL / SGX543MP4+" on the current engine.
+// Defined by the embedder only on the GL path, hence weak -- the same
+// declaration devserver.c and bailout.c carry.
 int flutter_vita_force_software = 0;
 
 // Defined by the embedder when it is running the GL path, absent otherwise --
@@ -143,10 +90,9 @@ static void release_gpu(void) {
 // When a host last sent this receiver a command, in process time. Negative
 // means never.
 //
-// The badge said "Waiting" through every unreachable stretch of 2026-09-01 and
-// it was telling the truth: the console had an address and the socket was
-// listening. What it could not say was that nothing had reached it for twenty
-// minutes, which is the difference between idle and lost.
+// The badge said "Waiting" through every unreachable stretch of 2026-09-01, and
+// it was true: the console had an address and the socket was listening. What it
+// could not say was that nothing had reached it for twenty minutes.
 static SceInt64 g_last_cmd = -1;
 
 static char g_status[24] = "Starting";
@@ -214,19 +160,16 @@ static void set_status(const char* status, const char* fmt, ...) {
   publish();
 }
 
-// A line for the panel and a line for the log file, from one call. The two
-// audiences want the same thing and keeping them in step by hand did not last.
+// A line for the panel and a line for the log file, from one call.
 // MM-DD HH:MM:SS, fifteen characters including the trailing space.
 //
-// Fixed width on purpose: the panel finds the "+ " and "- " markers by
-// stepping over this, and the two halves of that arrangement are a hundred
-// lines apart in two languages. Change the width here and _Console goes wrong
-// quietly.
+// Fixed width on purpose: the panel finds the "+ " and "- " markers by stepping
+// over this, and the two halves of that arrangement are a hundred lines apart
+// in two languages. Change the width here and _Console goes wrong quietly.
 //
-// The clock is whatever the console was last set to. Nothing sorts by it --
-// the log archive is numbered for exactly that reason -- but a wrong wall
-// clock still answers "was that this deploy or the one before lunch", which
-// is the question a wall of `put 1 KB` cannot.
+// The clock is whatever the console was last set to. Nothing sorts by it -- the
+// log archive is numbered for that reason -- but a wrong wall clock still
+// answers "was that this deploy or the one before lunch".
 #define STAMP_LEN 15
 
 static void stamp(char* out, int cap) {
@@ -275,10 +218,9 @@ static void note(const char* fmt, ...) {
 
 // Keep the deploy log from growing without end.
 //
-// Truncated at boot rather than trimmed line by line: this file is read by a
-// panel that shows its last few dozen lines, so the cost of losing the older
-// half once every few hundred deploys is nothing, and a rewrite-on-every-note
-// scheme would put a read-modify-write of 64 KB in the path of every log line.
+// Truncated at boot rather than trimmed line by line: the panel shows only the
+// last few dozen lines, and trimming per note would put a read-modify-write of
+// 64 KB in the path of every log line.
 #define DEPLOY_LOG_MAX (64 * 1024)
 
 static void trim_deploy_log(void) {
@@ -318,14 +260,13 @@ static void mkdirs(void) {
 
 // Receive `size` bytes from the socket into `dest`, reporting progress.
 //
-// This is `put` and `stage` both, and it deliberately shadows the dev
-// server's own `put`: the built-in cannot report progress, and "Receiving,
-// 4.2 of 11.8 MB" is most of what the status line is for. A 12 MB eboot over
-// this console's Wi-Fi takes long enough to look like a hang.
+// This is `put` and `stage` both, and it deliberately shadows the dev server's
+// own `put`: the built-in cannot report progress, and "Receiving, 4.2 of
+// 11.8 MB" is most of what the status line is for.
 //
-// A NULL `what` receives silently: no log line, no status, no progress. That
-// is for the panel's command file, which is nine bytes and arrives whenever
-// someone is driving the screen from the host.
+// A NULL `what` receives silently: no log line, no status, no progress. That is
+// for the panel's command file, nine bytes arriving whenever someone is driving
+// the screen from the host.
 static int receive_to(int sock, const char* dest, int size, const char* what) {
   mkdirs();
   char tmp[288];
@@ -455,12 +396,6 @@ static int cmd_install(int sock) {
   return 0;
 }
 
-// Hand the console to the target and end this process.
-//
-// Terminal by construction, and ADR-0016's status model says so: there is no
-// state after Launching because there is no receiver after it. Launching
-// another title is what unlocks the target's directory, which cannot happen
-// while this process holds it.
 // Keep the log the app that just ran wrote, instead of letting the next one
 // truncate it.
 //
@@ -469,11 +404,9 @@ static int cmd_install(int sock) {
 // the wrong lifetime for the thing you go looking for after a crash, and it
 // cannot be fixed in the app: the truncate is inside the engine archive.
 //
-// It can be fixed here. The receiver is what launches apps, so it is the one
-// process that knows a log is about to be destroyed and can move it first.
-// Numbered rather than timestamped because this console's clock is whatever
-// the user last set it to, and a wrong date sorts wrong; the index only has to
-// increase.
+// The receiver is what launches apps, so it is the one process that knows a log
+// is about to be destroyed and can move it first. Numbered rather than
+// timestamped because this console's clock is whatever the user last set it to.
 #define LOG_DIR DATA_DIR "/logs"
 #define LOG_KEEP 20
 
@@ -559,13 +492,11 @@ static void rotate_app_log(const char* next_titleid) {
 // Which title ids this receiver has installed.
 //
 // The panel lists these and offers to remove them or clear their data, and it
-// deliberately lists nothing else. ux0:app holds the console's own titles and
-// whatever else is on the card, and a delete button beside one of those, on a
-// device with no undo, is a footgun rather than a feature.
+// deliberately lists nothing else. ux0:app holds the console's own titles, and
+// a delete button beside one of those, on a device with no undo, is a footgun.
 //
-// One id per line, appended, deduplicated on read rather than on write -- the
-// write happens on the install path where an extra sceIo round trip is a cost
-// and correctness here is worth nothing.
+// One id per line, appended, deduplicated on read rather than on write: the
+// write happens on the install path where an extra sceIo round trip costs.
 #define INSTALLED_PATH DATA_DIR "/installed.txt"
 
 // Rewritten rather than edited in place: the file is a handful of nine-byte
@@ -648,16 +579,19 @@ static int title_installed(const char* titleid) {
 
 // Hand the console over and end this process. Returns only if it could not.
 //
+// Terminal by construction, and ADR-0016's status model says so: there is no
+// state after Launching, because there is no receiver after it. Launching
+// another title is what unlocks the target's directory, which cannot happen
+// while this process holds it.
+//
 // Split out of cmd_launch because the APPS tab's RUN button arrives on the
-// watcher thread with no socket to answer on, and the steps below are the part
-// that must not differ between the two callers.
+// watcher thread with no socket to answer on.
 //
 // The existence check is not belt and braces. sceAppMgrLaunchAppByUri on a
 // title that is not installed fails quietly, and by then this process has
-// already exited -- so the console lands on the LiveArea home screen, which
-// answers no port and cannot be driven from the network. That happened twice
-// on 2026-08-31, both times through the APPS tab offering RUN on a title id
-// that was still in installed.txt after the title itself had been deleted.
+// exited -- so the console lands on LiveArea, which answers no port. That
+// happened twice on 2026-08-31, through the APPS tab offering RUN on a title id
+// still in installed.txt after the title had been deleted.
 static int hand_over(const char* titleid) {
   if (!title_installed(titleid)) {
     note("%s is not installed; staying here", titleid);
@@ -712,28 +646,24 @@ static void cmd_launch(int sock) {
   hand_over(g_target);
 }
 
-// Install a whole extracted .vpk through the system promoter.
+// --- the promoter -------------------------------------------------------
 //
-// The one command here that is not part of deploying an app: it is how the
-// receiver replaces *itself*, which matters more now than it did, because a
-// Flutter receiver is ~20 MB rather than 91 KB and there is no other route for
-// it. The promoter is a system service and is not bound by this sandbox.
+// How the receiver replaces *itself*, which matters more now that a Flutter
+// receiver is ~20 MB rather than 91 KB. The promoter is a system service and is
+// not bound by this sandbox.
+
 // PAF, loaded the way VitaShell loads it.
 //
-// ScePromoterUtil imports from PAF. Until PAF is resident in this process the
-// promoter's library cannot be linked and the load is refused with
-// SCE_KERNEL_ERROR_MODULEMGR_NO_LIB -- which is what this receiver, and the C one
-// before it, and three ADRs, all read as "the promoter is unavailable on this
-// console". It is not. The error was naming its own cause. See
-// experiments/promoter, which walks every route and shows the promoter loading and
-// initialising the moment PAF goes first.
+// ScePromoterUtil imports from PAF. Until PAF is resident the promoter's library
+// cannot be linked and the load is refused with MODULEMGR_NO_LIB -- which this
+// receiver, the C one before it, and three ADRs all read as "the promoter is
+// unavailable on this console". It is not; the error was naming its own cause.
+// See experiments/promoter.
 //
-// The argument block is not optional. The plain
-// sceSysmoduleLoadModuleInternal(PAF) faults the process; the experiment did it
-// twice. These values are VitaShell's verbatim -- 0x180000 is the heap PAF is
-// being given -- and note that buf[0] is a *size*, not flags, which is why
-// zeroing a SceSysmoduleOpt and filling in only `result` was never the same
-// call.
+// The argument block is not optional: plain sceSysmoduleLoadModuleInternal(PAF)
+// faults the process. These values are VitaShell's verbatim -- 0x180000 is the
+// heap PAF is given -- and buf[0] is a *size*, not flags, which is why zeroing
+// a SceSysmoduleOpt and filling in only `result` was never the same call.
 static int load_sce_paf(void) {
   static uint32_t argp[] = {0x180000, (uint32_t)-1, (uint32_t)-1, 1,
                             (uint32_t)-1, (uint32_t)-1};
@@ -767,23 +697,20 @@ static int g_pu_up = 0;
 // The promoter is driven in steps, and that is the point of it.
 //
 // It used to be one command that loaded PAF, loaded the promoter, initialised,
-// promoted, and then unwound all of it. That is the right shape for a feature
-// and the wrong shape for an investigation, because every run tested five
-// things at once and the console went down about ten seconds after each.
+// promoted, and unwound all of it. That is the right shape for a feature and
+// the wrong shape for an investigation: every run tested five things at once
+// and the console went down about ten seconds after each.
 //
-// What the dumps say (experiments/promoter): PAF starts a thread of its own, called
-// `ScePaf EntryCall`, and *that* thread takes a data abort six bytes into the
-// PAF module while our threads sit idle. Every run that died had unmapped PAF
-// first, by unloading it or by exiting. No run has yet kept it resident and
-// survived, so that is the cell to fill in, and filling it in needs the load
-// and the unload to be separate commands.
+// What the dumps say (experiments/promoter): PAF starts a thread of its own,
+// `ScePaf EntryCall`, and that thread takes a data abort six bytes into the PAF
+// module while our threads sit idle. Every run that died had unmapped PAF
+// first. Filling in the cell that is still blank -- kept resident and survived
+// -- needs the load and the unload to be separate commands.
 //
-// It is driven from here rather than from the experiment for a second reason. The
-// experiment draws with debugScreen, which writes the framebuffer directly and
-// initialises no display subsystem; VitaShell, which does all of this safely,
-// is a vita2d app with a live GXM context. The receiver is the only thing here
-// with VitaShell's shape -- a real context, a dev server, and no exit of its
-// own -- and it is also where the feature has to end up.
+// Driven from here rather than from the experiment for a second reason: the
+// experiment draws with debugScreen and initialises no display subsystem, while
+// VitaShell, which does all of this safely, is a vita2d app with a live GXM
+// context. The receiver is the only thing here with VitaShell's shape.
 static void cmd_paf(int sock, const char* arg) {
   char m[192];
   if (strcmp(arg, "on") == 0) {
@@ -807,12 +734,6 @@ static void cmd_paf(int sock, const char* arg) {
   dev_server_send(sock, m);
 }
 
-// Load PAF if it is not up, then the promoter, then Init.
-//
-// A failed load stays fatal and must: an import stub for a module that is not
-// resident is not a stub that returns an error, it is address zero, so
-// "continue and let Init decide" is `blx 0`. That was tried on 2026-08-22 and
-// the dump is a prefetch abort with PC 0.
 // `sock` may be -1. The watcher thread calls this on behalf of the panel, which
 // has no socket, and dev_server_send on a fd that was never opened is not a
 // no-op -- it is a write to whatever -1 means to sceNetSend.
@@ -820,6 +741,12 @@ static void reply(int sock, const char* msg) {
   if (sock >= 0) dev_server_send(sock, msg);
 }
 
+// Load PAF if it is not up, then the promoter, then Init.
+//
+// A failed load stays fatal and must: an import stub for a module that is not
+// resident is address zero rather than a stub returning an error, so
+// "continue and let Init decide" is `blx 0`. Tried on 2026-08-22; the dump is
+// a prefetch abort with PC 0.
 static int promoter_up(int sock) {
   char m[192];
   if (g_pu_up) return 1;
@@ -879,10 +806,9 @@ static void cmd_promoter(int sock, const char* arg) {
 
 // Wait out an operation and report both halves of its answer.
 //
-// sync=1 is documented to block, and is not trusted: GetState is polled anyway,
-// and GetResult is read separately because a call can return >= 0 and still
-// fail -- the return value says the request was accepted, the result says what
-// happened.
+// sync=1 is documented to block and is not trusted, so GetState is polled.
+// GetResult is read separately because a call can be accepted and still fail:
+// the return value says accepted, the result says what happened.
 static void promoter_finish(int sock, const char* what, int r,
                             const char* titleid) {
   char m[224];
@@ -907,23 +833,21 @@ static void promoter_finish(int sock, const char* what, int r,
 }
 
 // The three ways in, kept as three commands because they want different things
-// of the directory and nothing here knows which of them this console accepts.
+// of the directory and nothing here knows which this console accepts.
 //
 //   promote      PromotePkg. What the receiver has always called.
 //   promoterif   PromotePkgWithRif. What VitaShell calls, and it builds a
-//                sce_sys/package/head.bin with three HMAC-SHA1 signatures
-//                before doing so.
-//   import       PromoteImport, documented as installing Content Manager
-//                import content "without checking license files", and the only
-//                one of the three that is handed the title id rather than
-//                reading it out of the package. If it works it removes the
-//                signing work entirely.
+//                sce_sys/package/head.bin with three HMAC-SHA1 signatures first.
+//   import       PromoteImport, documented as installing Content Manager import
+//                content "without checking license files", and the only one
+//                handed the title id rather than reading it out of the package.
 //
 // None of them unloads anything afterwards. See cmd_paf.
-// `<dir> [titleid]`. The id is optional and is only ever used to record what
-// was installed for the panel's apps list -- the promoter reads the package's
-// own param.sfo and does not take our word for it. Splitting here rather than
-// reading the sfo in C: the caller already parsed it to name the head.bin.
+
+// `<dir> [titleid]`. The id is optional and only ever records what was
+// installed for the panel's apps list -- the promoter reads the package's own
+// param.sfo. Split here rather than reading the sfo in C: the caller already
+// parsed it to name the head.bin.
 static const char* split_titleid(char* arg) {
   char* sp = strrchr(arg, ' ');
   if (sp == NULL) return NULL;
@@ -991,14 +915,13 @@ static void cmd_exist(int sock, const char* titleid) {
 // Recursively empty a directory, and only ever under ux0:data.
 //
 // install-vpk.sh stages an extracted package into ux0:data/pkg and the promoter
-// reads whatever is in there, so a file left by a previous install of something
-// else becomes part of the next package. Clearing it needed a command and there
-// was not one.
+// reads whatever is in there, so a file left by a previous install becomes part
+// of the next package.
 //
 // The prefix check is not decoration. This is a recursive delete on an
-// unauthenticated socket that anything on the network can open, and the receiver
-// runs as an UNSAFE self, so `rmtree ux0:app` would be honoured. Confined to
-// ux0:data, the worst it can do is cost a redeploy.
+// unauthenticated socket, and the receiver runs as an UNSAFE self, so
+// `rmtree ux0:app` would be honoured. Confined to ux0:data, the worst it can do
+// is cost a redeploy.
 #define RMTREE_ROOT "ux0:data/"
 
 static int rmtree(const char* path, int depth, int* removed) {
@@ -1055,20 +978,16 @@ static void cmd_rmtree(int sock, const char* path) {
 
 // Restart the receiver, immediately, after a delete.
 //
-// Not a workaround dressed up as a feature: a delete takes this process down a
-// few seconds later and I cannot yet say why. What is known is that the
-// promoter leaves PAF resident, that PAF runs a thread of its own, and that no
-// core dump is written -- so nothing here is faulting, which is why there is
-// nothing to read. See the note above cmd_paf.
+// A mitigation, and honest about it: a delete takes this process down a few
+// seconds later and I cannot yet say why. What is known is that the promoter
+// leaves PAF resident, that PAF runs a thread of its own, and that no core dump
+// is written, so nothing here is faulting and there is nothing to read.
 //
-// What that cost, twice on 2026-09-01, was the console sitting on the LiveArea
-// home screen: no port answers there, so the machine cannot be driven back
-// without someone picking it up. An unexplained death and a deliberate restart
-// end in the same place five seconds apart, and only one of them leaves the
-// receiver running.
+// What that cost, twice on 2026-09-01, was the console sitting on LiveArea: no
+// port answers there. An unexplained death and a deliberate restart end in the
+// same place five seconds apart, and only one leaves the receiver running.
 //
-// So this is honest about being a mitigation. When the cause is found this
-// should go, and a delete should simply not do it.
+// When the cause is found this should go.
 static void restart_after_delete(void) {
   note("restarting after a delete");
   set_status("Restarting", "after a delete");
@@ -1090,13 +1009,12 @@ static void restart_after_delete(void) {
 // FVTA00009 0x00000000` meant the request had been accepted and nothing more.
 // The receiver then went back to serving the panel -- which lists ux0:app on
 // every poll -- while the promoter's worker was still removing a title from
-// underneath that enumeration. Twice that evening the receiver went down inside
-// a second of a delete and left the console on the LiveArea home screen, which
-// is the one place it must never leave it: nothing there answers a socket.
+// under that enumeration. Twice that evening the receiver went down within a
+// second of a delete and left the console on LiveArea.
 //
-// The wait is the fix, and reading the result is the other half of it. A call
-// can be accepted and still fail, and reporting the accept as success is how
-// a title that is still there gets called gone.
+// The wait is the fix, and reading the result is the other half: a call can be
+// accepted and still fail, and reporting the accept as success is how a title
+// that is still there gets called gone.
 static void cmd_delete(int sock, const char* titleid) {
   if (strcmp(titleid, SELF_TITLEID) == 0) {
     dev_server_send(sock, "ERR refusing to delete the receiver\n");
@@ -1203,14 +1121,11 @@ static int handle(int sock, const char* line, int* stop) {
   }
   if (strncmp(line, "launch", 6) == 0 && (line[6] == '\0' || line[6] == ' ')) {
     set_target(line[6] == ' ' ? line + 7 : NULL);
-    // No `*stop = 1` here. It used to sit on the next line with the comment
-    // "not reached; the process is gone", which was true for as long as
-    // cmd_launch could not fail. It can now -- it refuses a title that is not
-    // installed -- and `stop` closes the listening socket and ends the dev
-    // server thread, so the first refused launch left the receiver on screen and
-    // unreachable, recoverable only by picking the console up. The launch that
-    // succeeds exits the process from inside cmd_launch and never comes back
-    // here, so there was never anything for this flag to do.
+    // No `*stop = 1` here. It used to sit on the next line, which was correct
+    // for as long as cmd_launch could not fail. It can now -- it refuses a title
+    // that is not installed -- and `stop` closes the listening socket and ends
+    // the dev server thread, so the first refused launch left the receiver on
+    // screen and unreachable. A launch that succeeds never returns here.
     cmd_launch(sock);
     return 1;
   }
@@ -1255,33 +1170,31 @@ static int handle(int sock, const char* line, int* stop) {
 
 // --------------------------------------------------------------- the watcher
 //
-// The address is the reason this screen exists. Nothing else notices it
-// change: the dev server learns the IP once at startup and the command
-// handler only runs when a client is already connected -- which is exactly
-// the case that cannot happen when the address is wrong.
+// The address is the reason this screen exists. Nothing else notices it change:
+// the dev server learns the IP once at startup, and the command handler runs
+// only when a client is already connected, which is exactly the case that
+// cannot happen when the address is wrong.
 //
 // Started from the dev server's ready handler and never from the constructor.
-// A Vita import stub for a module that is not resident is address zero, not a
-// function that returns an error, so calling sceNetCtlInetGetInfo before
-// SCE_SYSMODULE_NET is loaded is `blx 0` -- a prefetch abort with PC 0 and no
-// frame to name. That is what the first version of this file did, and the
-// dump for it is the reason dev_server_set_ready_handler exists.
+// A Vita import stub for a non-resident module is address zero, so calling
+// sceNetCtlInetGetInfo before SCE_SYSMODULE_NET is loaded is `blx 0`. That is
+// what the first version of this file did, and why
+// dev_server_set_ready_handler exists.
 
 // What the panel asks the C layer to do, and why it is a file.
 //
-// The panel can clear a log or delete an app's data directory by itself --
-// dart:io writes ux0:data as happily as this does. What it cannot do is delete
-// a *title*, because that goes through the promoter, and the promoter lives on
-// this side.
+// The panel can clear a log or delete an app's data directory by itself. What
+// it cannot do is delete a *title*, because that goes through the promoter, and
+// the promoter lives on this side.
 //
 // ADR-0016 decision 3 keeps the reliability-critical half free of a platform
 // channel, and the panel already learns everything by polling a file this side
 // writes. A file the panel writes and this side polls is the same arrangement
-// pointed the other way: no channel, no engine dependency, and a request that
-// arrives while Flutter is dead simply never arrives.
+// pointed the other way, and a request that arrives while Flutter is dead
+// simply never arrives.
 //
-// One line, `delete <titleid>`, removed before it is acted on so a crash in
-// the middle cannot replay it on the next boot.
+// One line, `delete <titleid>`, removed before it is acted on so a crash in the
+// middle cannot replay it on the next boot.
 #define REQUEST_PATH DATA_DIR "/receiver-request.txt"
 
 static void serve_request(void) {
@@ -1399,13 +1312,12 @@ __attribute__((constructor)) static void receiver_register(void) {
   //
   // The engine opens its log with O_TRUNC as the first line of main(), and now
   // that the receiver runs GL it shares app.log with every app -- so without
-  // this, opening the receiver after a crash destroys the log of the crash. That
-  // exact regression was measured on 2026-08-28 chasing keklist's emoji grid.
-  // A constructor runs before main, so the file is moved into the archive
-  // while it still holds the last thing the app said.
-  // Read before the rotation, which overwrites it. logs/last names whatever
-  // ran before this boot, so it is how the receiver knows an app has ended --
-  // there is no notification, only the fact of being alive again.
+  // this, opening the receiver after a crash destroys the log of the crash.
+  // Measured on 2026-08-28 chasing keklist's emoji grid.
+
+  // Read before the rotation, which overwrites it. logs/last names whatever ran
+  // before this boot, so it is how the receiver knows an app has ended: there is
+  // no notification, only the fact of being alive again.
   char prev[24] = {0};
   read_small(LOG_DIR "/last", prev, sizeof prev);
 

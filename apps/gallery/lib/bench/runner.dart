@@ -1,10 +1,9 @@
 // Drives the scenes and writes the result file. ADR-0017.
 //
-// The host tool starts a run by writing ux0:data/flutter-vita/bench.on and
-// relaunching; this writes ux0:data/flutter-vita/bench-result.json and a
-// bench-done marker when it finishes. Two files rather than one because the
-// host has to know the difference between "still running" and "wrote a
-// truncated file", and a rename is the only atomic operation available.
+// The host starts a run by writing ux0:data/flutter-vita/bench.on and
+// relaunching; this writes bench-result.json and a bench-done marker. Two files
+// because the host has to tell "still running" from "wrote a truncated file",
+// and a rename is the only atomic operation available.
 
 import 'dart:async';
 import 'dart:convert';
@@ -49,9 +48,7 @@ const String kEngineManifest = 'app0:/engine.txt';
 /// Which engine build this binary links, or null if it cannot tell.
 ///
 /// `built at` rather than the git revision: the revision is identical across
-/// rebuilds, so it cannot separate two engines that differ by a patch -- which
-/// is the only distinction that matters when deciding whether two runs may be
-/// read against each other.
+/// rebuilds, so it cannot separate two engines that differ by a patch.
 String? engineStamp() {
   try {
     final f = File(kEngineManifest);
@@ -79,10 +76,9 @@ String? engineStamp() {
 /// Comma-separated scene names. Empty or absent means run everything.
 ///
 /// Added 2026-09-01, after a full run wedged: `route_wrap` and `route_spans`
-/// between them grew the heap from 8 MB to the 159 MB ceiling in twelve
-/// seconds, and every scene after them ran on a full heap until the UI thread
-/// blocked inside a FreeType allocation. Anything scheduled behind a leak is
-/// measuring the leak, so a subset has to be runnable on a fresh heap.
+/// grew the heap from 8 MB to the 159 MB ceiling in twelve seconds, and every
+/// scene after them ran on a full heap. Anything scheduled behind a leak is
+/// measuring the leak.
 const String kOnlyPath = '$kDataDir/bench.only';
 
 /// True when the host has asked for an unattended run.
@@ -171,17 +167,12 @@ class BenchRunner {
   /// Quiet wall-clock time before a scene is measured.
   ///
   /// Not politeness. Until 2026-08-25 every Dart timer on this port fired on a
-  /// 200 ms grid, which meant the two probes above spent ~25 seconds mostly
-  /// idle before the first scene and the route scenes settled for ~600 ms
-  /// rather than the 450 they asked for. Fixing the timers took that away, and
-  /// two scenes moved: opacity_fade 83 -> 200 ms and route_boxes 33 -> 133,
-  /// both reproducing three runs running, both with the UI thread at 1.2 ms
-  /// and the raster thread at 1.1 -- a pause with nothing running, which is
-  /// what a collection looks like from here.
+  /// 200 ms grid, so the benchmark got this recovery by accident. Fixing the
+  /// timers took it away and two scenes moved: opacity_fade 83 -> 200 ms and
+  /// route_boxes 33 -> 133, both with the UI thread at 1.2 ms and the raster
+  /// thread at 1.1, which is what a collection looks like from here.
   ///
-  /// So the recovery the benchmark used to get by accident is now asked for on
-  /// purpose. A scene measured immediately after another one is measuring the
-  /// previous scene's garbage.
+  /// A scene measured immediately after another measures its garbage.
   static Future<void> _quiet() =>
       Future<void>.delayed(const Duration(milliseconds: 500));
 
@@ -229,15 +220,12 @@ class BenchRunner {
     final navigator = Navigator.of(context, rootNavigator: true);
 
     // Never await Navigator.push. Its Future completes when the route is
-    // *popped*, not when the transition finishes -- so awaiting it before the
-    // matching pop is a deadlock, and it is one that looks like a slow
-    // transition rather than a hang. The first run of this benchmark on
-    // hardware sat on a pushed page until the host gave up.
+    // *popped*, so awaiting it before the matching pop is a deadlock that looks
+    // like a slow transition. The first run on hardware sat on a pushed page
+    // until the host gave up.
     //
-    // The transition itself is time-based: MaterialPageRoute animates for
-    // 300 ms of wall clock whether or not frames are dropped, so a fixed
-    // settle longer than that is sound. Dropped frames make it look worse,
-    // which is the thing being measured, not longer.
+    // MaterialPageRoute animates for 300 ms of wall clock whether or not frames
+    // are dropped, so a fixed settle longer than that is sound.
     final settle = scene.settle;
 
     // A scene with no route factory is pushed the way every scene was pushed
@@ -274,10 +262,9 @@ class BenchRunner {
 
   /// Mount, settle, then call the scene's driver [DrivenScene.repeats] times.
   ///
-  /// The stage stays up across repeats. Remounting between them would charge
-  /// the widget tree's first build to every repetition and drown the thing
-  /// being measured -- a fling is 900 ms of scrolling, a rebuilt ListView is
-  /// one 240 ms frame.
+  /// The stage stays up across repeats. Remounting would charge the widget
+  /// tree's first build to every repetition: a fling is 900 ms of scrolling, a
+  /// rebuilt ListView is one 240 ms frame.
   Future<void> runDriven(DrivenScene scene) async {
     setStage(scene.stage());
     await SchedulerBinding.instance.endOfFrame;
@@ -320,12 +307,10 @@ class BenchRunner {
     print('bench: ${await probeTimers()}');
     print('bench: ${await probeTimers(pumpFrames: true)}');
     // Not called. probeSockets() wedges the isolate: bind, connect and accept
-    // all succeed, the first byte never comes back, and the 30 s timeout
-    // guarding it never fires either -- because that timeout is a timer, and
-    // the thread that would deliver it is the one that is stuck. Every scene
-    // after it is lost. Left in the tree because it is the measurement the
-    // event-handler fix has to pass; run it deliberately, not as part of a
-    // benchmark. See socket_probe.dart.
+    // all succeed, the first byte never comes back, and the 30 s timeout never
+    // fires either, because the thread that would deliver it is the stuck one.
+    // Left in the tree because it is the measurement the event-handler fix has
+    // to pass. See socket_probe.dart.
     // print('bench: ${await probeSockets()}');
     try {
       // Each scene is isolated. An unattended run that hangs because one
@@ -400,11 +385,10 @@ class BenchRunner {
 
   /// The result file, plus a marker written strictly afterwards.
   ///
-  /// The renderer recorded here is what software.on *asked for*, and the
-  /// field is named to say so. A binary built against an older engine artifact ignores
-  /// that switch entirely -- one did, on 2026-08-22, and reported a GPU frame
-  /// while the file said 0. Only the host can settle it, with `shotinfo`, so
-  /// only the host writes `renderer`.
+  /// The renderer recorded here is what software.on *asked for*, and the field
+  /// is named to say so. A binary built against an older engine artifact ignores
+  /// that switch -- one did, on 2026-08-22. Only the host can settle it, with
+  /// `shotinfo`, so only the host writes `renderer`.
   void write() {
     final payload = <String, Object>{
       'schema': 1,
@@ -433,12 +417,11 @@ class BenchRunner {
     _handBackIfAsked();
   }
 
-  /// Give the console back to the receiver, if the receiver is what started this.
+  /// Give the console back to the receiver, if the receiver started this.
   ///
   /// A run launched from the TESTS tab used to end with the app sitting on its
-  /// results and the receiver gone, so the TESTS tab that asked for the run was not
-  /// there to show it. Host-started runs are left alone: tools/bench.sh wants
-  /// the app alive afterwards to read the numbers off it.
+  /// results and the receiver gone. Host-started runs are left alone:
+  /// tools/bench.sh wants the app alive afterwards.
   void _handBackIfAsked() {
     try {
       final marker = File(kFromReceiverPath);

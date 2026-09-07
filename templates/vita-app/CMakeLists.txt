@@ -1,9 +1,5 @@
-# Build any Flutter app into a Vita .vpk.
-#
-# The counterpart to experiments/m3-vpk, with the experiment taken out: no hardcoded app,
-# no hardcoded asset path, and the engine comes from a packaged artifact rather
-# than a local object tree. Driven by tools/build-vita-app.sh, which passes
-# everything in as cache variables.
+# Build any Flutter app into a Vita .vpk. Driven by tools/build-vita-app.sh,
+# which passes everything in as cache variables.
 #
 # Required:
 #   APP_NAME        display name on the LiveArea
@@ -58,30 +54,20 @@ endif()
 set(CMAKE_C_FLAGS   "${CMAKE_C_FLAGS} -std=gnu11 -Wall -O2 -g")
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=gnu++20 -Wall -O2 -g")
 
-# The embedder, with main(), is inside the archive. What is not is the dev
-# server it calls into — five undefined symbols the app has to satisfy. It
-# ships as source in the artifact so it can be replaced: a shipping app wants
-# no listening socket, and can link a stub with the same five entry points.
-# bailout.c is the other half of the dev loop and is dropped for shipping
-# alongside devserver.c. It overrides abort() and __assert_func(), which works
-# only because both are *undefined* in the engine archive -- the engine calls
-# them and libc supplies them, so a definition linked ahead of libc wins.
+# The embedder, with main(), is inside the archive. The dev server it calls into
+# is not: five undefined symbols the app must satisfy, shipped as source so a
+# shipping app can link a stub instead. bailout.c is the other half and drops
+# with it; it overrides abort() and __assert_func(), which works only because
+# both are undefined in the engine archive.
 #
-# The third dev-only piece is the debug HUD -- frame rate, damaged area, blit
-# cost and free memory, drawn in the top-right corner of every frame. It cannot
-# be dropped by leaving a file out, because it lives inside the engine archive,
-# so it is switched off by *adding* one:
+# The debug HUD lives inside the archive, so it is switched off by *adding* a
+# strong definition rather than leaving a file out:
 #
 #   echo 'int flutter_vita_debug_overlay = 0;' > shipping.c
 #
-# and listing that beside the devserver stub. The symbol in the archive is weak;
-# a strong definition linked alongside wins. It can also be toggled at runtime
-# with `overlay off` on the dev server, which is what to use for a screenshot.
-#
-# RELEASE=ON is that build, and release.c is the file described above: the five
-# stubs, plus the strong `flutter_vita_debug_overlay = 0`. Nothing else in this
-# file changes, which is the point -- a release app is the same link as a debug
-# one with two files swapped for one, not a second build path that can rot.
+# RELEASE=ON is that build: release.c is the five stubs plus that zero. Nothing
+# else here changes, so a release app is the same link with two files swapped
+# for one. `overlay off` on the dev server toggles the HUD at runtime.
 if(RELEASE)
   set(DEV_LOOP_SOURCES ${CMAKE_CURRENT_SOURCE_DIR}/release.c)
 else()
@@ -95,9 +81,8 @@ add_executable(${PROJECT_NAME}
   ${DEV_LOOP_SOURCES}
   ${CMAKE_CURRENT_SOURCE_DIR}/heap.c
   # Product-specific C, compiled beside the dev server. The receiver (ADR-0016)
-  # uses this to register its own commands and its own port from a constructor,
-  # which is what lets it be an ordinary app built from this same template
-  # rather than a private build path.
+  # registers its own commands and port from a constructor, which is what lets
+  # it be an ordinary app built from this template.
   ${EXTRA_SOURCES}
 )
 target_include_directories(${PROJECT_NAME} PRIVATE ${ENGINE_DIR}/src)
@@ -120,14 +105,12 @@ target_link_options(${PROJECT_NAME} PRIVATE
 
   # Nothing calls pthread_cancel. Do not remove this.
   #
-  # gcc decides whether a program is threaded by taking the address of a proxy
-  # symbol, and outside glibc that proxy is pthread_cancel — a weak reference,
-  # which does not pull a member out of an archive. Without this it links with
-  # no address, __gthread_active_p() returns 0, and libstdc++ compiles every
-  # std::mutex::lock() in the engine down to `return 0` without touching the
-  # handle. The mutexes are then never initialised, and
-  # std::condition_variable::wait — which is not gated on that check — hands an
-  # uninitialised handle to a real pthread_cond_wait.
+  # gcc decides a program is threaded by taking the address of a proxy symbol,
+  # and outside glibc that proxy is pthread_cancel, a weak reference that pulls
+  # nothing out of an archive. Without this, __gthread_active_p() returns 0 and
+  # libstdc++ compiles every std::mutex::lock() in the engine to `return 0`.
+  # The mutexes are never initialised, and std::condition_variable::wait, which
+  # is not gated on that check, hands an uninitialised handle to pthread_cond_wait.
   "-Wl,-u,pthread_cancel"
 )
 
@@ -135,11 +118,8 @@ target_link_options(${PROJECT_NAME} PRIVATE
 #
 # FLUTTER_VITA_VITAGL points at a checkout built with
 # `make HAVE_SHADER_CACHE=1 TEXTURES_SPEEDHACK=1`; patches/vitagl/README.md says
-# why each flag is needed.
-# Without the cache, Ganesh recompiles every shader on every launch -- ADR-0014
-# measured 205 ms for a one-line shader and 405 ms for a short one, against
-# ~3 ms once cached -- which is the difference between a GPU backend that is
-# worth having and one that stutters whenever a new widget first paints.
+# why. Without the cache, Ganesh recompiles every shader on every launch --
+# ADR-0014 measured 205 ms against ~3 ms once cached.
 if(DEFINED ENV{FLUTTER_VITA_VITAGL} AND EXISTS "$ENV{FLUTTER_VITA_VITAGL}/libvitaGL.a")
   message(STATUS "vitaGL: $ENV{FLUTTER_VITA_VITAGL} (built from source)")
   set(VITAGL_LIB "$ENV{FLUTTER_VITA_VITAGL}/libvitaGL.a")
@@ -159,17 +139,11 @@ target_link_libraries(${PROJECT_NAME}
   #
   # Order matters: vitaGL calls into vitashark, vitashark into SceShaccCgExt,
   # and that into taiHEN's *ForUser* hooks, which patch SceShaccCg inside this
-  # process and die with it. That is not what ADR-0011 declined -- it declined
-  # kernel plugins and SceShell modules -- and the note there is explicit about
-  # the difference.
+  # process and die with it. ADR-0011 declined kernel plugins and SceShell
+  # modules, not this.
   #
-  # The archive is preferred from third_party/vitaGL when it is present,
-  # because the VitaSDK package is built with HAVE_SHADER_CACHE=0: its
-  # vglSetShaderCachePath is a two-byte stub, and without a cache every Ganesh
-  # program pays libshacccg's 200-400 ms compile on every launch.
-  #
-  # Linked unconditionally, even for an app that will run software: the branch
-  # is a runtime one, and a binary that cannot take it is not a fallback.
+  # Linked unconditionally, even for a software-path app: the branch is a
+  # runtime one, and a binary that cannot take it is not a fallback.
   ${VITAGL_LIB}
   vitashark
   SceShaccCg_stub
@@ -184,14 +158,11 @@ target_link_libraries(${PROJECT_NAME}
   # vitaGL's vgl_memcpy goes through the DMAC for anything large.
   SceKernelDmacMgr_stub
   SceIme_stub SceAppUtil_stub
-  # For the receiver's `promote`, which installs a whole extracted .vpk through
-  # the system promoter -- the only route by which the receiver can replace
-  # itself. A stub archive contributes nothing to an app that never calls into
-  # it, so this is listed unconditionally rather than behind another switch.
+  # For the receiver's `promote`, the only route by which it can replace itself.
+  # A stub archive costs nothing to an app that never calls into it.
   ScePromoterUtil_stub
-  # For the receiver's timestamps on every deploy-log line. The clock is whatever
-  # the console was last set to, which is why nothing sorts by it -- but a
-  # wrong wall clock still tells you two lines are an hour apart.
+  # For the receiver's timestamps. The clock is whatever the console was last
+  # set to, so nothing sorts by it, but it still shows two lines an hour apart.
   SceRtc_stub
   pthread m
 )
@@ -200,21 +171,17 @@ vita_create_self(${PROJECT_NAME}.self ${PROJECT_NAME} UNSAFE)
 
 # The crash supervisor, as eboot2.bin.
 #
-# A background application: a separate process, started by this app at startup
-# and outliving it, so that when the app dies the console still has something
-# listening that can bring the receiver back. Without it every crash costs a
-# human walking to the Vita and tapping a bubble, which is the real limit on
-# how fast this port can be debugged -- not build time.
+# A background application: a separate process, started by this app and
+# outliving it, so a crash still leaves something listening that can bring the
+# receiver back. Otherwise every crash costs a walk to the Vita and a tap.
 #
-# ATTRIBUTE and MEMSIZE come from Sony's own background-app sample
-# (Vita-Development-Suite/samples, notification-util/bootparam-bg.yml). The
-# memory budget is not cosmetic: a background process cannot be handed the
-# whole foreground app budget, and 2 MiB is far more than a socket and a 16 KiB
-# net pool need.
+# ATTRIBUTE and MEMSIZE come from Sony's background-app sample
+# (Vita-Development-Suite/samples, notification-util/bootparam-bg.yml). 2 MiB is
+# far more than a socket and a 16 KiB net pool need.
 #
-# Left out entirely when NO_SUPERVISOR is set. The receiver is what the
-# supervisor recovers *to*, so a receiver carrying one would contend for the same
-# background title id and have no stopping condition -- ADR-0016 decision 8.
+# Left out under NO_SUPERVISOR: the receiver is what the supervisor recovers to,
+# so one carrying its own would contend for the same background title id and
+# never stop (ADR-0016 decision 8).
 if(NOT NO_SUPERVISOR)
 add_executable(fvita_supervisor ${CMAKE_CURRENT_SOURCE_DIR}/supervisor.c)
 target_link_libraries(fvita_supervisor
@@ -228,15 +195,13 @@ vita_create_self(fvita_supervisor.self fvita_supervisor UNSAFE
 
 # param2.sfo -- the manifest for eboot2.bin.
 #
-# sceBgAppUtilStartBgApp does not merely run eboot2.bin; the shell looks up a
-# second SFO beside the first to learn what it is being asked to start, and
-# without it the call cannot succeed whatever else is right. Same shape as
-# Sony's sample: its own title id, CATEGORY gdd, and ATTRIBUTE 0x1000, the bit
-# that means "background application".
+# sceBgAppUtilStartBgApp looks up a second SFO beside the first to learn what it
+# is starting, and without it the call cannot succeed. Same shape as Sony's
+# sample: its own title id, CATEGORY gdd, ATTRIBUTE 0x1000.
 #
 # Only keys already in vita-mksfoex's template are set. Keys it does not know
-# get appended after the sorted ones, and an SFO index table that is not sorted
-# by key is not something any Sony parser is documented to accept.
+# get appended after the sorted ones, and no Sony parser is documented to accept
+# an unsorted index table.
 add_custom_command(OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/param2.sfo
   COMMAND ${VITA_MKSFOEX}
     -s TITLE_ID=${SUPERVISOR_TITLE_ID}
@@ -253,42 +218,33 @@ endif()
 
 # Everything the engine reads at runtime from app0:.
 #
-# flutter_assets is globbed rather than listed, because an app's bundle is
-# whatever `flutter build bundle` produced — images, fonts, JSON, shaders. The
-# glob is at configure time, so a newly added asset needs a reconfigure; the
-# build script does that every run.
+# flutter_assets is globbed because a bundle is whatever `flutter build bundle`
+# produced. The glob runs at configure time, so a new asset needs a reconfigure;
+# the build script reconfigures every run.
 #
-# kernel_blob.bin is filtered out on purpose. It is the JIT path's copy of the
-# whole program, several megabytes, and this build links its AOT snapshot into
-# eboot.bin instead (ADR-0005). Shipping it would be dead weight the engine
-# never opens.
+# kernel_blob.bin is filtered out: it is the JIT path's copy of the whole
+# program, and this build links the AOT snapshot into eboot.bin (ADR-0005).
 file(GLOB_RECURSE APP_ASSETS RELATIVE "${FLUTTER_ASSETS}" "${FLUTTER_ASSETS}/*")
 list(FILTER APP_ASSETS EXCLUDE REGEX "kernel_blob.bin|\\.last_build_id")
 
 set(VPK_FILES
-  # The engine's receipt, shipped so the app can say which engine produced a
-  # number. framework_rev cannot: it is a git revision and stays identical
-  # across rebuilds, so two engines that differ by a patch report the same
-  # value. MANIFEST.txt carries `built at`, which does move.
-  #
-  # This exists because of 2026-08-22, when three published figures turned out
-  # to have come from an engine that predated the switch they were measuring.
+  # The engine's receipt, so the app can say which engine produced a number.
+  # framework_rev cannot: it is a git revision, identical across rebuilds, so
+  # two engines differing by a patch report the same value. MANIFEST.txt carries
+  # `built at`, which moves. Added after 2026-08-22, when three published figures
+  # turned out to come from an engine predating the switch they measured.
   FILE "${ENGINE_DIR}/MANIFEST.txt" engine.txt
   FILE "${ENGINE_DIR}/data/icudtl.dat" icudtl.dat
   # The system font, scanned from app0:/fonts. Deliberately not inside
-  # flutter_assets: that directory holds icon fonts meant to be looked up by
-  # asset key, and offering MaterialIcons as a fallback for body text renders
-  # paragraphs in icons.
+  # flutter_assets: that holds icon fonts looked up by asset key, and offering
+  # MaterialIcons as a body-text fallback renders paragraphs in icons.
   FILE "${ENGINE_DIR}/data/Roboto-Regular.ttf" fonts/Roboto-Regular.ttf
-  # Emoji. Everything in app0:/fonts is a fallback candidate for every
-  # codepoint (see platform_vita.cc), which is how an unmodified app gets emoji
-  # without naming a Vita-specific family. Monochrome and 1.9 MB; the colour
-  # font was tried and is documented in assets/fonts/README.md.
+  # Emoji. Everything in app0:/fonts is a fallback candidate for every codepoint
+  # (see platform_vita.cc). Monochrome, 1.9 MB; the colour font was tried and is
+  # documented in assets/fonts/README.md.
   FILE "${ENGINE_DIR}/data/NotoEmoji-Regular.ttf" fonts/NotoEmoji-Regular.ttf
-  # LiveArea: the bubble icon, the gate art and the page background. Without
-  # these the system draws its blank placeholder, which makes every app built
-  # from this template look like a corrupt install. LIVEAREA_DIR lets an app
-  # ship its own set; the default is the shared Vita-with-Flutter-logo art.
+  # LiveArea art. Without it the system draws a blank placeholder that looks
+  # like a corrupt install. LIVEAREA_DIR lets an app ship its own set.
   FILE "${LIVEAREA_DIR}/icon0.png" sce_sys/icon0.png
   FILE "${LIVEAREA_DIR}/template.xml" sce_sys/livearea/contents/template.xml
   FILE "${LIVEAREA_DIR}/bg0.png" sce_sys/livearea/contents/bg0.png

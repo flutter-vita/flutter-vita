@@ -4,31 +4,19 @@
 #   ./tools/update-receiver.sh [--host IP] [--vpk PATH] [--port N] [--title-id ID]
 #   ./tools/update-receiver.sh --backup /tmp/receiver-eboot.bak
 #
-# The receiver installs the app under test; for a long time nothing installed the
-# receiver, which meant VitaShell and a card swap for every receiver change. That is
-# why the receiver accumulated fixes slowly and why the background supervisor sat
-# broken for five days.
+# A receiver cannot install itself: ux0:app/<self> is the read-only app0: mount,
+# so a `put` there returns 0x8001000D whatever the app's permissions. Every
+# other title's directory is ordinary storage an UNSAFE self writes freely.
 #
-# A receiver cannot install itself. `ux0:app/<self>` is the read-only `app0:`
-# mount, so `put ux0:app/FVTA00004/eboot.bin` from the receiver in FVTA00004 comes
-# back 0x8001000D, EACCES, and no amount of unsafe-ness changes it. Every *other*
-# title's directory is ordinary storage that an UNSAFE self writes freely.
+# So the receiver installs an app, and the app installs the receiver. Any app
+# with the dev server in it will do:
 #
-# So the update goes the other way round, and this is the whole trick: the
-# receiver installs an app, and the app installs the receiver. Any app with the dev
-# server in it will do. `experiments/m1-vpk` is the small one kept around for exactly
-# this -- 2.5 MB, no engine, same dev server -- and the conformance or gallery
-# app works just as well when one of those happens to be the thing installed.
+#   ./tools/deploy.sh --vpk <small-app>.vpk --receiver-port 1342
+#   ./tools/update-receiver.sh
 #
-#   ./tools/deploy.sh --vpk experiments/m1-vpk/build/flutter_vita_m1.vpk \
-#       --receiver-port 1342          # receiver installs the app
-#   ./tools/update-receiver.sh        # app installs the receiver
-#
-# This used to go through the promoter instead. The promoter turned out to be
-# reachable after all (see experiments/promoter), but loading it takes the console
-# down about ten seconds later, so nothing here uses it. Nothing here needs to:
-# the promoter is required to register a *new* title id, and updating one that
-# already exists is a file copy.
+# Not through the promoter. The promoter is reachable, but loading it takes the
+# console down about ten seconds later, and it is only needed to register a new
+# title id. Updating one that already exists is a file copy.
 set -euo pipefail
 
 HERE="$(cd "$(dirname "$0")" && pwd)"

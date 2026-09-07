@@ -1,26 +1,18 @@
-// The TESTS tab. One place to start a suite and one place to read what it
+// The benchmark TESTS tab. One place to start a suite and one place to read what it
 // said, in the only process on this console that is always up.
 //
-// ## Why here, and why out of process
-//
 // Every suite lives inside the app it measures, because a benchmark that does
-// not run in the real binary measures something else. That makes them scattered
-// and it makes them fragile: a suite that wedges takes its app down, and on
-// 2026-09-01 that cost a whole session because the wedged app was also the only
+// not run in the real binary measures something else. That makes them fragile:
+// a suite that wedges takes its app down, and the app is usually the only
 // thing on the console answering a socket.
 //
-// The receiver is the one process that survives that -- surviving an app crash is
-// the job it exists for. So it starts a run by *launching the app* and getting
-// out of the way, exactly the way the APPS tab does. Nothing runs inside the
-// receiver. A suite that takes its app down leaves the TESTS tab standing, which is the
-// whole point.
+// The receiver survives that. It starts a run by launching the app and getting
+// out of the way, the same as the APPS tab. Nothing runs inside the receiver.
 //
-// ## Nothing here may throw
-//
-// Every file this reads is written by something else, some of it while a
-// process was dying. The receiver is the recovery mechanism; a receiver that
-// crashes on a truncated JSON file is worse than no TESTS tab at all. Every read is
-// guarded and every parse falls back to "unknown" rather than propagating.
+// Nothing here may throw. Every file this reads is written by something else,
+// some of it while a process was dying, and a receiver that crashes on a
+// truncated JSON file is worse than no TESTS tab. Every read is guarded and every
+// parse falls back to "unknown".
 
 import 'dart:convert';
 import 'dart:io';
@@ -136,12 +128,9 @@ class BenchResult {
 
   /// The engine that produced it, or null when the file does not say.
   ///
-  /// This is the field that decides whether two rows may be read against each
-  /// other. Numbers from different engine builds shown side by side are how a
-  /// confident wrong answer gets made: on 2026-08-22 a "software" run turned
-  /// out to be running the GPU because the installed eboot predated the opt-in
-  /// switch, and three published figures collapsed at once. Rows without a
-  /// stamp are marked rather than quietly compared.
+  /// Decides whether two rows may be read against each other. Numbers from
+  /// different engine builds shown side by side are how a confident wrong answer
+  /// gets made, so rows without a stamp are marked rather than quietly compared.
   final String? engine;
 
   final DateTime? when;

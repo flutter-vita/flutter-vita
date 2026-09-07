@@ -1,29 +1,25 @@
-// Flutter Vita Receiver — the other half of the deploy loop.
+// Flutter Vita Receiver -- the other half of the deploy loop.
 //
-// Why this exists: a running app can never replace its own eboot.bin. Measured,
-// not assumed (experiments/vita-tooling/README.md) —
+// A running app can never replace its own eboot.bin:
 //
-//   * from inside FVTA00002, ux0:app/FVTA00002/ is ENOENT, because an app's own
-//     directory is not in its sandbox; the same content is mounted read-only as
-//     app0:
-//   * while FVTA00002 runs, that directory is locked against every *other*
-//     process too — even BGFTP gets 550 on it
+//   * from inside FVTA00002, ux0:app/FVTA00002/ is ENOENT. An app's own
+//     directory is not in its sandbox; the same content is mounted read-only
+//     as app0:
+//   * while FVTA00002 runs, that directory is locked against every other
+//     process too
 //
-// So the write has to come from a different process, at a moment when the
-// target app is not running. This is that process.
+// So the write has to come from a different process while the target is not
+// running. This is that process.
 //
 //   receiver running  ->  stage a new eboot into ux0:data (writable)
-//                   ->  install it into ux0:app/FVTA00002 (we are not it, and
-//                       it is not running, so both objections are gone)
-//                   ->  launch FVTA00002, which replaces us
-//   M1 finishes     ->  handoff: launches us back, and exits
+//                     ->  install it into ux0:app/FVTA00002
+//                     ->  launch FVTA00002, which replaces us
+//   app finishes      ->  handoff: launches us back, and exits
 //
-// Each app launches the other, so neither has to survive the switch. After the
-// very first tap on the LiveArea there is nothing left to press.
+// Each app launches the other, so neither has to survive the switch.
 //
-// This binary should change as rarely as possible: it is the thing that can
-// recover the loop, and nothing can redeploy *it* except BGFTP plus a manual
-// tap. Keep it boring.
+// This binary should change as rarely as possible: it is what can recover the
+// loop, and nothing can redeploy it without a manual tap. Keep it boring.
 
 #include <psp2/appmgr.h>
 #include <psp2/bgapputil.h>
@@ -85,17 +81,14 @@ static int recv_line(int sock, char* out, int max) {
 
 // Screen power.
 //
-// scePowerRequestDisplayOff is NOT used here, and must not be reintroduced. It
-// does turn the panel off, but nothing this app can do brings it back --
-// scePowerRequestDisplayOn had no effect, and the only ways out were exiting
-// the app or minimising it. On someone's only console that is an unacceptable
-// way to lose the display.
+// scePowerRequestDisplayOff is NOT used here and must not be reintroduced. It
+// turns the panel off and nothing this app can do brings it back:
+// scePowerRequestDisplayOn has no effect, and the only ways out are exiting or
+// minimising the app.
 //
-// What protects the OLED instead is blanking: the panel stays powered, but the
-// framebuffer is cleared to black, and a black pixel on an OLED draws
-// essentially no current. Burn-in comes from static *text* sitting there for
-// hours, and blanking removes exactly that. Recovery is guaranteed because we
-// own the framebuffer -- any button redraws.
+// The OLED is protected by blanking instead. The panel stays powered and the
+// framebuffer is cleared to black, which draws essentially no current, and any
+// button redraws because we own the framebuffer.
 #define SCREEN_IDLE_US (60 * 1000 * 1000)
 
 static volatile int g_blanked = 0;
@@ -204,16 +197,12 @@ static int cmd_stage(int sock, int size) {
 
 // Which slot install/launch act on.
 //
-// One title id was hard-coded here because there was one app. There are now
-// several -- a conformance suite that self-reports pass/fail and a gallery
-// judged by eye answer different questions and want different bubbles -- and
-// each needs its own slot. The bare `install` and `launch` still mean
-// FVTA00002, so every existing script and habit keeps working.
+// Bare `install` and `launch` still mean FVTA00002, so existing scripts keep
+// working.
 //
-// A slot must already be **registered** with the shell before either command
-// can reach it: ScePromoterUtil will not load for us (MODULEMGR_NO_LIB), so a
-// new title id needs one VitaShell install of its .vpk. After that this loop
-// owns it.
+// A slot must already be registered with the shell before either command can
+// reach it: ScePromoterUtil will not load for us (MODULEMGR_NO_LIB), so a new
+// title id needs one VitaShell install of its .vpk first.
 static char g_target[16] = TARGET_TITLEID;
 
 static void set_target(const char* arg) {
@@ -324,20 +313,16 @@ static int serve(int sock) {
       send_str(sock, m);
     } else if (strncmp(line, "inject", 6) == 0) {
       // Inject the launcher module into SceShell. SceShell survives our apps
-      // crashing, so a module inside it can relaunch us with no human involved
-      // -- which is the entire point.
+      // crashing, so a module inside it can relaunch us with no human involved.
       //
       // Runtime injection, deliberately: nothing goes into ur0:tai/config.txt
       // and nothing loads at boot, so the worst case is a hung shell that a
-      // reboot clears completely. The two failures earlier today were
-      // config.txt entries that stopped the console booting at all.
-      // sceAppMgrGetIdByName("SceShell") returns 0x80802012 here -- it does
-      // not resolve the shell. SceShell's pid is conventionally a fixed value
-      // on this platform, so allow it to be given explicitly:
+      // reboot clears. A bad config.txt entry stops the console booting.
+      //
+      // sceAppMgrGetIdByName("SceShell") returns 0x80802012 here, so the pid can
+      // be given explicitly:
       //   inject           -> try the name, then fall back to 0x10005
       //   inject 10005     -> use that pid (hex)
-      // Passing it in means candidate pids can be tried without a rebuild and
-      // redeploy for each one.
       SceUID shell_pid = 0;
       char m[224];
       if (line[6] == ' ' && line[7] != '\0') {
@@ -590,16 +575,13 @@ static int serve(int sock) {
     } else if (strncmp(line, "exec ", 5) == 0) {
       // Does sceAppMgrLoadExec take a path outside our own app0:?
       //
-      // Every launch we do today goes through sceAppMgrLaunchAppByUri, which
-      // asks the *shell* to resolve a title id -- and the shell only knows
-      // title ids in its installed-titles database, which is the thing we
-      // cannot write. LoadExec takes a path instead, so if it accepts one in
-      // another title's directory then a slot never needs registering at all
-      // and ScePromoterUtil stops mattering.
+      // sceAppMgrLaunchAppByUri asks the shell to resolve a title id, and the
+      // shell only knows ids in its installed-titles database, which we cannot
+      // write. LoadExec takes a path, so if it accepts one in another title's
+      // directory a slot never needs registering.
       //
-      // The expected answer is no: LoadExec is documented for chain-loading
-      // within a title's own directory. Worth one round trip to know rather
-      // than assume, because the whole install story turns on it.
+      // Expected answer is no: LoadExec is documented for chain-loading within
+      // a title's own directory.
       const char* path = line + 5;
       char m[256];
       snprintf(m, sizeof m, "OK exec %s\n", path);
@@ -690,17 +672,14 @@ int main(void) {
   g_log = sceIoOpen("ux0:data/flutter-vita/receiver.log",
                     SCE_O_WRONLY | SCE_O_CREAT | SCE_O_TRUNC, 0777);
 
-  // Start the background supervisor before anything else. It is what makes a
-  // crash recoverable without a tap: it is a separate process, so it outlives
-  // the foreground app dying. Failure here is not fatal -- the loop still works,
-  // it just needs a tap after each crash, as before.
+  // Start the background supervisor before anything else. It is a separate
+  // process, so it outlives the foreground app dying, which is what makes a
+  // crash recoverable without a tap. Failure here is not fatal.
   //
-  // The mode argument is 0, and VitaSDK's header is wrong about it. That header
-  // says "must be 1" and defines SCE_BGAPP_UTIL_ERROR_INVALID_ARG as 0x80106502;
-  // Sony's own header says mode 0 and INVALID_ARG 0x80106501. Both constants are
-  // off by one, and 0x80106501 is exactly what this call returned on every boot
-  // between 2026-08-10 and 2026-08-15 -- an invalid argument, not a permission
-  // problem, which is what the undocumented code was read as at the time.
+  // The mode argument is 0, and VitaSDK's header is wrong about it: it says
+  // "must be 1" and defines INVALID_ARG as 0x80106502, while Sony's says mode 0
+  // and 0x80106501. Both constants are off by one, and 0x80106501 is what this
+  // call returned on every boot while mode 1 was passed.
   {
     const int bg = sceSysmoduleLoadModule(SCE_SYSMODULE_BG_APP_UTIL);
     const int st = (bg >= 0) ? sceBgAppUtilStartBgApp(0) : bg;

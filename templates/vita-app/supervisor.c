@@ -1,34 +1,26 @@
-// Flutter Vita Supervisor — packaged as eboot2.bin, run as a background app.
+// Flutter Vita Supervisor -- packaged as eboot2.bin, run as a background app.
 //
-// The problem it exists to solve: when the app under test crashes, both it and
-// the receiver are gone, and nothing left on the device can start anything.
-// Recovery needs a physical tap. That is tolerable once; it is not tolerable as
-// the routine outcome of every crash, and the crash under investigation
-// produces one every twenty seconds.
+// When the app under test crashes, both it and the receiver are gone and
+// nothing left on the device can start anything, so recovery needs a physical
+// tap.
 //
 // sceBgAppUtilStartBgApp(0) starts eboot2.bin from the same app directory as a
-// *background* application. A background process is not the foreground app, so
-// it survives the foreground app crashing. This binary therefore stays alive
-// across the app dying and can launch the receiver again on request.
+// background application, which is not the foreground app and so survives it
+// crashing. This binary stays alive and can launch the receiver again.
 //
-// It ships with the *app*, not with the receiver, and that is forced rather than
-// chosen. Only one directory on this device is writable by anything we control
-// -- ux0:app/FVTA00002, which the receiver installs into. An app cannot write its
-// own directory (`touch ux0:app/FVTA00001/x` is 0x8001000D, EACCES, even for an
-// UNSAFE self), and ScePromoterUtil, which could, refuses to load for us with
-// MODULEMGR_NO_LIB. So the receiver cannot update itself and cannot gain an
-// eboot2.bin; the app slot is redeployed every cycle and can.
+// It ships with the app rather than the receiver, and that is forced: only the
+// app slot is writable by anything we control. An app cannot write its own
+// directory (0x8001000D even for an UNSAFE self), and ScePromoterUtil refuses
+// to load for us, so the receiver cannot gain an eboot2.bin.
 //
-// Started from dev_server_run, which makes it dev-loop infrastructure that
-// leaves with the dev server: an app that links a devserver stub for shipping
-// gets no supervisor, which is right.
+// Started from dev_server_run, so it leaves with the dev server: an app that
+// links a devserver stub for shipping gets no supervisor.
 //
-// Deliberately trivial: sockets and one launch call. No Dart, no filesystem
-// writes beyond a log, nothing that can fault. The whole value is that it does
-// not crash, so it must stay boring.
+// Deliberately trivial: sockets and one launch call. Its whole value is that
+// it does not crash.
 //
-// There is no display in the background: psvDebugScreen is NOT used here. All
-// output goes to ux0:data/flutter-vita/supervisor.log.
+// There is no display in the background, so psvDebugScreen is NOT used here.
+// Output goes to ux0:data/flutter-vita/supervisor.log.
 
 #include <psp2/appmgr.h>
 #include <psp2/io/fcntl.h>

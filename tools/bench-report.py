@@ -22,28 +22,20 @@ MARGIN = 0.10
 # smaller than the measurement's own resolution is not a change.
 VSYNC_MS = 1000.0 / 60.0
 
-# Worst-frame alone is not enough to grade a scene on, and the route scenes are
-# why. Every one of them runs at a clean 60 fps -- median 16.67 ms, p95 16.67 ms
-# -- with a single outlier frame of exactly 133.33 ms, eight vsyncs, somewhere in
-# the window. Whether that outlier lands inside the sample or outside it is what
-# worst-frame reports, so the same scene grades 33.3 one run and 133.3 the next
-# with nothing changed.
+# Worst-frame alone is not enough to grade a scene on. Every route scene runs
+# at a clean 60 fps with a single outlier of exactly 133.33 ms somewhere in the
+# window, so whether that outlier lands inside the sample decides whether the
+# scene grades 33.3 or 133.3 with nothing changed. One report flagged two
+# scenes as +300% regressions, silently "improved" a third 8x, and passed a
+# scene whose raster mean had gone 8.0 ms to 41.5 ms.
 #
-# On 2026-08-31 that produced three wrong answers in one report: route_spans and
-# route_boxes were flagged as +300% regressions, route_wrap silently "improved"
-# 8x by the same mechanism, and blur_backdrop -- whose raster mean went 8.0 ms to
-# 41.5 ms and whose stall doubled to 2.1 s -- passed, because its worst frame
-# happened to come in at 100 ms against a baseline of 133 ms.
-#
-# So two more metrics are graded, chosen because they are means or totals over
-# the whole window rather than a single frame, and cannot flip on where one
-# outlier fell:
+# So two more metrics are graded, both means or totals over the whole window:
 #
 #   raster_ms  the rasteriser's mean. What a renderer change moves.
 #   stall_ms   total time below 30 fps. What a person actually feels.
 #
-# Wider margins than worst-frame's and an absolute floor on each, because a mean
-# that moves from 0.5 ms to 0.7 ms is not news.
+# Wider margins than worst-frame's, and an absolute floor on each: a mean that
+# moves from 0.5 ms to 0.7 ms is not news.
 MEAN_MARGIN = 0.25
 RASTER_FLOOR_MS = 1.0
 STALL_FLOOR_MS = 100.0
@@ -196,18 +188,16 @@ def main():
           f" — see ADR-0017{OFF}")
 
     # ---- what to fix first ----------------------------------------------
-    # The table has one row per scene and up to nine columns per renderer,
-    # which is the right shape for reading a single scene and the wrong shape
-    # for the question people actually arrive with: which of these is bad.
+    # The table is one row per scene and up to nine columns per renderer, which
+    # is the wrong shape for the question people arrive with: which of these
+    # is bad.
     #
-    # Ranked by stall -- total time below 30 fps -- because that is the metric
-    # that corresponds to something a person felt, and because it is a total
-    # over the window rather than a single frame (see MEAN_MARGIN above for why
-    # worst-frame cannot carry this).
+    # Ranked by stall, total time below 30 fps, because that corresponds to
+    # something a person felt and is a total over the window rather than one
+    # frame.
     #
-    # `where` names the thread the time went to. It is the difference between a
-    # scene the GPU could help and a scene no renderer change will touch, and
-    # on this port almost everything has turned out to be the second kind.
+    # `where` names the thread the time went to: the difference between a scene
+    # the GPU could help and a scene no renderer change will touch.
     rank_mode = "gl" if "gl" in have else have[0]
     ranked = []
     for name, s_ in scenes_of(results[rank_mode]).items():
@@ -215,18 +205,15 @@ def main():
             continue
         b = bad_build(s_)
         r = s_["raster_ms"]
-        # "neither" is decided first, and on an absolute threshold rather
-        # than on the ratio between the two. A scene whose build is 4.5 ms and
-        # whose raster is 1.1 ms has a build four times the raster and a
-        # perfectly healthy build -- route_bare, which stalls 183 ms on numbers
-        # that fit inside a frame twice over. Ranking that as "UI thread" sends
-        # someone to optimise a build that is not the problem.
+        # "neither" is decided first, and on an absolute threshold rather than
+        # the ratio between the two. A scene whose build is 4.5 ms and whose
+        # raster is 1.1 ms has a build four times the raster and a perfectly
+        # healthy build; ranking that as "UI thread" sends someone to optimise
+        # something that is not the problem.
         #
         # 8 ms is half a vsync: under it, neither thread can be what made the
-        # frame late. Every scene that lands here has looked like a collection
-        # arriving on a build frame -- see the bimodality note in
-        # apps/gallery/bench/README.md. Nothing has measured one; the port has
-        # no VM service.
+        # frame late. Nothing has measured what does; the port has no VM
+        # service.
         if s_["stall_ms"] > 0 and b < 8.0 and r < 8.0:
             where = "neither"
         elif b > max(2 * r, 4.0):
@@ -312,13 +299,10 @@ def main():
                 continue
             # A scene the run could not sample properly is not a scene that got
             # slower, and grading one produces the loudest numbers in the report
-            # off the fewest frames. sw blur_backdrop managed four frames in
-            # 1933 ms on 2026-08-31 and its raster mean, over those four, read as
-            # +492%. The table already refuses to print a number for these; the
-            # gate has to refuse to grade them for the same reason.
+            # off the fewest frames: four frames in 1933 ms once read as +492%.
             #
-            # Both sides, because a baseline written from a thin window is just
-            # as untrustworthy as a thin result measured against it.
+            # Both sides, because a baseline written from a thin window is as
+            # untrustworthy as a thin result measured against it.
             if not sound(s) or not sound(b[name]):
                 continue
             was, now = b[name]["worst_ms"], s["worst_ms"]

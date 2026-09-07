@@ -75,13 +75,11 @@ void dev_server_set_ready_handler(void (*ready)(void)) {
 
 // Let go of the GPU before this process ends.
 //
-// Defined by the embedder when it is running the GL path, absent otherwise --
-// hence weak. Every exit below launches another application and then calls
-// sceKernelExitProcess, and under GL that leaves a live GXM context and queued
-// flips pointing at memory the kernel is about to reclaim. The console locks
-// up hard enough to need the power button; the PS button does not respond,
-// because the shell composites through the same driver. See the note on
-// flutter_vita_gpu_shutdown in vita_embedder.cc.
+// Defined by the embedder only on the GL path, hence weak. Every exit below
+// launches another application and calls sceKernelExitProcess, and under GL
+// that leaves a live GXM context and queued flips pointing at memory the kernel
+// is about to reclaim. The console then needs the power button, because the
+// shell composites through the same driver.
 extern void flutter_vita_gpu_shutdown(void) __attribute__((weak));
 
 // The stall watchdog's report, taken now. Weak because the experiments link this
@@ -227,26 +225,21 @@ static void cmd_log(int sock, const char* log_path) {
   sceIoClose(fd);
 }
 
-// One connection, one or more commands. Returns 1 if the caller should stop
-// serving (exit or relaunch), 0 to keep going.
 // `ls <path>` and `rm <path>`, in the shared server rather than only in the
 // receiver's extras.
 //
-// An app has always been able to write any title but its own -- ux0:app/<self>
-// is the read-only app0: mount, and everything else is ordinary storage. That
-// asymmetry is what makes a receiver possible at all, and it runs both ways:
-// FVTA00002 can write ux0:app/FVTA00004, which is the directory the receiver
-// itself gets EACCES on. Measured, not assumed.
+// An app can write any title but its own -- ux0:app/<self> is the read-only
+// app0: mount, and everything else is ordinary storage. That asymmetry is what
+// makes a receiver possible, and it runs both ways: FVTA00002 can write
+// ux0:app/FVTA00004, the directory the receiver itself gets EACCES on.
 //
-// So the receiver can be updated by any running app, with no scePromoterUtil --
-// which is just as well, because it refuses to load on this console
-// (MODULEMGR_NO_LIB, 0x8002D003, recorded three times now). What was missing
-// was not permission, it was that an app could write a file into another
-// title and then neither see it nor take it back. `put` alone can install a
-// receiver; it cannot clean up after one.
+// So any running app can update the receiver, with no scePromoterUtil, which
+// refuses to load on this console anyway (MODULEMGR_NO_LIB, 0x8002D003). What
+// was missing was not permission: an app could write a file into another title
+// and then neither see it nor take it back.
 //
-// No glob and no recursion in `rm`, deliberately. This deletes on a console
-// with one lifeline app installed on it.
+// No glob and no recursion in `rm`. This deletes on a console with one lifeline
+// app installed on it.
 static void cmd_ls(int sock, const char* path) {
   char m[320];
   const SceUID d = sceIoDopen(path);
@@ -284,10 +277,9 @@ static void cmd_rm(int sock, const char* path) {
 
 // Give the console to `receiver` and end this process. Never returns.
 //
-// Split out of the `handoff` verb so a run that nobody is watching can do the
-// same thing. A benchmark started from the receiver's TESTS tab used to end with
-// the app sitting on the results and the receiver gone, so the TESTS tab that asked
-// for the run could not show it.
+// Split out of the `handoff` verb so a run nobody is watching can do the same.
+// A benchmark started from the TESTS tab used to end with the app sitting on
+// its results and the receiver gone.
 static void hand_over_to(const char* receiver) {
   logf_("  [dev] handing off to %s\n", receiver);
   release_gpu();
@@ -308,9 +300,7 @@ static void hand_over_to(const char* receiver) {
 // A handoff the app can ask for itself, by writing a file.
 //
 // Dart cannot call sceAppMgrLaunchAppByUri and there is no platform channel on
-// this path -- ADR-0016 keeps the reliability-critical half free of one. A file
-// is what the rest of this project already uses to cross that line, so it is
-// what this uses too. The contents are an optional title id; empty means the
+// this path (ADR-0016). The contents are an optional title id; empty means the
 // same resolution order the verb uses.
 #define HANDOFF_REQUEST "ux0:data/flutter-vita/handoff.request"
 
@@ -351,6 +341,8 @@ static void start_handoff_watch(void) {
   sceKernelStartThread(th, 0, NULL);
 }
 
+// One connection, one or more commands. Returns 1 if the caller should stop
+// serving (exit or relaunch), 0 to keep going.
 static int serve(int sock, const char* log_path, const char* eboot_path) {
   char line[256];
   for (;;) {
@@ -368,20 +360,16 @@ static int serve(int sock, const char* log_path, const char* eboot_path) {
     }
 
     // In minimal mode everything outside the deploy and debug loop is refused
-    // -- see dev_server_set_minimal. The list is spelled out here rather than
-    // deleted from the dispatch below because both products link the same
-    // file, and an app under development still wants the whole thing.
+    // -- see dev_server_set_minimal. Spelled out here rather than deleted from
+    // the dispatch below, because both products link the same file.
     //
     // tap and swipe are on the list because the receiver's screen became a
-    // screen you press (ADR-0016): four tabs, a log viewer and a delete
-    // button. A deploy tool that can read the panel with `shot` but cannot
-    // reach the CRASHES tab can only verify the first thing the panel draws.
+    // screen you press (ADR-0016). A deploy tool that can read the panel with
+    // `shot` but cannot reach the CRASHES tab can only verify the first thing
+    // the panel draws.
     //
-    // Not in the receiver yet. This file is compiled from the engine package
-    // (package-engine.sh copies it there), and the receiver links the pinned
-    // one -- so minimal mode gains tap at the next pin, not at the next
-    // receiver build. Deliberate: ADR-0016 decision 2 is that nothing reaches
-    // the receiver's engine without someone choosing to re-pin.
+    // Not in the receiver yet: it links the pinned copy of this file, so
+    // minimal mode gains tap at the next pin. ADR-0016 decision 2.
     if (g_minimal && strcmp(line, "ping") != 0 && strcmp(line, "probe") != 0 &&
         strcmp(line, "log") != 0 && strncmp(line, "get ", 4) != 0 &&
         strncmp(line, "put ", 4) != 0 && strcmp(line, "shot") != 0 &&
@@ -516,14 +504,12 @@ static int serve(int sock, const char* log_path, const char* eboot_path) {
     } else if (strcmp(line, "bail") == 0 || strcmp(line, "abort") == 0) {
       // Exercise the crash-recovery path on demand.
       //
-      // `bail` takes the clean route deliberately; `abort` goes through libc's
-      // abort(), which is the symbol the app overrides, so it also proves the
-      // override is actually linked rather than merely compiled. Both should
-      // look identical from here: the socket closes, no dialog appears on the
-      // panel, and the receiver answers within a few seconds.
+      // `bail` takes the clean route; `abort` goes through libc's abort(), the
+      // symbol the app overrides, so it also proves the override is linked.
+      // Both look identical from here: the socket closes, no dialog appears,
+      // and the receiver answers within a few seconds.
       //
-      // A recovery mechanism nobody can trigger is a recovery mechanism nobody
-      // knows is broken. This one is checkable in ten seconds from the host.
+      // A recovery mechanism nobody can trigger is one nobody knows is broken.
       send_str(sock, "OK bailing to the receiver\n");
       sceNetSocketClose(sock);
       logf_("  [dev] bail requested\n");
@@ -547,16 +533,13 @@ static int serve(int sock, const char* log_path, const char* eboot_path) {
                (line[7] == '\0' || line[7] == ' ')) {
       // The other half of the loop. We cannot replace our own eboot.bin, and
       // while we run nobody else can either -- so hand control to the receiver,
-      // which can do both once we are gone. It launches us back afterwards.
+      // which can do both once we are gone, and launches us back afterwards.
       //
-      // Which receiver is not a constant any more. It used to be FVTA00003 and
-      // nothing else, which was true right up until that slot was emptied and
-      // every handoff started launching a title that did not exist -- the
-      // shell falls back to something, so the failure looks like a puzzle
-      // rather than an error. Resolution order: the argument, then
-      // receiver.titleid, then the historical default. The file is there so a
-      // console whose receiver has moved can be corrected with one `put`,
-      // without rebuilding and reinstalling every app on it.
+      // Which receiver is not a constant. It used to be FVTA00003 and nothing
+      // else, which held right up until that slot was emptied and every handoff
+      // launched a title that did not exist. Resolution order: the argument,
+      // then receiver.titleid, then the historical default. The file lets a
+      // console whose receiver has moved be corrected with one `put`.
       char receiver[16];
       if (line[7] == ' ' && line[8] != '\0') {
         snprintf(receiver, sizeof receiver, "%s", line + 8);
@@ -581,10 +564,9 @@ static int serve(int sock, const char* log_path, const char* eboot_path) {
     } else if (strcmp(line, "shot") == 0 || strcmp(line, "shotinfo") == 0) {
       // Raw framebuffer, no header, so the host can wrap it in a PNG.
       //
-      // `shotinfo` returns only the description line, which is the part that
-      // says whether the capture means anything: if the pointer the display
-      // controller holds is not the one the app drew into, then the pixels
-      // below are real but nobody is looking at them.
+      // `shotinfo` returns the description line alone, which says whether the
+      // capture means anything: if the display controller's pointer is not the
+      // one the app drew into, the pixels are real but nobody sees them.
       char describe[192];
       describe[0] = '\0';
       unsigned int size = 0;
@@ -646,9 +628,7 @@ static int serve(int sock, const char* log_path, const char* eboot_path) {
       // Turn the debug HUD off for a screenshot, and back on afterwards.
       //
       // Worth a command rather than a rebuild: the HUD sits on top of the app,
-      // so every capture taken for documentation has it in the corner, and the
-      // only alternatives are relinking with the overlay compiled out or
-      // cropping the picture afterwards.
+      // so every capture taken for documentation has it in the corner.
       if (g_overlay == NULL) {
         send_str(sock, "ERR no overlay handler\n");
       } else if (strcmp(line + 8, "on") == 0) {
@@ -665,13 +645,9 @@ static int serve(int sock, const char* log_path, const char* eboot_path) {
       // crashing.
       //
       // A hang is the one failure the log cannot describe: it says what
-      // happened last, never what everything is currently blocked on. The
-      // dump does -- it carries every thread's PC, which is exactly the
-      // question a deadlock poses. m3 hung inside FlutterEngineRun after
-      // starting its threads and there was no other way to see where.
-      //
-      // Kept out of the way of ordinary use: nothing sends this by accident,
-      // and the alternative was waiting for a fault that may never come.
+      // happened last, never what everything is blocked on. The dump carries
+      // every thread's PC, which is the question a deadlock poses. m3 hung
+      // inside FlutterEngineRun and there was no other way to see where.
       send_str(sock, "OK faulting\n");
       *(volatile unsigned int*)0 = 0xDEAD;
       return 1;  // not reached
@@ -687,34 +663,29 @@ static int serve(int sock, const char* log_path, const char* eboot_path) {
 //
 // A background process is not the foreground app, so it outlives this one
 // dying. That is what lets a crash be recovered without someone walking to the
-// console and tapping the receiver -- which is the actual limit on how fast this
-// port can be debugged, since builds take twenty seconds and a human does not.
+// console and tapping the receiver.
 //
 // Two things about the argument, both of which cost days. The mode is 0:
 // VitaSDK's header says "must be 1" and defines INVALID_ARG as 0x80106502,
-// while Sony's own header says 0 and 0x80106501, and 0x80106501 is exactly what
-// mode 1 returned on every boot. And the app directory must contain
-// sce_sys/param2.sfo, a second manifest describing eboot2.bin, or the call
-// cannot succeed whatever mode is passed.
+// while Sony's header says 0 and 0x80106501, and 0x80106501 is what mode 1
+// returned on every boot. And the app directory must contain
+// sce_sys/param2.sfo, a second manifest describing eboot2.bin.
 //
-// Failure is logged and ignored. Losing the supervisor costs a tap per crash,
-// which is where this started; it is not a reason to take the app down.
+// Failure is logged and ignored. Losing the supervisor costs a tap per crash.
 //
 // Off unless switched on, because a failed start is not silent: the shell puts
-// "could not find app" on the panel at every launch, in front of the app. The
-// switch is a file rather than a build flag so that flipping it costs one
-// `put` instead of a rebuild and a 12 MB upload -- and it reads the file's
-// *contents*, not its existence, because turning it back off would otherwise
-// need a delete, which the receiver currently installed on the device cannot do.
+// "could not find app" on the panel at every launch. The switch is a file so
+// flipping it costs one `put`, and it reads the file's *contents* rather than
+// its existence, because turning it off would otherwise need a delete.
 //
 //   echo -n 1 > on  &&  dev.sh put on ux0:data/flutter-vita/supervisor.on
+
 // Which title `handoff` hands to. One line, no newline needed:
 //
 //   printf 'put 9 ux0:data/flutter-vita/receiver.titleid\nFVTA00004' | nc <ip> 1339
 //
 // Returns 0 when the file is absent or does not hold nine plausible
-// characters, so a truncated or half-written file falls back rather than
-// launching something arbitrary.
+// characters.
 static int read_receiver_titleid(char* out, int max) {
   const SceUID fd =
       sceIoOpen("ux0:data/flutter-vita/receiver.titleid", SCE_O_RDONLY, 0777);
@@ -745,35 +716,26 @@ static int supervisor_enabled(void) {
 //
 // Answers `flutter-vita.local` so nothing has to know the console's address.
 //
-// This exists because the address is not stable. The Vita drops Wi-Fi and
-// comes back on whatever DHCP gives it, and every tool here takes an IP:
-// deploy.sh, the probe scripts, `nc <ip> 1339`. Every session so far has begun
-// by finding out what the number is today, and twice in one afternoon it cost
-// a round of "it stopped answering" before anyone thought to check.
+// The address is not stable: the Vita drops Wi-Fi and comes back on whatever
+// DHCP gives it, and every tool here took an IP. Every session began by finding
+// out what the number was that day.
 //
-// Multicast DNS is the answer the desktop already has. macOS resolves .local
-// natively through Bonjour and Windows has had a responder since 10, so the
-// host side needs nothing installed: `VITA_HOST=flutter-vita.local` works in
-// every script at once. It is also known to work on this console, because
-// localsend's discovery is multicast UDP and phones find the Vita with it.
+// macOS resolves .local natively through Bonjour and Windows has had a
+// responder since 10, so the host side needs nothing installed. It is known to
+// work on this console, because localsend's discovery is multicast UDP.
 //
 // Scope, deliberately: A records for one name. No service enumeration, no
-// PTR/SRV/TXT, no probing for name conflicts, no goodbye packets. A responder
-// that advertised _flutter-vita._tcp would be answering questions nobody here
-// asks. If two consoles ever run this at once they will both claim the name
-// and the answer will be whichever replies first; that is a real limitation of
-// skipping conflict detection, and one console is the case this serves.
+// PTR/SRV/TXT, no conflict probing, no goodbye packets. Two consoles running
+// this at once would both claim the name; one console is the case this serves.
 //
-// It does not fix Wi-Fi dropping. When the console falls off the network the
-// name stops resolving with it. What it removes is having to ask what the
+// It does not fix Wi-Fi dropping. What it removes is having to ask what the
 // address is, not having to reconnect.
 //
 // It announces on a timer as well as answering queries. Answering alone was
 // enough only for a console that hears the multicast group, and this one does
 // not appear to: on 2026-09-01 it served TCP for twenty minutes while the name
-// resolved for the first two, which is exactly the shape of two startup
-// announcements ageing out of the host's cache with nothing renewing them.
-// Every diagnosis I made in that window blamed Wi-Fi and every one was wrong.
+// resolved for the first two, which is two startup announcements ageing out of
+// the host's cache with nothing renewing them.
 #define MDNS_PORT 5353
 #define MDNS_GROUP "224.0.0.251"
 #define MDNS_TTL 120
@@ -781,22 +743,17 @@ static int supervisor_enabled(void) {
 // The names this console answers to, each with `.local` appended on the wire.
 //
 // `flutter-vita` is what the tools default to. `flutter.vita` is here because
-// that is the obvious thing to want to type, and a bare `flutter.vita` cannot
-// be made to work: mDNS answers for the `.local` domain and nothing else, so a
-// name ending in `.vita` goes to the unicast DNS resolver, which has never
-// heard of this console. Keeping the dot and landing in `.local` is as close as
-// the protocol allows, and answering to both costs one comparison per query.
+// it is the obvious thing to type, and a bare `flutter.vita` cannot be made to
+// work: mDNS answers for `.local` and nothing else, so a name ending in `.vita`
+// goes to the unicast resolver, which has never heard of this console.
 static const char* const kMdnsNames[] = {"flutter-vita", "flutter.vita"};
 #define MDNS_NAME_COUNT ((int)(sizeof kMdnsNames / sizeof kMdnsNames[0]))
 
 static int g_mdns_sock = -1;
 
 // What the responder has actually done, written to disk so the receiver's panel
-// can show it. Every mDNS failure this project has had looked identical from
-// the host -- the name stops resolving -- and the four possible causes need
-// four different fixes. Counting them on the console is the only way to tell
-// a console that never joined the group from one whose announcement simply
-// aged out.
+// can show it. Every mDNS failure here looked identical from the host -- the
+// name stops resolving -- and the four causes need four different fixes.
 #define MDNS_STATUS_PATH "ux0:data/flutter-vita/mdns.txt"
 static int g_mdns_joined = 0;    // did ADD_MEMBERSHIP succeed
 static int g_mdns_announced = 0; // A records we have sent unasked

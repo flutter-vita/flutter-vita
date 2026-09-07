@@ -3,11 +3,9 @@ import 'dart:typed_data';
 
 import 'package:file_picker/file_picker.dart';
 // The interface every platform implementation must extend, and the one thing
-// `package:file_picker/file_picker.dart` does not export. Nothing in that
-// package's public surface reaches it, because `file_picker` ships all of its
-// platforms itself and never expected a third-party one. Importing through
-// `src/` is the only way in, and it is why this package pins a caret range on
-// file_picker rather than accepting any version.
+// `package:file_picker/file_picker.dart` does not export: file_picker ships all
+// of its platforms itself and never expected a third-party one. Importing
+// through `src/` is why this package pins a caret range on file_picker.
 // ignore: implementation_imports
 import 'package:file_picker/src/platform/file_picker_platform_interface.dart';
 import 'package:vita_file_browser/vita_file_browser.dart';
@@ -16,26 +14,18 @@ export 'package:vita_file_browser/vita_file_browser.dart' show VitaPaths;
 
 /// The Vita implementation of [FilePickerPlatform], for `file_picker` 11.x.
 ///
-/// **Non-endorsed**, per ADR-0009: `file_picker` does not know the Vita exists,
-/// so an app depends on this package alongside it and calls
-/// `FilePickerVita.registerWith()`.
+/// Non-endorsed: `file_picker` does not know the Vita exists, so an app depends
+/// on this package alongside it and calls `FilePickerVita.registerWith()`.
 ///
-/// The UI lives in `vita_file_browser`, which this shares with
-/// `file_selector_vita`. See that package for why the console draws its own
-/// picker at all, and why the browser is not in here.
+/// The UI lives in `vita_file_browser`, shared with `file_selector_vita`.
 ///
-/// ## What is not supported, and why
+/// Not supported:
 ///
 ///   * `withReadStream`, `onFileLoading`, `compressionQuality`,
 ///     `cancelUploadOnWindowBlur`, `readSequential`. These describe cloud
 ///     providers, image re-encoding and browser tabs. Files here are on a
 ///     memory card and are read in one go.
-///
-///   * `clearTemporaryFiles`. Nothing is cached: [pickFiles] returns the file
-///     where it already sits, so there is nothing to clear. It answers true
-///     rather than throwing, which is the honest answer to "is the cache
-///     empty".
-///
+///   * `clearTemporaryFiles`. Nothing is cached, so it answers true.
 ///   * `pickFileAndDirectoryPaths`. Inherited as unimplemented, matching every
 ///     platform but macOS.
 class FilePickerVita extends FilePickerPlatform {

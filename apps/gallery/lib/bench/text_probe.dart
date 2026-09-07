@@ -1,16 +1,12 @@
-// Where the 950 us in a Text widget goes, timed from Dart. ADR-0017.
+// Where the 950 us in a Text widget goes, timed from Dart.
 //
-// The engine side is already instrumented (patches/flutter-engine/0010) and
-// accounts for only ~260 us of it: a ui.Paragraph's construction, build and
-// layout. The other ~690 us is above dart:ui, in the framework, and no engine
-// counter can see it.
+// The engine side is instrumented and accounts for only ~260 us: a
+// ui.Paragraph's construction, build and layout. The other ~690 us is above
+// dart:ui, in the framework, where no engine counter can see it.
 //
-// It does not need one. TextPainter is ordinary Dart calling ordinary dart:ui,
-// so the same work can be performed here with a Stopwatch around each layer:
-// building the two style objects, building the paragraph, laying it out, and
-// -- separately -- the whole thing through TextPainter as a widget would. The
-// difference between the last two is the framework's share, measured rather
-// than inferred.
+// TextPainter is ordinary Dart calling ordinary dart:ui, so the same work runs
+// here with a Stopwatch around each layer. The difference between the last two
+// is the framework's share, measured rather than inferred.
 
 import 'dart:ui' as ui;
 
@@ -152,7 +148,7 @@ TextProbe probeText({int n = 48, int warm = 8}) {
   // Is the step the cost of having a pushed style block at all, or of what is
   // in it? These vary the two independently.
   //
-  //   nopush     paragraph style only, no pushStyle -- one block, by force
+  //   nopush     paragraph style only, no pushStyle
   //   pushempty  an empty ui.TextStyle pushed -- a second block, same content
   //   pushsame   a pushed style whose values match the paragraph style
   //   pushdiff   a pushed style that diverges by one field
@@ -181,12 +177,10 @@ TextProbe probeText({int n = 48, int warm = 8}) {
   // TextPainter's sequence, priced by cumulative passes rather than by
   // stopwatches inside the loop.
   //
-  // The first attempt at this put four Stopwatches around four calls and
-  // reported 719 us for a sequence TextPainter completes in 410 -- a total
-  // larger than the thing it decomposes, which is the tell. Eight clock reads
-  // an iteration are not free here; `clock` below is what they cost. So each
-  // pass does strictly more work than the last and the differences are the
-  // per-call costs.
+  // Four stopwatches around four calls reported 719 us for a sequence
+  // TextPainter completes in 410: eight clock reads an iteration are not free
+  // here, and `clock` below is what they cost. So each pass does strictly more
+  // work than the last and the differences are the per-call costs.
   {
     final sw = Stopwatch()..start();
     for (var i = 0; i < n; i++) {

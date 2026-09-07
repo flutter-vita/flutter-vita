@@ -1,32 +1,22 @@
 // The receiver's updater: the one app whose job is to replace the receiver.
 //
-// A running title cannot write its own directory. app0: is the read-only
-// mount of ux0:app/<own id>, so every attempt is 0x8001000D -- which means the
-// receiver can install anything on this console except a new receiver. Until now
-// that gap was filled by whatever app happened to be in FVTA00002
-// (tools/update-receiver.sh), so updating the receiver required a working Flutter
-// app with a dev server, and a broken app slot took the receiver's update path
-// down with it.
+// A running title cannot write its own directory. app0: is the read-only mount
+// of ux0:app/<own id>, so every attempt is 0x8001000D, and the receiver can
+// install anything on this console except a new receiver.
 //
-// This is that path as its own title. It has no engine, no network and no
-// protocol: the receiver stages the new build onto the memory card with the
-// `put` command it already has, launches this, and this copies the staged
-// tree over ux0:app/<target> and launches the target back. Boots in about a
-// second, and nothing in the Flutter tree can break it.
+// This is that path as its own title. No engine, no network, no protocol: the
+// receiver stages the new build onto the card with `put`, launches this, and
+// this copies the staged tree over ux0:app/<target> and launches it back.
 //
-// The order is not arbitrary. eboot.bin is written last, after every asset,
-// because a half-written eboot is the one file that cannot be recovered from
-// the console itself -- and the eboot it replaces is copied to
-// ux0:data/flutter-vita/receiver-backup first, so a build that boots into
-// nothing is one L-trigger away from the build that worked.
+// eboot.bin is written last, after every asset, because a half-written eboot is
+// the one file that cannot be recovered from the console itself. The eboot it
+// replaces is copied to ux0:data/flutter-vita/receiver-backup first, so a build
+// that boots into nothing is one L-trigger away from the build that worked.
 //
 // The staging directory:
 //
 //   ux0:data/flutter-vita/receiver-update/manifest.txt   target + file list
 //   ux0:data/flutter-vita/receiver-update/files/<rel>    the payload
-//
-// The manifest is removed once the copy is done, so launching this app by
-// hand with nothing staged is a no-op that hands the console back.
 
 #include <psp2/appmgr.h>
 #include <psp2/ctrl.h>

@@ -16,9 +16,8 @@ class Probe {
   /// How long the harness gives this probe before calling it hung.
   ///
   /// 25 seconds suits a probe that either answers at once or is broken. It is
-  /// the wrong ceiling for one that is deliberately moving megabytes, where a
-  /// timeout reports "slower than 25 seconds" and hides the number that is the
-  /// entire point of running it.
+  /// the wrong ceiling for one deliberately moving megabytes, where a timeout
+  /// reports "slower than 25 seconds" and hides the number being measured.
   final Duration timeout;
 
   /// Returns a short human-readable detail on success. Throwing is a failure;
@@ -45,10 +44,9 @@ const _dataDir = 'ux0:data/flutter-vita';
 
 /// Append a progress line to the run journal from inside a probe.
 ///
-/// The journal normally records one line per probe, which is too coarse for a
-/// probe whose whole purpose is to find out *how many* of something can exist
-/// before the process dies. Same file, same synchronous flush, for the same
-/// reason: it has to survive the crash it is measuring.
+/// One line per probe is too coarse for a probe whose purpose is to find out
+/// how many of something can exist before the process dies. Same file, same
+/// synchronous flush: it has to survive the crash it is measuring.
 void _mark(String s) {
   try {
     File('ux0:data/flutter-vita/conformance.txt')
@@ -61,10 +59,9 @@ void _mark(String s) {
 /// The machine running tools/benchserver.py. See the throughput probes.
 ///
 /// Read from the memory card rather than compiled in, because the host's lease
-/// moves and a compiled-in address means a 15 MB rebuild and reinstall to chase
-/// it. That is not hypothetical: fifteen probes failed a whole run with
-/// `errno = 61`, ECONNREFUSED, for no reason other than the bench machine
-/// having come back on .26 instead of .30 -- which reads like a broken socket
+/// moves and a compiled-in address means a 15 MB rebuild to chase it. Fifteen
+/// probes failed a whole run with `errno = 61`, ECONNREFUSED, because the bench
+/// machine came back on .26 instead of .30 -- which reads like a broken socket
 /// layer and is a DHCP lease.
 ///
 /// The dev server writes it without a rebuild:
@@ -72,7 +69,6 @@ void _mark(String s) {
 ///   printf 'put 12 ux0:data/flutter-vita/bench.host\n192.168.0.26' \
 ///     | nc <vita> 1339
 ///
-/// Same shape as `handoff` reading receiver.titleid, and for the same reason.
 /// The constant stays as the fallback so a card with no file still runs.
 final String _benchHost = _readBenchHost();
 
@@ -99,10 +95,9 @@ String _rate(int bytes, Stopwatch sw) {
 
 /// Reads a URL to the end and reports what arrived and how long it took.
 ///
-/// The self-signed bench certificate is accepted for this host only. That is
-/// the whole point of the probe -- it measures BoringSSL's throughput, not the
-/// trust store -- and narrowing it to the bench host keeps the exception from
-/// applying to anything else the app does.
+/// The self-signed bench certificate is accepted for this host only: the probe
+/// measures BoringSSL's throughput, not the trust store, and narrowing it keeps
+/// the exception off everything else the app does.
 Future<(int, Stopwatch)> _drain(String url) async {
   final client = HttpClient()
     ..connectionTimeout = const Duration(seconds: 10)
@@ -122,11 +117,9 @@ Future<(int, Stopwatch)> _drain(String url) async {
 ///
 /// 3731 us per zero-duration timer could have been 200 timers each costing
 /// 3.7 ms, or 196 costing 200 us and four stalling for most of a second. Those
-/// were different bugs with different fixes, and every measurement before this
-/// one was a total divided by 200, which cannot tell them apart. It turned out
-/// to be the first. The count over 20 ms is still here because this console has
-/// a known ~100-200 ms network tick (t1-timers sections E, G and H), and four
-/// of those would smear a mean exactly as far.
+/// are different bugs with different fixes. It turned out to be the first. The
+/// count over 20 ms stays because this console has a known ~100-200 ms network
+/// tick (t1-timers E, G and H), and four of those would smear a mean as far.
 String _dist(List<int> us) {
   final sorted = List<int>.of(us)..sort();
   final sum = sorted.fold<int>(0, (a, b) => a + b);
@@ -203,22 +196,20 @@ Future<String> _timerAtDist(int n, Duration d) async {
 
 /// A ladder of durations, reported as `asked -> measured` pairs.
 ///
-/// The one number that has resisted explanation since the POLLOUT fix is
+/// The number that has resisted explanation since the POLLOUT fix is
 /// Future.delayed(1 ms) at ~2,500 us against Timer(0) at ~210 us. A single
-/// duration cannot say why. A ladder can, because the three candidate causes
-/// each have a different shape:
+/// duration cannot say why; a ladder can, because the three candidates each
+/// have a different shape:
 ///
-///   a constant offset      the wait is exact and the round trip costs what it
-///                          costs -- thread wake plus message delivery
-///   a floor                everything below some duration takes the same
-///                          time, which is a granularity
+///   a constant offset      thread wake plus message delivery
+///   a floor                everything below some duration costs the same,
+///                          which is a granularity
 ///   proportional error     the deadline arithmetic is wrong
 ///
 /// eventhandler_vita.cc computes its wait as `CurrentTimeout() -
-/// GetCurrentMonotonicMillis()`, both in **milliseconds**, so a timer armed
-/// part-way through a millisecond can be rounded up by nearly one. That
-/// predicts a constant offset of about 0.5 ms on top of the round trip, and
-/// the ladder is what can confirm or kill it.
+/// GetCurrentMonotonicMillis()`, both in milliseconds, so a timer armed
+/// part-way through a millisecond rounds up by nearly one. That predicts a
+/// constant offset of about 0.5 ms, and the ladder confirms or kills it.
 Future<String> _delayLadder(int n, List<int> millis) async {
   final parts = <String>[];
   for (final ms in millis) {
@@ -236,10 +227,9 @@ Future<String> _delayLadder(int n, List<int> millis) async {
 
 /// Ordered safest-first, deliberately.
 ///
-/// A native crash takes the whole app down and loses every result, since the
-/// screen is the reporting channel. Ordering by risk turns that failure into
-/// information: whatever is on screen passed, and the first thing missing is
-/// the one that killed it.
+/// A native crash takes the app down and loses every result, since the screen
+/// is the reporting channel. Ordering by risk turns that into information:
+/// whatever is on screen passed, and the first thing missing killed it.
 List<Probe> buildProbes() => [
   // -- pure Dart, no platform surface at all. If these fail, nothing else
   //    that follows means anything.
@@ -258,14 +248,12 @@ List<Probe> buildProbes() => [
   // -- How many timers can exist before the process dies?
   //
   // Every run so far has died at probe 32 regardless of what probe 32 is, and
-  // the per-probe constant is two timers: a .timeout() around the probe and a
-  // Future.delayed() after it. That puts the wall near the 64th timer, which is
-  // round enough to be worth measuring rather than reasoning about.
+  // the per-probe constant is two timers. That puts the wall near the 64th,
+  // round enough to measure rather than reason about.
   //
   // Two shapes, because they fail differently. Sequential answers "is anything
   // leaked per timer created"; concurrent answers "is there a fixed-size table
-  // of live timers". A leak dies at a total count no matter the overlap; a
-  // table only dies when enough are alive at once.
+  // of live timers".
   Probe('limits', 'sequential timers', () async {
     for (var i = 1; i <= 400; i++) {
       final c = Completer<void>();
@@ -370,12 +358,11 @@ List<Probe> buildProbes() => [
     return 'port $port';
   }),
   Probe('net', 'NetworkInterface.list', () async {
-    // Prints the address *count* next to the addresses themselves, which is
-    // not redundant: a list holding one empty string renders identically to an
-    // empty list, and that is exactly how this bug hid. localsend logged
-    // `ip: []` for an interface whose single address had been stringified by a
-    // getnameinfo call that failed, and the report read as "no addresses" for
-    // long enough to send me after the wrong cause.
+    // Prints the address *count* next to the addresses, which is not
+    // redundant: a list holding one empty string renders identically to an
+    // empty list, and that is how this bug hid. localsend logged `ip: []` for
+    // an interface whose single address had been stringified by a failed
+    // getnameinfo call.
     final ifs = await NetworkInterface.list();
     if (ifs.isEmpty) return throw 'no interfaces';
     return ifs
@@ -420,15 +407,14 @@ List<Probe> buildProbes() => [
   //
   // Every TLS filter cycle is an `_IOService._dispatch(sslProcessFilter, ...)`:
   // a message to the IO service's native port, handled off the isolate, and
-  // awaited back. 1 MB of HTTPS is roughly 128 of those, and it takes 7.9 s,
-  // which puts about 62 ms on each one. Plain HTTP does not use IOService at
-  // all, which is why it runs 9x faster over the same socket.
+  // awaited back. 1 MB of HTTPS is roughly 128 of those and takes 7.9 s, about
+  // 62 ms each. Plain HTTP does not use IOService at all, which is why it runs
+  // 9x faster over the same socket.
   //
-  // So the question is no longer about TLS. It is how long one IOService round
-  // trip costs on this port. Any async dart:io filesystem call is the same
-  // mechanism with none of the crypto, so it can be timed on its own -- and the
-  // sync sibling next to it does the identical work on the calling thread,
-  // which separates the round trip from the syscall underneath it.
+  // So the question is how long one IOService round trip costs here. Any async
+  // dart:io filesystem call is the same mechanism without the crypto, and the
+  // sync sibling does the identical work on the calling thread, which separates
+  // the round trip from the syscall underneath it.
   Probe('async', 'File.lengthSync x200', () async {
     final file = File('$_dataDir/rtt.bin')..writeAsBytesSync(const [1, 2, 3]);
     final sw = Stopwatch()..start();
@@ -455,15 +441,14 @@ List<Probe> buildProbes() => [
   Probe('async', 'File.length x200 concurrent', () async {
     // The same 200 dispatches with all of them in flight at once.
     //
-    // This is the discriminator the sequential pair cannot give. If the 5.8 ms
-    // is latency -- a wait, with everything idle through it -- then overlapping
-    // them collapses the total to roughly one round trip. If it is work, the
-    // total stays put and something is burning 5.8 ms of CPU per dispatch.
+    // The discriminator the sequential pair cannot give. If the 5.8 ms is
+    // latency, overlapping them collapses the total to roughly one round trip.
+    // If it is work, the total stays put and something is burning 5.8 ms of CPU
+    // per dispatch.
     //
-    // It matters because it decides what a fix would even look like. TLS is
-    // sequential by construction: the record layer cannot start the next cycle
-    // until this one is decrypted, so it can never overlap its way out of a
-    // latency problem, and pipelining is not available to it.
+    // It decides what a fix would look like. TLS is sequential by construction:
+    // the record layer cannot start the next cycle until this one is decrypted,
+    // so pipelining is not available to it.
     final file = File('$_dataDir/rtt.bin')..writeAsBytesSync(const [1, 2, 3]);
     final sw = Stopwatch()..start();
     await Future.wait<int>(<Future<int>>[
@@ -478,35 +463,32 @@ List<Probe> buildProbes() => [
   //
   // A zero-duration Dart timer used to cost the root isolate 215 us with
   // nothing open, 744 us with one TCP connection, and 43418 us with eight. That
-  // was the ceiling on TLS and the source of the jank during a transfer, and
-  // five explanations were wrong before these probes found the right one.
+  // was the ceiling on TLS and the source of the jank during a transfer.
   //
-  // The cause was setListening in socket_patch.dart: it sent the event mask to
-  // the event handler once and always asked for both readEvent and writeEvent,
-  // whatever its own arguments said. Every other POSIX backend is
-  // edge-triggered, so an unwanted POLLOUT fires once; this port polls, poll()
-  // is level-triggered, and an idle connected socket is writable every time
-  // round. The event handler was posting 2255 write events per second per
-  // socket to the root isolate, and each one cost a task on Flutter's UI
-  // thread. A spawned isolate, which drains its port queue in one go, barely
-  // noticed -- which is what pointed at the delivery path.
+  // The cause was setListening in socket_patch.dart: it sent the event mask
+  // once and always asked for both readEvent and writeEvent, whatever its
+  // arguments said. Every other POSIX backend is edge-triggered, so an unwanted
+  // POLLOUT fires once; this port polls, poll() is level-triggered, and an idle
+  // connected socket is writable every time round. The event handler posted
+  // 2255 write events per second per socket to the root isolate, each costing a
+  // task on Flutter's UI thread. A spawned isolate, which drains its port queue
+  // in one go, barely noticed, which is what pointed at the delivery path.
   //
-  // These stay because they are the regression test. Each is the same 200
-  // timers with one thing different, and the interesting property is now that
-  // they are all the same number:
+  // These stay as the regression test. Each is the same 200 timers with one
+  // thing different, and the interesting property is that they are now all the
+  // same number:
   //
   //   none          the baseline
   //   TCP open      one established connection
-  //   TCP closed    the socket gone, the event handler thread it started still
-  //                 running
+  //   TCP closed    the socket gone, its event handler thread still running
   //   reads off     connected with Mask() == 0, so the fd is not polled at all.
-  //                 Before the fix this was the *slowest* case, because turning
+  //                 Before the fix this was the slowest case, because turning
   //                 the Dart flags off never reached the event handler.
-  //   UDP bound     a registered fd with no peer, which was always fast: it is
-  //                 never listened to, so no mask was ever sent for it.
+  //   UDP bound     a registered fd with no peer, always fast: never listened
+  //                 to, so no mask was ever sent for it.
   //
-  // Reported as a distribution, not a mean, because a mean cannot tell 200
-  // slow timers from four stalls. This one was 200 slow timers.
+  // Reported as a distribution because a mean cannot tell 200 slow timers from
+  // four stalls. This one was 200 slow timers.
   Probe('async', 'Timer(0) x200', () async => _timerDist(200),
       timeout: const Duration(seconds: 120)),
   Probe('async', 'Timer(0) x200, TCP open', () async {
@@ -551,12 +533,11 @@ List<Probe> buildProbes() => [
   Probe('async', 'Timer(0) x200, counting events', () async {
     // Does an idle socket deliver anything Dart can see?
     //
-    // It does not, and that was the misleading part: this reports one write
-    // event and then nothing, because the write event is one-shot in Dart and
-    // every later one is discarded before it reaches a listener. The event
-    // handler was posting 1100 of them a second the whole time. The count is
-    // kept because "write 1" is the correct answer and a regression would show
-    // up here as a listener seeing the storm.
+    // It does not, and that was the misleading part: the write event is
+    // one-shot in Dart and every later one is discarded before it reaches a
+    // listener, while the event handler was posting 1100 a second. Kept because
+    // "write 1" is the correct answer, and a regression shows as a listener
+    // seeing the storm.
     final raw = await RawSocket.connect(_benchHost, 5302,
         timeout: const Duration(seconds: 10));
     var read = 0, write = 0, closed = 0, other = 0;
@@ -626,10 +607,9 @@ List<Probe> buildProbes() => [
   Probe('async', 'Timer(0) x200, 4 TCP open', () async {
     // Does the penalty scale with the number of connections?
     //
-    // It did, and steeply: 744 us at one connection, 16941 at four, 43418 at
-    // eight. That is what said the cost was per socket per wake rather than a
-    // mode the console entered, and it is why the search went looking for
-    // something being posted once per socket. All three now sit at ~200 us.
+    // It did, steeply: 744 us at one connection, 16941 at four, 43418 at eight.
+    // That said the cost was per socket per wake rather than a mode the console
+    // entered. All three now sit at ~200 us.
     final sockets = <Socket>[];
     for (var i = 0; i < 4; i++) {
       sockets.add(await Socket.connect(_benchHost, 5302,
@@ -659,11 +639,9 @@ List<Probe> buildProbes() => [
   }, timeout: const Duration(seconds: 120)),
   Probe('async', 'Timer(0) x200 at once, TCP open', () async {
     // The same 200 timers with all of them armed before any is awaited, which
-    // asks whether the cost is charged per message or per trip round the
-    // message loop. Batched, 200 messages can be drained in one turn. If the
-    // total collapses, the loop is the unit and TLS -- which cannot batch,
-    // because the record layer is sequential -- is stuck with it. If the total
-    // holds, every message is paying separately.
+    // asks whether the cost is per message or per trip round the message loop.
+    // If the total collapses, the loop is the unit and TLS is stuck with it,
+    // because the record layer cannot batch. If it holds, every message pays.
     final socket = await Socket.connect(_benchHost, 5302,
         timeout: const Duration(seconds: 10));
     try {
@@ -702,19 +680,18 @@ List<Probe> buildProbes() => [
   // -- Throughput, layer by layer.
   //
   // localsend receives a 5 MB file over HTTPS in 62 seconds: 84 KB/s, against
-  // 852 KB/s pushing the same file over the same Wi-Fi to the same memory card
-  // from C. Every explanation offered for that gap so far has been a guess that
-  // did not survive being built, so these probes move the same bytes through
-  // one more layer each and let the cost land in whichever gap opens up.
+  // 852 KB/s pushing the same file over the same Wi-Fi to the same card from C.
+  // Every explanation for that gap has been a guess that did not survive being
+  // built, so these probes move the same bytes through one more layer each.
   //
   // The first run answered most of it: plain HTTP reads 5 MB at 2377 KB/s and
   // writes it to the card at 544 KB/s, so sockets, the HTTP parser and the
   // filesystem are all fine. HTTPS did not finish inside the old 25-second
-  // ceiling. These probes are the follow-up, and they split TLS in two:
+  // ceiling. These split TLS in two:
   //
   //   handshake   asymmetric crypto and certificate parsing, paid once
-  //   1MB vs 4MB  if both take the same time it is the handshake; if the time
-  //               scales with the bytes it is the record layer
+  //   1MB vs 4MB  same time means the handshake; time that scales with the
+  //               bytes means the record layer
   //
   // The bench server is benchserver.py on a machine on the same network.
   Probe('throughput', 'raw TCP 4MB', () async {
@@ -845,13 +822,12 @@ List<Probe> buildProbes() => [
   // -- Does print() reach the log file? Cannot be answered from inside the
   //    app; it is checked afterwards by reading m3.log. Recorded here so the
   //    marker is in the log at a known point in the sequence.
-  // Three separate channels that all get called "printing", reported
-  // separately because they fail separately.
-  //
-  // The combined version threw on the first one that broke and said nothing
-  // about the rest, so "print is broken" was recorded for a run in which
-  // `print` itself was very likely fine -- it is `dart:io`'s stderr that
-  // raises, and merely *constructing* it is enough.
+
+  // Three separate channels that all get called "printing", reported separately
+  // because they fail separately. The combined version threw on the first one
+  // that broke and said nothing about the rest, so "print is broken" was
+  // recorded for a run in which `print` was fine: it is dart:io's stderr that
+  // raises, and merely constructing it is enough.
   Probe('io', 'print to log', () async {
     final results = <String>[];
     for (final (name, emit) in <(String, void Function())>[
@@ -861,12 +837,11 @@ List<Probe> buildProbes() => [
     ]) {
       try {
         emit();
-        // "accepted", not "ok". IOSink.writeln is buffered and asynchronous:
+        // "accepted", not "ok". IOSink.writeln is buffered and asynchronous, so
         // the call returning proves only that the sink was constructed and the
-        // bytes queued. On 2026-08-15 all three reported ok here while the
-        // engine log carried `writeFrom failed ... Bad file number` twice, as
-        // an unhandled async exception nobody was watching. A synchronous probe
-        // cannot see that, so it must not claim to.
+        // bytes queued. On 2026-08-15 all three reported ok while the engine log
+        // carried `writeFrom failed ... Bad file number` twice, as an unhandled
+        // async exception. A synchronous probe cannot see that.
         results.add('$name accepted');
       } on Object catch (e) {
         results.add('$name ${e.runtimeType}');
@@ -877,17 +852,15 @@ List<Probe> buildProbes() => [
 
   // Phase 8, step one: does a platform channel reach the embedder at all?
   //
-  // Deliberately not a TextField. A widget would drag in focus, layout and the
-  // IME all at once, and a failure anywhere in that chain would look the same.
-  // This sends a real message on the real channel with the real codec --
-  // `flutter/textinput` is a JSONMethodCodec channel, so what lands in the
-  // embedder is readable JSON -- and asks only whether the plumbing exists.
+  // Deliberately not a TextField, which would drag in focus, layout and the IME
+  // at once, and a failure anywhere in that chain would look the same. This
+  // sends a real message on the real channel with the real codec and asks only
+  // whether the plumbing exists.
   //
-  // Passing means the message left Dart and the engine accepted a reply. It
-  // does **not** mean the embedder understood it: `flutter/textinput` is an
-  // OptionalMethodChannel, so "not implemented" comes back as null rather than
-  // as an error, which is what makes a partial implementation viable at all.
-  // The evidence of what actually arrived is in m3.log.
+  // Passing means the message left Dart and the engine accepted a reply. It does
+  // not mean the embedder understood it: `flutter/textinput` is an
+  // OptionalMethodChannel, so "not implemented" comes back as null. What
+  // actually arrived is in m3.log.
   Probe('channel', 'textinput reaches embedder', () async {
     await SystemChannels.textInput.invokeMethod<void>('TextInput.hide');
     return 'sent, see m3.log';
@@ -897,19 +870,16 @@ List<Probe> buildProbes() => [
   //
   // Phase 7 eliminated entropy, certificate verification, stack, memory and
   // assembly by measurement and still crashes here. Until that is understood,
-  // anything ordered after these probes simply never runs -- which is exactly
-  // what happened to the two plugin probes above on their first outing.
-  // TLS is split into four, smallest first, because the single combined probe
-  // took the whole process down and a hard fault names nothing. Each of these
-  // is a different suspect, and the journal records which one was running:
+  // anything ordered after these probes never runs.
+
+  // Split into four, smallest first, because the single combined probe took the
+  // whole process down and a hard fault names nothing. Each is a different
+  // suspect, and the journal records which one was running:
   //
   //   1. does BoringSSL initialise at all
   //   2. does parsing ~240 KB of compiled-in PEM into an X509 store survive
   //   3. does a handshake survive
   //   4. does the HTTP layer on top of it survive
-  //
-  // Splitting it costs one app rebuild and replaces a guess about stack sizes
-  // with an answer.
   Probe('tls', 'empty SecurityContext', () async {
     final ctx = SecurityContext(withTrustedRoots: false);
     return ctx.runtimeType.toString();
@@ -924,13 +894,12 @@ List<Probe> buildProbes() => [
   // Splits the handshake from the chain verification that follows it.
   //
   // An empty context with onBadCertificate accepting everything still does the
-  // full key exchange and cipher negotiation, but skips building and walking
-  // the trust chain -- which is the recursive, allocation-heavy half. If this
-  // passes and the verifying one below dies, the problem is verification, not
-  // TLS; if both die, it is the handshake itself.
+  // full key exchange and cipher negotiation, but skips building and walking the
+  // trust chain, which is the recursive, allocation-heavy half. If this passes
+  // and the verifying one below dies, the problem is verification.
   //
-  // Not a configuration anything should ship: it accepts any certificate, so
-  // it proves reachability, never security.
+  // Not a configuration anything should ship: it proves reachability, never
+  // security.
   Probe('tls', 'handshake, no verify', () async {
     final s = await SecureSocket.connect(
       'example.com',
@@ -963,13 +932,12 @@ List<Probe> buildProbes() => [
   // Last on purpose: it puts a modal dialog over the app for six seconds, and
   // anything after it would run behind a keyboard.
   //
-  // What this can prove without a person: the IME initialises, the shell
-  // composites it over a software-rendered framebuffer, and it tears down
-  // cleanly. That middle one is the whole risk of Phase 8 --
-  // sceCommonDialogUpdate wants a GXM colour surface and ADR-0003 says we do
-  // not have one, only CDRAM we wrote pixels into. The evidence is a
-  // screenshot taken from the host while this probe holds the dialog open, so
-  // the six-second wait is the test window and not a delay.
+  // What this proves without a person: the IME initialises, the shell composites
+  // it over a software-rendered framebuffer, and it tears down cleanly. That
+  // middle one is the whole risk of Phase 8 -- sceCommonDialogUpdate wants a GXM
+  // colour surface and ADR-0003 says we have only CDRAM we wrote pixels into.
+  // The evidence is a screenshot taken from the host while the dialog is open,
+  // so the six-second wait is the test window.
   //
   // What it cannot prove is typing. That needs thumbs.
   Probe('ime', 'dialog opens', () async {
@@ -996,18 +964,15 @@ List<Probe> buildProbes() => [
   // -- Which thread's message loop is this?
   //
   // A zero-duration timer is a message to the isolate's own port. In the root
-  // isolate that message is delivered by Flutter's UI task runner, which is
-  // fml's MessageLoopVita; in a spawned isolate it is delivered by the VM's own
-  // thread pool, with no engine anywhere near it. Same VM, same port machinery,
-  // different loop.
+  // isolate that message is delivered by Flutter's UI task runner, fml's
+  // MessageLoopVita; in a spawned isolate it is delivered by the VM's own thread
+  // pool, with no engine near it. Same VM, same port machinery, different loop.
   //
   // So if a spawned isolate holding a socket pays the same 5x, the cost is in
-  // the VM or below it. If it does not, it is in the engine's message loop and
-  // there is one file to read.
+  // the VM or below it. If not, it is in the engine's message loop.
   //
-  // Last in the suite, and last for a reason: Isolate.spawn has never been run
-  // on this port. If it takes the process down, everything above it has already
-  // been reported and the journal is flushed per probe.
+  // Last in the suite: Isolate.spawn has never been run on this port. If it
+  // takes the process down, everything above it has already been reported.
   Probe('isolate', 'spawn', () async {
     final port = ReceivePort();
     await Isolate.spawn(_isolateTimers, [port.sendPort, false]);

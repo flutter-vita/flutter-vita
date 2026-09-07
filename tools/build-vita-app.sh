@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Build any Flutter app into a Vita .vpk.
+# Build any Flutter app into a Vita .vpk: Dart to kernel, kernel to armv7
+# assembly, assembly plus engine to an ELF, ELF to a signed .vpk.
 #
 #   ./tools/build-vita-app.sh <app-dir> [options]
 #
@@ -14,7 +15,7 @@
 #   --define K=V      preprocessor define for the extra sources; repeatable
 #   --release         no dev server, no debug HUD, no bailout, no supervisor
 #
-# The app configures itself in pubspec.yaml, which is the opt-in surface:
+# The app configures itself in pubspec.yaml:
 #
 #   vita:
 #     title_id: FVTA00003        # optional; derived from the package name
@@ -22,13 +23,7 @@
 #
 # Title id resolution: --title-id, then pubspec vita.title_id, then a value
 # derived from the package name if a vita: block exists, then FVTA00002 -- the
-# slot the dev receiver installs into, which is what the counter app and the
-# experiments want.
-#
-# This is the whole pipeline in one place: Dart to kernel, kernel to armv7
-# assembly, assembly plus engine to an ELF, ELF to a signed .vpk. It is what a
-# `flutter-vita build` command would call, written as a shell script first so
-# the steps are legible before they are wrapped.
+# slot the dev receiver installs into.
 set -euo pipefail
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
@@ -44,11 +39,9 @@ TITLE_ID=""
 APP_NAME=""
 ENGINE_DIR="${FLUTTER_VITA_ENGINE:-$ROOT/out/artifacts/flutter-engine-vita-$FLUTTER_PIN}"
 # vitaGL for the GL path (ADR-0014). The repo's own checkout by default, built
-# with `make HAVE_SHADER_CACHE=1 TEXTURES_SPEEDHACK=1` -- see
-# patches/vitagl/README.md, which is the authority on both flags. The template
-# falls back to the VitaSDK package with a warning when this is not set to
-# something real, because that build cannot cache a compiled shader, recompiles
-# on every launch, and clones Skia's 4 MB glyph atlas on every text change.
+# with `make HAVE_SHADER_CACHE=1 TEXTURES_SPEEDHACK=1` (patches/vitagl/README.md
+# is the authority on both flags). Without it the template falls back to the
+# VitaSDK package, which recompiles every shader on every launch.
 export FLUTTER_VITA_VITAGL="${FLUTTER_VITA_VITAGL:-$ROOT/third_party/vitaGL}"
 FLUTTER_DIR="$HOME/fvm/versions/$FLUTTER_PIN"
 OUT_DIR=""
@@ -62,16 +55,13 @@ ENTRY_POINT="lib/main.dart"
 EXTRA_SOURCES=""
 NO_SUPERVISOR="OFF"
 EXTRA_DEFINES=""
-# Debug and release are the same pipeline with a different final link. What
-# release drops is everything that exists to serve the person developing the
-# app: the dev server's listening socket, the debug HUD over every frame, the
-# bailout that launches a development receiver on abort, and the crash supervisor
-# that relaunches one. See templates/vita-app/release.c.
+# Debug and release are the same pipeline with a different final link. Release
+# drops what serves the developer: the dev server's socket, the debug HUD, the
+# bailout, and the crash supervisor. See templates/vita-app/release.c.
 #
-# It is not a Dart-level distinction. The kernel is already compiled with
-# -Ddart.vm.product=true and the bundle with --release, in both modes, because
-# nothing here has ever built a JIT app -- so "debug" means the dev loop is
-# linked in, and nothing about how the Dart was compiled.
+# Not a Dart-level distinction. Both modes compile the kernel with
+# -Ddart.vm.product=true and the bundle with --release, because nothing here has
+# ever built a JIT app.
 RELEASE="OFF"
 
 while [ $# -gt 0 ]; do
@@ -115,12 +105,10 @@ OUT_DIR="$(cd "$OUT_DIR" && pwd)"
 SDK="$FLUTTER_DIR/bin/cache/dart-sdk"
 # Prefer the engine artifact's own platform dill over the Flutter cache's.
 #
-# They are not interchangeable. The cache's is stock Flutter's, and its dart:io
-# does not declare the natives this port adds, so an app compiled against it
-# fails to resolve them at snapshot time. The engine ships its own precisely so
-# the Dart and native halves of dart:io come from the same tree; see
-# package-engine.sh. The cache stays as the fallback for an older artifact that
-# predates this.
+# The cache's is stock Flutter's, and its dart:io does not declare the natives
+# this port adds, so an app compiled against it fails to resolve them at snapshot
+# time. See package-engine.sh. The cache stays as the fallback for an older
+# artifact that predates this.
 PATCHED_SDK="$FLUTTER_DIR/bin/cache/artifacts/engine/common/flutter_patched_sdk_product"
 if [ -f "$ENGINE_DIR/flutter_patched_sdk/platform_strong.dill" ]; then
   PATCHED_SDK="$ENGINE_DIR/flutter_patched_sdk"
@@ -128,19 +116,16 @@ fi
 
 # ---------------------------------------------------------------- vita: block
 #
-# The app's own configuration lives in the app, not in flags the developer has
-# to remember and cannot commit (ADR-0009). The block is deliberately flat:
+# The app's own configuration lives in the app, not in flags nobody can commit
+# (ADR-0009). Flat because this parser and the Dart one must never disagree, and
+# a flat block is the largest shape both read identically:
 #
 #   vita:
 #     title_id: FVTA00003
 #     name: My App
 #
-# Flat because this parser and the Dart one must never disagree, and a flat
-# block is the largest shape both can read identically. Anything needing
-# nesting should become a separate top-level key instead.
-# `|| true` is load-bearing: an absent key is the normal case, but grep exits 1
-# on no match and `set -o pipefail` propagates that, so without it a pubspec
-# lacking `title_id` kills the script before it prints anything at all.
+# `|| true` is load-bearing: grep exits 1 on no match and `set -o pipefail`
+# propagates that, so without it a pubspec lacking `title_id` kills the script.
 vita_key() {
   sed -n '/^vita:[[:space:]]*$/,/^[^[:space:]#]/p' "$APP_DIR/pubspec.yaml" \
     | grep -m1 "^[[:space:]]\+$1:" \
@@ -159,14 +144,12 @@ if grep -q '^vita:[[:space:]]*$' "$APP_DIR/pubspec.yaml"; then HAS_VITA_BLOCK=1;
 # title and produces "Counter Demo.vpk" if it also names the file.
 PKG_NAME="$(grep -m1 '^name:' "$APP_DIR/pubspec.yaml" | sed 's/^name: *//' | tr -d "\"'")"
 
-# Derive a title id from the package name when the app opted in but did not
-# pick one. Nine characters, four letters and five digits, deterministic -- the
-# same app always lands in the same slot, so reinstalling replaces rather than
-# accumulates, and two different apps essentially never collide.
+# Derive a title id from the package name when the app opted in but did not pick
+# one. Deterministic, so the same app always lands in the same slot and
+# reinstalling replaces rather than accumulates.
 #
-# Only for apps with a vita: block. Without one, the default stays FVTA00002,
-# which is the slot the dev receiver installs into: deriving there would break the
-# edit-run loop for the counter app and every experiment.
+# Only for apps with a vita: block. Without one the default stays FVTA00002, the
+# slot the dev receiver installs into.
 derive_title_id() {
   local n l1 l2
   n=$((16#$(printf '%s' "$1" | shasum -a 1 | cut -c1-8)))
@@ -192,17 +175,13 @@ fi
 
 # The title id that goes into sce_sys/param2.sfo, for eboot2.bin.
 #
-# The app's own, and that is deliberate even though Sony's sample and BGFTP both
-# give their background app a *distinct* id. Both of those are installed by the
-# promoter, which registers every title in the package; ours is side-loaded into
-# an app directory the receiver can write, so the only id the shell has a record
-# of is the app's.
+# The app's own, though Sony's sample gives its background app a distinct id.
+# That sample is installed by the promoter, which registers every title in the
+# package; ours is side-loaded into a directory the receiver can write, so the
+# only id the shell knows is the app's.
 #
-# Measured, not assumed. With a distinct id (FVSV00003) the call succeeded --
-# sceBgAppUtilStartBgApp returned 0 -- and the shell then put "could not find
-# app" on the panel and never ran eboot2.bin: it resolves the background app
-# through its installed-titles database, and an id nothing installed is not in
-# it.
+# Measured: with a distinct id, sceBgAppUtilStartBgApp returned 0 and the shell
+# then put "could not find app" on the panel and never ran eboot2.bin.
 SUPERVISOR_TITLE_ID="$TITLE_ID"
 
 [ -d "$ENGINE_DIR" ] || {
@@ -219,12 +198,9 @@ SUPERVISOR_TITLE_ID="$TITLE_ID"
 # ------------------------------------------------------- engine/SDK lockstep
 #
 # dart:ui and the engine are one source tree cut in half. A framework from a
-# different revision links and builds and packages without complaint, then
-# misbehaves at runtime in ways that look like anything but a version skew.
-#
-# So this refuses rather than warns. A warning here is worth nothing: it scrolls
-# past in a build log and the failure it predicts arrives hours later wearing a
-# different face.
+# different revision builds and packages without complaint, then misbehaves at
+# runtime in ways that look like anything but a version skew. So this refuses
+# rather than warns.
 MANIFEST="$ENGINE_DIR/MANIFEST.txt"
 ENGINE_REV="$(grep -m1 '^framework_rev ' "$MANIFEST" 2>/dev/null | awk '{print $2}' || true)"
 SDK_JSON="$FLUTTER_DIR/bin/cache/flutter.version.json"
@@ -274,18 +250,14 @@ ASSETS="$APP_DIR/build/flutter_assets"
 
 # Where pub actually put the package config.
 #
-# Not always $APP_DIR/.dart_tool. A pub *workspace* -- one pubspec at the root
-# with `workspace:` listing its members -- resolves once for the whole tree and
-# writes a single package_config.json at the root, leaving each member's own
-# .dart_tool without one. flutter/samples is laid out that way, so the control
-# app of the test apps was the app that found this.
+# Not always $APP_DIR/.dart_tool. A pub workspace resolves once for the whole
+# tree and writes a single package_config.json at the root, leaving each member's
+# .dart_tool without one. flutter/samples is laid out that way.
 #
-# The failure it produced is worth recording, because it looks like anything but
-# a missing file: frontend_server falls back to a *relative* .dart_tool, finds
-# nothing, and reports `Not found: package:flutter/material.dart` on every
-# import in the program -- 1,900 errors that read as a broken SDK. It then exits
-# 254 having printed all of that to stdout, which this script sends to
-# /dev/null, so the visible result was an empty failure.
+# The failure looks like anything but a missing file: frontend_server falls back
+# to a relative .dart_tool, finds nothing, and reports `Not found:
+# package:flutter/material.dart` on every import -- 1,900 errors that read as a
+# broken SDK, printed to a stdout this script sends to /dev/null.
 #
 # So: walk up, the way Dart itself does, and say which one was used.
 PACKAGES=""

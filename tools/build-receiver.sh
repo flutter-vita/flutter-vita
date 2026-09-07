@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Build the receiver (ADR-0016) into a .vpk.
+# Build the receiver into a .vpk.
 #
 #   ./tools/build-receiver.sh                 the real receiver: FVTA00001, port 1341
 #   ./tools/build-receiver.sh --scratch       a second one: FVTA00004, port 1342
@@ -9,18 +9,14 @@
 #
 # The receiver is an ordinary Flutter-Vita application -- same template, same
 # build script, same snapshot -- plus one translation unit that owns the port
-# and the commands, and minus the crash supervisor. Everything here is either
-# the pin check or arguments to tools/build-vita-app.sh.
+# and the commands, and minus the crash supervisor.
 #
-# --scratch exists because replacing FVTA00001 in place is replacing the only
-# way to install anything. A scratch receiver installs beside the working one,
-# on its own port, and can be driven with `./tools/deploy.sh --receiver-port 1342`.
+# --scratch exists because replacing FVTA00001 in place replaces the only way to
+# install anything. A scratch receiver installs beside the working one, on its
+# own port, and is driven with `./tools/deploy.sh --receiver-port 1342`.
 #
-# The slot no longer has to exist first. It used to mean "a title id somebody
-# created with VitaShell for this purpose", which is why FVTA00004 sat on the
-# card whether or not anything needed it. tools/install-vpk.sh registers the id
-# as part of installing, so the scratch receiver is created when it is wanted and
-# deleted when it is not.
+# tools/install-vpk.sh registers the id as part of installing, so the slot does
+# not have to exist first.
 set -euo pipefail
 
 HERE="$(cd "$(dirname "$0")" && pwd)"

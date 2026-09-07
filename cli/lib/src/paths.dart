@@ -1,19 +1,13 @@
 // Where the CLI finds the things it needs, when there is no repo.
 //
-// Every path used to be derived by walking up from Platform.script to a repo
-// root:
+// Deriving every path by walking up from Platform.script to a repo root works
+// only from a source checkout. Installed through `pub global activate` the
+// script lives in the pub cache, four parents up is somebody's home directory,
+// and every lookup silently resolves to a path that does not exist.
 //
-//   // bin/ -> flutter_vita/ -> tools/ -> repo
-//   var dir = File.fromUri(Platform.script).parent.parent.parent.parent;
-//
-// That works only from a source checkout. Installed through `pub global
-// activate` the script lives in the pub cache, four parents up is somebody's
-// home directory, and every lookup silently resolves to a path that does not
-// exist -- so the CLI could not be distributed at all. See ADR-0015.
-//
-// The rule here: an explicit override wins, then a source checkout if we are
-// in one, then the user's own flutter-vita home. Failing that, an error that
-// says what to do rather than a path that is quietly wrong.
+// So: an explicit override wins, then a source checkout if we are in one, then
+// the user's own flutter-vita home. Failing that, an error that says what to do
+// rather than a path that is quietly wrong.
 import 'dart:convert';
 import 'dart:io';
 
@@ -78,11 +72,9 @@ String flutterDir() =>
 
 /// The Flutter version to match an engine artifact against.
 ///
-/// Read from the *developer's* SDK first, which is the only correct source for
-/// an installed CLI: they build with the Flutter they have, and the artifact
-/// has to match it. VERSIONS.md is a maintainer's file and says what this repo
-/// pins, which is a different question that happens to have the same answer on
-/// the maintainer's machine.
+/// Read from the developer's SDK first, which is the only correct source for an
+/// installed CLI: they build with the Flutter they have, and the artifact has to
+/// match it. VERSIONS.md is a maintainer's file answering a different question.
 late final String Function() flutterPin = () {
   String? cached;
   return () {

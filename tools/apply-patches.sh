@@ -1,31 +1,22 @@
 #!/usr/bin/env bash
-# The patch series is the port. This script is the machine-readable version of
-# the apply procedures written in prose across six patches/*/README.md files.
+# Apply and verify the vendored patch series. The patch series is the port.
 #
 #   ./tools/apply-patches.sh --verify     check the series against the trees
 #   ./tools/apply-patches.sh --apply      apply every series to a pristine checkout
 #   ./tools/apply-patches.sh --dry-run    say what --apply would do, touching nothing
 #   ./tools/apply-patches.sh --list       print the patch -> repo manifest
 #
-# Why this exists rather than the READMEs alone:
+# Three things make this worth automating:
 #
-#   * `git apply patches/dart-sdk/000*.patch` -- the documented command in two
-#     READMEs -- silently skips 0010, because `000*` does not match `0010`.
-#     0010 is 29 files including every socket implementation. A glob that
-#     drops a third of a series without a word is the worst possible failure
-#     mode, and it is in the docs three times.
+#   * `git apply patches/dart-sdk/000*.patch` silently skips 0010, which is 29
+#     files including every socket implementation.
+#   * Several patches apply to a nested DEPS repo rather than the tree they sit
+#     beside. patches/dart-sdk/0005 applies to zlib, and BUILD.gn exists in
+#     both, so a careless path intersection matches the wrong file.
+#   * The same series applies to two different Dart checkouts, and 0004 goes in
+#     only half-way on one of them.
 #
-#   * Several patches apply to a *nested DEPS repo*, not to the tree they are
-#     filed beside. patches/dart-sdk/0005 applies to zlib. Nothing in the name
-#     says so, and on 2026-08-19 that cost a wrong number in a committed
-#     document: `BUILD.gn` exists in both repos, so intersecting owned paths
-#     with a Dart-tree diff matched the wrong file.
-#
-#   * The same series applies to two different Dart checkouts, and 0004 goes
-#     in only half-way on one of them.
-#
-# --verify mutates nothing and needs no network. Run it after touching a patch
-# or a vendored tree.
+# --verify mutates nothing and needs no network.
 
 set -uo pipefail
 
@@ -197,16 +188,14 @@ done < <(all_patches)
 
 # --------------------------------------------- 2. one file, one patch, per repo
 #
-# This is the invariant the whole scheme rests on. Each patch is a `git diff`
-# against the *pristine* tree, so two patches touching one file overlap: the
-# later contains the earlier's hunks. Applying both does not necessarily fail
-# -- on 2026-08-14 `git apply` found matching context elsewhere in
-# runtime/bin/BUILD.gn and inserted a second copy of the vita gen_snapshot
-# targets, twenty vita_arm references where there should be ten, no error.
+# The invariant the whole scheme rests on. Each patch is a `git diff` against
+# the pristine tree, so two patches touching one file overlap: the later
+# contains the earlier's hunks. Applying both need not fail -- `git apply` can
+# find matching context elsewhere and insert a second copy, silently.
 #
-# It is also what makes check 4 below sound: if each file has exactly one
-# owner, the tree's content for that file is pristine-plus-that-patch, so the
-# patch must reverse-apply cleanly.
+# It is also what makes check 4 sound: if each file has exactly one owner, the
+# tree's content for that file is pristine-plus-that-patch, so the patch must
+# reverse-apply cleanly.
 head_ "One file, one patch"
 for series in patches/*/; do
   s="${series%/}"; [ "$s" = "patches/test-apps" ] && continue
@@ -291,12 +280,9 @@ fi
 
 # ------------------------------- 6. nothing in a tree that no patch accounts for
 #
-# The other half of check 4. Reverse-apply proves every *patch* is in the tree;
-# this proves every *change* in the tree is in a patch. A file edited in a
-# vendored tree but owned by nothing is a change that a fresh checkout loses --
-# which is how runtime/bin/virtual_memory_vita.cc once went missing from patch
-# 0010, present in one tree, absent from the other, and invisible to the check
-# meant to catch it.
+# The other half of check 4. Reverse-apply proves every patch is in the tree;
+# this proves every change in the tree is in a patch. A file edited in a
+# vendored tree but owned by nothing is a change a fresh checkout loses.
 #
 # Diff against the pin, not HEAD: the engine's Dart tree carries a local commit
 # above the pin, so `git diff` with no revision reports nothing for files

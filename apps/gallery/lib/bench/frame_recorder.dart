@@ -1,9 +1,8 @@
 // Frame capture for the benchmark. ADR-0017.
 //
-// Everything here is ordinary Flutter: SchedulerBinding hands Dart a
-// FrameTiming per frame with buildDuration and rasterDuration already
-// separated. No embedder change, which is why the benchmark is not pinned to
-// an engine artifact and can be fixed without a repackage.
+// Ordinary Flutter: SchedulerBinding hands Dart a FrameTiming per frame with
+// buildDuration and rasterDuration already separated. No embedder change, so
+// the benchmark is not pinned to an engine artifact.
 
 import 'dart:math' as math;
 
@@ -22,10 +21,9 @@ const double kSlowFrameMs = kVsyncMs * 2;
 /// One frame, split into the four things that can make it late.
 ///
 /// Medians say a transition runs at 60 fps; they cannot say what the three
-/// frames that took 150 ms were doing. These can. The split matters because
-/// each part points somewhere different: [gapMs] at the platform or IO thread
-/// holding the UI thread up, [buildMs] at Dart, [waitMs] at a raster thread
-/// still busy with the previous frame, [rasterMs] at the renderer.
+/// frames that took 150 ms were doing. Each part points somewhere different:
+/// [gapMs] at the platform or IO thread, [buildMs] at Dart, [waitMs] at a
+/// raster thread still busy, [rasterMs] at the renderer.
 class FrameSample {
   const FrameSample({
     required this.index,
@@ -97,12 +95,10 @@ class SceneStats {
   /// Longest uninterrupted run of frames at or below 30 fps, in milliseconds,
   /// counting only runs of two or more.
   ///
-  /// The "two or more" is the whole rule. At 60 Hz every frame period is a
-  /// multiple of 16.67 ms, so a frame that misses a single deadline already
-  /// presents at 33.3 ms and reads as exactly 30 fps -- a literal "below
-  /// 30 fps" test fires on every dropped frame, and on this console nearly
-  /// every scene drops one. Two in a row is a 66.7 ms interruption, which is
-  /// about the shortest a person reliably sees.
+  /// The "two or more" is the whole rule. At 60 Hz a frame that misses a single
+  /// deadline already presents at 33.3 ms and reads as exactly 30 fps, and on
+  /// this console nearly every scene drops one. Two in a row is a 66.7 ms
+  /// interruption, about the shortest a person reliably sees.
   ///
   /// Zero means the scene passed.
   final double stallMs;
@@ -116,21 +112,19 @@ class SceneStats {
 
   /// The slowest single build in the scene.
   ///
-  /// [buildMs] is a median, and a median is the wrong statistic for a route
-  /// scene: most of its frames are the transition coasting, so the median
-  /// reads 1.2 ms while the frame that actually builds the incoming page takes
-  /// 46. This is that frame. It is also far steadier than [worstMs], which is
-  /// quantised to a vsync and moves a whole step on noise.
+  /// [buildMs] is a median, which is wrong for a route scene: most frames are
+  /// the transition coasting, so the median reads 1.2 ms while the frame that
+  /// builds the incoming page takes 46. Steadier than [worstMs], which is
+  /// quantised to a vsync.
   final double buildMaxMs;
 
   /// The few frames with the largest *build*, largest first.
   ///
-  /// Distinct from [worstFrames], which ranks by period. The two coincide when
-  /// a scene's heavy frames dominate -- route_text_uniq's 46 ms builds are the
-  /// worst periods too -- and diverge when they do not: at 12 ms a build is
-  /// close enough to vsync quantisation that the five worst periods need not
-  /// be the five heaviest builds at all, and a statistic taken over them
-  /// wanders. route_boxes read 11.6 and 29.4 on one binary that way.
+  /// Distinct from [worstFrames], which ranks by period. They coincide when a
+  /// scene's heavy frames dominate and diverge when they do not: at 12 ms a
+  /// build is close enough to vsync quantisation that the five worst periods
+  /// need not be the five heaviest builds. route_boxes read 11.6 and 29.4 on
+  /// one binary that way.
   final List<FrameSample> heaviestBuilds;
 
   /// The slowest few frames, split by phase, slowest first.
@@ -161,18 +155,17 @@ class SceneStats {
   static double _r(double v) => (v * 100).roundToDouble() / 100;
 }
 
-/// Collects [FrameTiming]s continuously and slices them per scene.
-///
-/// Continuously, rather than starting and stopping around each scene, because
-/// timings are delivered asynchronously and in batches: a callback registered
-/// at scene start would miss frames belonging to the scene, and one removed at
-/// scene end would drop the last few. Slicing an always-on buffer by index has
-/// neither problem.
 /// How many slow frames a scene reports individually, when the caller does not
-/// say. Five covers "one bad frame per repeat" for a short scene without
-/// turning the result file into a trace.
+/// say. Five covers "one bad frame per repeat" without turning the result file
+/// into a trace.
 const int _kWorstKept = 5;
 
+/// Collects [FrameTiming]s continuously and slices them per scene.
+///
+/// Continuously rather than starting and stopping around each scene, because
+/// timings arrive asynchronously and in batches: a callback registered at scene
+/// start would miss frames belonging to the scene, and one removed at scene end
+/// would drop the last few.
 class FrameRecorder {
   final List<FrameTiming> _all = <FrameTiming>[];
   bool _attached = false;
@@ -196,20 +189,16 @@ class FrameRecorder {
 
   /// Everything recorded since [mark], minus [dropTrailing] entries.
   ///
-  /// The caller forces a fixed number of frames after the animation ends so
-  /// the batched timings for its final frames arrive. Those forced frames are
-  /// idle and fast, so leaving them in would quietly soften every percentile;
-  /// dropping exactly as many as were forced is deterministic, because an
-  /// idle frame does not itself drop.
-  /// [keep] is how many heavy frames to record individually, and the caller
-  /// should pass the scene's repeat count.
+  /// The caller forces a fixed number of frames after the animation ends so the
+  /// batched timings for its final frames arrive. Those are idle and fast, so
+  /// leaving them in would soften every percentile; dropping exactly as many as
+  /// were forced is deterministic, because an idle frame does not itself drop.
   ///
-  /// The number matters because the report takes a median over them. A route
-  /// scene pushes eight times, so eight samples make that median "the typical
-  /// push"; taking five instead meant that a scene throwing three outliers --
-  /// and most scenes throw one or two, at roughly twice the cluster -- had its
-  /// median land among the outliers. That is what made route_boxes read 12.6
-  /// and 30.8 on one binary.
+  /// [keep] is how many heavy frames to record individually; pass the scene's
+  /// repeat count, because the report takes a median over them. A route scene
+  /// pushes eight times, so eight samples make that median the typical push.
+  /// Taking five instead let a scene's outliers land in the middle, which is
+  /// what made route_boxes read 12.6 and 30.8 on one binary.
   SceneStats take(int from, {int dropTrailing = 0, int keep = _kWorstKept}) {
     final end = math.max(from, _all.length - dropTrailing);
     final window = _all.sublist(math.min(from, end), end);
@@ -247,23 +236,18 @@ class FrameRecorder {
       final ms = (next - prev) / 1000.0;
       if (ms <= 0 || ms >= 5000) continue;
 
-      // Drop idle gaps. A route scene waits between repeats, and nothing is
-      // scheduled during the wait -- so the next frame's period spans the
-      // whole pause and arrives looking like a 2.5 second stall. It is not:
-      // route_hero reported exactly that on 2026-08-24 and the time was spent
-      // doing nothing at all.
+      // Drop idle gaps. A route scene waits between repeats and nothing is
+      // scheduled during the wait, so the next frame's period spans the whole
+      // pause and arrives looking like a 2.5 second stall. route_hero reported
+      // exactly that on 2026-08-24.
       //
-      // The test is whether the frame did work. A frame that is slow is slow
-      // because it built or rastered something; a long period whose frame did
-      // almost nothing is the scheduler resting. Anything under 100 ms is kept
+      // The test is whether the frame did work. Anything under 100 ms is kept
       // regardless, because at that scale the ratio is noise.
       //
-      // What this can hide, stated plainly: a stall caused by something
-      // outside the frame -- a long GC pause, a blocking read -- also shows as
-      // a long period with no work in it, and is dropped here. The suite runs
-      // no IO during a scene, so on this port that leaves GC, and a GC pause
-      // long enough to matter would show up as a raised median across the
-      // whole scene rather than vanishing.
+      // What this hides: a stall from outside the frame -- a long GC pause, a
+      // blocking read -- also shows as a long period with no work. The suite
+      // runs no IO during a scene, and a GC pause long enough to matter would
+      // raise the median across the whole scene rather than vanish.
       final work = (window[i].buildDuration.inMicroseconds +
               window[i].rasterDuration.inMicroseconds) /
           1000.0;

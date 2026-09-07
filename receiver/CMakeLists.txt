@@ -44,22 +44,20 @@ target_link_libraries(${PROJECT_NAME}
   taihen_stub
 )
 
-# UNSAFE, deliberately. vita_create_self builds a *safe* self by default, and a
-# safe self is confined regardless of the "Enable unsafe homebrew" setting --
+# UNSAFE, deliberately. vita_create_self builds a safe self by default, and a
+# safe self is confined regardless of the "Enable unsafe homebrew" setting:
 # ux0:app is not merely unwritable but invisible, and ScePromoterUtil's library
-# is refused with MODULEMGR_NO_LIB. That confinement, not any HENkaku option,
-# is what forced BGFTP into the deploy loop.
-# No -u pthread_cancel here, unlike m1-vpk. This app does not link libpthread,
-# so the flag would resolve to nothing, and it has no thread_local of its own.
-# See experiments/m1-vpk/CMakeLists.txt for what that flag is for.
+# is refused with MODULEMGR_NO_LIB.
+#
+# No -u pthread_cancel here. This app does not link libpthread, so the flag
+# would resolve to nothing, and it has no thread_local of its own.
 vita_create_self(${PROJECT_NAME}.self ${PROJECT_NAME} UNSAFE)
-# The supervisor ships inside the same vpk as eboot2.bin, which is the file
-# sceBgAppUtilStartBgApp(1) starts as a background application. It survives the
-# foreground app crashing, which is the entire point.
-# The supervisor lives with the app template, because that is the only place it
-# can be installed from -- see the comment at the top of the file. The receiver
-# still builds a copy: if a receiver vpk is ever installed by hand through
-# VitaShell, it arrives with a working supervisor rather than none.
+# The supervisor ships as eboot2.bin, which sceBgAppUtilStartBgApp starts as a
+# background application so it survives the foreground app crashing.
+#
+# It lives with the app template because that is the only place it can be
+# installed from. The receiver still builds a copy, so a receiver vpk installed
+# by hand through VitaShell arrives with a working supervisor.
 add_executable(fvita_supervisor
   ${CMAKE_CURRENT_SOURCE_DIR}/../templates/vita-app/supervisor.c)
 target_link_libraries(fvita_supervisor
@@ -73,29 +71,24 @@ target_link_libraries(fvita_supervisor
   SceAppMgr_stub
 )
 #
-# ATTRIBUTE and MEMSIZE are copied from Sony's own background-app sample
-# (Vita-Development-Suite/samples, notification-util/bootparam-bg.yml, which
-# carries `ATTRIBUTE: 0x3` and `APP_MEMSIZE: 0x800`). Neither is guessed and
-# neither is understood: they are what a background eboot is known to be built
-# with. The memory budget in particular is not cosmetic -- a background process
-# cannot be handed the whole foreground app budget, and 2 MiB is far more than
-# a socket and a 16 KiB net pool need.
+# ATTRIBUTE and MEMSIZE are copied from Sony's background-app sample, which
+# carries ATTRIBUTE 0x3 and APP_MEMSIZE 0x800. The memory budget matters: a
+# background process cannot be handed the whole foreground app budget, and
+# 2 MiB is ample for a socket and a 16 KiB net pool.
 vita_create_self(fvita_supervisor.self fvita_supervisor UNSAFE
   ATTRIBUTE 3
   MEMSIZE 0x800
 )
 
-# param2.sfo -- the manifest for eboot2.bin, and the piece that was missing.
+# param2.sfo, the manifest for eboot2.bin.
 #
-# sceBgAppUtilStartBgApp does not just run eboot2.bin; the shell looks up a
-# second SFO beside the first one to learn what it is starting. Without it the
-# call cannot succeed no matter what mode is passed. Same shape as Sony's
-# sample: its own title id, CATEGORY gdd, and ATTRIBUTE 0x1000, which is the
-# bit that says "background application" (BGFTP's bg app sets it too).
+# sceBgAppUtilStartBgApp looks up a second SFO beside the first to learn what
+# it is starting, and fails without one whatever mode is passed. Its own title
+# id, CATEGORY gdd, and ATTRIBUTE 0x1000 for "background application".
 #
-# Only keys already in vita-mksfoex's template are set, deliberately: keys it
-# does not know get appended after the sorted ones, and an SFO index table that
-# is not sorted by key is a thing no Sony parser is documented to accept.
+# Only keys already in vita-mksfoex's template are set: unknown keys get
+# appended after the sorted ones, and no Sony parser is documented to accept an
+# unsorted SFO index table.
 set(VITA_SUPERVISOR_TITLEID "FVTA00004")
 add_custom_command(OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/param2.sfo
   COMMAND ${VITA_MKSFOEX}

@@ -1,24 +1,21 @@
 #!/usr/bin/env bash
 # Run the gallery's benchmark on both renderers and compare. ADR-0017.
 #
-#   ./tools/bench.sh                       the GPU, which is the only renderer
-                                         anyone runs
-  ./tools/bench.sh --only sw             software, to localise a GL defect
-# #   ./tools/bench.sh --baseline            write the result in as the baseline
-#   ./tools/bench.sh --relaunch            reuse the installed build, skip the deploy
+#   ./tools/bench.sh                       the GPU, the only renderer anyone runs
+#   ./tools/bench.sh --only sw             software, to localise a GL defect
+#   ./tools/bench.sh --baseline            write the result in as the baseline
+#   ./tools/bench.sh --relaunch            reuse the installed build, skip deploy
 #   ./tools/bench.sh --leave sw|gl         renderer the console rests on (default gl)
 #   ./tools/bench.sh --scenes a,b,c        run only these scenes
 #   ./tools/bench.sh --host IP --receiver-port N
 #
-# gl.on is read once at startup, so comparing renderers is always two runs and
-# a relaunch. This is that, made into one command: deploy, run, flip, relaunch,
-# run, pull both, print a table, and fail if a scene regressed against the
-# committed baseline.
+# gl.on is read once at startup, so comparing renderers is two runs and a
+# relaunch. This is that in one command: deploy, run, flip, relaunch, run, pull
+# both, print a table, and fail if a scene regressed against the baseline.
 #
-# It exists because every performance number this project produced before it
-# came from a human driving an app by hand, once, on whatever binary happened
-# to be installed -- and three of them collapsed in a single session on
-# 2026-08-22. See the ADR's Context.
+# Every performance number before it came from a human driving an app by hand,
+# once, on whatever binary happened to be installed, and three of them collapsed
+# in a single session on 2026-08-22. See the ADR's Context.
 set -euo pipefail
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
@@ -36,33 +33,28 @@ BASELINE_DIR="$ROOT/apps/gallery/bench"
 OUT_DIR="$ROOT/out/bench"
 # GPU only, unless asked otherwise.
 #
-# Every run used to do software and GPU and diff them. The comparison stopped
-# earning its keep on 2026-09-01: nobody ships software rendering on this
-# console, nobody would choose it as a user, and running it doubled the time of
-# every measurement to produce a column nobody acts on. --only sw still works
-# for the rare case of asking whether a defect is in the GL path at all.
+# Every run used to do software and GPU and diff them. Nobody ships software
+# rendering on this console, and running it doubled every measurement to produce
+# a column nobody acts on. --only sw still localises a GL defect.
 ONLY="gl"
 # Which renderer the console is left on when the run finishes. See the note
 # beside the write at the bottom.
 LEAVE=gl
-# Scene subset, written to bench.only for the app to read. Empty runs
-# everything.
+# Scene subset, written to bench.only for the app to read. Empty runs everything.
 #
-# It exists because a scene scheduled behind a leak measures the leak: on
-# 2026-09-01 route_wrap and route_spans took the heap from 8 MB to the 159 MB
-# ceiling and every scene after them ran on a full heap until the run wedged.
-# Isolating a group is the only way to measure one on a fresh heap.
+# A scene scheduled behind a leak measures the leak: on 2026-09-01 route_wrap and
+# route_spans took the heap from 8 MB to the 159 MB ceiling, and every scene
+# after them ran on a full heap. Isolating a group is the only way to measure one
+# on a fresh heap.
 SCENES=""
 WRITE_BASELINE=0
 BUILD=1
 # Reuse what is installed instead of staging 13 MB again.
 #
-# Off by default, and that default is not caution for its own sake: a "software"
-# run on 2026-08-22 turned out to be running the GPU because the installed eboot
-# predated the opt-in switch. The renderer check below is what makes this safe
-# to turn on -- it reads what the display controller is actually scanning, so a
-# stale binary is caught before any scene runs rather than after the numbers are
-# published.
+# Off by default: a "software" run on 2026-08-22 turned out to be running the GPU
+# because the installed eboot predated the opt-in switch. The renderer check
+# below reads what the display controller is scanning, so a stale binary is
+# caught before any scene runs.
 RELAUNCH=0
 
 while [ $# -gt 0 ]; do
@@ -84,10 +76,9 @@ say() { printf '%s\n' "$2" | nc -w "${3:-20}" "$HOST" "$1" 2>/dev/null; }
 # Write a switch file, through whichever of the two is actually listening.
 #
 # Both the app and the receiver serve `put`, and which one holds the console
-# depends on where the last run left it. Assuming the receiver is up cost two
-# silent aborts on 2026-08-24: nc found nothing on the receiver port, `set -e`
-# took the script down between two echoes, and the output looked like the
-# script had simply stopped.
+# depends on where the last run left it. Assuming the receiver cost two silent
+# aborts on 2026-08-24: nc found nothing, `set -e` took the script down between
+# two echoes, and the output looked like it had simply stopped.
 put() {  # <content> <device path>
   local content="$1" path="$2" size port reply
   size=${#content}
@@ -111,10 +102,9 @@ fi
 # One run: set the renderer, deploy so the app restarts into it, wait for the
 # result file, pull it.
 #
-# Deploying rather than relaunching is deliberate. `relaunch` is faster, but it
-# reuses the installed eboot, and a stale eboot is exactly how a "software" run
-# turned out to be running the GPU on 2026-08-22. A deploy makes the binary
-# under test the binary that was just built.
+# Deploying rather than relaunching is deliberate. `relaunch` reuses the
+# installed eboot, which is how a "software" run turned out to be GL on
+# 2026-08-22.
 run_one() {  # <sw|gl>
   # software.on, not gl.on: the default flipped to GL on 2026-08-24, so the
   # switch that exists is the one that opts *out*.
@@ -150,14 +140,11 @@ run_one() {  # <sw|gl>
   done
   say "$DEV" "overlay off" 6 >/dev/null || true
 
-  # What the app *asked* for is not what it got if the binary predates the
-  # opt-in switch. shotinfo reports what the display controller is actually
-  # scanning, so the renderer in the results comes from here and not from the
-  # app.
-  # Retried, because the first sample can be too early rather than wrong. On
-  # the GL path sceDisplayGetFrameBuf has nothing to report until vitaGL has
-  # presented once, and a single probe two seconds after launch caught exactly
-  # that and reported the renderer as "unknown".
+  # What the app asked for is not what it got if the binary predates the opt-in
+  # switch, so the renderer in the results comes from shotinfo, which reports
+  # what the display controller is scanning.
+  # Retried, because the first sample can be too early: on the GL path
+  # sceDisplayGetFrameBuf has nothing to report until vitaGL has presented once.
   local actual=unknown info=""
   for _ in 1 2 3 4 5 6 7 8; do
     info="$(say "$DEV" shotinfo 8)"
@@ -209,16 +196,13 @@ for m in $MODES; do run_one "$m"; done
 
 # What renderer the console is left on.
 #
-# This used to be software unconditionally, on the grounds that a hard crash
-# under GL wedges the whole console (ADR-0014) so the resting state should be
-# the one that cannot. Two things changed on 2026-09-01: the reservation that
+# This used to be software unconditionally, because a hard crash under GL wedges
+# the console (ADR-0014). Two things changed on 2026-09-01: the reservation that
 # took GXM down is checked (patches/vitagl/0002) and the shader that would not
-# link now links (0004). What the old default cost, meanwhile, was real and
-# recurring -- every app launched after a bench run was silently on the
-# software path, including runs whose numbers were then read as GL.
+# link now links (0004). The old default meanwhile left every app launched after
+# a bench run silently on the software path, including runs read as GL.
 #
-# So the resting state is GL, which is also the app default, and --leave sw is
-# there for anyone who wants the old behaviour back.
+# So the resting state is GL, and --leave sw restores the old behaviour.
 put "$([ "$LEAVE" = sw ] && echo 1 || echo 0)" "ux0:data/flutter-vita/software.on"
 put "0" "ux0:data/flutter-vita/bench.on"
 

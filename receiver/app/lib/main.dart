@@ -1,19 +1,15 @@
-// The receiver's screen. ADR-0016.
+// The receiver's screen.
 //
-// A header that says where the console is and what it is doing, four tabs, and
-// a footer of versions. The header is the line that justifies the screen --
-// when this console's Wi-Fi drops and returns on a different address, the
-// receiver is the only thing that knows where it went.
+// A header saying where the console is and what it is doing, four tabs, and a
+// footer of versions. The header is what justifies the screen: when Wi-Fi
+// drops and returns on a different address, the receiver is the only thing
+// that knows where it went.
 //
-// The address shown is the mDNS name, not the number. Every tool in tools/
-// defaults to flutter-vita.local and the dev server answers for it, so the
-// number is a fallback and belongs in the footer where a fallback belongs.
+// The address shown is the mDNS name, not the number. Every tool defaults to
+// flutter-vita.local, so the number is a fallback and lives in the footer.
 //
-// The reliability-critical half (receiver_dev.c) owns the port and republishes
-// ux0:data/flutter-vita/receiver-state.txt on every change; polling a file is
-// what lets that half stay free of a platform channel. If the engine never
-// starts, only this is lost. See device.dart for the one request that travels
-// the other way.
+// receiver_dev.c owns the port and republishes receiver-state.txt on every
+// change; polling a file is what keeps that half free of a platform channel.
 
 import 'dart:async';
 import 'dart:io';
@@ -161,11 +157,10 @@ class _Header extends StatelessWidget {
 
   /// What the badge should say, which is not always what C published.
   ///
-  /// C reports what this process is doing. It said "Waiting" through every
-  /// unreachable stretch of 2026-09-01, correctly -- the socket was listening
-  /// and the console had an address. The gap it cannot see is the name: a host
-  /// types flutter-vita.local, and if nothing is announcing it, the console is
-  /// unreachable while looking perfectly healthy from where you are standing.
+  /// C reports what this process is doing, and "Waiting" is correct even when
+  /// nothing can reach the console. The gap it cannot see is the name: if
+  /// nothing is announcing flutter-vita.local, the console is unreachable while
+  /// looking healthy from here.
   ///
   /// Only "Waiting" is overridden. A transfer in flight says what it is doing.
   String get _badge {
@@ -514,14 +509,12 @@ class _Progress extends StatelessWidget {
 
 /// The deploy history, oldest at the top, newest pinned to the bottom.
 ///
-/// It used to be the C side's in-memory ring, which meant it was empty at
+/// Reads a file rather than the C side's in-memory ring, which was empty at
 /// every launch -- and since `launch` is the last thing the receiver does, that
-/// emptied it exactly when you wanted to read it. It reads a file now, so a
-/// deploy is still on screen after the app it deployed has come and gone.
+/// emptied it exactly when you wanted to read it.
 ///
 /// Reversed rather than bottom-aligned: a Column that runs past the panel
-/// overflows, and two hundred lines is more than fits. Reverse puts the newest
-/// line at the bottom and makes the rest scroll back under a thumb.
+/// overflows, and two hundred lines is more than fits.
 class _Console extends StatelessWidget {
   const _Console({required this.lines});
 

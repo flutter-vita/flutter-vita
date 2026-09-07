@@ -18,12 +18,11 @@ import 'scene.dart';
 /// A busy but cheap subtree, used as the content most scenes animate.
 ///
 /// Deliberately not a solid rectangle: a single colour composites at a cost
-/// unrelated to anything real, and every scene would then measure the same
-/// fill. Fifty-odd tiles with text is closer to what a screen actually is.
-/// Coloured cells, optionally with a numeral in each.
+/// unrelated to anything real. Fifty-odd tiles with text is closer to what a
+/// screen actually is.
 ///
-/// [text] exists so `route_boxes` and `route_push` differ by exactly one
-/// thing: whether 48 glyph runs have to be laid out.
+/// [text] exists so `route_boxes` and `route_push` differ by exactly one thing:
+/// whether 48 glyph runs have to be laid out.
 Widget _content({double seed = 0, bool text = true}) {
   return GridView.count(
     physics: const NeverScrollableScrollPhysics(),
@@ -73,26 +72,20 @@ Future<void> prepareAssets() async {
 final List<AnimatedScene> animatedScenes = <AnimatedScene>[
   // Not a benchmark. A picture that answers one question.
   //
-  // On 2026-09-01 the receiver's panel was unreadable under GL: its status pill
-  // and buttons rendered as solid rectangles with the text gone. Sampling the
-  // framebuffer showed the fills at exactly full opacity -- 0xFF4B8FD6 where
-  // a 16% accent over the page background should be (21, 40, 61). The text is
-  // the same colour as its background by design, so losing the alpha loses
-  // the text.
+  // The receiver's panel is unreadable under GL: its status pill and buttons
+  // render as solid rectangles with the text gone, sampling at full opacity
+  // where a 16% accent over the page background should be (21, 40, 61).
   //
   // Software renders the same widgets correctly, so the colour survives Dart
-  // and the embedder and is dropped in the GL path. This narrows where.
+  // and the embedder and is dropped in the GL path.
   //
-  //   row 1  Color.fromARGB(41, ...)      the old, plain construction
-  //   row 2  base.withValues(alpha: 0.16) the API the receiver actually uses
-  //   row 3  Opacity(0.16) over an opaque fill   a different route to the
-  //                                              same pixel
+  //   row 1  Color.fromARGB(41, ...)               plain construction
+  //   row 2  base.withValues(alpha: 0.16)          what the receiver uses
+  //   row 3  Opacity(0.16) over an opaque fill     a different route
   //
-  // Each row is drawn over the same dark background with white text on top.
-  // If rows 1 and 2 both come out opaque, the colour API is exonerated and
-  // the bug is in how a translucent solid fill reaches vitaGL. If row 3 is
-  // correct while 1 and 2 are not, the layer path blends and the direct fill
-  // does not, which is a much smaller place to look.
+  // If rows 1 and 2 come out opaque, the colour API is exonerated and the bug
+  // is in how a translucent solid fill reaches vitaGL. If row 3 is correct and
+  // the others are not, the layer path blends and the direct fill does not.
   AnimatedScene(
     name: 'alpha_probe',
     stresses: Stresses.fill,

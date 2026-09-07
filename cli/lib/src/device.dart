@@ -7,8 +7,7 @@ import 'dart:typed_data';
 /// The receiver (port 1341) installs and launches; the app (port 1339) serves
 /// logs, screenshots and synthetic input while it runs. Only one is up at a
 /// time, because launching the app replaces the receiver and `handoff` puts it
-/// back. Which one answers is therefore a fact about the device's current
-/// state, not a configuration choice.
+/// back.
 enum VitaRole {
   receiver(1341, 'receiver'),
   app(1339, 'app');

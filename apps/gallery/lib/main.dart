@@ -5,14 +5,12 @@ import 'bench/runner.dart';
 
 /// What this port looks like, judged by eye.
 ///
-/// A separate app from the conformance suite, and the split is about how each
-/// one produces a verdict. Conformance computes a boolean about itself and
-/// reports 45/45 with no human involved; that is what makes it runnable on
-/// every deploy. A widget either looks right or it does not, and no app can
-/// assess that about itself — the verdict is a screenshot or a pair of eyes.
+/// Separate from the conformance suite because of how each produces a verdict.
+/// Conformance computes a boolean about itself, which is what makes it runnable
+/// on every deploy. A widget either looks right or it does not, and no app can
+/// assess that about itself.
 ///
-/// Folding the two together would cost the conformance run its automation,
-/// which is the whole reason it survived the crash investigation.
+/// Folding them together would cost the conformance run its automation.
 void main() {
   // A positive control for the engine's log_message_callback. Dart print had
   // no destination on this port until 2026-08-24 -- it went to a stdout the

@@ -10,18 +10,13 @@ import 'probes.dart';
 
 /// The conformance app: what this port can actually do, shown on the panel.
 ///
-/// Results go to two places, because the first run proved one is not enough.
-///
-/// The screen was the original channel — files, sockets and `print` are all
-/// things under test, so reporting through them is circular, while rendering
-/// and `shot` were already proved by M3. What that reasoning missed is that a
-/// crash takes the app down *and the screen with it*: after the first run died
-/// partway through, `shot` had nothing left to capture and the only record was
-/// what the user happened to have seen.
+/// Results go to two places. The screen alone is not enough, because a crash
+/// takes the app down and the screen with it, leaving `shot` nothing to
+/// capture.
 ///
 /// So results are also appended to a file as they complete. That is circular
 /// for the filesystem probes and honest about it: if the file exists at all,
-/// the filesystem works, and the rows inside it speak for everything after.
+/// the filesystem works.
 void main() {
   // The second half of the opt-in. A non-endorsed implementation is not found
   // automatically -- that is what non-endorsed means -- so the app registers
@@ -97,11 +92,9 @@ class _ProbeRunnerState extends State<ProbeRunner>
 
   /// Keeps the probe that just ran in the middle of the panel.
   ///
-  /// This is what replaces fitting everything on screen at once. There is no
-  /// pointer to drag with while a run is going and no keyboard to page with,
-  /// so a list that does not follow the run is a list whose interesting row is
-  /// off the bottom for the whole run. The front touchscreen does deliver
-  /// pointer events, so dragging works once it stops moving on its own.
+  /// There is no pointer to drag with while a run is going and no keyboard to
+  /// page with, so a list that does not follow the run is a list whose
+  /// interesting row is off the bottom for the whole run.
   ///
   /// jumpTo, not animateTo: an animation is another timer firing on every
   /// probe, and this app exists partly to measure what timers cost.
@@ -177,16 +170,11 @@ class _ProbeRunnerState extends State<ProbeRunner>
 
   /// Where the next attempt should pick up.
   ///
-  /// Separate from the journal on purpose. The journal is a narrative and this
-  /// is one integer, and conflating them would mean parsing prose to recover a
-  /// number -- which is what "the resume point is already on disk" glossed
-  /// over. It is also the file that must survive when the journal does not.
+  /// Separate from the journal on purpose: the journal is a narrative and this
+  /// is one integer, and it must survive when the journal does not.
   ///
-  /// Delete it to force a run from the top:
-  ///     ./experiments/m1-vpk/dev.sh rm ux0:data/flutter-vita/resume.txt
-  ///
-  /// Or overwrite it with anything that is not a number, which works on a
-  /// device whose installed receiver has no `rm`.
+  /// Delete it to force a run from the top, or overwrite it with anything that
+  /// is not a number, which works on a device whose receiver has no `rm`.
   static const _resumePath = 'ux0:data/flutter-vita/resume.txt';
 
   /// Opens the journal and returns the probe index to start from, or null if

@@ -1,10 +1,8 @@
-// The gallery's benchmark section. ADR-0017 decision 10 (it lives here rather
-// than in a fifth product).
+// The gallery's benchmark section.
 //
 // Two ways in. A person opens it and taps Run, which is what makes a red row
 // worth looking at; or the host writes bench.on and relaunches, and the page
-// runs itself and writes a result file. The second is the one that produces
-// numbers anyone can reproduce.
+// runs itself and writes a result file.
 
 import 'dart:async';
 
@@ -35,10 +33,9 @@ class _BenchPageState extends State<BenchPage> with TickerProviderStateMixin {
   /// measured.
   ///
   /// The HUD costs about 300 us a frame and is drawn into the frame it is
-  /// measuring. That is not hypothetical caution: on 2026-08-22 a 45-versus-60
-  /// fps difference was attributed to the HUD and then disproved by a repeat
-  /// A/B. Dart cannot switch it off -- it lives in the engine -- so the run
-  /// waits, and `tools/bench.sh` sends `overlay off` during the wait.
+  /// measuring; a 45-versus-60 fps difference was once attributed to it and then
+  /// disproved. Dart cannot switch it off, so the run waits and
+  /// `tools/bench.sh` sends `overlay off` during the wait.
   static const Duration _hostWindow = Duration(seconds: 3);
 
   @override
@@ -127,18 +124,15 @@ class _BenchPageState extends State<BenchPage> with TickerProviderStateMixin {
             tag: 'bench-hero',
             child: SizedBox(width: 1, height: 1),
           ),
-          // Four ways of asking for the same 16%-opaque blue, on the page
-          // rather than in a scene.
+          // Four ways of asking for the same 16%-opaque blue.
           //
-          // It started as the alpha_probe scene and could not be photographed:
-          // a scene lasts about five seconds and one `shot` moves two
-          // megabytes, so every capture landed on the results screen instead.
-          // A diagnostic you cannot photograph is not a diagnostic. Here it
-          // holds still.
+          // On the page rather than in a scene because a scene lasts about five
+          // seconds and one `shot` moves two megabytes, so every capture landed
+          // on the results screen instead.
           //
-          // What it is for: on 2026-09-01 the receiver's panel was unreadable
-          // under GL, its pills and buttons rendering at full opacity where
-          // 16% was asked for. Software draws them correctly.
+          // The receiver's panel is unreadable under GL, its pills and buttons
+          // rendering at full opacity where 16% was asked for. Software draws
+          // them correctly.
           const Padding(
             padding: EdgeInsets.symmetric(horizontal: 12),
             child: _AlphaProbeRow(),

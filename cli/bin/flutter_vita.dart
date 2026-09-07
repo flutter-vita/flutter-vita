@@ -8,11 +8,9 @@ import 'package:flutter_vita/src/png.dart';
 
 /// One entry point for building, installing and driving Flutter on a Vita.
 ///
-/// The pieces already existed as shell scripts in tools/ with the device
-/// address written into two of them, under two different variable names. This
-/// keeps the build orchestration as subprocesses — it genuinely is cmake,
-/// gen_snapshot and flutter — and takes over everything that talks to the
-/// device, which is where the hardcoded addresses were.
+/// Build orchestration stays as subprocesses, because it genuinely is cmake,
+/// gen_snapshot and flutter. Everything that talks to the device lives here,
+/// which is where the hardcoded addresses used to be.
 const usage = '''
 flutter-vita — build and run Flutter apps on a PlayStation Vita
 

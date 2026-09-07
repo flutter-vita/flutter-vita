@@ -5,34 +5,28 @@ export 'package:vita_file_browser/vita_file_browser.dart' show VitaPaths;
 
 /// The Vita implementation of [FileSelectorPlatform].
 ///
-/// **Non-endorsed**, per ADR-0009: `file_selector` does not know the Vita
-/// exists, so an app depends on this package alongside it and calls
+/// Non-endorsed: `file_selector` does not know the Vita exists, so an app
+/// depends on this package alongside it and calls
 /// `FileSelectorVita.registerWith()`.
 ///
-/// This is the one localsend needs. It reports `TargetPlatform.linux`
-/// (ADR-0008), so both of its picking paths take the desktop branch:
-/// `openFiles()` chooses what to send, and `getDirectoryPath()` chooses where
-/// received files land. Without an implementation both throw
-/// `UnimplementedError` from the platform interface's defaults, which is why
-/// the Vita could receive files and never send one.
+/// localsend needs this. It reports `TargetPlatform.linux`, so both of its
+/// picking paths take the desktop branch, and without an implementation both
+/// throw `UnimplementedError` -- which is why the Vita could receive files and
+/// never send one.
 ///
 /// The UI is `vita_file_browser`, shared with `file_picker_vita`.
 ///
-/// ## What is not supported, and why
+/// Not supported:
 ///
-///   * [getSavePath] and [getSaveLocation] return the *directory* the user
-///     chose joined to `suggestedName`, never a name the user typed. Naming a
-///     file means the on-screen keyboard over a file list on a 544 px screen.
-///     A caller that passes no `suggestedName` gets null rather than a file
-///     called "untitled" it never asked for.
-///
-///   * `confirmButtonText` is ignored. The browser's confirm button says what
-///     it does, and a caller's word for it would have to fit a button sized for
-///     this screen.
-///
+///   * [getSavePath] and [getSaveLocation] return the directory the user chose
+///     joined to `suggestedName`, never a name the user typed: naming a file
+///     means the on-screen keyboard over a file list on a 544 px screen. No
+///     `suggestedName` gives null rather than an "untitled" nobody asked for.
+///   * `confirmButtonText` is ignored. The browser's confirm button says what it
+///     does, and a caller's word would have to fit a button sized for this
+///     screen.
 ///   * [XTypeGroup] is read for `extensions` only. There are no UTIs or MIME
-///     types here to hand a dialog that does not exist, and `webWildCards` is
-///     for browsers.
+///     types here, and `webWildCards` is for browsers.
 class FileSelectorVita extends FileSelectorPlatform {
   static void registerWith() {
     FileSelectorPlatform.instance = FileSelectorVita();

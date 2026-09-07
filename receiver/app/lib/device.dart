@@ -1,15 +1,15 @@
 // Everything the panel reads off the memory card, and the one thing it writes.
 //
-// ADR-0016 decision 3 keeps the reliability-critical half free of a platform
-// channel: the C layer republishes a state file and this side polls it. That
-// decision is about the *channel*, not about the filesystem -- ux0:data is
-// readable from Dart directly, so the log archive, the crash dumps and the
-// install registry are read here rather than pushed through C.
+// The C layer republishes a state file and this side polls it, which keeps the
+// reliability-critical half free of a platform channel. That applies to the
+// channel, not the filesystem: ux0:data is readable from Dart, so the log
+// archive, crash dumps and install registry are read here rather than pushed
+// through C.
 //
-// Deleting a title is the exception. It needs ScePromoterUtil, which needs PAF
-// resident and a state machine that already lives in C, so the panel asks for
-// it by writing one line the watcher picks up. A request that arrives while
-// Flutter is dead simply never arrives, which is the correct behaviour.
+// Deleting a title is the exception. It needs ScePromoterUtil, PAF resident and
+// a state machine that lives in C, so the panel writes one line the watcher
+// picks up. A request that arrives while Flutter is dead never arrives, which
+// is correct.
 
 import 'dart:convert';
 import 'dart:io';
@@ -194,14 +194,11 @@ class ReceiverState {
 
 /// The DEPLOY console's history, newest last.
 ///
-/// `launch` ends the receiver's process, so the C side's in-memory ring is empty
-/// at every boot and the console showed nothing about the deploy that just
-/// happened -- which is the one you go looking for. receiver_dev.c appends every
-/// note to a file instead.
+/// `launch` ends the receiver's process, so the C side's in-memory ring is
+/// empty at every boot. receiver_dev.c appends every note to a file instead.
 ///
-/// Read from the end. The file is capped at 64 KB and this only ever wants the
-/// last screenful, so seeking beats reading the whole thing on a memory card,
-/// and the first partial line after the seek is dropped.
+/// Read from the end: the file is capped at 64 KB and this wants the last
+/// screenful, so the first partial line after the seek is dropped.
 List<String> readDeployLog({int lines = 200, int window = 16 * 1024}) {
   try {
     final file = File(deployLogPath);
@@ -376,16 +373,12 @@ bool deleteCrash(CrashFile crash) {
 
 /// Every psp2dmp in ux0:data, one at a time, yielding between each.
 ///
-/// Nothing on this console removes these, so they accumulate -- there were 53
-/// the day this was written, a few hundred megabytes of dumps of crashes that
-/// were debugged weeks ago.
+/// Nothing on this console removes these, so they accumulate into hundreds of
+/// megabytes.
 ///
-/// The first version was a plain loop of deleteSync. It ran on the UI thread,
-/// which on this platform is also the thread that builds frames and dispatches
-/// touches, so the panel stopped painting and stopped answering for as long as
-/// the card took to unlink fifty files -- indistinguishable from a hang, and
-/// reported as one. The await hands the event loop back after every file, so
-/// frames keep going out and `onProgress` has something to draw.
+/// The await matters. A plain loop of deleteSync runs on the UI thread, which
+/// is also the thread that builds frames and dispatches touches, so the panel
+/// stops painting for as long as the card takes to unlink fifty files.
 Future<int> clearCrashes(void Function(int done, int total) onProgress) async {
   final files = listCrashes();
   var removed = 0;
@@ -414,12 +407,10 @@ class InstalledApp {
 
   /// Whether ux0:app/<id> is actually there.
   ///
-  /// installed.txt is a list of what this receiver has installed, not a list of
-  /// what is installed. A title deleted any other way stays in it, and a RUN
-  /// button on that row hands the console to a title that does not exist --
-  /// sceAppMgrLaunchAppByUri fails quietly and the receiver has already exited,
-  /// so you end up on the LiveArea home screen. That is how FVTA00004 stranded
-  /// this console twice on 2026-08-31.
+  /// installed.txt lists what this receiver installed, not what is installed. A
+  /// title deleted any other way stays in it, and a RUN button on that row hands
+  /// the console to a title that does not exist: sceAppMgrLaunchAppByUri fails
+  /// quietly after the receiver has exited, leaving the LiveArea home screen.
   final bool present;
 }
 
@@ -452,12 +443,10 @@ List<InstalledApp> listInstalled(String self) {
 ///
 /// SFO is a small binary table: a header giving where the key and data tables
 /// start and how many entries there are, then fixed 16-byte index entries. No
-/// parser ships with the SDK and the format is four fields wide, so it is read
-/// here rather than shelled out to.
+/// parser ships with the SDK.
 ///
-/// Every failure returns null. This runs on files written by other people's
-/// installers, and the receiver must not be the thing that cannot start because
-/// one of them is malformed.
+/// Every failure returns null. This reads files written by other people's
+/// installers, and a malformed one must not stop the receiver starting.
 String? appTitle(String titleId) {
   try {
     final f = File('ux0:app/$titleId/sce_sys/param.sfo');
@@ -561,27 +550,14 @@ String humanBytes(int n) {
 
 /// A command for the panel itself, read and consumed on the poll tick.
 ///
-/// The panel is a screen you press, and the one thing that cannot press it is
-/// the machine building it. `tap` exists in the dev server but not in minimal
-/// mode, and minimal mode's allowlist is compiled into the pinned engine
-/// (ADR-0016 decision 2), so reaching the CRASHES tab from the host would mean
-/// re-pinning an engine to debug a layout.
-///
-/// This is the same trick as receiver-request.txt pointed at the other half:
-/// `put` one line onto the card, the panel picks it up within 500 ms and
-/// removes it. Shipped rather than kept behind a debug flag, because the
-/// person who needs to see this screen is usually not holding the console.
+/// `tap` exists in the dev server but not in minimal mode, and minimal mode's
+/// allowlist is compiled into the pinned engine, so reaching the CRASHES tab
+/// from the host would otherwise mean re-blessing an engine to debug a layout.
 ///
 ///   printf 'put 12 ux0:data/flutter-vita/panel-request.txt\ntab crashes\n' | nc ...
 ///
 /// Verbs: `tab <deploy|logs|crashes|apps>`, `select <index>`, `back`, and
-/// `action <name>` for a button.
-///
-/// `action` exists because the buttons on this panel are the parts most worth
-/// testing and the parts I cannot reach: DELETE ALL froze the console for as
-/// long as the card took to unlink fifty dumps, and the only ways to check the
-/// fix were to hand the console to someone or to run different code than the
-/// button runs. Each tab decides what its names mean.
+/// `action <name>` for a button. Each tab decides what its names mean.
 class PanelCommand {
   const PanelCommand(this.seq, this.verb, this.arg);
 
