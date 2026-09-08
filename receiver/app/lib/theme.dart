@@ -26,6 +26,71 @@ const label = TextStyle(fontSize: 13, height: 1.2, color: dim);
 const heading = TextStyle(fontSize: 15, height: 1.2, color: fg,
     fontWeight: FontWeight.w600);
 
+/// A rounded box with a visible edge, drawn as two filled rectangles rather
+/// than one bordered one.
+///
+/// BoxDecoration paints a uniform border with Canvas.drawDRRect
+/// (box_border.dart:298). On the GL path that call fills the whole shape with
+/// the border colour once the box is short. Measured on this panel 2026-09-08:
+/// the log Panel at 755x335 drew a correct 1 px edge, while the list row at
+/// 755x62 and every button at ~90x26 came out as solid blocks with their text
+/// buried in them. Two filled rounded rectangles use drawRRect only, which is
+/// correct at every size here.
+///
+/// [fill] is composited against [under] rather than left translucent, because
+/// the outer rectangle is the border colour and a translucent fill laid over it
+/// would tint against that edge instead of against the page.
+class Outlined extends StatelessWidget {
+  const Outlined({
+    super.key,
+    required this.colour,
+    required this.child,
+    this.fill,
+    this.under = bg,
+    this.radius = 5,
+    this.width = 1,
+    this.padding = EdgeInsets.zero,
+    this.margin = EdgeInsets.zero,
+    this.expand = false,
+  });
+
+  final Color colour;
+  final Widget child;
+
+  /// Null means the inside is whatever the box sits on.
+  final Color? fill;
+  final Color under;
+  final double radius;
+  final double width;
+  final EdgeInsets padding;
+  final EdgeInsets margin;
+  final bool expand;
+
+  @override
+  Widget build(BuildContext context) {
+    Widget box = DecoratedBox(
+      decoration: BoxDecoration(
+        color: colour,
+        borderRadius: BorderRadius.circular(radius),
+      ),
+      child: Padding(
+        padding: EdgeInsets.all(width),
+        child: DecoratedBox(
+          decoration: BoxDecoration(
+            color: Color.alphaBlend(fill ?? under, under),
+            borderRadius:
+                BorderRadius.circular((radius - width).clamp(0.0, radius)),
+          ),
+          child: Padding(padding: padding, child: child),
+        ),
+      ),
+    );
+    if (expand) box = SizedBox(width: double.infinity, child: box);
+    if (margin != EdgeInsets.zero) box = Padding(padding: margin, child: box);
+    return box;
+  }
+}
+
 /// A bordered well. Everything scrollable in this app sits in one.
 class Panel extends StatelessWidget {
   const Panel({super.key, required this.child, this.padding = 10});
@@ -34,14 +99,12 @@ class Panel extends StatelessWidget {
   final double padding;
 
   @override
-  Widget build(BuildContext context) => Container(
-        width: double.infinity,
+  Widget build(BuildContext context) => Outlined(
+        expand: true,
+        colour: line,
+        fill: sunken,
+        radius: 6,
         padding: EdgeInsets.all(padding),
-        decoration: BoxDecoration(
-          color: sunken,
-          border: Border.all(color: line),
-          borderRadius: BorderRadius.circular(6),
-        ),
         child: child,
       );
 }
@@ -71,13 +134,11 @@ class Btn extends StatelessWidget {
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
       onTap: enabled ? onTap : null,
-      child: Container(
+      child: Outlined(
+        colour: c,
+        fill: c.withValues(alpha: enabled ? 0.14 : 0.06),
+        radius: 5,
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
-        decoration: BoxDecoration(
-          color: c.withValues(alpha: enabled ? 0.14 : 0.06),
-          border: Border.all(color: c),
-          borderRadius: BorderRadius.circular(5),
-        ),
         child: Text(
           text,
           style: TextStyle(
@@ -110,14 +171,12 @@ class ListRow extends StatelessWidget {
   Widget build(BuildContext context) => GestureDetector(
         behavior: HitTestBehavior.opaque,
         onTap: onTap,
-        child: Container(
+        child: Outlined(
+          colour: selected ? accent : line,
+          fill: selected ? accent.withValues(alpha: 0.14) : bg,
+          radius: 5,
           padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
           margin: const EdgeInsets.only(bottom: 4),
-          decoration: BoxDecoration(
-            color: selected ? accent.withValues(alpha: 0.14) : bg,
-            border: Border.all(color: selected ? accent : line),
-            borderRadius: BorderRadius.circular(5),
-          ),
           child: Row(children: children),
         ),
       );

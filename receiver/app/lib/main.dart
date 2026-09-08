@@ -260,13 +260,12 @@ class _Status extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colour = _colours[status] ?? const Color(0xFF5A6B7C);
-    return Container(
+    return Outlined(
+      colour: colour,
+      fill: colour.withValues(alpha: 0.16),
+      radius: 6,
+      width: 1.5,
       padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 5),
-      decoration: BoxDecoration(
-        color: colour.withValues(alpha: 0.16),
-        border: Border.all(color: colour, width: 1.5),
-        borderRadius: BorderRadius.circular(6),
-      ),
       child: Text(
         status.toUpperCase(),
         style: TextStyle(
@@ -482,21 +481,21 @@ class _Progress extends StatelessWidget {
           ],
         ),
         const SizedBox(height: 5),
-        Container(
+        SizedBox(
           height: 12,
-          decoration: BoxDecoration(
-            color: sunken,
-            border: Border.all(color: line),
-            borderRadius: BorderRadius.circular(6),
-          ),
-          child: Align(
-            alignment: Alignment.centerLeft,
-            child: FractionallySizedBox(
-              widthFactor: fraction,
-              child: Container(
-                decoration: BoxDecoration(
-                  color: warn,
-                  borderRadius: BorderRadius.circular(5),
+          child: Outlined(
+            colour: line,
+            fill: sunken,
+            radius: 6,
+            child: Align(
+              alignment: Alignment.centerLeft,
+              child: FractionallySizedBox(
+                widthFactor: fraction,
+                child: Container(
+                  decoration: BoxDecoration(
+                    color: warn,
+                    borderRadius: BorderRadius.circular(5),
+                  ),
                 ),
               ),
             ),
@@ -880,14 +879,12 @@ class _CrashBody extends StatelessWidget {
         if (culprit == null)
           Text('no thread is marked as stopped', style: mono)
         else
-          Container(
-            width: double.infinity,
+          Outlined(
+            expand: true,
+            colour: danger,
+            fill: danger.withValues(alpha: 0.10),
+            radius: 5,
             padding: const EdgeInsets.all(10),
-            decoration: BoxDecoration(
-              color: danger.withValues(alpha: 0.10),
-              border: Border.all(color: danger),
-              borderRadius: BorderRadius.circular(5),
-            ),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -934,14 +931,12 @@ class _ThreadRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final where = dump.locate(thread.pc);
-    return Container(
-      margin: const EdgeInsets.only(bottom: 4),
+    return Outlined(
+      colour: thread.faulted ? danger : line,
+      fill: thread.faulted ? danger.withValues(alpha: 0.08) : bg,
+      radius: 4,
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-      decoration: BoxDecoration(
-        color: thread.faulted ? danger.withValues(alpha: 0.08) : bg,
-        border: Border.all(color: thread.faulted ? danger : line),
-        borderRadius: BorderRadius.circular(4),
-      ),
+      margin: const EdgeInsets.only(bottom: 4),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
