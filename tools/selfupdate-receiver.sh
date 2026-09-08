@@ -152,6 +152,25 @@ for _ in $(seq 1 40); do
   case "$PONG" in
     pong\ receiver*)
       echo "    $PONG"
+      # A receiver answering is not proof the update was applied.
+      #
+      # The updater removes the manifest as its last act, and only after every
+      # copy has succeeded. If the manifest survives, the updater ran and
+      # decided there was nothing to do -- which is exactly what a stale updater
+      # does. On 2026-09-08 one built before the loader/receiver rename kept
+      # looking in ux0:data/flutter-vita/loader-update, found nothing, printed
+      # "nothing staged" and launched the receiver straight back. Three updates
+      # in a row reported success and changed no bytes.
+      if say "$PORT" "ls $STAGE" 20 | grep -q manifest.txt; then
+        echo "!! the updater did not apply the payload: $STAGE/manifest.txt" >&2
+        echo "   is still there, and it is removed only on success." >&2
+        echo "   Most likely $UPDATER is older than the staging paths:" >&2
+        echo "     rm -rf receiver/updater/build" >&2
+        echo "     cmake -S receiver/updater -B receiver/updater/build \\" >&2
+        echo "       -DCMAKE_TOOLCHAIN_FILE=\$VITASDK/share/vita.toolchain.cmake" >&2
+        echo "     cmake --build receiver/updater/build" >&2
+        exit 1
+      fi
       # The updater is scaffolding and comes back down. It is a bubble on the
       # LiveArea that does exactly one thing and does it destructively, and
       # every one of these left behind is a way to overwrite the receiver by
@@ -160,10 +179,12 @@ for _ in $(seq 1 40); do
       if [ "$KEEP_UPDATER" -eq 0 ]; then
         echo "==> removing $UPDATER"
         say "$PORT" "delete $UPDATER" 60 | sed 's/^/    /' || true
-        # The receiver restarts itself after a delete -- see restart_after_delete
-        # in receiver/src/receiver_dev.c. Waiting for it here so this script never
-        # returns while the console is mid-handover and nothing answers.
-        echo "==> waiting for the receiver to come back"
+        # The receiver stays up through a delete now -- see after_delete in
+        # receiver/src/receiver_dev.c. It used to relaunch itself here, which on
+        # 2026-09-08 left the console on LiveArea with nothing answering. This
+        # still waits, because the delete goes through the promoter and the
+        # reply can arrive before the worker has finished.
+        echo "==> confirming the receiver is still there"
         for _ in $(seq 1 20); do
           sleep 3
           BACK="$(say "$PORT" ping 5 2>/dev/null || true)"
