@@ -27,6 +27,13 @@
 #include "bailout.h"
 
 #ifndef VITA_LOADER_TITLEID
+// Slot A. There are two receivers, A and B, and they take turns (see
+// SELF_TITLEID in receiver/src/receiver_dev.c), so this is not always the
+// newest one -- but it is always a receiver, it always answers 1341, and an
+// app that has just aborted needs somewhere reachable more than it needs the
+// latest build. Picking the newer of the two would mean a file both receivers
+// write and this code reads at abort time, which is the wrong moment to start
+// reading the card.
 #define VITA_LOADER_TITLEID "FVTA00001"
 #endif
 

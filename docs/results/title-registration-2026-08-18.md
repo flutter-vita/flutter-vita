@@ -8,6 +8,16 @@ The test apps needs one slot and we already own one, so the risk of writing the
 shell's database on the only console here bought nothing today. Written down so
 the next person does not re-derive it.
 
+> **Superseded 2026-08-31.** `ScePromoterUtil` does work, and it is what
+> `tools/install-vpk.sh` uses. The conclusion below is wrong in its cause, not
+> its measurement: the promoter imports from PAF, and until PAF is resident its
+> library cannot be linked, so the load is refused with `MODULEMGR_NO_LIB` —
+> the error was naming its own missing dependency. Load PAF first with
+> `sceSysmoduleLoadModuleInternalWithArg(SCE_SYSMODULE_INTERNAL_PAF, …)`, keep
+> it resident, and the promote succeeds. See `experiments/promoter` and the
+> **Promote** entry in [the glossary](../glossary.md). The SQLite route below
+> was never needed and is kept as a record of what the shell's database holds.
+
 ## What is closed
 
 `ScePromoterUtil` is not available to us, and this is now precise rather than

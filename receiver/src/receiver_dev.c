@@ -37,9 +37,27 @@
 #ifndef RECEIVER_PORT
 #define RECEIVER_PORT 1341
 #endif
-// Which slot this receiver occupies. Used only to refuse to delete itself; the
-// receiver cannot write its own directory anyway, but the promoter can, and
-// `delete` goes through the promoter.
+// Which slot this receiver occupies.
+//
+// There are two of them, FVTA00001 and FVTA00005, and they take turns. A
+// running title cannot write its own directory -- ux0:app/<self> is the
+// read-only app0: mount, and that covers the whole slot, not just eboot.bin --
+// so the receiver in A writes the new build into B and launches it. The next
+// update goes the other way.
+//
+// Both build with RECEIVER_PORT 1341, because only one of them runs at a time.
+// Every host tool keeps talking to one number and does not care which slot is
+// answering.
+//
+// What this replaces: FVTA00009, a second application whose only job was to
+// copy 15 MB out of a staging directory while the receiver was not running.
+// That cost two application changes per update and about thirteen seconds of
+// LiveArea. A/B costs one change and about five, and the slot that is not
+// running is a complete receiver that worked -- a better rescue than the
+// single eboot the updater used to keep.
+//
+// The id is also used to refuse to delete ourselves, and to refuse to hand
+// over to ourselves. See cmd_delete and hand_over.
 #ifndef SELF_TITLEID
 #define SELF_TITLEID "FVTA00001"
 #endif
@@ -1101,6 +1119,22 @@ static void cmd_delete(int sock, const char* titleid) {
   dev_server_send(sock, "OK delete started; it reports to the log\n");
 }
 
+// `ls` reports names and no sizes, so verifying a `put` landed whole needed a
+// 14 MB `get` back. This is the same answer in twelve bytes.
+static void cmd_stat(int sock, const char* path) {
+  char m[96];
+  SceIoStat st;
+  memset(&st, 0, sizeof st);
+  const int r = sceIoGetstat(path, &st);
+  if (r < 0) {
+    snprintf(m, sizeof m, "ERR stat 0x%08X\n", (unsigned)r);
+  } else {
+    snprintf(m, sizeof m, "%lld %s\n", (long long)st.st_size,
+             SCE_S_ISDIR(st.st_mode) ? "dir" : "file");
+  }
+  dev_server_send(sock, m);
+}
+
 // Kept when almost everything else was dropped, because it has repeatedly
 // answered "is this path writable" without a rebuild -- twice in the session
 // that produced ADR-0016 alone.
@@ -1135,10 +1169,16 @@ static int handle(int sock, const char* line, int* stop) {
   // answered. tools/update-receiver.sh greps for it, and the alternative --
   // a bare "pong" from whatever happens to hold the port -- is how you
   // promote a receiver over an app.
+  //
+  // The fourth field is the slot this process is running from. Two receivers
+  // share the port -- see the A/B comment above SELF_TITLEID -- and the host
+  // has to know which one answered before it can build for the other one.
+  // Appended rather than inserted, so the parsers that read three fields
+  // still read three fields.
   if (strcmp(line, "ping") == 0) {
-    char m[64];
-    snprintf(m, sizeof m, "pong receiver %s %d\n", TARGET_TITLEID,
-             RECEIVER_PORT);
+    char m[80];
+    snprintf(m, sizeof m, "pong receiver %s %d %s\n", TARGET_TITLEID,
+             RECEIVER_PORT, SELF_TITLEID);
     dev_server_send(sock, m);
     return 1;
   }
@@ -1234,6 +1274,10 @@ static int handle(int sock, const char* line, int* stop) {
   }
   if (strncmp(line, "ls ", 3) == 0) {
     cmd_ls(sock, line + 3);
+    return 1;
+  }
+  if (strncmp(line, "stat ", 5) == 0) {
+    cmd_stat(sock, line + 5);
     return 1;
   }
   return 0;
