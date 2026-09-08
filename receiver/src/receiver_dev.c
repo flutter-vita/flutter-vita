@@ -593,6 +593,20 @@ static int title_installed(const char* titleid) {
 // happened twice on 2026-08-31, through the APPS tab offering RUN on a title id
 // still in installed.txt after the title had been deleted.
 static int hand_over(const char* titleid) {
+  // Never to ourselves. Launching the title that is still running and then
+  // exiting is a race the shell loses: it drops to LiveArea, which answers no
+  // port, and the console needs a tap to come back. Measured 2026-09-08, when
+  // `selfupdate-receiver.sh --remove-updater` deleted FVTA00009 and the restart
+  // that followed handed over to FVTA00001. The log ends `+ opened FVTA00001`
+  // and the console was found on the home screen.
+  //
+  // Staying up is always the better answer, because this process is the only
+  // thing on the console that answers TCP.
+  if (strcmp(titleid, SELF_TITLEID) == 0) {
+    note("asked to hand over to myself; staying here");
+    set_status("Waiting", NULL);
+    return -1;
+  }
   if (!title_installed(titleid)) {
     note("%s is not installed; staying here", titleid);
     set_status("Waiting", NULL);
@@ -612,9 +626,31 @@ static int hand_over(const char* titleid) {
   // it now runs GL like everything else, and the call is real.
   release_gpu();
 
+  // Four attempts, not one, and read what each one returns.
+  //
+  // Opening the receiver from the LiveArea fails on the first tap and succeeds
+  // on the second, often enough to be the normal case. A single launch is
+  // therefore not reliable here, and every exit path in this project fired
+  // exactly one and then exited. None of them read the return value either --
+  // the "+ opened" line above is written before anything has been asked for,
+  // so three consoles left on the home screen on 2026-09-08 are all recorded
+  // as successful handovers.
+  //
+  // The likely reason a first attempt fails is that this process has not
+  // released its memory budget yet, and the receiver asks for a 160 MB arena
+  // on top of the engine's blocks. That is a guess; the error code logged here
+  // is what will settle it.
   char uri[64];
   snprintf(uri, sizeof uri, "psgm:play?titleid=%s", titleid);
-  sceAppMgrLaunchAppByUri(0xFFFFF, uri);
+  int rc = -1;
+  for (int attempt = 1; attempt <= 4 && rc < 0; attempt++) {
+    rc = sceAppMgrLaunchAppByUri(0xFFFFF, uri);
+    if (rc < 0) {
+      note("launch %s attempt %d: 0x%08X", titleid, attempt, (unsigned)rc);
+      sceKernelDelayThread(1500 * 1000);
+    }
+  }
+  if (rc < 0) note("!! %s refused every launch; the console is on its own", titleid);
   // Exit at once rather than lingering: the "close the current application?"
   // prompt appears only because the outgoing app is still alive.
   sceKernelExitProcess(0);
@@ -976,28 +1012,23 @@ static void cmd_rmtree(int sock, const char* path) {
   dev_server_send(sock, m);
 }
 
-// Restart the receiver, immediately, after a delete.
+// After a delete, stay up.
 //
-// A mitigation, and honest about it: a delete takes this process down a few
-// seconds later and I cannot yet say why. What is known is that the promoter
-// leaves PAF resident, that PAF runs a thread of its own, and that no core dump
-// is written, so nothing here is faulting and there is nothing to read.
+// This used to relaunch the receiver. The reasoning was that a delete takes
+// this process down a few seconds later for reasons nobody has found, so it
+// restarted first and got ahead of the death.
 //
-// What that cost, twice on 2026-09-01, was the console sitting on LiveArea: no
-// port answers there. An unexplained death and a deliberate restart end in the
-// same place five seconds apart, and only one leaves the receiver running.
+// The restart was the worse failure. It handed over to SELF_TITLEID, and on
+// 2026-09-08 that left the console on the LiveArea home screen with nothing
+// answering a port, which is the exact outcome the restart existed to avoid.
+// The delete itself had already succeeded.
 //
-// When the cause is found this should go.
-static void restart_after_delete(void) {
-  note("restarting after a delete");
-  set_status("Restarting", "after a delete");
-  // Long enough for the reply to leave and for one publish-and-poll, so the
-  // last frame on screen says what is happening.
-  sceKernelDelayThread(600 * 1000);
-  hand_over(SELF_TITLEID);
-  // Only reached if the launch was refused, which for our own title id means
-  // ux0:app/<self> has gone -- there is nothing to hand to, so stay up.
-  note("could not relaunch; staying here");
+// hand_over refuses its own title id now, so this only records what happened.
+// If the unexplained death is real it shows up as a gap in the log, and the
+// answer to it is something outside this process that can start it again --
+// the supervisor on port 1342 -- not an exit taken on purpose.
+static void after_delete(void) {
+  note("delete done; staying up");
   set_status("Waiting", NULL);
 }
 
@@ -1015,19 +1046,59 @@ static void restart_after_delete(void) {
 // The wait is the fix, and reading the result is the other half: a call can be
 // accepted and still fail, and reporting the accept as success is how a title
 // that is still there gets called gone.
+// The delete runs on a thread of its own, and the caller is answered at once.
+//
+// scePromoterUtilityDeletePkg does not return promptly. On 2026-09-08 one call
+// held the dev server thread from 23:15 to 00:44 by the console's clock, while
+// the UI stalled in fifteen consecutive gaps of almost exactly ten seconds --
+// a fixed timeout being retried, not work being done. Nothing answered port
+// 1341 for the whole of it, so every host tool reported a dead console and the
+// obvious reading was that the receiver had crashed. It had not: it presented
+// 318 frames during the same window.
+//
+// Answering immediately costs a synchronous result and buys a receiver that
+// stays reachable while the promoter grinds. The outcome goes to the log and
+// the status line, which the panel shows and `log` returns.
+static char g_deleting[16];
+
+static int delete_thread(SceSize args, void* argp) {
+  (void)args;
+  (void)argp;
+  set_status("Deleting", "removing %s", g_deleting);
+  note("delete %s", g_deleting);
+  // -1: there is no socket to answer on from here. promoter_finish reports
+  // through reply(), which tolerates that. NULL because promoter_finish
+  // records a title id as *installed* on success, the opposite of this.
+  promoter_finish(-1, "delete", scePromoterUtilityDeletePkg(g_deleting), NULL);
+  forget_installed(g_deleting);
+  after_delete();
+  return 0;
+}
+
+// Returns 0 if the thread could not be started.
+static int start_delete(const char* titleid) {
+  snprintf(g_deleting, sizeof g_deleting, "%s", titleid);
+  const SceUID th = sceKernelCreateThread("fvita_delete", delete_thread,
+                                          0x10000100, 32 * 1024, 0, 0, NULL);
+  if (th < 0) {
+    note("delete thread failed 0x%08X", (unsigned)th);
+    return 0;
+  }
+  sceKernelStartThread(th, 0, NULL);
+  return 1;
+}
+
 static void cmd_delete(int sock, const char* titleid) {
   if (strcmp(titleid, SELF_TITLEID) == 0) {
     dev_server_send(sock, "ERR refusing to delete the receiver\n");
     return;
   }
   if (!promoter_up(sock)) return;
-  set_status("Deleting", "removing %s", titleid);
-  note("delete %s", titleid);
-  // NULL: promoter_finish records a title id as *installed* on success, which
-  // is the opposite of what happened here.
-  promoter_finish(sock, "delete", scePromoterUtilityDeletePkg(titleid), NULL);
-  forget_installed(titleid);
-  restart_after_delete();
+  if (!start_delete(titleid)) {
+    dev_server_send(sock, "ERR could not start the delete\n");
+    return;
+  }
+  dev_server_send(sock, "OK delete started; it reports to the log\n");
 }
 
 // Kept when almost everything else was dropped, because it has repeatedly
@@ -1219,9 +1290,7 @@ static void serve_request(void) {
       note("delete %s: promoter would not start", titleid);
       return;
     }
-    promoter_finish(-1, "delete", scePromoterUtilityDeletePkg(titleid), NULL);
-    forget_installed(titleid);
-    restart_after_delete();
+    start_delete(titleid);
   } else if (strncmp(buf, "launch ", 7) == 0) {
     const char* titleid = buf + 7;
     if (strcmp(titleid, SELF_TITLEID) == 0) {

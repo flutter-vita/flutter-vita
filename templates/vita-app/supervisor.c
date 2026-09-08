@@ -82,9 +82,24 @@ static void serve(int sock) {
     } else if (strncmp(line, "launch ", 7) == 0) {
       // The whole point. Note we do NOT exit afterwards, unlike the receiver:
       // staying alive is the entire reason this process exists.
+      // Six attempts, three seconds apart, because one is not enough.
+      //
+      // Opening a title on this console fails on the first try and works on the
+      // second often enough to be the normal case, and the caller here is
+      // recovering a console that has nothing else listening. Staying alive
+      // through the retries is the one thing this process can do that a
+      // launcher which exits cannot.
       char uri[96];
       snprintf(uri, sizeof uri, "psgm:play?titleid=%s", line + 7);
-      const int r = sceAppMgrLaunchAppByUri(0xFFFFF, uri);
+      int r = -1;
+      for (int attempt = 1; attempt <= 6 && r < 0; attempt++) {
+        r = sceAppMgrLaunchAppByUri(0xFFFFF, uri);
+        if (r < 0) {
+          lg("  launch %s attempt %d: 0x%08X\n", line + 7, attempt,
+             (unsigned)r);
+          sceKernelDelayThread(3 * 1000 * 1000);
+        }
+      }
       char m[160];
       snprintf(m, sizeof m, "%s launch %s rc=0x%08X\n", r >= 0 ? "OK" : "ERR",
                line + 7, (unsigned)r);
