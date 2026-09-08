@@ -145,10 +145,23 @@ static int looks_like_titleid(const char* s) {
 // console on the LiveArea home screen, which answers no port and cannot be
 // driven from the network. Whatever went wrong, the right end state is the
 // receiver running, because the receiver is the thing that can be talked to.
+// Four attempts, not one. A single launch is not reliable on this console --
+// opening a title from the LiveArea often fails once and works on the retry --
+// and this app exits straight afterwards, so a refused launch leaves the
+// console on the home screen with nothing listening. The return value was
+// ignored here until 2026-09-08.
 static void launch(const char* titleid) {
   char uri[64];
   snprintf(uri, sizeof uri, "psgm:play?titleid=%s", titleid);
-  sceAppMgrLaunchAppByUri(0xFFFFF, uri);
+  int rc = -1;
+  for (int attempt = 1; attempt <= 4 && rc < 0; attempt++) {
+    rc = sceAppMgrLaunchAppByUri(0xFFFFF, uri);
+    if (rc < 0) {
+      printf("  launch %s attempt %d: 0x%08X\n", titleid, attempt,
+             (unsigned)rc);
+      sceKernelDelayThread(1500 * 1000);
+    }
+  }
   // Exit at once rather than lingering: the "close the current application?"
   // prompt appears only because the outgoing app is still alive.
   sceKernelExitProcess(0);
