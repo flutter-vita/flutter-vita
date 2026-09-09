@@ -6,6 +6,14 @@ this file is specifically *where we stopped and why*.
 
 ---
 
+> **The status below is from 2026-08-08 and is superseded.** It predates the
+> engine port, the GPU backend and the receiver becoming a Flutter app. Flutter
+> runs on hardware now; see "Where the project stands" in
+> [README.md](README.md). Two details in *The machine* are also stale: the
+> console is reached as `flutter-vita.local` rather than by address, and BGFTP
+> was deliberately removed from the loop. The build pipeline and the gotchas
+> below still hold.
+
 ## One-paragraph summary
 
 **Milestone M1 is met.** Pure-Dart AOT runs on real hardware: the Dart runtime

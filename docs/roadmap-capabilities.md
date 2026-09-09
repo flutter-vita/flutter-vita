@@ -170,7 +170,7 @@ given `sceIoDopen` semantics, and case sensitivity. The engine needed
 The system keyboard opens on a `TextField`, seeded with the field's current
 value, and what you type arrives back in the framework. Single line, multiline
 and obscured, measured on hardware in [apps/gallery](../apps/gallery) and in
-[apps/keklist](../apps/keklist).
+[apps/keklist](../apps/test-apps/keklist).
 
 It shipped on `sceImeDialog`, a modal common dialog, and moved to **libime**'s
 inline keyboard on 2026-08-28 because the dialog cannot composite over vitaGL.

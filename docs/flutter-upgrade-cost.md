@@ -154,7 +154,7 @@ Our `SocketBase::ListInterfaces` is a **full replacement** of the POSIX one
 that constructor. After the upgrade it does not compile. The fix is small —
 `sceNetCtlInetGetInfo` returns a netmask, so the prefix length is a popcount —
 but it has to be written, and it lands on
-[the code fixed on 2026-08-19](results/test apps-localsend-2026-08-19.md) to make
+[the code fixed on 2026-08-19](results/corpus-localsend-2026-08-19.md) to make
 localsend discover peers.
 
 Upstream also restructured the same function around a new
@@ -205,7 +205,7 @@ in 3.47.0.
 | **Eight of ten Dart patches need rework** | Including the three largest rewrites, and `ffi_dynamic_library.cc` which ADR-0013 depends on |
 | **One guaranteed compile break** | `InterfaceSocketAddress`'s new 4th parameter, in the code that makes localsend work |
 | **Skia patch needs re-validation** | Skia's pin moves; BoringSSL, abseil and zlib do not |
-| **The SDK-hash trap fires again** | Re-pinning makes `gen_snapshot` bake a mismatched verification hash. Known and fixable, but it [already cost a day once](results/test apps-build-failures-2026-08-19.md) |
+| **The SDK-hash trap fires again** | Re-pinning makes `gen_snapshot` bake a mismatched verification hash. Known and fixable, but it [already cost a day once](results/corpus-build-failures-2026-08-19.md) |
 | **A full revalidation cycle** | Engine build, both Dart trees, 21 patches across six repos, conformance baseline, five test apps |
 
 ## Verdict, 2026-08-19: do not upgrade
@@ -217,8 +217,8 @@ That bottleneck is raster cost *inside* the damaged region: localsend's Receive
 screen runs at 4.7 fps with only 13% of the screen damaged, while manga_reader
 holds 48 fps at 89% — so `dmg%` does not predict frame rate and the cost
 underneath it is still unattributed
-([test apps-localsend-2026-08-19](results/test apps-localsend-2026-08-19.md),
-[test apps-run-2026-08-19](results/test apps-run-2026-08-19.md)). No
+([test apps-localsend-2026-08-19](results/corpus-localsend-2026-08-19.md),
+[test apps-run-2026-08-19](results/corpus-run-2026-08-19.md)). No
 framework release fixes a software rasterizer that is too slow per pixel on a
 333 MHz ARM. The candidates for that are a GPU backend or finding what is
 expensive in that region — not a version bump.

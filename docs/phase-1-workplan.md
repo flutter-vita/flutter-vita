@@ -74,7 +74,7 @@ most mistakes immediately instead of after a multi-GB bring-up.
 
 The tree is a shallow checkout at the pinned commit (486 MB), gitignored;
 edits are captured as an ordered series in
-[`patches/dart-sdk/`](../../patches/dart-sdk/README.md).
+[`patches/dart-sdk/`](../patches/dart-sdk/README.md).
 
 **Within minutes the compiler found three things this inventory did not:**
 
