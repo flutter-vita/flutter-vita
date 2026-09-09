@@ -1,94 +1,107 @@
-# Contributing
+# How to help
 
-This port was built by one person for one console. That shaped it, and the
-sharpest edges are where an assumption held for exactly one machine. Help is
-wanted, and the most useful help is not what you might expect.
+One person made this port, for one console. This had an effect on the code. The
+sharpest edges are where an assumption was correct for one machine only.
+
+We want help. The most useful help is not the help you expect.
 
 ## The most useful thing you can do
 
-**Run a Flutter app we did not write, and tell us what broke.**
+**Operate a Flutter application that we did not write. Tell us what failed.**
 
-`apps/conformance` reports a clean score because the people who wrote it also
-wrote the port, so it tests what we already knew to test. A real app finds the
-things we cannot see. Clone something off pub.dev or GitHub, point
-`flutter-vita run` at it, and open an issue with what happened.
+The application in `apps/conformance` gives a good score. But the persons who
+wrote it also wrote the port, so it tests only what we knew to test. A real
+application finds what we cannot see.
 
-A good report has the app, the commit, and one of:
+Get an application from pub.dev or from GitHub. Point `flutter-vita run` at it.
+Then make an issue and tell us what occurred.
 
-- **It did not build.** The compiler or linker output, and the last 30 lines.
-- **It built and did not start.** `flutter-vita logs`, plus the crash dump if
-  there is one — `tools/analyse-crash.sh` symbolicates it.
-- **It ran and looked wrong.** `flutter-vita screenshot`, and what you expected.
-- **It ran and was slow.** Which screen, and what you were doing.
+A good report has the name of the application, its commit, and one of these:
 
-We cannot fix what we cannot reproduce, and "Wonderous is broken" is not
-reproducible. "Wonderous at `a1b2c3d`, blank screen after the splash, log ends
-at `MissingPluginException(getApplicationDocumentsDirectory)`" is.
+- **It did not build.** Give the output of the compiler or the linker, and the
+  last 30 lines.
+- **It built, but it did not start.** Give `flutter-vita logs`. Give the crash
+  dump if there is one. `tools/analyse-crash.sh` puts the symbols into it.
+- **It operated, but it looked incorrect.** Give `flutter-vita screenshot`, and
+  tell us what you expected.
+- **It operated, but it was slow.** Tell us which screen, and what you did.
+
+We cannot correct a fault that we cannot cause again. "Wonderous is broken" does
+not let us cause it again. This does: "Wonderous at `a1b2c3d`. The screen is
+empty after the splash. The log stops at
+`MissingPluginException(getApplicationDocumentsDirectory)`."
 
 ## You do not need a Vita to help
 
-- **Host tooling.** The CLI is plain Dart. Windows support is missing entirely
-  and needs no console to start on.
-- **Plugins.** `packages/*_vita` are ordinary federated implementations. Writing
-  one against the `sce*` API is C and Dart, and the shape is already there to
-  copy.
-- **Docs.** If a step in the README did not work for you, that is a bug in the
-  README.
+- **Host tools.** The CLI is Dart only. There is no Windows support at all, and
+  you can start that work with no console.
+- **Plugins.** The packages in `packages/*_vita` are usual federated
+  implementations. To write one, you use the `sce*` API in C, and Dart. Copy the
+  shape of one that is there.
+- **Documentation.** If a step in the README did not operate for you, that step
+  is a fault in the README.
 
-## If you do have a Vita
+## If you have a Vita
 
-You need HENkaku and [VitaSDK](https://vitasdk.org). You do **not** need
-taiHEN, a kernel plugin, a card swap, or VitaShell in the loop — if a step asks
-for one of those, it is out of date and we want to know.
+You must have HENkaku and [VitaSDK](https://vitasdk.org).
 
-The console never needs to be in a special state. The receiver holds a TCP port
+You do **not** need taiHEN, a kernel plugin, a card change, or VitaShell. If a
+step tells you to use one of them, that step is old. Tell us.
+
+The console does not need a special condition. The receiver holds a TCP port,
 and everything goes through it.
 
-## Ground rules that came from being burned
+## Rules that came from failures
 
-**Hardware is the only ground truth.** Vita3K is useful for iteration and its
-performance numbers mean nothing. So do numbers from QEMU. If a change is
-justified by a measurement, the measurement was taken on a console.
+**Real hardware is the only truth.** Vita3K is useful to make changes quickly,
+but its performance numbers have no value. The numbers from QEMU also have no
+value. If a measurement is the reason for a change, take that measurement on a
+console.
 
-**Never `git checkout` inside `third_party/`.** Those trees are vendored and
-patched. `patches/` is the real artifact; `tools/apply-patches.sh --verify`
-checks the series and the trees still agree. A checkout in there wipes the
-patches and has left empty files behind.
+**Never do `git checkout` in `third_party/`.** Those trees come from other
+projects and we patch them. The real work is in `patches/`. To examine the
+series and the trees together, use `tools/apply-patches.sh --verify`. A checkout
+in `third_party/` removes the patches, and it has left empty files.
 
-**Pins are a project, not maintenance.** Flutter 3.44.8 is not arbitrary: it is
-what prebuilt 32-bit ARM engine binaries exist for. Moving it is a piece of
-work with its own cost, priced before it starts, never a version bump.
+**A version change is a project, not maintenance.** Flutter 3.44.8 is not an
+arbitrary choice. It is the version that has prebuilt 32-bit ARM engine
+binaries. To move it is work with a cost. Calculate the cost first.
 
-**A number without a method is not a result.** Benchmarks go through
-`tools/bench.sh` so the next person can rerun them. The gate grades build,
-raster and stall together, because grading worst-frame alone produced three
-wrong answers in one report.
+**A number with no method is not a result.** Use `tools/bench.sh` for
+measurements, so that the next person can do them again. The gate examines
+build, raster, and stall together. When it examined the worst frame only, it
+gave three incorrect answers in one report.
 
 ## Code
 
-Match the file you are editing. The C is C11 and the Dart is `flutter analyze`
-clean; both are formatted the way their neighbours are.
+Write in the style of the file you change. The C is C11. The Dart is clean under
+`flutter analyze`. Both agree with the code near them.
 
-Comments explain **why**, and the good ones name what was measured and when. A
-comment that restates the code is noise; a comment saying *this loop retries
-four times because the shell refuses `psgm:play` while it is still tearing the
-old process down, measured 2026-09-08* is the reason the next person does not
-delete the retry.
+Comments tell you **why**. The best comments name a measurement and its date. A
+comment that says again what the code says is noise. This comment is the reason
+that the next person does not delete the loop: *this loop tries four times,
+because the shell refuses `psgm:play` while it closes the old process. Measured
+2026-09-08.*
 
-Commit messages are `area: what changed`, lower case, no trailing full stop. The
-subject says what changed and the body says what it cost to find out.
+Commit messages have the form `area: what changed`. Use lower case. Do not put a
+full stop at the end. The subject tells what changed. The body tells what it
+cost to find out.
 
 ## Pull requests
 
-Say what you changed and how you know it works. If it touches the device, say
-which console and which firmware. If it touches performance, attach the bench
-output.
+Tell us what you changed, and how you know that it operates.
 
-Small and finished beats large and nearly. A PR that fixes one plugin is more
-useful than one that reorganises the tree.
+If your change touches the console, tell us which console and which firmware. If
+it touches performance, attach the output of the bench.
 
-## Reporting something that looks like a security issue
+A small and complete change is better than a large and almost complete change. A
+pull request that corrects one plugin is more useful than one that moves the
+tree around.
 
-Open a normal issue. This is homebrew for a console Sony stopped supporting;
-there is no embargo process and nothing here is a trust boundary. Do not send
-anything you would not put in public.
+## Security
+
+If you find something that looks like a security fault, make a usual issue.
+
+This is homebrew for a console that Sony no longer supports. There is no embargo
+process, and nothing here is a trust boundary. Do not send anything that you do
+not want in public.
