@@ -149,7 +149,14 @@ cp "$ENGINE_SRC/flutter/shell/platform/embedder/embedder.h" "$STAGE/include/"
 mkdir -p "$STAGE/src"
 cp "$ROOT/experiments/m1-vpk/src/devserver.c" "$ROOT/experiments/m1-vpk/src/devserver.h" "$STAGE/src/"
 cp "$ENGINE_SRC/flutter/third_party/icu/flutter/icudtl.dat" "$STAGE/data/"
-cp "$ENGINE_SRC/flutter/txt/third_party/fonts/Roboto-Regular.ttf" "$STAGE/data/"
+# Roboto out of the repository, not out of the engine checkout.
+#
+# The checkout's copy lives under txt/third_party/fonts, which txt/BUILD.gn
+# lists in test_fixtures inside `if (enable_unittests)`. It is a unit-test
+# asset. That is why LICENSE.engine has no mention of Roboto: upstream's
+# licence tooling excludes fixtures, correctly, because upstream does not ship
+# them. This port does ship it, so it is tracked here with its licence.
+cp "$ROOT/assets/fonts/Roboto-Regular.ttf" "$STAGE/data/"
 # Roboto Mono, so that fontFamily: 'monospace' has something to resolve to.
 # Without it the alias table in platform_vita.cc names a family nobody shipped
 # and every fixed-pitch request falls back to Roboto, which is proportional.

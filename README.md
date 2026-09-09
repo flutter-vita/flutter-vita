@@ -109,6 +109,11 @@ build is usually what you feel. Examine the build first, not the paint.
 
 - **Hot reload.** This is permanent. See below.
 - **Windows** as a host.
+- **Fonts your app does not ship.** `app0:/fonts` holds Roboto and Roboto Mono.
+  Anything else, emoji included, is declared by your app under `fonts:` in
+  `pubspec.yaml`, the same as on every other Flutter target. Roboto stops at
+  U+FFFD, so an app that shows an emoji and declares no font for it draws an
+  empty box.
 - Most plugins. `path_provider`, `shared_preferences`, `url_launcher` and a file
   picker have Vita implementations in `packages/`. Other plugins that use native
   code must be linked statically, because this platform has no `dlopen`. See

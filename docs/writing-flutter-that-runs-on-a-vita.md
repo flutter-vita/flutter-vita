@@ -135,6 +135,24 @@ building.
 - **Text input** — the IME cannot composite over vitaGL, so an app that needs
   a keyboard needs `software.on` for now (ADR-0014).
 
+## 6. Ship the fonts your app needs
+
+`app0:/fonts` holds Roboto and Roboto Mono, and that is the whole set. There is
+no system font manager on this platform, so those two are what
+`SkFontMgr_New_Custom_Directory` has to work with.
+
+Generic family names resolve. `monospace`, `Courier New`, `Menlo`, `Consolas`
+and `SF Mono` reach Roboto Mono; `sans-serif`, `Arial`, `Helvetica` and
+`Segoe UI` reach Roboto. The serif names reach Roboto too, which is the wrong
+shape and is what they resolved to before, silently.
+
+**Everything else is yours to ship.** Declare it under `fonts:` in
+`pubspec.yaml` and the asset font provider picks it up, exactly as on Android
+and iOS. Roboto covers 896 codepoints and stops at U+FFFD, so an app that
+renders an emoji and declares no font for it draws an empty box. That is not a
+gap in the port. No Flutter target promises a glyph the app did not ask for,
+and an emoji font is 1.9 MB that most apps have no use for.
+
 ## Two of these numbers moved on 2026-08-25, and why
 
 An earlier version of this page said spans were **38x** cheaper than `Text`
