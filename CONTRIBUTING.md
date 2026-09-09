@@ -72,6 +72,17 @@ measurements, so that the next person can do them again. The gate examines
 build, raster, and stall together. When it examined the worst frame only, it
 gave three incorrect answers in one report.
 
+## Before you change something large
+
+Read the ADR first. Each decision in this port has a record in
+[docs/adr/](docs/adr/README.md), with the forces behind it and what must change
+for it to be examined again.
+
+Some decisions look arbitrary and are not. Skia and not Impeller, AOT and not
+JIT, one static binary and not shared libraries: each has a record, and each
+record names the measurement that closed it. If you disagree with a decision,
+disagree with its ADR. That is what they are for.
+
 ## Code
 
 Write in the style of the file you change. The C is C11. The Dart is clean under

@@ -111,7 +111,8 @@ build is usually what you feel. Examine the build first, not the paint.
 - **Windows** as a host.
 - Most plugins. `path_provider`, `shared_preferences`, `url_launcher` and a file
   picker have Vita implementations in `packages/`. Other plugins that use native
-  code must be linked statically, because this platform has no `dlopen`.
+  code must be linked statically, because this platform has no `dlopen`. See
+  [ADR-0013](docs/adr/0013-ffi-needs-static-linking.md).
 - Audio.
 - Code that needs 64 bits, or more than 512 MB of RAM.
 
@@ -122,7 +123,8 @@ Hot reload needs a JIT. This port uses AOT only.
 The usual explanation is not correct: the Vita **can** make pages executable,
 and it does this with no kernel plugin. The true reasons are memory, and the
 size of an engine in JIT mode. The console has 512 MB of RAM, and it shares that
-RAM with the operating system.
+RAM with the operating system. [ADR-0001](docs/adr/0001-aot-only-no-jit.md) has
+the full argument.
 
 You get a quick installation in its place. A change to code only takes
 approximately 6 seconds, and the console goes back to your application without
@@ -139,6 +141,21 @@ help.
 | `apps/` | `conformance` measures what operates. `gallery` shows how it looks. |
 | `patches/` | The Vita patch series for Dart, Skia, the engine, and vitaGL |
 | `tools/` | Build, install, measure, and examine crashes |
+| `docs/adr/` | Why each decision was made, and what would change it |
+
+## Why the port is like this
+
+Each decision has a record in [docs/adr/](docs/adr/README.md). It gives the
+forces behind the decision, and what must change for it to be examined again.
+
+Start with these three:
+
+- [ADR-0003](docs/adr/0003-software-rendering-first.md) and
+  [ADR-0014](docs/adr/0014-gpu-backend-via-vitagl.md): why the renderer began in
+  software, and why it moved to the GPU.
+- [ADR-0016](docs/adr/0016-the-receiver-becomes-a-flutter-app.md): why the
+  receiver is a Flutter application and not a small C program.
+- [ADR-0002](docs/adr/0002-skia-not-impeller.md): why Skia and not Impeller.
 
 ## How to help
 
