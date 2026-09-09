@@ -10,6 +10,7 @@ VITASDK="${VITASDK:-$HOME/vitasdk}"
 # vita-libs-gen-2 shells out to arm-vita-eabi-as by bare name, so the assembler
 # has to be on PATH or the stub build fails at the first .o.
 export VITASDK PATH="$VITASDK/bin:$PATH"
+# By name. Never an address, not even to get unstuck: see tools/deploy.sh.
 HOST="${VITA_HOST:-flutter-vita.local}"
 PORT="${RECEIVER_PORT:-1341}"
 

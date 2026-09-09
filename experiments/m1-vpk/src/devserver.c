@@ -756,8 +756,12 @@ static int g_mdns_sock = -1;
 // name stops resolving -- and the four causes need four different fixes.
 #define MDNS_STATUS_PATH "ux0:data/flutter-vita/mdns.txt"
 static int g_mdns_joined = 0;    // did ADD_MEMBERSHIP succeed
-static int g_mdns_announced = 0; // A records we have sent unasked
+static int g_mdns_announced = 0; // A records that left the console
+static int g_mdns_sendfail = 0;  // A records sceNetSendto refused
+static int g_mdns_noaddr = 0;    // announcements skipped: no address yet
+static int g_mdns_rejoins = 0;   // times the address changed under us
 static int g_mdns_queries = 0;   // queries we have answered
+static unsigned int g_mdns_addr = 0;     // what we last announced
 static SceInt64 g_mdns_last_query = -1;  // usec, process time
 
 // Under the 120 s TTL with room for a lost packet. Announcing rather than
@@ -767,14 +771,17 @@ static SceInt64 g_mdns_last_query = -1;  // usec, process time
 #define MDNS_ANNOUNCE_EVERY_US (30 * 1000 * 1000)
 
 static void mdns_write_status(void) {
-  char buf[160];
+  char buf[224];
   const SceInt64 now = (SceInt64)sceKernelGetProcessTimeWide();
   const int ago = g_mdns_last_query < 0
                       ? -1
                       : (int)((now - g_mdns_last_query) / 1000000);
-  const int n = snprintf(buf, sizeof buf,
-                         "joined %d\nannounced %d\nqueries %d\nlast %d\n",
-                         g_mdns_joined, g_mdns_announced, g_mdns_queries, ago);
+  const int n = snprintf(
+      buf, sizeof buf,
+      "joined %d\nannounced %d\nsendfail %d\nnoaddr %d\nrejoins %d\n"
+      "queries %d\nlast %d\n",
+      g_mdns_joined, g_mdns_announced, g_mdns_sendfail, g_mdns_noaddr,
+      g_mdns_rejoins, g_mdns_queries, ago);
   const SceUID fd =
       sceIoOpen(MDNS_STATUS_PATH, SCE_O_WRONLY | SCE_O_CREAT | SCE_O_TRUNC,
                 0777);
@@ -863,9 +870,20 @@ static unsigned int mdns_self_addr(void) {
 
 // One A record, multicast to the group. QDCOUNT is zero and the answer carries
 // the name in full, which is what lets the reply stand alone.
-static void mdns_respond(const char* name) {
+// Returns 1 if the packet left the console.
+//
+// The return used to be void and every caller did `g_mdns_announced++`
+// regardless, so mdns.txt reported a healthy responder while sceNetSendto was
+// refusing every packet and nothing was on the wire. A status file that cannot
+// see the most common failure is worse than none: it is the file you read to
+// rule that failure out.
+static int mdns_respond(const char* name) {
   const unsigned int addr = mdns_self_addr();
-  if (addr == 0 || g_mdns_sock < 0) return;
+  if (addr == 0) {
+    g_mdns_noaddr++;
+    return 0;
+  }
+  if (g_mdns_sock < 0) return 0;
 
   unsigned char out[128];
   memset(out, 0, sizeof out);
@@ -887,8 +905,42 @@ static void mdns_respond(const char* name) {
   to.sin_family = SCE_NET_AF_INET;
   to.sin_port = sceNetHtons(MDNS_PORT);
   sceNetInetPton(SCE_NET_AF_INET, MDNS_GROUP, &to.sin_addr);
-  sceNetSendto(g_mdns_sock, out, (unsigned int)at, 0,
-               (SceNetSockaddr*)&to, sizeof to);
+  const int sent = sceNetSendto(g_mdns_sock, out, (unsigned int)at, 0,
+                                (SceNetSockaddr*)&to, sizeof to);
+  if (sent < 0) {
+    g_mdns_sendfail++;
+    return 0;
+  }
+  return 1;
+}
+
+// Join the group again against whatever interface we are on now.
+//
+// IP_ADD_MEMBERSHIP with INADDR_ANY picks an interface once, at the moment it
+// is called. When the console drops Wi-Fi and comes back, the membership is
+// against an interface that no longer exists, so queries stop arriving even
+// though sends still work. From the host that reads as a name which resolves
+// only when a heartbeat happens to be fresh, and not at all in the gaps -- and
+// on macOS a failed lookup is cached, so one missed heartbeat is a drop that
+// lasts longer than the outage did.
+static void mdns_rejoin(void) {
+  if (g_mdns_sock < 0) return;
+  SceNetIpMreq mreq;
+  memset(&mreq, 0, sizeof mreq);
+  sceNetInetPton(SCE_NET_AF_INET, MDNS_GROUP, &mreq.imr_multiaddr);
+  mreq.imr_interface.s_addr = sceNetHtonl(SCE_NET_INADDR_ANY);
+  sceNetSetsockopt(g_mdns_sock, SCE_NET_IPPROTO_IP, SCE_NET_IP_DROP_MEMBERSHIP,
+                   &mreq, sizeof mreq);
+  g_mdns_joined = sceNetSetsockopt(g_mdns_sock, SCE_NET_IPPROTO_IP,
+                                   SCE_NET_IP_ADD_MEMBERSHIP, &mreq,
+                                   sizeof mreq) >= 0;
+}
+
+// One round of announcements, on every name.
+static void mdns_announce_all(void) {
+  for (int n = 0; n < MDNS_NAME_COUNT; n++) {
+    g_mdns_announced += mdns_respond(kMdnsNames[n]);
+  }
 }
 
 static int mdns_thread(SceSize args, void* argp) {
@@ -897,12 +949,10 @@ static int mdns_thread(SceSize args, void* argp) {
   // Two unsolicited announcements a second apart, so the name resolves before
   // anything asks rather than only after the first query times out.
   for (int i = 0; i < 2; i++) {
-    for (int n = 0; n < MDNS_NAME_COUNT; n++) {
-      mdns_respond(kMdnsNames[n]);
-      g_mdns_announced++;
-    }
+    mdns_announce_all();
     sceKernelDelayThread(1000 * 1000);
   }
+  g_mdns_addr = mdns_self_addr();
   SceInt64 next_announce =
       (SceInt64)sceKernelGetProcessTimeWide() + MDNS_ANNOUNCE_EVERY_US;
   mdns_write_status();
@@ -914,12 +964,35 @@ static int mdns_thread(SceSize args, void* argp) {
     // which is the point: a console that cannot hear the multicast group can
     // still keep its own name alive by talking.
     const SceInt64 now = (SceInt64)sceKernelGetProcessTimeWide();
+
+    // The address is the signal that the interface came back. Checking it
+    // costs one sceNetCtl call a second and is the only way this thread finds
+    // out; there is no notification, and by the time the heartbeat noticed,
+    // the host had already cached the failure.
+    const unsigned int addr = mdns_self_addr();
+    if (addr != 0 && addr != g_mdns_addr) {
+      g_mdns_addr = addr;
+      g_mdns_rejoins++;
+      mdns_rejoin();
+      // The same burst as startup, because that is what this is.
+      mdns_announce_all();
+      sceKernelDelayThread(1000 * 1000);
+      mdns_announce_all();
+      next_announce = (SceInt64)sceKernelGetProcessTimeWide() +
+                      MDNS_ANNOUNCE_EVERY_US;
+      mdns_write_status();
+      continue;
+    }
+
     if (now >= next_announce) {
-      for (int n = 0; n < MDNS_NAME_COUNT; n++) {
-        mdns_respond(kMdnsNames[n]);
-        g_mdns_announced++;
-      }
-      next_announce = now + MDNS_ANNOUNCE_EVERY_US;
+      // Twice, a second apart. One packet per period against a 120 s TTL
+      // leaves a single lost datagram looking like a dead console, and macOS
+      // caches the failed lookup afterwards.
+      mdns_announce_all();
+      sceKernelDelayThread(1000 * 1000);
+      mdns_announce_all();
+      next_announce = (SceInt64)sceKernelGetProcessTimeWide() +
+                      MDNS_ANNOUNCE_EVERY_US;
       mdns_write_status();
     }
     SceNetSockaddrIn from;

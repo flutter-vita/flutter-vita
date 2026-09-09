@@ -21,32 +21,43 @@ ROOT="$(cd "$HERE/.." && pwd)"
 # back on a different lease -- which it does, often. VITA_HOST still overrides
 # it, and an IP is still the right answer when the name will not resolve.
 HOST="${VITA_HOST:-flutter-vita.local}"
-
-# Resolve the name once, then work in addresses for the rest of the run.
+# Wait for the name, do not go round it.
 #
-# This script hands the app off to the receiver and keeps talking, and the mDNS
-# responder lives in whichever of the two is running -- so the name goes dark
-# for the seconds between the app exiting and the receiver answering. The first
-# deploy after adding mDNS failed exactly there.
+# The responder lives inside whichever of the app and the receiver is running,
+# so the name goes dark for the seconds between one exiting and the other
+# answering. This used to resolve the name to an address and carry that
+# address through the run, which papered over the gap.
 #
-# Resolving once also makes a console that drops off the network fail with a
-# connection error against a real address rather than a name lookup.
-case "$HOST" in
-  *[!0-9.]*)
-    RESOLVED="$(python3 -c "import socket,sys
-try: print(socket.gethostbyname(sys.argv[1]))
-except OSError: pass" "$HOST" 2>/dev/null)"
-    if [ -n "$RESOLVED" ]; then
-      echo "    $HOST is $RESOLVED"
-      HOST="$RESOLVED"
-    else
-      echo "!! $HOST does not resolve." >&2
-      echo "   The responder runs inside the app or the receiver, so nothing" >&2
-      echo "   answers while neither is up. Set VITA_HOST to an address." >&2
-      exit 1
+# It also papered over everything else. An address in hand survives the console
+# changing lease and the laptop changing network, and then reports a live
+# console as dead. Retrying the name costs the same seconds and tells the
+# truth: if it never comes back, nothing is running, and that is the answer.
+wait_for_name() {
+  case "$HOST" in
+    *[!0-9.]*) ;;
+    *) echo "!! $HOST is an address. This tool addresses the console by name." >&2
+       exit 2 ;;
+  esac
+  local i
+  for i in 1 2 3 4 5 6 7 8 9 10; do
+    if python3 -c "import socket,sys
+try:
+    socket.gethostbyname(sys.argv[1])
+except OSError:
+    raise SystemExit(1)" "$HOST" 2>/dev/null; then
+      return 0
     fi
-    ;;
-esac
+    sleep 2
+  done
+  echo "!! $HOST does not resolve after 20 s." >&2
+  echo "   The responder runs inside the app or the receiver, so nothing" >&2
+  echo "   answers while neither is up. Open the receiver on the console." >&2
+  echo "   If one is running, read ux0:data/flutter-vita/mdns.txt: a zero" >&2
+  echo "   'joined' means the console never hears a query, and a rising" >&2
+  echo "   'sendfail' means its announcements are not leaving." >&2
+  exit 1
+}
+wait_for_name
 DEV=1339
 LDR=1341
 TITLEID="FVTA00002"

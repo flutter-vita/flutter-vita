@@ -61,36 +61,19 @@ done
 VPK="$(cd "$(dirname "$VPK")" && pwd)/$(basename "$VPK")"
 
 say() { printf '%s\n' "$2" | nc -w "${3:-30}" "$HOST" "$1"; }
+# The console is addressed by name, always, everywhere.
+#
+# An earlier version of this resolved the name once and used the address for
+# the rest of the run, to avoid paying mDNS on each of about sixty connections.
+# That is gone. An address held anywhere is an address that goes stale, and on
+# 2026-09-09 a stale one cost a bench run: the laptop changed network, the
+# address in hand pointed at nothing, and a console that was awake and well
+# read as asleep for half an hour. The name would have said so at once.
+#
+# If resolving the name is slow, that is a fault in the responder and it is
+# visible in ux0:data/flutter-vita/mdns.txt. Read that instead of caching
+# around it.
 
-# ------------------------------------------------------- one lookup per run
-#
-# Measured 2026-09-09: `nc flutter-vita.local 1341` takes 5.12 s, `nc` against
-# the address it resolves to takes 0.08 s. The whole difference is getaddrinfo
-# asking mDNSResponder, and it is paid once per connection -- so a promote,
-# which opens about sixty of them, spends five minutes resolving one name sixty
-# times.
-#
-# The name is still how you address the console: its lease changes whenever its
-# Wi-Fi does, which is often. It does not change during one run of one script,
-# so resolving once and reusing the answer is the same guarantee for 1/60th of
-# the cost. The address is printed, because a run that talked to the wrong
-# console should say so.
-resolve_once() {
-  case "$HOST" in
-    *[!0-9.]*) ;;
-    *) return 0 ;;
-  esac
-  local addr
-  addr="$(python3 -c 'import socket,sys
-try:
-    print(socket.gethostbyname(sys.argv[1]))
-except OSError:
-    pass' "$HOST" 2>/dev/null || true)"
-  [ -n "$addr" ] || return 0
-  echo "==> $HOST is $addr"
-  HOST="$addr"
-}
-resolve_once
 
 # Retried, because one connect is not evidence. The receiver's listener is
 # non-blocking and a single ping races with its accept loop: it reported "no
