@@ -49,7 +49,7 @@ measurement, drop the conclusion.
 
 Measured against the pinned Flutter 3.44.8:
 
-| | |
+| Measurement | Value |
 |---|---|
 | Receiver `.text` (armv7) | 14.67 MiB, 14 MB `.vpk` |
 | Engine code (armv7) | 12.41 MiB `.text`, ~14.5 MiB resident |

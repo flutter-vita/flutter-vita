@@ -22,7 +22,7 @@ Flutter applications run on real hardware. Route transitions run at 60 frames
 each second. There is no hot reload, and there will be none. A list that builds
 again in each frame is too slow.
 
-| | |
+| Item | Detail |
 |---|---|
 | Flutter version | 3.44.8. This version is fixed. |
 | Consoles | PS Vita 1000 and PS Vita 2000, with HENkaku |
@@ -96,7 +96,7 @@ A change to one line takes approximately 6 seconds.
 These are measurements from real hardware. There are 18 scenes. Use
 `tools/bench.sh` to do them again.
 
-| | |
+| What | Measurement |
 |---|---|
 | Route transitions | 60 frames each second. The median frame is 16.67 ms. |
 | Backdrop blur | 100 ms for each frame. The rasteriser is the limit. |
@@ -131,7 +131,7 @@ help.
 
 ## Structure of the repository
 
-| | |
+| Directory | What it holds |
 |---|---|
 | `cli/` | The `flutter-vita` command |
 | `receiver/` | The receiver for the console, and the updater that replaces it |
