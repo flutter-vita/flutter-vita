@@ -145,15 +145,21 @@ BUILT_FOR="$(strings "$WORK/sce_sys/param.sfo" 2>/dev/null \
   echo "   update goes to $DEST. Rebuild it:" >&2
   echo "     ./tools/build-receiver.sh --slot $SLOT_ARG" >&2; exit 1; }
 
+# The elapsed column is not decoration. On 2026-09-08 every put took about
+# five seconds whatever its size -- two bytes cost the same as a hundred
+# kilobytes -- and sixty files of that is five minutes of a deploy spent on
+# something other than moving data. The accept loop polls at 30 ms, so the
+# floor is not the receiver's. Print it and the next run says where it went.
 put() {  # <local> <device path>
   local size; size=$(wc -c <"$1" | tr -d ' ')
   # `put 0` is refused by the dev server, and this is the second guard on the
   # same mistake: a blank shell expansion once truncated a 12 MB eboot to
   # nothing, and the console then had a receiver that could not start.
   [ "${size:-0}" -gt 0 ] || { echo "!! refusing to put an empty $1" >&2; return 1; }
+  local t0; t0=$(date +%s)
   { printf 'put %s %s\n' "$size" "$2"; cat "$1"; } | nc -w 300 "$HOST" "$PORT" \
     | grep -q OK || { echo "!! put failed: $2" >&2; return 1; }
-  printf '    %-52s %9s B\n' "$2" "$size"
+  printf '    %-52s %9s B  %3ss\n' "$2" "$size" "$(( $(date +%s) - t0 ))"
 }
 
 # What belongs to the *build*, and so gets copied.
