@@ -579,20 +579,61 @@ class _LogsTabState extends State<_LogsTab> {
   LogFile? _open;
   String _text = '';
   String? _note;
+  Timer? _watch;
 
   @override
   void initState() {
     super.initState();
     _refresh();
+    _watch = Timer.periodic(const Duration(seconds: 2), (_) => _recheck());
   }
 
-  // Listings are read on entry and on demand, never on the poll timer: this is
-  // a memory card, and twenty stat calls twice a second to keep a list fresh
-  // that changes once per deploy is a bad trade.
+  @override
+  void dispose() {
+    _watch?.cancel();
+    super.dispose();
+  }
+
   void _refresh() => setState(() {
         _files = listLogs();
         _open = null;
       });
+
+  /// What the listing looked like, cheap enough to compare every two seconds.
+  static String _signature(List<LogFile> files) =>
+      files.map((f) => '${f.path}:${f.size}').join('|');
+
+  // A listing read only on entry is a listing that is wrong whenever a file
+  // lands while you are already looking at the tab, which is most of the time
+  // here: the log of a run that just ended is archived a moment after the
+  // receiver comes back and has already listed. So re-read, slowly, and
+  // rebuild only when the answer changed.
+  //
+  // Twice a second was the wrong rate for this and still is -- twenty stat
+  // calls at frame rate against a memory card buys nothing. Every two seconds,
+  // with the setState skipped when nothing moved, costs a listing and usually
+  // no frame.
+  void _recheck() {
+    if (!mounted) return;
+    final now = listLogs();
+    final open = _open;
+    // A live log is being written while you read it. An archived one is not,
+    // so re-reading it would be pure cost.
+    if (open != null && open.live) {
+      final grown = now.firstWhere((f) => f.path == open.path,
+          orElse: () => open);
+      if (grown.size != open.size) {
+        setState(() {
+          _files = now;
+          _open = grown;
+          _text = grown.read();
+        });
+        return;
+      }
+    }
+    if (_signature(now) == _signature(_files)) return;
+    setState(() => _files = now);
+  }
 
   void _openFile(LogFile f) => setState(() {
         _open = f;
@@ -698,10 +739,19 @@ class _CrashesTabState extends State<_CrashesTab> {
   int _toClear = 0;
   String? _note;
 
+  Timer? _watch;
+
   @override
   void initState() {
     super.initState();
     _refresh();
+    _watch = Timer.periodic(const Duration(seconds: 2), (_) => _recheck());
+  }
+
+  @override
+  void dispose() {
+    _watch?.cancel();
+    super.dispose();
   }
 
   void _refresh() => setState(() {
@@ -710,6 +760,30 @@ class _CrashesTabState extends State<_CrashesTab> {
         _dump = null;
         _confirmClear = false;
       });
+
+  static String _signature(List<CrashFile> files) =>
+      files.map((f) => '${f.path}:${f.size}').join('|');
+
+  // The dump lands after the panel has already asked.
+  //
+  // The shell writes psp2core-*.psp2dmp for a process that has just died while
+  // the receiver is being brought back, and a 100 KB dump is not instant. The
+  // listing on entry therefore runs against a card that does not have the file
+  // yet, and the tab says "nothing has crashed" about the crash you are
+  // holding the console to read. This is why a crash sometimes did not appear
+  // until REFRESH was pressed.
+  //
+  // The size is in the signature as well as the name, so a dump that is still
+  // being written is picked up again once it settles, rather than being parsed
+  // once while truncated and left that way.
+  void _recheck() {
+    if (!mounted || _clearing || _confirmClear) return;
+    final now = listCrashes();
+    if (_signature(now) == _signature(_files)) return;
+    // Whatever is open stays open. A listing changing under a report you are
+    // reading must not close it.
+    setState(() => _files = now);
+  }
 
   void _openFile(CrashFile f) {
     CoreDump? dump;
