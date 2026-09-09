@@ -83,6 +83,36 @@ done
 
 say() { printf '%s\n' "$2" | nc -w "${3:-30}" "$HOST" "$1"; }
 
+# ------------------------------------------------------- one lookup per run
+#
+# Measured 2026-09-09: `nc flutter-vita.local 1341` takes 5.12 s, `nc` against
+# the address it resolves to takes 0.08 s. The whole difference is getaddrinfo
+# asking mDNSResponder, and it is paid once per connection -- so a promote,
+# which opens about sixty of them, spends five minutes resolving one name sixty
+# times.
+#
+# The name is still how you address the console: its lease changes whenever its
+# Wi-Fi does, which is often. It does not change during one run of one script,
+# so resolving once and reusing the answer is the same guarantee for 1/60th of
+# the cost. The address is printed, because a run that talked to the wrong
+# console should say so.
+resolve_once() {
+  case "$HOST" in
+    *[!0-9.]*) ;;
+    *) return 0 ;;
+  esac
+  local addr
+  addr="$(python3 -c 'import socket,sys
+try:
+    print(socket.gethostbyname(sys.argv[1]))
+except OSError:
+    pass' "$HOST" 2>/dev/null || true)"
+  [ -n "$addr" ] || return 0
+  echo "==> $HOST is $addr"
+  HOST="$addr"
+}
+resolve_once
+
 # ----------------------------------------------------------- which slot is up
 #
 # The far end has to be a receiver, not an app that happens to hold the port.
@@ -213,7 +243,11 @@ else
       "$OLDSHA" "$SHA")"
 
   if [ -z "$CHANGED" ]; then
+    # Nothing to send and nothing to record: the manifest on the card is the
+    # one this run just recomputed. Writing it back is a round trip that
+    # changes no bytes, which is the whole cost of a no-op deploy.
     echo "==> $DEST already holds this build"
+    SKIP_MANIFEST=1
   else
     echo "==> $(printf '%s\n' "$CHANGED" | wc -l | tr -d ' ') changed file(s) -> $DEST"
     # eboot.bin last. Everything else is an asset the old binary can also read,
@@ -240,7 +274,7 @@ else
 
   # Last, so that anything above going wrong leaves a manifest that no longer
   # describes the slot and the next run resends the lot.
-  put "$SHA" "$MANIFEST"
+  [ "${SKIP_MANIFEST:-0}" -eq 1 ] || put "$SHA" "$MANIFEST"
 fi
 
 # ------------------------------------------------------------------ hand over

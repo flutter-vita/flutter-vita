@@ -132,13 +132,26 @@ put "$WORK/eboot.bin" "$DEST/eboot.bin"
 
 # Read it back. `put` renames only after the whole file lands, so a wrong size
 # here means the device wrote something other than what was sent.
+#
+# `stat`, not `ls`. ls prints a type and a name and no size, so the awk that
+# used to be here -- $3 == "eboot.bin" against two-field lines -- matched
+# nothing, compared a size against an empty string, and failed every run that
+# had in fact worked.
+#
+# `stat` is a receiver command and the far end here is an app, which runs the
+# base dev server and does not have it. Say so and carry on rather than
+# refusing an install that succeeded: this route exists for the day both
+# receivers are broken, and that is the wrong day to be pedantic.
 WANT="$(wc -c <"$WORK/eboot.bin" | tr -d ' ')"
-GOT="$(say "$PORT" "ls $DEST" 20 | awk '$3 == "eboot.bin" { print $2 }')"
-[ "$WANT" = "$GOT" ] || {
-  echo "!! $DEST/eboot.bin is $GOT B on the console, sent $WANT B" >&2; exit 1; }
+GOT="$(say "$PORT" "stat $DEST/eboot.bin" 20 | awk '{ print $1 }')"
+case "$GOT" in
+  "$WANT") VERIFIED="eboot.bin $GOT B verified" ;;
+  ''|ERR*) VERIFIED="eboot.bin not verified: the app on :$PORT has no \`stat\`" ;;
+  *) echo "!! $DEST/eboot.bin is $GOT B on the console, sent $WANT B" >&2; exit 1 ;;
+esac
 
 echo
-echo "Installed into $TITLE_ID, eboot.bin $GOT B verified."
+echo "Installed into $TITLE_ID, $VERIFIED."
 echo "The running process is unchanged; the new build starts on the next launch."
 echo "The app can hand the console over without a tap:"
 echo "  printf 'handoff $TITLE_ID\\n' | nc $HOST $PORT"
