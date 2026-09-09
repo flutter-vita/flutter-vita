@@ -66,11 +66,10 @@ be strictly worse than the one that works.
 
 **The receiver does not gain an FTP server.** The word "FTP" in the framing of
 this interview meant the receiver's existing `get`/`put` commands, not a new
-service. `receiver/src/main.c` says why this matters:
-
-> `// This is what removes BGFTP from the loop entirely.`
-
-That was won, not given. It stands.
+service. Removing BGFTP from the loop was won rather than given: it took the
+promoter, which runs as a system service and so installs into `ux0:app` the way
+VHBB and PKGj do, outside our sandbox. `cmd_promote_rif` in
+`receiver/src/receiver_dev.c` is what stands in its place. It stands.
 
 ## Distribution
 

@@ -16,7 +16,7 @@ set(VITA_APP_NAME "Flutter Vita")
 # FVTA00002 -- M1's slot, deliberately reused rather than taking a new one.
 #
 # The whole dev loop is built around this title id: the receiver hard-codes
-# TARGET_TITLEID "FVTA00002" (receiver/src/main.c:51) and dev.sh
+# TARGET_TITLEID "FVTA00002" (receiver/src/receiver_dev.c:55) and dev.sh
 # drives that. Giving M3 its own id would mean changing the receiver, rebuilding
 # it, and installing it -- and installing a receiver is the one operation that
 # needs the old receiver working, so a mistake there costs a manual recovery.

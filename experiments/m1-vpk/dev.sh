@@ -35,7 +35,7 @@ HERE="$(cd "$(dirname "$0")" && pwd)"
 # note and habit assumes; APP=m3 switches to the Flutter engine build.
 #
 # Both install into FVTA00002 -- there is one slot and the receiver hard-codes it
-# (vita-receiver/src/main.c:51). So this chooses which eboot.bin gets staged and,
+# (receiver/src/receiver_dev.c:55). So this chooses which eboot.bin gets staged and,
 # just as importantly, which ELF analyse-crash.sh symbolicates against. Pointing
 # a dump at the wrong ELF produces plausible, wrong function names, which cost
 # real time in Phase 1.
@@ -46,7 +46,7 @@ case "$APP" in
   *)  echo "APP must be m1 or m3, not '$APP'" >&2; exit 2 ;;
 esac
 APPDIR="$(cd "$APPDIR" && pwd)"
-# One slot, hard-coded in the receiver at vita-receiver/src/main.c:51. Named here
+# One slot, hard-coded in the receiver at receiver/src/receiver_dev.c:55. Named here
 # rather than repeated, because it is the destination for every file push.
 TITLEID="FVTA00002"
 
