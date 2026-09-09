@@ -6,8 +6,8 @@
 #
 #   --title-id ID     which receiver to replace (default FVTA00001)
 #   --updater ID      the updater's title id    (default FVTA00009)
-#   --keep-updater    leave the updater installed
-#   --remove-updater  delete it afterwards (the default)
+#   --keep-updater    leave the updater installed (the default)
+#   --remove-updater  delete it afterwards, at the cost of 45 s of LiveArea
 #   --full            stage every file, not only the ones that changed
 #   --port N          the port to talk to       (default 1341)
 #   --host NAME       the console               (default flutter-vita.local)
@@ -24,11 +24,10 @@
 #   2. launch FVTA00009, a 50 KB app with no engine whose only job is to copy
 #      that tree over ux0:app/<target> and launch the target back
 #   3. wait for the new receiver
-#   4. take FVTA00009 back off the card
 #
 # The updater keeps the eboot it replaces in receiver-backup. If the new build
 # boots into nothing, launch "Flutter Receiver Updater" holding L to restore
-# it -- which is why step 4 is the last thing and not the first.
+# it.
 set -euo pipefail
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
@@ -50,18 +49,22 @@ VPK=""
 BUILD_PORT=""
 UPDATER_VPK="$ROOT/receiver/updater/build/flutter_vita_updater.vpk"
 
-# The updater comes back down after every update.
+# The updater stays installed.
 #
-# It is scaffolding: a bubble that does exactly one thing and does it
-# destructively, and every one left behind is a way to overwrite the receiver
-# by accident. Deleting it used to cost a visible restart, because the receiver
-# relaunched itself afterwards and lost the race to the shell. It does not
-# relaunch any more -- see after_delete in receiver/src/receiver_dev.c -- so the
-# delete happens with the receiver on screen throughout.
+# It used to be deleted after every update, and the delete is what put the
+# console on the LiveArea for the last three quarters of a minute of every
+# deploy. Measured 2026-09-09: scePromoterUtilityDeletePkg returned in one
+# second, and the 46 seconds after that were the shell rebuilding its title
+# list -- which takes the screen and blocks the card, so the receiver's own
+# 1 KB write of installed.txt sat there for the whole of it. The receiver never
+# died and always came back, but the last thing you saw was the home screen.
 #
-# --keep-updater when you are chasing a failing update and the cost of
-# reinstalling it between attempts is the thing you are paying.
-KEEP_UPDATER=0
+# Nothing this script does can make the shell quiet about a package being
+# removed. So it does not remove one. The cost is a 50 KB bubble that is always
+# there, which also means hold-L rollback is always available.
+#
+# --remove-updater if you want it gone and can spend the 45 seconds.
+KEEP_UPDATER=1
 
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -229,11 +232,26 @@ echo "    $(printf '%s\n' "$FILES" | wc -l | tr -d ' ') of" \
 # launch of a title that is not installed is a silent no-op, and the console
 # would sit on the receiver with a staged update it never applies.
 #
-# Installing it here rather than telling you to go and do it: the updater is
-# scaffolding, and asking a human to put scaffolding up by hand before every
-# receiver change is how the receiver stops getting changed.
+# It also has to be *this* updater. It is permanent now, so nothing reinstalls
+# it as a side effect, and an updater older than the code that stages for it is
+# the failure this script exists to make loud: on 2026-09-08 one built before
+# the loader/receiver rename looked in a directory that no longer got written,
+# printed "nothing staged", relaunched the receiver, and three deploys in a row
+# reported success and changed no bytes. Comparing eboot sizes is one round
+# trip and catches every rebuild of it.
+NEED_UPDATER=""
 if ! say "$PORT" "exist $UPDATER" 20 | grep -q "res=3"; then
-  echo "==> installing $UPDATER"
+  NEED_UPDATER="it is not installed"
+else
+  [ -f "$UPDATER_VPK" ] || {
+    echo "!! no updater vpk at $UPDATER_VPK" >&2
+    echo "   cmake --build receiver/updater/build" >&2; exit 1; }
+  UWANT="$(unzip -p "$UPDATER_VPK" eboot.bin | wc -c | tr -d ' ')"
+  UGOT="$(say "$PORT" "stat ux0:app/$UPDATER/eboot.bin" 20 | awk '{ print $1 }')"
+  [ "$UWANT" = "$UGOT" ] || NEED_UPDATER="the installed one is ${UGOT:-?} B, this one is $UWANT B"
+fi
+if [ -n "$NEED_UPDATER" ]; then
+  echo "==> installing $UPDATER: $NEED_UPDATER"
   [ -f "$UPDATER_VPK" ] || {
     echo "!! no updater vpk at $UPDATER_VPK" >&2
     echo "   cmake --build receiver/updater/build" >&2; exit 1; }
@@ -296,7 +314,7 @@ put "$SHA" "$MANIFEST_PATH"
 
 if [ "$KEEP_UPDATER" -eq 1 ]; then
   echo
-  echo "$TITLE_ID updated. $UPDATER left installed; hold L on it to roll back."
+  echo "$TITLE_ID updated. Hold L on $UPDATER to put the old eboot back."
   exit 0
 fi
 
