@@ -253,6 +253,10 @@ set(VPK_FILES
   # the family name inside each file, so the alias table in platform_vita.cc
   # needs this present or it points at nothing.
   FILE "${ENGINE_DIR}/data/RobotoMono-Regular.ttf" fonts/RobotoMono-Regular.ttf
+  # Not optional and not decoration. The SIL OFL says the notice and the
+  # licence go with every copy of the font, and all three fonts above are under
+  # it. See NOTICE.
+  FILE "${ENGINE_DIR}/data/OFL.txt" fonts/OFL.txt
   # LiveArea art. Without it the system draws a blank placeholder that looks
   # like a corrupt install. LIVEAREA_DIR lets an app ship its own set.
   FILE "${LIVEAREA_DIR}/icon0.png" sce_sys/icon0.png

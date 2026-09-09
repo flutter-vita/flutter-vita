@@ -165,6 +165,10 @@ cp "$ROOT/assets/fonts/NotoEmoji-Regular.ttf" "$STAGE/data/"
 # resolve to. Without it the alias table in platform_vita.cc points at a family
 # nobody shipped, and every fixed-pitch request falls back to Roboto again.
 cp "$ROOT/assets/fonts/RobotoMono-Regular.ttf" "$STAGE/data/"
+# The OFL requires the notice and the licence to travel with every copy of the
+# font. Three fonts land in app0:/fonts and none of them carried it until
+# 2026-09-09, so every vpk built before then was out of compliance.
+cp "$ROOT/assets/fonts/OFL.txt" "$STAGE/data/"
 
 # The platform dill, built from *our* Dart SDK rather than stock Flutter's.
 #

@@ -59,6 +59,38 @@ and your application's object files.
 ADR-0018 is measuring whether this stays true. Read it before you build a
 release pipeline around the paragraph above.
 
+## The three fonts, and what still has to be done about them
+
+All three are under the **SIL Open Font License 1.1**, and every `.vpk` carries
+all three in `app0:/fonts`. An earlier version of this file called Roboto and
+Roboto Mono Apache-2.0. That was wrong: `google/fonts` holds both under
+`ofl/`, not `apache/`.
+
+The OFL permits exactly what this project does. Bundling a font with software,
+redistributing it, and selling the result are all allowed, and no part of the
+port has to change licence because of them. Two conditions apply and one of
+them we now meet:
+
+- **The copyright notice and the licence must accompany every copy.** They now
+  ship as `app0:/fonts/OFL.txt`, inside the `.vpk`. Before 2026-09-09 they did
+  not, which made every `.vpk` built by this toolchain non-compliant for
+  Noto Emoji.
+- **The fonts may not be sold on their own**, and the Reserved Font Names may
+  not be used on a modified version. Nothing here modifies or resells them.
+
+**Provenance is the open item.** The Roboto copy is Flutter's unit-test
+fixture: `txt/BUILD.gn` lists it under `test_fixtures("txt_fixtures")`, inside
+`if (enable_unittests)`. That is why `LICENSE.engine` does not mention Roboto
+at all — upstream's licence tooling excludes test fixtures, correctly, because
+upstream does not ship them. We do ship it. The Roboto Mono copy came from the
+DevTools bundle inside a Dart SDK prebuilt, which carries no licence file
+either.
+
+Both should be re-taken from `google/fonts` (`ofl/roboto`, `ofl/robotomono`)
+with each family's own `OFL.txt` beside it. The licence is not in doubt; where
+our particular binaries came from is, and a font shipped in every `.vpk`
+deserves a source that ships its own licence.
+
 ## The patch series is not all BSD-3
 
 A patch is a derivative work of the file it changes, so each series under
@@ -80,9 +112,9 @@ and does not reach them.
 |---|---|
 | Flutter engine, framework, Dart SDK, Skia | BSD-3-Clause |
 | Everything vendored beneath them | see `LICENSE.engine` |
-| Roboto (`Roboto-Regular.ttf`, shipped in the engine artifact) | Apache-2.0 |
-| Roboto Mono (`RobotoMono-Regular.ttf`, shipped in the engine artifact) | Apache-2.0 |
-| Noto Emoji (`NotoEmoji-Regular.ttf`, shipped in the engine artifact) | SIL Open Font License 1.1, `assets/fonts/OFL.txt` |
+| Roboto (`Roboto-Regular.ttf`) | SIL Open Font License 1.1 |
+| Roboto Mono (`RobotoMono-Regular.ttf`) | SIL Open Font License 1.1 |
+| Noto Emoji (`NotoEmoji-Regular.ttf`) | SIL Open Font License 1.1 |
 | VitaSDK headers and stub libraries | see the VitaSDK distribution; not redistributed here |
 
 This project vendors no third-party source. `third_party/` is checked out by
