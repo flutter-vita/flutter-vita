@@ -11,3 +11,4 @@ FlutterVitaSpike:
       syscall: false
       functions:
         - spike_add
+        - spike_shader_probe

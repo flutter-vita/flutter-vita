@@ -6,6 +6,10 @@
 set -euo pipefail
 HERE="$(cd "$(dirname "$0")" && pwd)"
 ROOT="$(cd "$HERE/../.." && pwd)"
+VITASDK="${VITASDK:-$HOME/vitasdk}"
+# vita-libs-gen-2 shells out to arm-vita-eabi-as by bare name, so the assembler
+# has to be on PATH or the stub build fails at the first .o.
+export VITASDK PATH="$VITASDK/bin:$PATH"
 HOST="${VITA_HOST:-flutter-vita.local}"
 PORT="${RECEIVER_PORT:-1341}"
 
