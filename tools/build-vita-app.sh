@@ -13,6 +13,7 @@
 #   --extra-source F  extra C/C++ compiled into the app; repeatable
 #   --no-supervisor   leave out eboot2.bin (the receiver; ADR-0016)
 #   --define K=V      preprocessor define for the extra sources; repeatable
+#   --link-option F   extra linker flag, for measurement builds; repeatable
 #   --release         no dev server, no debug HUD, no bailout, no supervisor
 #
 # The app configures itself in pubspec.yaml:
@@ -55,6 +56,7 @@ ENTRY_POINT="lib/main.dart"
 EXTRA_SOURCES=""
 NO_SUPERVISOR="OFF"
 EXTRA_DEFINES=""
+EXTRA_LINK_OPTIONS=
 # Debug and release are the same pipeline with a different final link. Release
 # drops what serves the developer: the dev server's socket, the debug HUD, the
 # bailout, and the crash supervisor. See templates/vita-app/release.c.
@@ -82,6 +84,9 @@ while [ $# -gt 0 ]; do
     # no receiver to relaunch.
     --release)  RELEASE="ON"; NO_SUPERVISOR="ON"; shift ;;
     --define) EXTRA_DEFINES="${EXTRA_DEFINES:+$EXTRA_DEFINES;}$2"; shift 2 ;;
+    # For measurement builds. experiments/gl-usage needs
+    # -Wl,--wrap=vglGetProcAddress and there is no other way in.
+    --link-option) EXTRA_LINK_OPTIONS="${EXTRA_LINK_OPTIONS:+$EXTRA_LINK_OPTIONS;}$2"; shift 2 ;;
     -h|--help)  sed -n '2,20p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
     -*)         echo "unknown option: $1" >&2; exit 2 ;;
     *)          APP_DIR="$1"; shift ;;
@@ -328,7 +333,8 @@ cmake -S "${FLUTTER_VITA_TEMPLATE:-$ROOT/templates/vita-app}" -B "$OUT_DIR/cmake
   -DEXTRA_SOURCES="$EXTRA_SOURCES" \
   -DNO_SUPERVISOR="$NO_SUPERVISOR" \
   -DRELEASE="$RELEASE" \
-  -DEXTRA_DEFINES="$EXTRA_DEFINES" >/dev/null
+  -DEXTRA_DEFINES="$EXTRA_DEFINES" \
+  -DEXTRA_LINK_OPTIONS="$EXTRA_LINK_OPTIONS" >/dev/null
 cmake --build "$OUT_DIR/cmake" -j"$(getconf _NPROCESSORS_ONLN 2>/dev/null || echo 4)"
 
 VPK="$(find "$OUT_DIR/cmake" -name '*.vpk' | head -1)"

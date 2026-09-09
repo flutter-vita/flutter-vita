@@ -13,6 +13,7 @@
 #   EXTRA_SOURCES   ;-list of extra C/C++ files to compile into the app
 #   NO_SUPERVISOR   ON to leave out eboot2.bin and param2.sfo
 #   EXTRA_DEFINES   ;-list of K=V preprocessor defines
+#   EXTRA_LINK_OPTIONS  ;-list of extra linker flags
 #   RELEASE         ON to link release.c instead of the dev loop
 cmake_minimum_required(VERSION 3.16)
 
@@ -97,6 +98,11 @@ target_compile_definitions(${PROJECT_NAME} PRIVATE ${EXTRA_DEFINES})
 set_target_properties(${PROJECT_NAME} PROPERTIES LINKER_LANGUAGE CXX)
 
 target_link_options(${PROJECT_NAME} PRIVATE
+  # Set from the outside for measurement builds. experiments/gl-usage passes
+  # -Wl,--wrap=vglGetProcAddress here, which is the only way to see what an app
+  # asks of vitaGL: Skia binds by name, so no link map can tell you.
+  ${EXTRA_LINK_OPTIONS}
+
   # vita-elf-create appends ~32 KB of SCE metadata after the first LOAD segment
   # and fails if the next segment starts too soon. At 4 KiB pages the gap came
   # to 2148 bytes; 64 KiB leaves a whole page of slack.

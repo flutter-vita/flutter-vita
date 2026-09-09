@@ -27,6 +27,7 @@ ADR-0001 through ADR-0004 are back-filled from §1 of `Flutter Vita Plan.md`
 | [0015](0015-four-products-one-audience.md) | The toolchain is four products with one audience | Accepted — the product boundary ends at the `.vpk` |
 | [0016](0016-the-receiver-becomes-a-flutter-app.md) | The receiver becomes a Flutter app, and stops being invisible | Accepted — pinned engine, software rendering, C layer holds the port |
 | [0017](0017-the-gallery-becomes-the-benchmark.md) | The gallery becomes the benchmark, and a scene is the unit | Accepted — scripted scenes, a stall is 2+ frames at or below 30 fps, gated on a committed baseline |
+| [0018](0018-the-lgpl-obligation-in-every-vpk.md) | vitaGL is LGPL, and the obligation lands on every developer who ships | Proposed — routes measured, choice open pending the run-time entry-point count |
 
 ## Open questions not yet decided
 
