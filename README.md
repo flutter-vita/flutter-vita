@@ -26,7 +26,6 @@ again in each frame is too slow.
 |---|---|
 | Flutter version | 3.44.8. This version is fixed. |
 | Consoles | PS Vita 1000 and PS Vita 2000, with HENkaku |
-| Kernel plugin | **Not necessary.** No taiHEN, no card change, no VitaShell. |
 | Hot reload | No. This port uses AOT only. See [No hot reload](#no-hot-reload). |
 | Renderer | Skia on GLES2, through vitaGL. A software renderer is also available, but it is 6 to 18 times more slow. |
 
