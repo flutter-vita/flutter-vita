@@ -19,6 +19,11 @@
 # Both slots build for port 1341. Only one of them runs at a time, so there is
 # nothing to collide with, and every host tool keeps talking to one number.
 #
+# The slot is *not* compiled in. The receiver reads its own title id at startup
+# (read_self_titleid in receiver/src/receiver_dev.c), so A and B are the same
+# eboot.bin and switching slots regenerates param.sfo rather than relinking the
+# engine. --slot decides what goes in the package, not what goes in the binary.
+#
 # The receiver is an ordinary Flutter-Vita application -- same template, same
 # build script, same snapshot -- plus one translation unit that owns the port
 # and the commands, and minus the crash supervisor.
@@ -56,7 +61,7 @@ while [ $# -gt 0 ]; do
     --scratch)  TITLE_ID="FVTA00004"; PORT=1342; NAME="Flutter Receiver (scratch)"; shift ;;
     --title-id) TITLE_ID="$2"; shift 2 ;;
     --port)     PORT="$2"; shift 2 ;;
-    -h|--help)  sed -n '2,29p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    -h|--help)  sed -n '2,35p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
     *) echo "unknown option: $1" >&2; exit 2 ;;
   esac
 done
@@ -117,5 +122,4 @@ exec "$HERE/build-vita-app.sh" "$ROOT/receiver/app" \
   --extra-source "$ROOT/receiver/src/receiver_dev.c" \
   --no-supervisor \
   --define "RECEIVER_PORT=$PORT" \
-  --define "SELF_TITLEID=\"$TITLE_ID\"" \
   --define "TARGET_TITLEID=\"FVTA00002\""

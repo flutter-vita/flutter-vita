@@ -58,9 +58,20 @@
 //
 // The id is also used to refuse to delete ourselves, and to refuse to hand
 // over to ourselves. See cmd_delete and hand_over.
+//
+// Read at startup rather than compiled in, so that A and B are the *same*
+// binary. Two consequences worth the twenty lines: switching slots no longer
+// relinks the engine, which was three minutes on every alternating deploy;
+// and a build cannot be copied into the wrong slot, because there is no
+// longer a slot baked into it. This is the fallback, for a console where
+// sceAppMgrAppParamGetString refuses.
+#define SLOT_A "FVTA00001"
+#define SLOT_B "FVTA00005"
 #ifndef SELF_TITLEID
-#define SELF_TITLEID "FVTA00001"
+#define SELF_TITLEID SLOT_A
 #endif
+static char g_self[16] = SELF_TITLEID;
+
 #ifndef TARGET_TITLEID
 #define TARGET_TITLEID "FVTA00002"
 #endif
@@ -142,7 +153,7 @@ static void publish(void) {
                    "seq %u\nip %s\nport %d\ntarget %s\nstatus %s\ndetail %s\n"
                    "self %s\nrecv %d %d\nlastcmd %d\n",
                    g_seq, g_ip[0] ? g_ip : "-", RECEIVER_PORT, g_target,
-                   g_status, g_detail, SELF_TITLEID, g_recv_done,
+                   g_status, g_detail, g_self, g_recv_done,
                    g_recv_total, last_cmd_age());
   // Oldest first, so the Dart side can append without reversing.
   const int have = g_line_count < LOG_LINES ? g_line_count : LOG_LINES;
@@ -263,6 +274,64 @@ static const char* human_size(int bytes) {
              (int)(((bytes % (1024 * 1024)) * 10) / (1024 * 1024)));
   }
   return out;
+}
+
+// Is this slot the one we are running from?
+//
+// Our own slot is the app0: mount and refuses a new file; every other title's
+// directory is ordinary storage an UNSAFE self writes freely. So the question
+// has a physical answer, and it costs one create and one remove.
+//
+// A slot that does not exist also refuses the write, which is why the caller
+// checks eboot.bin is there first. Without that, a wrong title id and an empty
+// directory look identical.
+static int slot_refuses_writes(const char* titleid) {
+  char path[64];
+  snprintf(path, sizeof path, "ux0:app/%s/eboot.bin", titleid);
+  SceIoStat st;
+  if (sceIoGetstat(path, &st) < 0) return 0;
+  snprintf(path, sizeof path, "ux0:app/%s/.whoami", titleid);
+  const SceUID fd =
+      sceIoOpen(path, SCE_O_WRONLY | SCE_O_CREAT | SCE_O_TRUNC, 0777);
+  if (fd < 0) return 1;
+  sceIoClose(fd);
+  sceIoRemove(path);
+  return 0;
+}
+
+// Which slot are we in?
+//
+// Param 12 of the running process's SFO descriptor is the title id, and that
+// is the answer in one call. It is confirmed rather than trusted, because
+// everything this value guards is destructive: a receiver that believes it is
+// in A while running in B will agree to delete B, and B is itself.
+//
+// The confirmation is the app0: mount. If the id the shell gave us names a
+// slot we can write to, it is not our slot, and the two known receiver slots
+// get probed instead. Silence here means the first answer was right.
+static void read_self_titleid(void) {
+  static const char* const kSlots[] = {SLOT_A, SLOT_B};
+  char id[16] = {0};
+  const int r = sceAppMgrAppParamGetString(0, 12, id, sizeof id);
+  if (r >= 0 && strlen(id) == 9 && slot_refuses_writes(id)) {
+    snprintf(g_self, sizeof g_self, "%s", id);
+    return;
+  }
+  if (r < 0) {
+    note("title id: sceAppMgrAppParamGetString 0x%08X", (unsigned)r);
+  } else {
+    note("title id: the shell says %s, but that slot is writable", id);
+  }
+  for (unsigned i = 0; i < sizeof kSlots / sizeof kSlots[0]; i++) {
+    if (slot_refuses_writes(kSlots[i])) {
+      note("title id: %s refuses writes, so we are in it", kSlots[i]);
+      snprintf(g_self, sizeof g_self, "%s", kSlots[i]);
+      return;
+    }
+  }
+  note("!! title id unknown; assuming %s. Deleting a receiver is refused for",
+       g_self);
+  note("   both slots, so the worst case is a handover this process declines.");
 }
 
 static void note_size(const char* what, int bytes) {
@@ -620,7 +689,7 @@ static int hand_over(const char* titleid) {
   //
   // Staying up is always the better answer, because this process is the only
   // thing on the console that answers TCP.
-  if (strcmp(titleid, SELF_TITLEID) == 0) {
+  if (strcmp(titleid, g_self) == 0) {
     note("asked to hand over to myself; staying here");
     set_status("Waiting", NULL);
     return -1;
@@ -1036,8 +1105,8 @@ static void cmd_rmtree(int sock, const char* path) {
 // this process down a few seconds later for reasons nobody has found, so it
 // restarted first and got ahead of the death.
 //
-// The restart was the worse failure. It handed over to SELF_TITLEID, and on
-// 2026-09-08 that left the console on the LiveArea home screen with nothing
+// The restart was the worse failure. It handed over to this receiver's own
+// slot, and on 2026-09-08 that left the console on LiveArea with nothing
 // answering a port, which is the exact outcome the restart existed to avoid.
 // The delete itself had already succeeded.
 //
@@ -1077,6 +1146,16 @@ static void after_delete(void) {
 // Answering immediately costs a synchronous result and buys a receiver that
 // stays reachable while the promoter grinds. The outcome goes to the log and
 // the status line, which the panel shows and `log` returns.
+// Neither receiver slot is ever deletable, not just the one we think we are
+// in. Which slot is running is read at startup and confirmed against the app0:
+// mount, but "confirmed" is not "proved", and the cost of being wrong is a
+// receiver that removes the other receiver -- or itself. The cost of being
+// careful is that removing a receiver takes VitaShell.
+static int is_receiver_slot(const char* titleid) {
+  return strcmp(titleid, g_self) == 0 || strcmp(titleid, SLOT_A) == 0 ||
+         strcmp(titleid, SLOT_B) == 0;
+}
+
 static char g_deleting[16];
 
 static int delete_thread(SceSize args, void* argp) {
@@ -1107,8 +1186,8 @@ static int start_delete(const char* titleid) {
 }
 
 static void cmd_delete(int sock, const char* titleid) {
-  if (strcmp(titleid, SELF_TITLEID) == 0) {
-    dev_server_send(sock, "ERR refusing to delete the receiver\n");
+  if (is_receiver_slot(titleid)) {
+    dev_server_send(sock, "ERR refusing to delete a receiver slot\n");
     return;
   }
   if (!promoter_up(sock)) return;
@@ -1171,14 +1250,14 @@ static int handle(int sock, const char* line, int* stop) {
   // promote a receiver over an app.
   //
   // The fourth field is the slot this process is running from. Two receivers
-  // share the port -- see the A/B comment above SELF_TITLEID -- and the host
+  // share the port -- see the A/B comment above g_self -- and the host
   // has to know which one answered before it can build for the other one.
   // Appended rather than inserted, so the parsers that read three fields
   // still read three fields.
   if (strcmp(line, "ping") == 0) {
     char m[80];
     snprintf(m, sizeof m, "pong receiver %s %d %s\n", TARGET_TITLEID,
-             RECEIVER_PORT, SELF_TITLEID);
+             RECEIVER_PORT, g_self);
     dev_server_send(sock, m);
     return 1;
   }
@@ -1326,8 +1405,8 @@ static void serve_request(void) {
 
   if (strncmp(buf, "delete ", 7) == 0) {
     const char* titleid = buf + 7;
-    if (strcmp(titleid, SELF_TITLEID) == 0) {
-      note("panel asked to delete the receiver; refused");
+    if (is_receiver_slot(titleid)) {
+      note("panel asked to delete %s, a receiver slot; refused", titleid);
       return;
     }
     if (!promoter_up(-1)) {
@@ -1337,7 +1416,7 @@ static void serve_request(void) {
     start_delete(titleid);
   } else if (strncmp(buf, "launch ", 7) == 0) {
     const char* titleid = buf + 7;
-    if (strcmp(titleid, SELF_TITLEID) == 0) {
+    if (strcmp(titleid, g_self) == 0) {
       note("panel asked to launch the receiver; already here");
       return;
     }
@@ -1436,7 +1515,8 @@ __attribute__((constructor)) static void receiver_register(void) {
 
   rotate_app_log("receiver");
   trim_deploy_log();
-  note("---- receiver %s up ----", SELF_TITLEID);
+  read_self_titleid();
+  note("---- receiver %s up ----", g_self);
   if (prev[0] != '\0' && strcmp(prev, "receiver") != 0) {
     note("- left %s", prev);
   }

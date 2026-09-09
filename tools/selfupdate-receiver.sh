@@ -23,6 +23,11 @@
 #   A running  ->  write the build into B  ->  launch B  ->  B running
 #   B running  ->  write the build into A  ->  launch A  ->  A running
 #
+# The two slots run the same eboot.bin; the receiver reads its own title id at
+# startup rather than having it compiled in. So switching slots regenerates
+# param.sfo instead of relinking the engine (9 seconds, not three minutes), and
+# a deploy of an unchanged build transfers nothing at all.
+#
 # One change of application per update, which is the least the shell can do:
 # new code needs a new process. About five seconds, most of it the receiver's
 # own start.
@@ -70,7 +75,7 @@ while [ $# -gt 0 ]; do
     --port)     PORT="$2"; shift 2 ;;
     --host)     HOST="$2"; shift 2 ;;
     --no-build) BUILD=0; shift ;;
-    -h|--help)  sed -n '2,43p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    -h|--help)  sed -n '2,48p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
     -*) echo "unknown option: $1" >&2; exit 2 ;;
     *)  VPK="$1"; BUILD=0; shift ;;
   esac
@@ -129,10 +134,10 @@ trap 'rm -rf "$WORK" "$SHA" "$OLDSHA"' EXIT
 unzip -q "$VPK" -d "$WORK"
 [ -s "$WORK/eboot.bin" ] || { echo "!! no eboot.bin in $VPK" >&2; exit 1; }
 
-# A receiver knows its own slot at compile time: it refuses to delete itself
-# and refuses to hand over to itself by comparing against SELF_TITLEID. Copy a
-# build for one slot into the other and both of those guards protect the wrong
-# title, quietly, until the day they matter.
+# eboot.bin is the same file for both slots -- the receiver reads its own title
+# id at startup -- so what makes this vpk slot-specific is param.sfo, and
+# param.sfo is exactly what a promote writes. Sending the wrong one produces a
+# title whose id, name and bubble belong to the other slot.
 BUILT_FOR="$(strings "$WORK/sce_sys/param.sfo" 2>/dev/null \
   | grep -m1 -oE '^[A-Z]{4}[0-9]{5}$' || true)"
 [ "$BUILT_FOR" = "$DEST" ] || {
