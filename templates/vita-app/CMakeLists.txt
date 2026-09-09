@@ -248,7 +248,6 @@ set(VPK_FILES
   # Emoji. Everything in app0:/fonts is a fallback candidate for every codepoint
   # (see platform_vita.cc). Monochrome, 1.9 MB; the colour font was tried and is
   # documented in assets/fonts/README.md.
-  FILE "${ENGINE_DIR}/data/NotoEmoji-Regular.ttf" fonts/NotoEmoji-Regular.ttf
   # 109 KB, and it is what "monospace" resolves to. app0:/fonts is matched by
   # the family name inside each file, so the alias table in platform_vita.cc
   # needs this present or it points at nothing.

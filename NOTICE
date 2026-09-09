@@ -59,10 +59,10 @@ and your application's object files.
 ADR-0018 is measuring whether this stays true. Read it before you build a
 release pipeline around the paragraph above.
 
-## The three fonts, and what still has to be done about them
+## The two fonts, and what still has to be done about them
 
-All three are under the **SIL Open Font License 1.1**, and every `.vpk` carries
-all three in `app0:/fonts`. An earlier version of this file called Roboto and
+Both are under the **SIL Open Font License 1.1**, and every `.vpk` carries
+both in `app0:/fonts`. An earlier version of this file called Roboto and
 Roboto Mono Apache-2.0. That was wrong: `google/fonts` holds both under
 `ofl/`, not `apache/`.
 
@@ -73,8 +73,7 @@ them we now meet:
 
 - **The copyright notice and the licence must accompany every copy.** They now
   ship as `app0:/fonts/OFL.txt`, inside the `.vpk`. Before 2026-09-09 they did
-  not, which made every `.vpk` built by this toolchain non-compliant for
-  Noto Emoji.
+  not, which made every `.vpk` built by this toolchain non-compliant.
 - **The fonts may not be sold on their own**, and the Reserved Font Names may
   not be used on a modified version. Nothing here modifies or resells them.
 
@@ -114,7 +113,6 @@ and does not reach them.
 | Everything vendored beneath them | see `LICENSE.engine` |
 | Roboto (`Roboto-Regular.ttf`) | SIL Open Font License 1.1 |
 | Roboto Mono (`RobotoMono-Regular.ttf`) | SIL Open Font License 1.1 |
-| Noto Emoji (`NotoEmoji-Regular.ttf`) | SIL Open Font License 1.1 |
 | VitaSDK headers and stub libraries | see the VitaSDK distribution; not redistributed here |
 
 This project vendors no third-party source. `third_party/` is checked out by

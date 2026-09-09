@@ -1,31 +1,46 @@
 # Fonts the port ships that the engine does not
 
-One file so far, and it is here rather than in `third_party/` because that
-directory is a gclient checkout and gitignored — a font we chose has to be
+These are in the repository rather than in `third_party/` because that
+directory is a gclient checkout and gitignored. A font we chose has to be
 tracked.
 
-## NotoEmoji-Regular.ttf
+Every `.vpk` gets what is here in `app0:/fonts`, plus `Roboto-Regular.ttf` out
+of the engine checkout. Nothing else. `SkFontMgr_New_Custom_Directory` indexes
+that directory by the family name inside each file, so what goes in it is a
+deliberate choice and each file is a candidate for every codepoint.
 
-`Noto Emoji` v3.002, from
-[google/fonts `ofl/notoemoji`](https://github.com/google/fonts/tree/main/ofl/notoemoji),
-under the SIL Open Font License (`OFL.txt` beside it).
+## RobotoMono-Regular.ttf
 
-**Monochrome, and that is the point.** The engine checkout already carries a
-`NotoColorEmoji.ttf` next to the Roboto this port ships, and it was tried first.
-Two things ruled it out on 2026-08-28:
+`Roboto Mono`, SIL Open Font License 1.1.
 
-- **It is from May 2017.** `Version 1.39;GOOG;noto-emoji:20170518`, 1189
-  codepoints, Unicode 9.0. Everything added since — 🤩 (U10), 🥰 (U11), 🥲 (U13),
-  🫠 (U14), 🫨 (U15) — has no glyph, so keklist's picker rendered a field of
-  `.notdef` rectangles between the faces that did work. This one has 1489
-  codepoints and covers through Unicode 15.
-- **CBDT/CBLC is PNG bitmaps, not outlines.** Emoji paragraphs laid out at
-  4550 us against 424 us for ordinary text, and single frames stalled 6-7
-  seconds on the emoji grid. Outline glyphs cost what any other glyph costs.
+Here so that `fontFamily: 'monospace'` resolves to something. It cannot resolve
+by name on its own: no font file declares the family "monospace", so the
+request returned nothing and skparagraph fell back to Roboto, which is
+proportional. The alias table in `txt/src/txt/platform_vita.cc` maps the
+generic names onto this file, and the table is useless without it.
 
-It is a variable font (`fvar`, weight axis); FreeType renders the default
-instance and nothing here asks for another. 1.9 MB against the colour font's
-4.7 MB, and it lands in every `.vpk` — see `tools/package-engine.sh`.
+109 KB.
 
-The trade is colour. Emoji render as monochrome outlines, which is what the
-Vita's own system font does for symbols anyway.
+## OFL.txt
+
+The licence, shipped inside every `.vpk` beside the fonts, because the OFL
+requires the notice and the licence to accompany every copy. See
+[NOTICE](../../NOTICE).
+
+**This copy carries Noto Emoji's copyright line and needs replacing.** Both
+fonts want re-taking from `google/fonts` (`ofl/roboto`, `ofl/robotomono`) with
+each family's own `OFL.txt`, which is also what fixes their provenance: the
+Roboto we ship is Flutter's unit-test fixture and the Roboto Mono came out of a
+DevTools bundle inside a Dart SDK prebuilt. Neither source ships a licence.
+
+## No emoji font
+
+There was one, `NotoEmoji-Regular.ttf`, 1.9 MB in the repository and in every
+`.vpk`. It went in for one test application and came out on 2026-09-09.
+
+Emoji coverage is an application's choice. An app that wants it declares a font
+under `fonts:` in its `pubspec.yaml` and the asset font provider picks it up.
+Roboto covers 896 codepoints and stops at U+FFFD, so an app that declares
+nothing draws tofu where emoji would be. That is the application's answer to
+give, not the platform's, and it does not cost 1.9 MB to every app that has no
+emoji in it.

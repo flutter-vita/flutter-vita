@@ -150,25 +150,20 @@ mkdir -p "$STAGE/src"
 cp "$ROOT/experiments/m1-vpk/src/devserver.c" "$ROOT/experiments/m1-vpk/src/devserver.h" "$STAGE/src/"
 cp "$ENGINE_SRC/flutter/third_party/icu/flutter/icudtl.dat" "$STAGE/data/"
 cp "$ENGINE_SRC/flutter/txt/third_party/fonts/Roboto-Regular.ttf" "$STAGE/data/"
-# Emoji, as a system font rather than an app asset.
-#
-# Roboto covers 896 codepoints and stops at U+FFFD, so every emoji was tofu
-# until platform_vita.cc learned to answer onMatchFamilyStyleCharacter. That
-# hook can only find what app0:/fonts holds, and third-party apps run here
-# unmodified.
-#
-# Not the NotoColorEmoji.ttf next to Roboto in the engine checkout: a May 2017
-# build covering Unicode 9, whose CBDT bitmaps cost 4550 us per emoji paragraph
-# against 424 us for text. assets/fonts/README.md has the measurements.
-cp "$ROOT/assets/fonts/NotoEmoji-Regular.ttf" "$STAGE/data/"
-# Roboto Mono, Apache-2.0, so that fontFamily: 'monospace' has something to
-# resolve to. Without it the alias table in platform_vita.cc points at a family
-# nobody shipped, and every fixed-pitch request falls back to Roboto again.
+# Roboto Mono, so that fontFamily: 'monospace' has something to resolve to.
+# Without it the alias table in platform_vita.cc names a family nobody shipped
+# and every fixed-pitch request falls back to Roboto, which is proportional.
 cp "$ROOT/assets/fonts/RobotoMono-Regular.ttf" "$STAGE/data/"
 # The OFL requires the notice and the licence to travel with every copy of the
-# font. Three fonts land in app0:/fonts and none of them carried it until
-# 2026-09-09, so every vpk built before then was out of compliance.
+# font. Both fonts above are under it and neither carried it until 2026-09-09,
+# so every vpk built before then was out of compliance.
 cp "$ROOT/assets/fonts/OFL.txt" "$STAGE/data/"
+
+# No emoji font ships. It used to, and it was 1.9 MB in every vpk for one test
+# app. Emoji coverage is an application's choice, not a platform guarantee:
+# an app that wants it declares a font under `fonts:` in its pubspec and the
+# asset font provider picks it up. Roboto stops at U+FFFD, so an app that
+# declares nothing draws tofu, and that is the app's answer to give.
 
 # The platform dill, built from *our* Dart SDK rather than stock Flutter's.
 #
