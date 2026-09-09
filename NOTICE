@@ -81,6 +81,8 @@ and does not reach them.
 | Flutter engine, framework, Dart SDK, Skia | BSD-3-Clause |
 | Everything vendored beneath them | see `LICENSE.engine` |
 | Roboto (`Roboto-Regular.ttf`, shipped in the engine artifact) | Apache-2.0 |
+| Roboto Mono (`RobotoMono-Regular.ttf`, shipped in the engine artifact) | Apache-2.0 |
+| Noto Emoji (`NotoEmoji-Regular.ttf`, shipped in the engine artifact) | SIL Open Font License 1.1, `assets/fonts/OFL.txt` |
 | VitaSDK headers and stub libraries | see the VitaSDK distribution; not redistributed here |
 
 This project vendors no third-party source. `third_party/` is checked out by

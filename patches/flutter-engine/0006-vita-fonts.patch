@@ -55,18 +55,50 @@ index 142a19de..8ca28bc7 100644
    } else {
      sources += [ "src/txt/platform.cc" ]
    }
+diff --git a/engine/src/flutter/txt/src/skia/paragraph_builder_skia.cc b/engine/src/flutter/txt/src/skia/paragraph_builder_skia.cc
+index c611b5bd..964df5dc 100644
+--- a/engine/src/flutter/txt/src/skia/paragraph_builder_skia.cc
++++ b/engine/src/flutter/txt/src/skia/paragraph_builder_skia.cc
+@@ -146,6 +146,26 @@ skt::ParagraphStyle ParagraphBuilderSkia::TxtToSkia(const ParagraphStyle& txt) {
+ skt::TextStyle ParagraphBuilderSkia::TxtToSkia(const TextStyle& txt) {
+   skt::TextStyle skia;
+ 
++#if defined(__vita__)
++  // No hinting on this port, and it is not a quality trade.
++  //
++  // skparagraph defaults fHinting to kSlight and nothing in Flutter overrides
++  // it. Slight still runs FreeType's *autohinter* for any font with no
++  // bytecode program, and the emoji font this port ships -- Noto Emoji, see
++  // assets/fonts/README.md -- has no `fpgm`, `prep` or `cvt `, so every emoji
++  // glyph was being autohinted on a 444 MHz CPU.
++  //
++  // Measured on 2026-08-29: with autohinting on, keklist's emoji grid took a
++  // data abort inside af_glyph_hints_reload -- a null dereference in the
++  // autohinter itself -- and emoji paragraphs cost about 1000 us each warm
++  // against 467 us for ordinary text.
++  //
++  // Hinting is a small-size legibility trick for LCD text, and it buys least
++  // on a 220 ppi panel drawn at a 0.5 pixel ratio. Turning it off costs
++  // nothing visible here and takes the autohinter out of the frame entirely.
++  skia.setFontHinting(SkFontHinting::kNone);
++#endif
++
+   skia.setColor(txt.color);
+   skia.setDecoration(static_cast<skt::TextDecoration>(txt.decoration));
+   skia.setDecorationColor(txt.decoration_color);
 diff --git a/engine/src/flutter/txt/src/txt/platform_vita.cc b/engine/src/flutter/txt/src/txt/platform_vita.cc
 new file mode 100644
-index 00000000..ac73b816
+index 00000000..7fecaf0e
 --- /dev/null
 +++ b/engine/src/flutter/txt/src/txt/platform_vita.cc
-@@ -0,0 +1,183 @@
+@@ -0,0 +1,282 @@
 +// Copyright 2013 The Flutter Authors. All rights reserved.
 +// Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
 +
 +#include "txt/platform.h"
 +
++#include <cctype>
 +#include <mutex>
 +#include <unordered_map>
 +#include <utility>
@@ -137,6 +169,82 @@ index 00000000..ac73b816
 +// general path passes the locale; with a directory this small, coverage is a
 +// better discriminator than either, and honouring the hint would only matter
 +// once two fonts both claim a codepoint.
++// Generic family names, mapped to what app0:/fonts actually holds.
++//
++// SkFontMgr_Custom matches on the family name stored inside the font file, so
++// "monospace" matches nothing, onMatchFamilyStyle returns null, and
++// skparagraph falls back to the default family. Everything that asked for a
++// fixed-pitch face got Roboto, which is proportional: a register dump and a
++// byte column do not line up and nothing says why. The receiver alone asks for
++// "monospace" in six places, and it is the panel you read crash reports in.
++//
++// The wider case is the whole point of the port. An application we did not
++// write names the families its author's platform has -- "sans-serif",
++// "Courier New", "Menlo", "Helvetica" -- and every one of them silently became
++// Roboto.
++//
++// The asked-for name is tried first, so an application that bundles its own
++// "Roboto Mono" wins over this table.
++struct FamilyAlias {
++  const char* asked;
++  const char* shipped;
++};
++
++constexpr FamilyAlias kFamilyAliases[] = {
++    {"monospace", "Roboto Mono"},
++    {"mono", "Roboto Mono"},
++    {"ui-monospace", "Roboto Mono"},
++    {"courier", "Roboto Mono"},
++    {"courier new", "Roboto Mono"},
++    {"menlo", "Roboto Mono"},
++    {"monaco", "Roboto Mono"},
++    {"consolas", "Roboto Mono"},
++    {"sf mono", "Roboto Mono"},
++    {"dejavu sans mono", "Roboto Mono"},
++    {"liberation mono", "Roboto Mono"},
++    {"sans-serif", "Roboto"},
++    {"sans", "Roboto"},
++    {"system-ui", "Roboto"},
++    {"arial", "Roboto"},
++    {"helvetica", "Roboto"},
++    {"helvetica neue", "Roboto"},
++    {"segoe ui", "Roboto"},
++    {"verdana", "Roboto"},
++    {"tahoma", "Roboto"},
++    // No serif face ships. Roboto is the wrong shape for these and is still
++    // the honest answer: it is what they resolve to today, by accident,
++    // through the default family. Naming it here costs nothing and makes the
++    // day a serif face ships a one-line change.
++    {"serif", "Roboto"},
++    {"times", "Roboto"},
++    {"times new roman", "Roboto"},
++    {"georgia", "Roboto"},
++};
++
++bool FamilyNameEquals(const char* a, const char* b) {
++  while (*a != '\0' && *b != '\0') {
++    if (std::tolower(static_cast<unsigned char>(*a)) !=
++        std::tolower(static_cast<unsigned char>(*b))) {
++      return false;
++    }
++    a++;
++    b++;
++  }
++  return *a == *b;
++}
++
++const char* AliasFor(const char* familyName) {
++  if (familyName == nullptr) {
++    return nullptr;
++  }
++  for (const FamilyAlias& alias : kFamilyAliases) {
++    if (FamilyNameEquals(familyName, alias.asked)) {
++      return alias.shipped;
++    }
++  }
++  return nullptr;
++}
++
 +class VitaFallbackFontMgr final : public SkFontMgr {
 + public:
 +  explicit VitaFallbackFontMgr(sk_sp<SkFontMgr> delegate)
@@ -154,12 +262,27 @@ index 00000000..ac73b816
 +  }
 +
 +  sk_sp<SkFontStyleSet> onMatchFamily(const char familyName[]) const override {
-+    return delegate_->matchFamily(familyName);
++    // matchFamily is wrapped in emptyOnNull upstream, so an unknown family is
++    // an empty set rather than null. Count it, do not test the pointer.
++    sk_sp<SkFontStyleSet> set = delegate_->matchFamily(familyName);
++    if (set != nullptr && set->count() > 0) {
++      return set;
++    }
++    if (const char* alias = AliasFor(familyName)) {
++      return delegate_->matchFamily(alias);
++    }
++    return set;
 +  }
 +
 +  sk_sp<SkTypeface> onMatchFamilyStyle(const char familyName[],
 +                                       const SkFontStyle& style) const override {
-+    return delegate_->matchFamilyStyle(familyName, style);
++    if (sk_sp<SkTypeface> hit = delegate_->matchFamilyStyle(familyName, style)) {
++      return hit;
++    }
++    if (const char* alias = AliasFor(familyName)) {
++      return delegate_->matchFamilyStyle(alias, style);
++    }
++    return nullptr;
 +  }
 +
 +  sk_sp<SkTypeface> onMatchFamilyStyleCharacter(const char familyName[],
@@ -213,7 +336,14 @@ index 00000000..ac73b816
 +
 +  sk_sp<SkTypeface> onLegacyMakeTypeface(const char familyName[],
 +                                         SkFontStyle style) const override {
-+    return delegate_->legacyMakeTypeface(familyName, style);
++    if (sk_sp<SkTypeface> hit =
++            delegate_->legacyMakeTypeface(familyName, style)) {
++      return hit;
++    }
++    if (const char* alias = AliasFor(familyName)) {
++      return delegate_->legacyMakeTypeface(alias, style);
++    }
++    return nullptr;
 +  }
 +
 + private:
@@ -244,34 +374,3 @@ index 00000000..ac73b816
 +}
 +
 +}  // namespace txt
-diff --git a/engine/src/flutter/txt/src/skia/paragraph_builder_skia.cc b/engine/src/flutter/txt/src/skia/paragraph_builder_skia.cc
-index c611b5bd..964df5dc 100644
---- a/engine/src/flutter/txt/src/skia/paragraph_builder_skia.cc
-+++ b/engine/src/flutter/txt/src/skia/paragraph_builder_skia.cc
-@@ -146,6 +146,26 @@ skt::ParagraphStyle ParagraphBuilderSkia::TxtToSkia(const ParagraphStyle& txt) {
- skt::TextStyle ParagraphBuilderSkia::TxtToSkia(const TextStyle& txt) {
-   skt::TextStyle skia;
- 
-+#if defined(__vita__)
-+  // No hinting on this port, and it is not a quality trade.
-+  //
-+  // skparagraph defaults fHinting to kSlight and nothing in Flutter overrides
-+  // it. Slight still runs FreeType's *autohinter* for any font with no
-+  // bytecode program, and the emoji font this port ships -- Noto Emoji, see
-+  // assets/fonts/README.md -- has no `fpgm`, `prep` or `cvt `, so every emoji
-+  // glyph was being autohinted on a 444 MHz CPU.
-+  //
-+  // Measured on 2026-08-29: with autohinting on, keklist's emoji grid took a
-+  // data abort inside af_glyph_hints_reload -- a null dereference in the
-+  // autohinter itself -- and emoji paragraphs cost about 1000 us each warm
-+  // against 467 us for ordinary text.
-+  //
-+  // Hinting is a small-size legibility trick for LCD text, and it buys least
-+  // on a 220 ppi panel drawn at a 0.5 pixel ratio. Turning it off costs
-+  // nothing visible here and takes the autohinter out of the frame entirely.
-+  skia.setFontHinting(SkFontHinting::kNone);
-+#endif
-+
-   skia.setColor(txt.color);
-   skia.setDecoration(static_cast<skt::TextDecoration>(txt.decoration));
-   skia.setDecorationColor(txt.decoration_color);

@@ -161,6 +161,10 @@ cp "$ENGINE_SRC/flutter/txt/third_party/fonts/Roboto-Regular.ttf" "$STAGE/data/"
 # build covering Unicode 9, whose CBDT bitmaps cost 4550 us per emoji paragraph
 # against 424 us for text. assets/fonts/README.md has the measurements.
 cp "$ROOT/assets/fonts/NotoEmoji-Regular.ttf" "$STAGE/data/"
+# Roboto Mono, Apache-2.0, so that fontFamily: 'monospace' has something to
+# resolve to. Without it the alias table in platform_vita.cc points at a family
+# nobody shipped, and every fixed-pitch request falls back to Roboto again.
+cp "$ROOT/assets/fonts/RobotoMono-Regular.ttf" "$STAGE/data/"
 
 # The platform dill, built from *our* Dart SDK rather than stock Flutter's.
 #
