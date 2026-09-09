@@ -2,7 +2,7 @@
 """Write the sce_sys/package/head.bin a fresh title id needs to be promoted.
 
     ./tools/make-head-bin.py <titleid> -o head.bin
-    ./tools/make-head-bin.py FVTA00005 --content-id EP9000-FVTA00005_00-...
+    ./tools/make-head-bin.py FVTA00002 --content-id EP9000-FVTA00002_00-...
 
 The promoter will install an extracted .vpk into any directory it is given, but
 it refuses one without a package header. Measured on 2026-08-31, with the same
@@ -109,7 +109,7 @@ def verify(head: bytes) -> bool:
 def main() -> int:
     here = __file__.rsplit("/", 1)[0]
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    ap.add_argument("titleid", nargs="?", help="nine characters, e.g. FVTA00005")
+    ap.add_argument("titleid", nargs="?", help="nine characters, e.g. FVTA00002")
     ap.add_argument("-o", "--output", default="head.bin")
     ap.add_argument("--template", default=f"{here}/pkg/head-template.bin")
     ap.add_argument("--content-id", help="override the derived content id")

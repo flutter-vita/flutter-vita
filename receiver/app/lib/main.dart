@@ -172,20 +172,11 @@ class _Header extends StatelessWidget {
     return 'Waiting';
   }
 
-  /// Which of the two receiver slots this process is. They share port 1341
-  /// and take turns, so the address alone does not say which build is up, and
-  /// the answer decides which bubble to open when one of them is broken.
-  String get _slot => switch (state.self) {
-        'FVTA00001' => 'slot A',
-        'FVTA00005' => 'slot B',
-        final id => id,
-      };
-
   /// One line of everything a host needs to reach this console.
   String get _line {
     final bits = <String>[];
     bits.add(state.ip.isEmpty ? 'no address' : '${state.ip}:${state.port}');
-    bits.add(_slot);
+    bits.add(state.self);
     if (mdns.announced < 0) {
       bits.add('name unknown');
     } else if (mdns.announced == 0) {

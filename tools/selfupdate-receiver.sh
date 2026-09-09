@@ -4,48 +4,31 @@
 #   ./tools/selfupdate-receiver.sh                    build and install
 #   ./tools/selfupdate-receiver.sh path/to.vpk        install a built one
 #
-#   --slot a|b      force the destination slot (default: the one not running)
-#   --full          promote the whole vpk instead of copying changed files
-#   --port N        the port to talk to      (default 1341)
-#   --host NAME     the console              (default flutter-vita.local)
-#   --no-build      require the vpk argument
-#
-# ## Two slots
+#   --title-id ID     which receiver to replace (default FVTA00001)
+#   --updater ID      the updater's title id    (default FVTA00009)
+#   --keep-updater    leave the updater installed
+#   --remove-updater  delete it afterwards (the default)
+#   --full            stage every file, not only the ones that changed
+#   --port N          the port to talk to       (default 1341)
+#   --host NAME       the console               (default flutter-vita.local)
+#   --build-port N    the port to build for     (default: build-receiver.sh's)
+#   --no-build        require the vpk argument
 #
 # A running title cannot write its own directory. ux0:app/<self> is the
-# read-only app0: mount, and that covers the whole slot: a `put` of a new file
-# into it returns ERR open, not just a refusal to overwrite eboot.bin. So a
-# receiver can never install itself, and something else has to do the write.
+# read-only app0: mount, and that covers the whole slot: `put 6
+# ux0:app/FVTA00001/wtest.txt` answers ERR open, so it is not only eboot.bin
+# that is protected. The receiver is therefore the one thing the receiver
+# cannot install, and four steps go around it:
 #
-# That something else is the other receiver's slot. FVTA00001 and FVTA00005
-# both hold a receiver, both listen on 1341, and they take turns:
+#   1. put the files that changed into ux0:data/flutter-vita/receiver-update
+#   2. launch FVTA00009, a 50 KB app with no engine whose only job is to copy
+#      that tree over ux0:app/<target> and launch the target back
+#   3. wait for the new receiver
+#   4. take FVTA00009 back off the card
 #
-#   A running  ->  write the build into B  ->  launch B  ->  B running
-#   B running  ->  write the build into A  ->  launch A  ->  A running
-#
-# The two slots run the same eboot.bin; the receiver reads its own title id at
-# startup rather than having it compiled in. So switching slots regenerates
-# param.sfo instead of relinking the engine (9 seconds, not three minutes), and
-# a deploy of an unchanged build transfers nothing at all.
-#
-# One change of application per update, which is the least the shell can do:
-# new code needs a new process. About five seconds, most of it the receiver's
-# own start.
-#
-# ## What this replaces
-#
-# FVTA00009, a 50 KB application whose only job was to copy a staged payload
-# over ux0:app/FVTA00001 while the receiver was not running. It cost two
-# changes of application and a full 15 MB copy on the card, about thirteen
-# seconds of LiveArea, and it was one stale binary away from silently applying
-# nothing -- which it did, three deploys in a row, on 2026-09-08.
-#
-# ## Rescue
-#
-# The slot that is not running is the rescue, and it is a complete receiver
-# that worked rather than a saved eboot. If a new build boots into nothing,
-# open the other bubble from the LiveArea: "Flutter Vita Receiver A" or
-# "Flutter Vita Receiver B". The panel's title line says which one is up.
+# The updater keeps the eboot it replaces in receiver-backup. If the new build
+# boots into nothing, launch "Flutter Receiver Updater" holding L to restore
+# it -- which is why step 4 is the last thing and not the first.
 set -euo pipefail
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
@@ -55,31 +38,54 @@ ROOT="$(cd "$HERE/.." && pwd)"
 # and this console's address changes whenever its Wi-Fi does.
 HOST="${VITA_HOST:-flutter-vita.local}"
 PORT="${RECEIVER_PORT:-1341}"
-SLOT_A="FVTA00001"
-SLOT_B="FVTA00005"
-DEST=""
+TITLE_ID="FVTA00001"
+UPDATER="FVTA00009"
 BUILD=1
 FULL=0
 VPK=""
+# The port to reach the running receiver on and the port to compile into the new
+# one are different numbers whenever a scratch receiver is doing the install.
+# They were one option for about ten minutes, which built FVTA00001 to listen
+# on the scratch receiver's port.
+BUILD_PORT=""
+UPDATER_VPK="$ROOT/receiver/updater/build/flutter_vita_updater.vpk"
+
+# The updater comes back down after every update.
+#
+# It is scaffolding: a bubble that does exactly one thing and does it
+# destructively, and every one left behind is a way to overwrite the receiver
+# by accident. Deleting it used to cost a visible restart, because the receiver
+# relaunched itself afterwards and lost the race to the shell. It does not
+# relaunch any more -- see after_delete in receiver/src/receiver_dev.c -- so the
+# delete happens with the receiver on screen throughout.
+#
+# --keep-updater when you are chasing a failing update and the cost of
+# reinstalling it between attempts is the thing you are paying.
+KEEP_UPDATER=0
 
 while [ $# -gt 0 ]; do
   case "$1" in
-    --slot)
-      case "$2" in
-        a|A) DEST="$SLOT_A" ;;
-        b|B) DEST="$SLOT_B" ;;
-        *) echo "--slot takes a or b" >&2; exit 2 ;;
-      esac
-      shift 2 ;;
+    --title-id) TITLE_ID="$2"; shift 2 ;;
+    --updater)  UPDATER="$2"; shift 2 ;;
+    --keep-updater) KEEP_UPDATER=1; shift ;;
+    --remove-updater) KEEP_UPDATER=0; shift ;;
     --full)     FULL=1; shift ;;
-    --port)     PORT="$2"; shift 2 ;;
+    --port)       PORT="$2"; shift 2 ;;
+    --build-port) BUILD_PORT="$2"; shift 2 ;;
     --host)     HOST="$2"; shift 2 ;;
     --no-build) BUILD=0; shift ;;
-    -h|--help)  sed -n '2,48p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    -h|--help)  sed -n '2,32p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
     -*) echo "unknown option: $1" >&2; exit 2 ;;
     *)  VPK="$1"; BUILD=0; shift ;;
   esac
 done
+
+STAGE="ux0:data/flutter-vita/receiver-update"
+# Not inside ux0:app/$TITLE_ID. That is the running receiver's own slot, the
+# read-only app0: mount this whole script exists to work around, and putting
+# the manifest there failed with ERR open on the first run that tried it.
+# ux0:data is ordinary storage the receiver writes freely.
+MANIFEST_PATH="ux0:data/flutter-vita/$TITLE_ID.payload.sha"
 
 say() { printf '%s\n' "$2" | nc -w "${3:-30}" "$HOST" "$1"; }
 
@@ -87,9 +93,9 @@ say() { printf '%s\n' "$2" | nc -w "${3:-30}" "$HOST" "$1"; }
 #
 # Measured 2026-09-09: `nc flutter-vita.local 1341` takes 5.12 s, `nc` against
 # the address it resolves to takes 0.08 s. The whole difference is getaddrinfo
-# asking mDNSResponder, and it is paid once per connection -- so a promote,
-# which opens about sixty of them, spends five minutes resolving one name sixty
-# times.
+# asking mDNSResponder, and it is paid once per connection -- so staging sixty
+# files spends five minutes resolving one name sixty times. That was the
+# largest cost in a deploy, and it hid behind a `| sed` that buffered.
 #
 # The name is still how you address the console: its lease changes whenever its
 # Wi-Fi does, which is often. It does not change during one run of one script,
@@ -113,73 +119,9 @@ except OSError:
 }
 resolve_once
 
-# ----------------------------------------------------------- which slot is up
-#
-# The far end has to be a receiver, not an app that happens to hold the port.
-# Its pong names itself; anything else and this would be putting a receiver's
-# eboot into whatever answered.
-PONG="$(say "$PORT" ping 15 || true)"
-case "$PONG" in
-  pong\ receiver*) ;;
-  *) echo "!! no receiver on $HOST:$PORT (got '${PONG:-nothing}')" >&2
-     echo "   open a receiver bubble, or pass --port" >&2; exit 1 ;;
-esac
-
-# "pong receiver <app slot> <port> <own slot>". The fourth field arrived with
-# A/B; a receiver built before it answers three, and every receiver built
-# before it lives in A.
-RUNNING="$(printf '%s\n' "$PONG" | awk '/^pong receiver/ { print $5 }')"
-[ -n "$RUNNING" ] || RUNNING="$SLOT_A"
-
-if [ -z "$DEST" ]; then
-  case "$RUNNING" in
-    "$SLOT_A") DEST="$SLOT_B" ;;
-    "$SLOT_B") DEST="$SLOT_A" ;;
-    *) echo "!! $RUNNING is neither $SLOT_A nor $SLOT_B." >&2
-       echo "   That is a scratch or hand-built receiver. Pass --slot a or b" >&2
-       echo "   to say where the new build should go." >&2; exit 1 ;;
-  esac
-fi
-[ "$DEST" != "$RUNNING" ] || {
-  echo "!! $DEST is the slot that is running, and it cannot write itself." >&2
-  echo "   Drop --slot and let it pick the other one." >&2; exit 1; }
-
-case "$DEST" in
-  "$SLOT_A") SLOT_ARG="a" ;;
-  *)         SLOT_ARG="b" ;;
-esac
-
-echo "==> $RUNNING is up; the new build goes to $DEST"
-
-if [ "$BUILD" -eq 1 ]; then
-  "$HERE/build-receiver.sh" --slot "$SLOT_ARG"
-  VPK="$ROOT/receiver/app/build/vita/flutter_vita_receiver.vpk"
-fi
-[ -f "$VPK" ] || { echo "no vpk at ${VPK:-<none>}" >&2; exit 1; }
-
-WORK="$(mktemp -d)"
-SHA="$WORK.sha"
-OLDSHA="$WORK.old"
-trap 'rm -rf "$WORK" "$SHA" "$OLDSHA"' EXIT
-unzip -q "$VPK" -d "$WORK"
-[ -s "$WORK/eboot.bin" ] || { echo "!! no eboot.bin in $VPK" >&2; exit 1; }
-
-# eboot.bin is the same file for both slots -- the receiver reads its own title
-# id at startup -- so what makes this vpk slot-specific is param.sfo, and
-# param.sfo is exactly what a promote writes. Sending the wrong one produces a
-# title whose id, name and bubble belong to the other slot.
-BUILT_FOR="$(strings "$WORK/sce_sys/param.sfo" 2>/dev/null \
-  | grep -m1 -oE '^[A-Z]{4}[0-9]{5}$' || true)"
-[ "$BUILT_FOR" = "$DEST" ] || {
-  echo "!! $(basename "$VPK") was built for ${BUILT_FOR:-nothing}, and this" >&2
-  echo "   update goes to $DEST. Rebuild it:" >&2
-  echo "     ./tools/build-receiver.sh --slot $SLOT_ARG" >&2; exit 1; }
-
-# The elapsed column is not decoration. On 2026-09-08 every put took about
-# five seconds whatever its size -- two bytes cost the same as a hundred
-# kilobytes -- and sixty files of that is five minutes of a deploy spent on
-# something other than moving data. The accept loop polls at 30 ms, so the
-# floor is not the receiver's. Print it and the next run says where it went.
+# The elapsed column is not decoration. It is what found the mDNS cost above:
+# a 1.4 KB manifest took the same five seconds as a 12 MB eboot, which is not
+# a shape that transfer time can produce.
 put() {  # <local> <device path>
   local size; size=$(wc -c <"$1" | tr -d ' ')
   # `put 0` is refused by the dev server, and this is the second guard on the
@@ -189,123 +131,194 @@ put() {  # <local> <device path>
   local t0; t0=$(date +%s)
   { printf 'put %s %s\n' "$size" "$2"; cat "$1"; } | nc -w 300 "$HOST" "$PORT" \
     | grep -q OK || { echo "!! put failed: $2" >&2; return 1; }
-  printf '    %-52s %9s B  %3ss\n' "$2" "$size" "$(( $(date +%s) - t0 ))"
+  printf '    %-52s %9s B  %3ss\n' "${2#"$STAGE"/files/}" "$size" \
+    "$(( $(date +%s) - t0 ))"
 }
 
-# What belongs to the *build*, and so gets copied.
-#
-# sce_sys/param.sfo and sce_sys/package/ are the installed title's identity:
-# its id, its name, the package header the promoter wrote. Writing a build's
-# param.sfo over a slot's is how a title stops being itself. A promote is the
-# only thing allowed to touch them, which is also why --full is the way to
-# change a bubble's name.
+if [ "$BUILD" -eq 1 ]; then
+  set -- --title-id "$TITLE_ID"
+  if [ -n "$BUILD_PORT" ]; then set -- "$@" --port "$BUILD_PORT"; fi
+  "$HERE/build-receiver.sh" "$@"
+  VPK="$ROOT/receiver/app/build/vita/flutter_vita_receiver.vpk"
+fi
+[ -f "$VPK" ] || { echo "no vpk at ${VPK:-<none>}" >&2; exit 1; }
+
+# The far end has to be a receiver, not an app that happens to hold the port.
+# Its pong names itself; anything else and this would be putting a receiver's
+# eboot into whatever answered.
+PONG="$(say "$PORT" ping 15 || true)"
+case "$PONG" in
+  pong\ receiver*) ;;
+  *) echo "!! no receiver on $HOST:$PORT (got '${PONG:-nothing}')" >&2
+     echo "   open the receiver, or pass --port" >&2; exit 1 ;;
+esac
+
+WORK="$(mktemp -d)"
+SHA="$WORK.sha"
+OLDSHA="$WORK.old"
+trap 'rm -rf "$WORK" "$SHA" "$OLDSHA"' EXIT
+unzip -q "$VPK" -d "$WORK"
+[ -s "$WORK/eboot.bin" ] || { echo "!! no eboot.bin in $VPK" >&2; exit 1; }
+
+# sce_sys/param.sfo and sce_sys/package/ are the *installed* title's identity:
+# its id, its name, the package header the promoter wrote. The payload is a
+# build of the receiver, which may have been built for a different slot, and
+# writing its param.sfo over FVTA00001's is how a title stops being itself.
+# The LiveArea art is not identity and is copied.
 PAYLOAD="$( cd "$WORK" && find . -type f \
     ! -name param.sfo ! -path './sce_sys/package/*' \
     | sed 's|^\./||' | sort )"
 ( cd "$WORK" && printf '%s\n' "$PAYLOAD" | xargs shasum -a 256 ) > "$SHA"
-MANIFEST="ux0:app/$DEST/.payload.sha"
 
-# ------------------------------------------------------- promote or copy over
+# ------------------------------------------------------------- changed only
 #
-# A slot that does not exist has to be promoted: `put` writes files and cannot
-# register a title with the shell. Promoting also rewrites param.sfo, which is
-# the only way the bubble's name changes, so --full is the way to rename one.
-EXISTS=0
-case "$(say "$PORT" "stat ux0:app/$DEST/eboot.bin" 20 || true)" in
-  ERR*|'') ;;
-  *) EXISTS=1 ;;
-esac
-
-if [ "$EXISTS" -eq 0 ] || [ "$FULL" -eq 1 ]; then
-  [ "$EXISTS" -eq 1 ] || echo "==> $DEST does not exist yet"
-  "$HERE/install-vpk.sh" "$VPK" --host "$HOST" --port "$PORT" \
-    --title-id "$DEST" --no-launch | sed 's/^/    /'
-  put "$SHA" "$MANIFEST"
-else
-  # ------------------------------------------------------------- changed only
-  #
-  # The payload is about 15 MB and roughly 12 of those are icudtl.dat and the
-  # fonts, which change when the pinned engine changes and never otherwise.
-  # Sending them on every deploy was most of the wait.
-  #
-  # What is on the card is recorded in the card's own copy of the manifest,
-  # written last and only after every file has landed. No manifest, or a
-  # transfer that died halfway, and the next run sends everything.
-  : > "$OLDSHA"
-  case "$(say "$PORT" "stat $MANIFEST" 20 || true)" in
-    ERR*|'') echo "==> no manifest in $DEST; sending everything" ;;
-    *) say "$PORT" "get $MANIFEST" 60 > "$OLDSHA" || : > "$OLDSHA" ;;
+# The payload is about 15 MB and roughly 3 of those are icudtl.dat and the
+# fonts, which change when the pinned engine changes and never otherwise. The
+# updater copies what the manifest lists and nothing else, so staging only the
+# files that differ shortens both halves of the update at once.
+#
+# What the console already holds is recorded in a manifest this script writes,
+# last, and only after the update has been confirmed. No manifest, or a run
+# that died halfway, and the next one stages everything.
+: > "$OLDSHA"
+if [ "$FULL" -eq 0 ]; then
+  case "$(say "$PORT" "stat $MANIFEST_PATH" 20 || true)" in
+    ERR*|'') echo "==> no manifest for $TITLE_ID; staging everything" ;;
+    *) say "$PORT" "get $MANIFEST_PATH" 60 > "$OLDSHA" || : > "$OLDSHA" ;;
   esac
-
-  # Whole lines, so a file counts as unchanged only when its sha and its path
-  # both match.
-  CHANGED="$(awk 'NR==FNR { seen[$0]=1; next } !($0 in seen) { print $2 }' \
-      "$OLDSHA" "$SHA")"
-
-  if [ -z "$CHANGED" ]; then
-    # Nothing to send and nothing to record: the manifest on the card is the
-    # one this run just recomputed. Writing it back is a round trip that
-    # changes no bytes, which is the whole cost of a no-op deploy.
-    echo "==> $DEST already holds this build"
-    SKIP_MANIFEST=1
-  else
-    echo "==> $(printf '%s\n' "$CHANGED" | wc -l | tr -d ' ') changed file(s) -> $DEST"
-    # eboot.bin last. Everything else is an asset the old binary can also read,
-    # so an interrupted run leaves a receiver that still starts, and the file
-    # that decides which build runs is written when the transfer has already
-    # proved itself over 3 MB of fonts.
-    for rel in $(printf '%s\n' "$CHANGED" | grep -vx 'eboot.bin'); do
-      put "$WORK/$rel" "ux0:app/$DEST/$rel"
-    done
-    if printf '%s\n' "$CHANGED" | grep -qx 'eboot.bin'; then
-      put "$WORK/eboot.bin" "ux0:app/$DEST/eboot.bin"
-    fi
-  fi
-
-  # Read the eboot back before believing any of it. `put` renames only after
-  # the whole file lands, so a wrong size means the card wrote something other
-  # than what was sent.
-  WANT="$(wc -c <"$WORK/eboot.bin" | tr -d ' ')"
-  GOT="$(say "$PORT" "stat ux0:app/$DEST/eboot.bin" 20 | awk '{ print $1 }')"
-  [ "$WANT" = "$GOT" ] || {
-    echo "!! ux0:app/$DEST/eboot.bin is ${GOT:-nothing} B, sent $WANT B" >&2
-    echo "   $DEST is half written. Do not launch it; run with --full." >&2
-    exit 1; }
-
-  # Last, so that anything above going wrong leaves a manifest that no longer
-  # describes the slot and the next run resends the lot.
-  [ "${SKIP_MANIFEST:-0}" -eq 1 ] || put "$SHA" "$MANIFEST"
 fi
 
-# ------------------------------------------------------------------ hand over
-echo "==> handing over to $DEST"
-say "$PORT" "launch $DEST" 20 | sed 's/^/    /' || true
+# Whole lines, so a file counts as unchanged only when its sha and its path
+# both match.
+#
+# The old manifest is read in BEGIN rather than as awk's first argument. The
+# NR==FNR idiom for "am I still on the first file" is a lie when that file is
+# empty: awk reads no records from it, NR never gets ahead of FNR, and every
+# line of the *second* file is treated as a line of the first. The symptom is
+# a run with no manifest at all reporting that the console already holds the
+# build, which is precisely backwards.
+FILES="$(awk -v old="$OLDSHA" '
+  BEGIN { while ((getline line < old) > 0) seen[line] = 1 }
+  !($0 in seen) { print $2 }' "$SHA")"
 
-echo "==> waiting for $DEST on $HOST:$PORT"
-for _ in $(seq 1 30); do
+# The manifest lives beside the slot rather than in it, so nothing stops
+# something else replacing the receiver and leaving a manifest that describes a
+# build no longer there -- install-vpk.sh --replace, or one VitaShell install.
+# The eboot's size is the cheapest disagreement to notice, and it is the file
+# whose staleness matters.
+if [ -s "$OLDSHA" ] && ! printf '%s\n' "$FILES" | grep -qx 'eboot.bin'; then
+  WANT="$(wc -c <"$WORK/eboot.bin" | tr -d ' ')"
+  GOT="$(say "$PORT" "stat ux0:app/$TITLE_ID/eboot.bin" 20 | awk '{ print $1 }')"
+  if [ "$WANT" != "$GOT" ]; then
+    echo "==> the manifest says eboot.bin is current, but $TITLE_ID has" \
+         "${GOT:-nothing} B and this build is $WANT B; staging everything"
+    FILES="$PAYLOAD"
+  fi
+fi
+
+if [ -z "$FILES" ]; then
+  echo "==> $TITLE_ID already holds this build; nothing to do"
+  exit 0
+fi
+
+echo "==> $(basename "$VPK") -> $TITLE_ID via $UPDATER"
+echo "    $(printf '%s\n' "$FILES" | wc -l | tr -d ' ') of" \
+     "$(printf '%s\n' "$PAYLOAD" | wc -l | tr -d ' ') files changed"
+
+# The updater has to exist before the receiver is asked to hand over to it. A
+# launch of a title that is not installed is a silent no-op, and the console
+# would sit on the receiver with a staged update it never applies.
+#
+# Installing it here rather than telling you to go and do it: the updater is
+# scaffolding, and asking a human to put scaffolding up by hand before every
+# receiver change is how the receiver stops getting changed.
+if ! say "$PORT" "exist $UPDATER" 20 | grep -q "res=3"; then
+  echo "==> installing $UPDATER"
+  [ -f "$UPDATER_VPK" ] || {
+    echo "!! no updater vpk at $UPDATER_VPK" >&2
+    echo "   cmake --build receiver/updater/build" >&2; exit 1; }
+  "$HERE/install-vpk.sh" "$UPDATER_VPK" --host "$HOST" --port "$PORT" \
+    --no-launch | sed 's/^/    /'
+fi
+
+echo "==> staging"
+say "$PORT" "rmtree $STAGE" 120 | sed 's/^/    /'
+for rel in $FILES; do put "$WORK/$rel" "$STAGE/files/$rel"; done
+
+# Written last, on purpose. The updater does nothing without it, so a transfer
+# that dies halfway leaves a half-copied payload that is never applied.
+MANIFEST="$WORK/manifest.txt"
+{ printf 'target %s\n' "$TITLE_ID"
+  printf '%s\n' "$FILES" | sed 's/^/file /'; } > "$MANIFEST"
+put "$MANIFEST" "$STAGE/manifest.txt"
+
+echo "==> handing over to $UPDATER"
+say "$PORT" "launch $UPDATER" 20 | sed 's/^/    /' || true
+
+echo "==> waiting for $TITLE_ID on $HOST:$PORT"
+BACK=""
+for _ in $(seq 1 40); do
+  sleep 2
+  BACK="$(say "$PORT" ping 5 2>/dev/null || true)"
+  case "$BACK" in pong\ receiver*) break ;; *) BACK="" ;; esac
+done
+[ -n "$BACK" ] || {
+  echo "!! it never came back." >&2
+  echo "   Launch 'Flutter Receiver Updater' from the LiveArea holding L to" >&2
+  echo "   restore the eboot that was running." >&2
+  exit 1; }
+echo "    $BACK"
+
+# A receiver answering is not proof the update was applied.
+#
+# The updater removes the manifest as its last act, and only after every copy
+# has succeeded. If the manifest survives, the updater ran and decided there
+# was nothing to do -- which is exactly what a stale updater does. On
+# 2026-09-08 one built before the loader/receiver rename kept looking in
+# ux0:data/flutter-vita/loader-update, found nothing, printed "nothing staged"
+# and launched the receiver straight back. Three updates in a row reported
+# success and changed no bytes.
+if say "$PORT" "ls $STAGE" 20 | grep -q manifest.txt; then
+  echo "!! the updater did not apply the payload: $STAGE/manifest.txt is" >&2
+  echo "   still there, and it is removed only on success." >&2
+  echo "   Most likely $UPDATER is older than the staging paths:" >&2
+  echo "     rm -rf receiver/updater/build" >&2
+  echo "     cmake -S receiver/updater -B receiver/updater/build \\" >&2
+  echo "       -DCMAKE_TOOLCHAIN_FILE=\$VITASDK/share/vita.toolchain.cmake" >&2
+  echo "     cmake --build receiver/updater/build" >&2
+  exit 1
+fi
+
+# Only now, because a manifest that describes the slot before the update has
+# been confirmed is a manifest that makes the next run skip a file that never
+# landed.
+put "$SHA" "$MANIFEST_PATH"
+
+if [ "$KEEP_UPDATER" -eq 1 ]; then
+  echo
+  echo "$TITLE_ID updated. $UPDATER left installed; hold L on it to roll back."
+  exit 0
+fi
+
+echo "==> removing $UPDATER"
+say "$PORT" "delete $UPDATER" 60 | sed 's/^/    /' || true
+# The receiver stays up through a delete now -- see after_delete in
+# receiver/src/receiver_dev.c. It used to relaunch itself here, which on
+# 2026-09-08 left the console on the LiveArea with nothing answering. This
+# still waits, because the delete goes through the promoter on its own thread
+# and the reply arrives before the worker has finished.
+for _ in $(seq 1 20); do
   sleep 2
   BACK="$(say "$PORT" ping 5 2>/dev/null || true)"
   case "$BACK" in
     pong\ receiver*)
-      UP="$(printf '%s\n' "$BACK" | awk '/^pong receiver/ { print $5 }')"
-      [ -n "$UP" ] || UP="$SLOT_A"
-      if [ "$UP" = "$DEST" ]; then
-        echo "    $BACK"
-        echo
-        echo "$DEST is up. $RUNNING is the rescue: open its bubble if this build"
-        echo "turns out to be broken."
-        exit 0
-      fi
-      # The old one answering again means the launch was refused and the shell
-      # put us back. hand_over retries four times before it gives up, so this
-      # is a real refusal rather than the first-attempt race.
-      echo "!! $UP answered, not $DEST: the launch was refused." >&2
-      echo "   printf 'log\\n' | nc $HOST $PORT | tail -20" >&2
-      exit 1 ;;
+      if say "$PORT" "exist $UPDATER" 20 | grep -q "res=3"; then continue; fi
+      echo "    $BACK"
+      echo
+      echo "$TITLE_ID updated and $UPDATER removed."
+      exit 0 ;;
   esac
 done
-
-echo "!! nothing came back on $HOST:$PORT after 60s." >&2
-echo "   The console is most likely on the LiveArea. Open the bubble for" >&2
-echo "   $RUNNING; its slot was not touched and it still works." >&2
+echo "!! $UPDATER is still there, or the receiver stopped answering." >&2
+echo "   printf 'log\\n' | nc $HOST $PORT | tail -20" >&2
 exit 1

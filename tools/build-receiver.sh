@@ -1,28 +1,11 @@
 #!/usr/bin/env bash
 # Build the receiver into a .vpk.
 #
-#   ./tools/build-receiver.sh                 slot A: FVTA00001, port 1341
-#   ./tools/build-receiver.sh --slot b        slot B: FVTA00005, port 1341
-#   ./tools/build-receiver.sh --scratch       a throwaway: FVTA00004, port 1342
+#   ./tools/build-receiver.sh                 the real receiver: FVTA00001, port 1341
+#   ./tools/build-receiver.sh --scratch       a second one: FVTA00004, port 1342
 #
 #   --title-id ID   override the slot
 #   --port N        override the port
-#
-# ## Two slots
-#
-# A running title cannot write its own directory, so a receiver can never
-# install itself. It installs the *other* receiver and hands the console over.
-# A and B take turns, and the one that is not running is the rescue: a whole
-# working install rather than a saved eboot. tools/selfupdate-receiver.sh picks
-# the slot; you rarely pass --slot by hand.
-#
-# Both slots build for port 1341. Only one of them runs at a time, so there is
-# nothing to collide with, and every host tool keeps talking to one number.
-#
-# The slot is *not* compiled in. The receiver reads its own title id at startup
-# (read_self_titleid in receiver/src/receiver_dev.c), so A and B are the same
-# eboot.bin and switching slots regenerates param.sfo rather than relinking the
-# engine. --slot decides what goes in the package, not what goes in the binary.
 #
 # The receiver is an ordinary Flutter-Vita application -- same template, same
 # build script, same snapshot -- plus one translation unit that owns the port
@@ -47,21 +30,14 @@ PIN="$ROOT/receiver/engine-pin.txt"
 # the number is a choice rather than an inheritance.
 TITLE_ID="FVTA00001"
 PORT=1341
-NAME="Flutter Vita Receiver A"
+NAME="Flutter Vita Receiver"
 
 while [ $# -gt 0 ]; do
   case "$1" in
-    --slot)
-      case "$2" in
-        a|A) TITLE_ID="FVTA00001"; NAME="Flutter Vita Receiver A" ;;
-        b|B) TITLE_ID="FVTA00005"; NAME="Flutter Vita Receiver B" ;;
-        *) echo "--slot takes a or b" >&2; exit 2 ;;
-      esac
-      shift 2 ;;
     --scratch)  TITLE_ID="FVTA00004"; PORT=1342; NAME="Flutter Receiver (scratch)"; shift ;;
     --title-id) TITLE_ID="$2"; shift 2 ;;
     --port)     PORT="$2"; shift 2 ;;
-    -h|--help)  sed -n '2,35p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    -h|--help)  sed -n '2,17p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
     *) echo "unknown option: $1" >&2; exit 2 ;;
   esac
 done
@@ -122,4 +98,5 @@ exec "$HERE/build-vita-app.sh" "$ROOT/receiver/app" \
   --extra-source "$ROOT/receiver/src/receiver_dev.c" \
   --no-supervisor \
   --define "RECEIVER_PORT=$PORT" \
+  --define "SELF_TITLEID=\"$TITLE_ID\"" \
   --define "TARGET_TITLEID=\"FVTA00002\""

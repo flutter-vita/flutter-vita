@@ -273,14 +273,25 @@ int main(void) {
     // The eboot about to be replaced is the one that just launched this app,
     // so it is known to boot. That is the whole value of the backup, and it is
     // why it is taken here rather than kept from some earlier build.
+    //
+    // Moved, not copied. Both paths are on ux0, so sceIoRename is a directory
+    // entry and the copy was 12.8 MB of card I/O -- about a quarter of the
+    // time the console spends on the LiveArea during an update, spent
+    // duplicating a file that is about to be overwritten anyway.
+    //
+    // The window this opens is between the rename and the write below, and
+    // during it the slot has no eboot at all. A power cut there leaves a
+    // receiver that will not start, and the backup is still on the card for
+    // the L-trigger path to put back. The copy had the same window in a
+    // different place: it overwrote the live eboot with a partial write.
     sceIoMkdir("ux0:data/flutter-vita", 0777);
     sceIoMkdir(BACKUP_DIR, 0777);
-    printf("\n  backing up the running eboot\n");
+    printf("\n  moving the running eboot aside\n");
     const int have = file_size(dst);
-    const int kept = copy_file(dst, backup);
-    if (kept != have) {
-      printf("  could not back it up (%d of %d, 0x%08X). stopping.\n", kept,
-             have, (unsigned)kept);
+    sceIoRemove(backup);
+    const int moved = sceIoRename(dst, backup);
+    if (moved < 0 || file_size(backup) != have) {
+      printf("  could not move it (0x%08X). stopping.\n", (unsigned)moved);
       hold(15);
       launch(g_target);
     }
@@ -306,8 +317,10 @@ int main(void) {
   // place and the next run redoes the copy, which is the safe direction.
   sceIoRemove(MANIFEST);
 
+  // No hold here. Every second this screen stays up is a second the console
+  // is not the receiver, and the two seconds this used to spend letting you
+  // read "done" are two of the twelve the whole update took.
   printf("\n  done. launching %s\n", g_target);
-  hold(2);
   launch(g_target);
   return 0;
 }
