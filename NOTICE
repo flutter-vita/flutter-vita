@@ -28,6 +28,52 @@ It is taken from the Flutter SDK at the pinned revision — the same sources thi
 project builds — so it describes the components actually linked. The only delta
 is this project's own patches, which are covered by [LICENSE](LICENSE).
 
+## vitaGL and vitaShaRK are LGPL, not BSD
+
+Everything above is BSD-3. Two components are not, and they are linked into
+every `eboot.bin` this toolchain produces, software-path apps included.
+
+| Component | Licence |
+|---|---|
+| [vitaGL](https://github.com/Rinnegatamante/vitaGL) | LGPL-3.0-or-later |
+| [vitaShaRK](https://github.com/Rinnegatamante/vitaShaRK) | LGPL-3.0-or-later |
+
+vitaGL gives us GLES2 over `sceGxm` and vitaShaRK compiles shaders through
+Sony's `libshacccg`. Both are Rinnegatamante's, both ship as static archives,
+and `templates/vita-app/CMakeLists.txt` links them unconditionally.
+
+Section 4 of LGPL-3 allows a combined work with a statically linked library on
+one further condition: whoever conveys the binary must also supply what a
+recipient needs to relink it against a modified version of that library. Object
+files and the link line satisfy that. So does a shared library mechanism, under
+section 4(d)(1), which is why the module route exists in
+[ADR-0018](docs/adr/0018-the-lgpl-obligation-in-every-vpk.md).
+
+**This applies to you if you ship a `.vpk` built with this toolchain.** It is
+not a duty this project can discharge on your behalf, because you are the one
+conveying the binary. Alongside `LICENSE.engine`, ship vitaGL's `COPYING` and
+`COPYING.LESSER`, the vitaGL and vitaShaRK sources at the revisions in
+[VERSIONS.md](VERSIONS.md), the patch series in [patches/vitagl/](patches/vitagl/),
+and your application's object files.
+
+ADR-0018 is measuring whether this stays true. Read it before you build a
+release pipeline around the paragraph above.
+
+## The patch series is not all BSD-3
+
+A patch is a derivative work of the file it changes, so each series under
+[patches/](patches/) carries the licence of the project it patches, not this
+project's. The [LICENSE](LICENSE) at the root covers this repository's own code
+and does not reach them.
+
+| Series | Licence it inherits |
+|---|---|
+| `patches/dart-sdk/`, `patches/flutter-engine/`, `patches/skia/` | BSD-3-Clause |
+| `patches/vitagl/` | LGPL-3.0-or-later |
+| `patches/abseil/` | Apache-2.0 |
+| `patches/boringssl/` | see BoringSSL's own `LICENSE` |
+| `patches/test-apps/` | whatever each application uses; they are unrelated projects |
+
 ## Components
 
 | Component | Licence |
@@ -40,3 +86,5 @@ is this project's own patches, which are covered by [LICENSE](LICENSE).
 This project vendors no third-party source. `third_party/` is checked out by
 tooling and is not committed; the exact revisions are pinned in
 [VERSIONS.md](VERSIONS.md) and the modifications are in [patches/](patches/).
+The patch files themselves are committed, and the table above says what each
+series is licensed under.

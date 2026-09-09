@@ -109,6 +109,11 @@ A small and complete change is better than a large and almost complete change. A
 pull request that corrects one plugin is more useful than one that moves the
 tree around.
 
+We accept your contribution under BSD-3-Clause, the licence in
+[LICENSE](LICENSE). A change to a series in [patches/](patches/) is different:
+it is a derivative of the project it patches and it keeps that project's
+licence. [NOTICE](NOTICE) says which is which.
+
 ## Security
 
 If you find something that looks like a security fault, make a usual issue.
