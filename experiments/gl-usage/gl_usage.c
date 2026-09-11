@@ -41,9 +41,20 @@ static int g_used;
 
 void* __real_vglGetProcAddress(const char* name);
 
+// Defined by gl_shaders.c when it is in the build, and weak so that it is not.
+__attribute__((weak)) void __wrap_glShaderSource(unsigned int, int,
+                                                 const char* const*,
+                                                 const int*);
+
 void* __wrap_vglGetProcAddress(const char* name) {
   void* real = __real_vglGetProcAddress(name);
   if (!real) return real;
+
+  // Skia compiles through the pointer it was handed, so a wrap on the symbol
+  // alone misses every shader. Hand back the dumper rather than a thunk.
+  if (__wrap_glShaderSource && name && strcmp(name, "glShaderSource") == 0) {
+    return (void*)__wrap_glShaderSource;
+  }
 
   // vitaGL answers several names with one function, so match on the target
   // rather than the name. Two thunks for one function would count it twice.
@@ -83,6 +94,10 @@ static void write_report(void) {
 static int reporter(SceSize argc, void* argv) {
   (void)argc;
   (void)argv;
+  // Written once before anything is bound. An empty table on the card and no
+  // table at all are different failures, and the first run could not tell them
+  // apart.
+  write_report();
   for (;;) {
     sceKernelDelayThread(3 * 1000 * 1000);
     write_report();
@@ -93,6 +108,6 @@ static int reporter(SceSize argc, void* argv) {
 __attribute__((constructor)) static void gl_usage_start(void) {
   sceIoMkdir("ux0:data/flutter-vita", 0777);
   const SceUID th =
-      sceKernelCreateThread("gl_usage", reporter, 0x10000100, 0x2000, 0, 0, NULL);
+      sceKernelCreateThread("gl_usage", reporter, 0x10000100, 0x8000, 0, 0, NULL);
   if (th >= 0) sceKernelStartThread(th, 0, NULL);
 }

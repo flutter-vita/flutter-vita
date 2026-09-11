@@ -116,6 +116,54 @@ The vitaGL API proper is five calls: `vglInitExtended`, `vglSetShaderCachePath`,
 `vglSetupRuntimeShaderCompiler`, `vglSwapBuffers`, `vglGetProcAddress`. Seven
 more symbols are counters our own patches added.
 
+### What Skia actually emits, measured
+
+`experiments/gl-usage/gl_shaders.c` wraps `glShaderSource` both ways Skia can
+reach it and appends every shader to disk. One gallery run, 101,380 bytes:
+
+| | |
+|---|---|
+| Shaders compiled | 114 |
+| Distinct shaders among them | **43** |
+| Median size | 556 bytes |
+| Largest | 4,495 bytes |
+
+Every one is `#version 100`. Not one uses `#extension`.
+
+What appears:
+
+| Construct | Shaders using it |
+|---|---|
+| `precision` qualifiers | 114 |
+| `varying`, `sampler2D` | 114 |
+| `uniform` | 103 |
+| `mat2`/`mat3`/`mat4` | 64 |
+| `attribute`, `gl_FragColor`, `gl_Position` | 57 |
+| `texture2D`, always with a bias argument | 44 |
+| arrays | 25 |
+| `for` | 24 |
+| `gl_FragCoord` | 5 |
+| `if` | **1** |
+
+What never appears, in any of the 114: `struct`, `while`, `discard`,
+user-defined functions, `textureSize`, `gl_FrontFacing`, `gl_FragData`,
+`gl_PointSize`, `gl_VertexID`, `gl_InstanceID`, `#extension`.
+
+Read the two lists together. Skia's output is a narrow, repetitive dialect:
+declarations, a straight-line `main`, arithmetic, one texture call shape, and
+occasionally a bounded `for`. It has no functions to inline, no structs to lay
+out, and one branch in the whole set.
+
+Several of vitaGL's translator passes exist for constructs that never arrive
+here. `gl_FrontFacing` has five code sites, `textureSize` has two, and
+`gl_FragData`, `gl_PointSize`, `gl_VertexID` and `gl_InstanceID` have one
+each. All dead for this port.
+
+The `*=` case its author marked `FIXME: *= still not handled` occurs exactly
+once, as `_52_color.xyz *= _52_color.w`. That is a vector scaled by a scalar,
+which Cg accepts unchanged, so the gap does not bite: `vglMul` exists for
+matrix multiplication order and nothing here needs it.
+
 ### The translator is the risk, and it is a text rewriter
 
 `glsl_utils.c` plus the preprocessor is 4,591 lines. It does not parse GLSL. It
