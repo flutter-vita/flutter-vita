@@ -153,6 +153,20 @@ renders an emoji and declares no font for it draws an empty box. That is not a
 gap in the port. No Flutter target promises a glyph the app did not ask for,
 and an emoji font is 1.9 MB that most apps have no use for.
 
+## 7. Your icon is an 8-bit indexed PNG, or the console refuses the vpk
+
+The shell installs `sce_sys/icon0.png` (128x128), `bg0.png` (840x500) and
+`startup.png` (280x158) only as 8-bit indexed PNGs. A 32-bit RGBA icon, which
+is what every image editor exports by default, fails the install with
+`0x8010113D`, from VitaShell and from `install-vpk.sh` alike, and the code says
+nothing about images. The receiver's own first install on a fresh console
+failed this way on 2026-09-11; re-encoding the three files was the whole fix.
+
+The build checks the art at configure time (`tools/check-livearea-art.py`) and
+refuses to produce a vpk it knows the console will refuse, with the one-line
+re-encode in the message. `pngquant` does it, and so does Pillow's
+`quantize(256)`.
+
 ## Two of these numbers moved on 2026-08-25, and why
 
 An earlier version of this page said spans were **38x** cheaper than `Text`

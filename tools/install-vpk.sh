@@ -141,13 +141,15 @@ else
 
   # The LiveArea art is staged nowhere and copied in after the promote.
   #
-  # PromotePkgWithRif validates sce_sys against the package header, and head.bin
-  # is a keyless template describing some other package's file set -- so an
-  # icon0.png the header never heard of is rejected outright, 0x8010113D.
-  # Measured 2026-08-31, both ways.
-  #
-  # The shell reads the art out of ux0:app/<id>/sce_sys, not out of the package,
-  # so putting it there afterwards gives the same result.
+  # The promoter validates the three PNGs in sce_sys and answers 0x8010113D
+  # when they are not 8-bit indexed. On 2026-08-31 ours were 32-bit RGBA, so
+  # staging them failed and leaving them out passed, and this file blamed the
+  # header for it. On 2026-09-11 VitaShell, with its own header, refused the
+  # same art and accepted it re-encoded (tools/check-livearea-art.py now
+  # refuses RGBA at build time). Staging the art with a valid encoding has not
+  # been measured on this path yet, so it still goes in afterwards, which works
+  # either way: the shell reads it out of ux0:app/<id>/sce_sys, not out of the
+  # package.
   echo "==> staging into $STAGE"
   ( cd "$WORK" && find . -type f | sed 's|^\./||' \
       | grep -v -e '^sce_sys/icon0\.png$' -e '^sce_sys/livearea/' | sort ) \

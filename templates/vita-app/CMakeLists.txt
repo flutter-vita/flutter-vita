@@ -38,6 +38,20 @@ endforeach()
 set(VITA_APP_NAME "${APP_NAME}")
 set(LIVEAREA_DIR "${CMAKE_CURRENT_SOURCE_DIR}/livearea" CACHE PATH
     "Directory holding icon0.png, template.xml, bg0.png and startup.png")
+# The promoter takes these PNGs only as 8-bit indexed at their fixed sizes and
+# answers anything else with 0x8010113D, from VitaShell as much as from our own
+# install path. Checked here so the reason reaches the build log.
+find_program(PYTHON3 python3 REQUIRED)
+set(TOOLS_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../../tools" CACHE PATH
+    "The repo's tools/; build-vita-app.sh passes it, a copied template needs it set")
+execute_process(
+  COMMAND "${PYTHON3}" "${TOOLS_DIR}/check-livearea-art.py" "${LIVEAREA_DIR}"
+  RESULT_VARIABLE LIVEAREA_ART_BAD)
+if(LIVEAREA_ART_BAD)
+  message(FATAL_ERROR "LiveArea art in ${LIVEAREA_DIR} will not install; see above.")
+endif()
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
+  "${LIVEAREA_DIR}/icon0.png" "${LIVEAREA_DIR}/bg0.png" "${LIVEAREA_DIR}/startup.png")
 set(VITA_TITLEID  "${TITLE_ID}")
 set(VITA_VERSION  "01.00")
 
@@ -253,7 +267,7 @@ set(VPK_FILES
   # needs this present or it points at nothing.
   FILE "${ENGINE_DIR}/data/RobotoMono-Regular.ttf" fonts/RobotoMono-Regular.ttf
   # Not optional and not decoration. The SIL OFL says the notice and the
-  # licence go with every copy of the font, and all three fonts above are under
+  # licence go with every copy of the font, and both fonts above are under
   # it. See NOTICE.
   FILE "${ENGINE_DIR}/data/OFL.txt" fonts/OFL.txt
   # LiveArea art. Without it the system draws a blank placeholder that looks

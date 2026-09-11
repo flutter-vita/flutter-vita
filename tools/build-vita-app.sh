@@ -334,7 +334,8 @@ cmake -S "${FLUTTER_VITA_TEMPLATE:-$ROOT/templates/vita-app}" -B "$OUT_DIR/cmake
   -DNO_SUPERVISOR="$NO_SUPERVISOR" \
   -DRELEASE="$RELEASE" \
   -DEXTRA_DEFINES="$EXTRA_DEFINES" \
-  -DEXTRA_LINK_OPTIONS="$EXTRA_LINK_OPTIONS" >/dev/null
+  -DEXTRA_LINK_OPTIONS="$EXTRA_LINK_OPTIONS" \
+  -DTOOLS_DIR="$ROOT/tools" >/dev/null
 cmake --build "$OUT_DIR/cmake" -j"$(getconf _NPROCESSORS_ONLN 2>/dev/null || echo 4)"
 
 VPK="$(find "$OUT_DIR/cmake" -name '*.vpk' | head -1)"
