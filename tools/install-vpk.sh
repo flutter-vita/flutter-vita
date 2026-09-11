@@ -150,9 +150,16 @@ else
   # been measured on this path yet, so it still goes in afterwards, which works
   # either way: the shell reads it out of ux0:app/<id>/sce_sys, not out of the
   # package.
+  # The supervisor pair stays out too. PromotePkgWithRif answers 0x80101104
+  # to a package that carries eboot2.bin and sce_sys/param2.sfo, and 0 to the
+  # same package without them; measured 2026-09-11 on a fresh console, the
+  # gallery both ways. The background app was abandoned in ADR-0011 and is
+  # not reachable, so nothing is lost. The first console never showed this
+  # because FVTA00002 there predates the pair and only ever got `--replace`.
   echo "==> staging into $STAGE"
   ( cd "$WORK" && find . -type f | sed 's|^\./||' \
-      | grep -v -e '^sce_sys/icon0\.png$' -e '^sce_sys/livearea/' | sort ) \
+      | grep -v -e '^sce_sys/icon0\.png$' -e '^sce_sys/livearea/' \
+                -e '^eboot2\.bin$' -e '^sce_sys/param2\.sfo$' | sort ) \
     | while read -r rel; do put "$WORK/$rel" "$STAGE/$rel"; done
   say "$PORT" "ls $STAGE" 30 | sed 's/^/    /'
 
