@@ -51,13 +51,17 @@ cd flutter-vita
 ./tools/apply-patches.sh --apply
 ```
 
-Install the receiver on the console one time. After this, the network does
-everything:
+Install the receiver on the console one time. This is the only step that needs
+the console's address, and it needs it once: open VitaShell, press SELECT to
+start its FTP server, and give this script the address it shows.
 
 ```bash
 ./tools/build-receiver.sh
-./tools/install-vpk.sh receiver/app/build/vita/flutter_vita_receiver.vpk
+./tools/bootstrap-receiver.sh 192.168.1.23
 ```
+
+It sends the `.vpk` over, you install it from VitaShell, and after that the
+console is `flutter-vita.local` and the network does everything.
 
 Then use these commands:
 
