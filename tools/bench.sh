@@ -72,6 +72,19 @@ while [ $# -gt 0 ]; do
   esac
 done
 
+# One bench at a time. There is one console, and two of these driving it
+# produce a run that never finishes and a second run that measures the first.
+# On 2026-09-09 that cost an afternoon: the app died between scenes, the GL
+# call counter froze, and the older run reported "never finished" after 6,000 s
+# while the newer one was still trying. Neither number could be used.
+LOCK="${TMPDIR:-/tmp}/flutter-vita-bench.lock"
+if [ -e "$LOCK" ] && kill -0 "$(cat "$LOCK" 2>/dev/null)" 2>/dev/null; then
+  echo "!! a bench is already running (pid $(cat "$LOCK")). One console, one bench." >&2
+  exit 3
+fi
+echo $$ > "$LOCK"
+trap 'rm -f "$LOCK"' EXIT
+
 say() { printf '%s\n' "$2" | nc -w "${3:-20}" "$HOST" "$1" 2>/dev/null; }
 # Write a switch file, through whichever of the two is actually listening.
 #
