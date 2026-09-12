@@ -69,9 +69,13 @@ void* __wrap_vglGetProcAddress(const char* name) {
   return gl_thunks + (unsigned)i * THUNK;
 }
 
+// Written whole under a temporary name and renamed into place. The first
+// version truncated REPORT and rewrote it a line at a time, and the run that
+// stalled on 2026-09-11 was killed by the receiver's watchdog in the middle of
+// one such rewrite, leaving 79 of 114 lines and no way to tell.
 static void write_report(void) {
   const SceUID fd =
-      sceIoOpen(REPORT, SCE_O_WRONLY | SCE_O_CREAT | SCE_O_TRUNC, 0777);
+      sceIoOpen(REPORT ".tmp", SCE_O_WRONLY | SCE_O_CREAT | SCE_O_TRUNC, 0777);
   if (fd < 0) return;
   char line[96];
   int called = 0;
@@ -86,6 +90,8 @@ static void write_report(void) {
     sceIoWrite(fd, line, (SceSize)n);
   }
   sceIoClose(fd);
+  sceIoRemove(REPORT);
+  sceIoRename(REPORT ".tmp", REPORT);
 }
 
 // The report is written on a timer rather than at exit, because the runs that
