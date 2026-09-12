@@ -713,7 +713,13 @@ GL_APICALL const GLubyte* GL_APIENTRY glGetString(GLenum name) {
     case GL_RENDERER: return (const GLubyte*)"fvita_gles2 over sceGxm";
     case GL_VERSION: return (const GLubyte*)"OpenGL ES 2.0 fvita_gles2";
     case GL_SHADING_LANGUAGE_VERSION: return (const GLubyte*)"OpenGL ES GLSL ES 1.00";
-    case GL_EXTENSIONS: return (const GLubyte*)"";
+    // Skia's GrGLCaps takes RGBA8 as a render target format on ES2 only when
+    // this is advertised (otherwise the wrapped display FBO is refused and
+    // nothing draws). It names no entry points. Nothing else is advertised:
+    // every extension Skia asks for by name would send it down a path with
+    // calls this layer does not have, and its fallbacks for an empty string
+    // are all core GLES 2.0.
+    case GL_EXTENSIONS: return (const GLubyte*)"GL_OES_rgb8_rgba8";
     default:
       fvgl_set_error(GL_INVALID_ENUM);
       return NULL;

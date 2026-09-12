@@ -15,6 +15,7 @@
 #   --define K=V      preprocessor define for the extra sources; repeatable
 #   --link-option F   extra linker flag, for measurement builds; repeatable
 #   --release         no dev server, no debug HUD, no bailout, no supervisor
+#   --gl vitagl|gles2 which GL sits under Ganesh; default vitagl (ADR-0019)
 #
 # The app configures itself in pubspec.yaml:
 #
@@ -65,6 +66,9 @@ EXTRA_LINK_OPTIONS=
 # -Ddart.vm.product=true and the bundle with --release, because nothing here has
 # ever built a JIT app.
 RELEASE="OFF"
+# The GL under Ganesh. vitaGL until fvita_gles2 reaches parity (ADR-0019, M4);
+# `gles2` builds gles2/ from source into the app.
+GL_BACKEND="${FLUTTER_VITA_GL:-vitagl}"
 
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -83,6 +87,7 @@ while [ $# -gt 0 ]; do
     # development receiver when the app dies, and a release build is one that has
     # no receiver to relaunch.
     --release)  RELEASE="ON"; NO_SUPERVISOR="ON"; shift ;;
+    --gl)       GL_BACKEND="$2"; shift 2 ;;
     --define) EXTRA_DEFINES="${EXTRA_DEFINES:+$EXTRA_DEFINES;}$2"; shift 2 ;;
     # For measurement builds. experiments/gl-usage needs
     # -Wl,--wrap=vglGetProcAddress and there is no other way in.
@@ -335,6 +340,8 @@ cmake -S "${FLUTTER_VITA_TEMPLATE:-$ROOT/templates/vita-app}" -B "$OUT_DIR/cmake
   -DRELEASE="$RELEASE" \
   -DEXTRA_DEFINES="$EXTRA_DEFINES" \
   -DEXTRA_LINK_OPTIONS="$EXTRA_LINK_OPTIONS" \
+  -DFLUTTER_VITA_GL="$GL_BACKEND" \
+  -DGLES2_DIR="$ROOT/gles2" \
   -DTOOLS_DIR="$ROOT/tools" >/dev/null
 cmake --build "$OUT_DIR/cmake" -j"$(getconf _NPROCESSORS_ONLN 2>/dev/null || echo 4)"
 

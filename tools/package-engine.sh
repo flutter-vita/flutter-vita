@@ -138,6 +138,9 @@ echo "==> stripping debug info"
 arm-vita-eabi-strip --strip-debug "$STAGE/lib/libflutter_engine_vita.a"
 
 cp "$ENGINE_SRC/flutter/shell/platform/embedder/embedder.h" "$STAGE/include/"
+# The five functions the embedder wants from whichever GL the app links
+# (ADR-0019). The template's gl_vitagl.c and gl_gles2.c implement them.
+cp "$ENGINE_SRC/flutter/shell/platform/embedder/flutter_vita_gl.h" "$STAGE/include/"
 
 # The embedder inside the archive calls into the dev server, so the archive has
 # three undefined symbols an app must satisfy:

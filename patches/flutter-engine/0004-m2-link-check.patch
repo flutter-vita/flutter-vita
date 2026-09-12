@@ -71,6 +71,49 @@ index 61abe64a..0beff971 100644
  group("flutter_engine") {
    deps = []
  
+diff --git a/engine/src/flutter/shell/platform/embedder/flutter_vita_gl.h b/engine/src/flutter/shell/platform/embedder/flutter_vita_gl.h
+new file mode 100644
+index 00000000..0045b620
+--- /dev/null
++++ b/engine/src/flutter/shell/platform/embedder/flutter_vita_gl.h
+@@ -0,0 +1,37 @@
++// The GL platform under Ganesh, as the app provides it.
++//
++// The engine draws through a GLES2 it resolves by name. What owns the GXM
++// context, the display chain and the swap is one of two archives the app
++// links (ADR-0019): vitaGL, or fvita_gles2. The embedder calls these five
++// and nothing else of either; templates/vita-app/gl_vitagl.c and gl_gles2.c
++// answer, and FLUTTER_VITA_GL in the template's CMake picks one.
++#ifndef FLUTTER_SHELL_PLATFORM_EMBEDDER_FLUTTER_VITA_GL_H_
++#define FLUTTER_SHELL_PLATFORM_EMBEDDER_FLUTTER_VITA_GL_H_
++
++#ifdef __cplusplus
++extern "C" {
++#endif
++
++// Brings a context up on the panel. 0 on success. `log_line` takes one line
++// without its newline, like the dev server's.
++int flutter_vita_gl_init(int width, int height, void (*log_line)(const char*));
++
++// Presents the frame. `dialog_open` says a common dialog (the IME) is up and
++// has to be composited over it.
++void flutter_vita_gl_swap(int dialog_open);
++
++// An entry point by name, or NULL.
++void* flutter_vita_gl_proc_address(const char* name);
++
++// Finishes the GPU and releases the context. Once, on the way out, after the
++// raster thread has been stopped.
++void flutter_vita_gl_shutdown(void);
++
++// "vitaGL" or "fvita_gles2", for the log and the HUD.
++const char* flutter_vita_gl_backend(void);
++
++#ifdef __cplusplus
++}
++#endif
++
++#endif  // FLUTTER_SHELL_PLATFORM_EMBEDDER_FLUTTER_VITA_GL_H_
 diff --git a/engine/src/flutter/shell/platform/embedder/vita_cxa_guard.cc b/engine/src/flutter/shell/platform/embedder/vita_cxa_guard.cc
 new file mode 100644
 index 00000000..a5e0625d
@@ -240,10 +283,10 @@ index 00000000..a5e0625d
 +}  // extern "C"
 diff --git a/engine/src/flutter/shell/platform/embedder/vita_embedder.cc b/engine/src/flutter/shell/platform/embedder/vita_embedder.cc
 new file mode 100644
-index 00000000..bbf8f039
+index 00000000..75079d19
 --- /dev/null
 +++ b/engine/src/flutter/shell/platform/embedder/vita_embedder.cc
-@@ -0,0 +1,3933 @@
+@@ -0,0 +1,3896 @@
 +// Copyright (c) 2026, the Flutter Authors. All rights reserved.
 +// Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
@@ -295,7 +338,7 @@ index 00000000..bbf8f039
 +// own. It does pull libshacccg.suprx in at run time, which is a user-installed
 +// module the homebrew community already depends on, and which the software
 +// path below exists to do without.
-+#include <vitaGL.h>
++#include <GLES2/gl2.h>
 +
 +#include <psp2/gxm.h>
 +#include <psp2/libime.h>
@@ -316,6 +359,7 @@ index 00000000..bbf8f039
 +
 +#include "flutter/shell/platform/embedder/embedder.h"
 +#include "flutter/shell/platform/embedder/embedder_software_frame_damage.h"
++#include "flutter/shell/platform/embedder/flutter_vita_gl.h"
 +
 +// M1's on-device dev server, at spikes/m1-vpk/src/devserver.{c,h}, compiled
 +// into this binary by the m3 spike's CMakeLists.
@@ -405,35 +449,46 @@ index 00000000..bbf8f039
 +// `extern "C"` on a variable still yields internal linkage and the link fails
 +// on `(anonymous namespace)::vgl_oom_count`.
 +//
-+// Strong, not weak, deliberately. A weak *variable* that nothing defines
-+// resolves to address zero and reading it is a data abort -- this port has
-+// been bitten by exactly that twice, both times through an import stub for a
-+// module that was not resident. If a build ever stops linking vitaGL this
-+// should fail at link time, where the message is legible.
-+extern "C" unsigned int vgl_oom_count;
++// Weak since ADR-0019, because an app built with FLUTTER_VITA_GL=gles2 links
++// no vitaGL and these have no definition. A weak variable nobody defines sits
++// at address zero and reading it is a data abort, which this port has met
++// twice through import stubs -- so every read goes through VglCounter below,
++// which tests the address first. The counters and the probe's compiler
++// switch leave with vitaGL at M5.
++extern "C" unsigned int vgl_oom_count __attribute__((weak));
 +// How many glScissor calls arrived with no area, or with an origin past the
 +// display. Patched into vitaGL alongside the clamps that stop those reaching
 +// sceGxmSetRegionClip as an inverted unsigned range; see patches/vitagl.
-+extern "C" unsigned int vgl_degenerate_scissor;
++extern "C" unsigned int vgl_degenerate_scissor __attribute__((weak));
 +// How many GXM default-uniform-buffer reservations were refused. Non-zero
 +// means the guard in patches/vitagl/0003 caught the write that used to be a
 +// data abort at SceGxm+0x1e638.
-+extern "C" unsigned int vgl_reserve_failed;
++extern "C" unsigned int vgl_reserve_failed __attribute__((weak));
 +// How many cached shader binaries were refused as truncated or malformed. A
 +// zero-byte .gxp is what a crash between compile_shader's open and its write
 +// leaves behind, and the read path used to trust it.
-+extern "C" unsigned int vgl_bad_shader_cache;
++extern "C" unsigned int vgl_bad_shader_cache __attribute__((weak));
 +// How many shader compiles libshacccg refused. Worth a line of its own: a
 +// refused compile is a draw that will not be drawn, and until 2026-09-01
 +// vitaGL followed it by serializing from a null pointer.
-+extern "C" unsigned int vgl_failed_compiles;
++extern "C" unsigned int vgl_failed_compiles __attribute__((weak));
 +// How many programs vitaGL refused to link because a shader behind them does
 +// not exist.
-+extern "C" unsigned int vgl_failed_links;
++extern "C" unsigned int vgl_failed_links __attribute__((weak));
 +// Makes vitaGL's GLSL translator write its Cg output beside the probe. Armed
 +// only while the probe is running a shader, because it is a file write per
 +// compile.
-+extern "C" unsigned int vgl_dump_translated;
++extern "C" unsigned int vgl_dump_translated __attribute__((weak));
++// vitaGL's compiler switch, for the probe. Weak for the same reason.
++extern "C" void vglSetupRuntimeShaderCompiler(int opt_level, int32_t use_fastmath,
++                                              int32_t use_fastprecision,
++                                              int32_t use_fastint)
++    __attribute__((weak));
++
++// A vitaGL counter's value, or zero under a backend that has none.
++static unsigned VglCounter(const unsigned int* counter) {
++  return counter != nullptr ? *counter : 0;
++}
 +
 +// Paragraph timing, defined in lib/ui/text/paragraph.cc. ADR-0017: 48 Text
 +// widgets cost 41 ms of UI thread and one Text holding the same 48 glyphs
@@ -459,19 +514,6 @@ index 00000000..bbf8f039
 +// already is, but the constant is named rather than assumed because it stops
 +// being true the moment the resolution changes.
 +constexpr int kPitch = 960;
-+
-+// GL path sizing.
-+//
-+// kGlRamThresholdBytes is the one to reach for if the engine starts failing
-+// allocations under GL. vitaGL claims the newlib arena for its own RAM pool
-+// and leaves *this much* behind for malloc; its own default is 16 MB, which is
-+// not enough to build a GrDirectContext in. templates/vita-app/heap.c sizes
-+// the arena at 160 MB, so this leaves vitaGL roughly 40 MB and the engine the
-+// rest -- and the software surfaces the CPU path allocates are gone, which
-+// pays for some of it.
-+constexpr int kGlLegacyPoolBytes = 0x100000;
-+constexpr int kGlRamThresholdBytes = 120 * 1024 * 1024;
-+constexpr const char* kShaderCachePath = "ux0:data/shader_cache";
 +
 +// Which backend this process is running. Decided once in main() and then read
 +// from several places that have to behave differently -- InitIme must not
@@ -925,7 +967,7 @@ index 00000000..bbf8f039
 +                // a mismatch is the expected answer rather than a fault. The
 +                // capture itself is still correct: this reads what the display
 +                // controller is scanning out, whoever allocated it.
-+                g_gl_enabled ? "vitaGL"
++                g_gl_enabled ? flutter_vita_gl_backend()
 +                             : (fb.base == g_display.base ? "yes" : "NO"),
 +                fb.width, fb.height,
 +                fb.pitch, fb.pixelformat, vcount_before, vcount_after,
@@ -1512,12 +1554,18 @@ index 00000000..bbf8f039
 +       "behind them does not exist\n", &vgl_failed_links, 0},
 +  };
 +  for (Counter& c : counters) {
-+    const unsigned now = *c.live;
++    const unsigned now = VglCounter(c.live);
 +    if (now == c.reported) continue;
 +    VLog(c.fmt, now - c.reported, now);
 +    c.reported = now;
 +  }
 +}
++
++// vitashark's shark_opt, spelled here so the header need not be: SLOW is O0,
++// UNSAFE is Ofast, FAST is vitaGL's default. Only vitaGL has the switch.
++constexpr int kSharkOptSlow = 0;
++constexpr int kSharkOptFast = 3;
++constexpr int kSharkOptUnsafe = 4;
 +
 +// Compile a shader pair on demand, from the raster thread, and say what
 +// happened.
@@ -1634,14 +1682,13 @@ index 00000000..bbf8f039
 +    if (char* opt = ReadWholeFile(opt_path, nullptr)) {
 +      level = std::atoi(opt);
 +      std::free(opt);
-+      if (level < SHARK_OPT_SLOW || level > SHARK_OPT_UNSAFE) level = -1;
++      if (level < kSharkOptSlow || level > kSharkOptUnsafe) level = -1;
 +    }
-+    if (level >= 0) {
-+      vglSetupRuntimeShaderCompiler(static_cast<shark_opt>(level), GL_TRUE,
-+                                    GL_FALSE, GL_TRUE);
++    if (level >= 0 && vglSetupRuntimeShaderCompiler != nullptr) {
++      vglSetupRuntimeShaderCompiler(level, GL_TRUE, GL_FALSE, GL_TRUE);
 +    }
 +
-+    vgl_dump_translated = 1;
++    if (&vgl_dump_translated != nullptr) vgl_dump_translated = 1;
 +    const uint64_t t0 = sceKernelGetSystemTimeWide();
 +    const GLuint vs = glCreateShader(GL_VERTEX_SHADER);
 +    const GLuint fs = glCreateShader(GL_FRAGMENT_SHADER);
@@ -1668,14 +1715,14 @@ index 00000000..bbf8f039
 +    ProbeShaderLog(fs, false, out, sizeof out, &n, "fragment");
 +    ProbeShaderLog(prog, true, out, sizeof out, &n, "program");
 +
-+    vgl_dump_translated = 0;
++    if (&vgl_dump_translated != nullptr) vgl_dump_translated = 0;
 +    glDeleteProgram(prog);
 +    glDeleteShader(vs);
 +    glDeleteShader(fs);
 +    // Put the compiler back however it was, so a probe cannot change what the
 +    // app itself compiles afterwards.
-+    if (level >= 0) {
-+      vglSetupRuntimeShaderCompiler(SHARK_OPT_FAST, GL_TRUE, GL_FALSE, GL_TRUE);
++    if (level >= 0 && vglSetupRuntimeShaderCompiler != nullptr) {
++      vglSetupRuntimeShaderCompiler(kSharkOptFast, GL_TRUE, GL_FALSE, GL_TRUE);
 +    }
 +  }
 +  std::free(vsrc);
@@ -2132,11 +2179,11 @@ index 00000000..bbf8f039
 +                       " reserve_fail=%u bad_cache=%u no_compile=%u\n",
 +                       mem.size_user / 1024, mem.size_cdram / 1024,
 +                       mem.size_phycont / 1024, HeapUsedMb(), HeapArenaMb(),
-+                       static_cast<unsigned>(vgl_oom_count),
-+                       static_cast<unsigned>(vgl_degenerate_scissor),
-+                       static_cast<unsigned>(vgl_reserve_failed),
-+                       static_cast<unsigned>(vgl_bad_shader_cache),
-+                       static_cast<unsigned>(vgl_failed_compiles));
++                       VglCounter(&vgl_oom_count),
++                       VglCounter(&vgl_degenerate_scissor),
++                       VglCounter(&vgl_reserve_failed),
++                       VglCounter(&vgl_bad_shader_cache),
++                       VglCounter(&vgl_failed_compiles));
 +  }
 +
 +  // Whether the console is idle or busy, independent of this process. A stall
@@ -2439,73 +2486,32 @@ index 00000000..bbf8f039
 +  return c == '1';
 +}
 +
-+// vitaGL owns GXM and the display once it initialises, which is a different
-+// arrangement from the software path: there, this file allocates the CDRAM
-+// framebuffer and calls sceDisplaySetFrameBuf itself. Only one of the two may
-+// run in a process.
++// The GL backend owns GXM and the display once it initialises, which is a
++// different arrangement from the software path: there, this file allocates
++// the CDRAM framebuffer and calls sceDisplaySetFrameBuf itself. Only one of
++// the two may run in a process.
++//
++// Which backend is the app's choice at link time (flutter_vita_gl.h). Under
++// vitaGL, gl_vitagl.c sizes the pools and points the shader cache somewhere
++// writable before the library starts; the reasons are with the code that
++// does it.
 +bool InitGl() {
-+  // Point the shader cache somewhere writable before vitaGL starts.
-+  //
-+  // Without it every Ganesh program pays libshacccg's compile on every launch:
-+  // ADR-0014 measured 205 ms for a one-line shader and 405 ms for a short one,
-+  // against ~3 ms once cached. Ganesh generates a program per paint
-+  // configuration, so uncached is not a slow start, it is a stutter every time
-+  // a new widget first paints.
-+  //
-+  // Two things have to be true for this to work, and both were found the hard
-+  // way. The archive must be built with HAVE_SHADER_CACHE=1 -- the VitaSDK
-+  // package has it off, and vglSetShaderCachePath there is a two-byte `bx lr`
-+  // that silently does nothing. And the directories have to exist, because
-+  // vitaGL opens the .gxp for writing and sceIoOpen does not create parents.
-+  // The version number in the path is vitaGL's, not ours, so cover the range;
-+  // an mkdir of a directory that exists costs nothing.
-+  vglSetShaderCachePath(kShaderCachePath);
 +  sceIoMkdir("ux0:data", 0777);
-+  sceIoMkdir(kShaderCachePath, 0777);
 +  sceIoMkdir("ux0:data/flutter-vita", 0777);
 +  sceIoMkdir(kProbeDir, 0777);
-+  for (int v = 0; v < 8; v++) {
-+    char p[64];
-+    std::snprintf(p, sizeof p, "%s/v%d", kShaderCachePath, v);
-+    sceIoMkdir(p, 0777);
-+    std::snprintf(p, sizeof p, "%s/v%d/v", kShaderCachePath, v);
-+    sceIoMkdir(p, 0777);
-+    std::snprintf(p, sizeof p, "%s/v%d/f", kShaderCachePath, v);
-+    sceIoMkdir(p, 0777);
-+  }
 +
-+  // The fourth argument is the one that matters and the one that is easy to
-+  // get wrong. vitaGL takes the newlib arena for its own RAM pool and leaves
-+  // *ram_threshold* behind for malloc -- 16 MB by default, which is not enough
-+  // to build a GrDirectContext in, let alone run Dart. templates/vita-app/
-+  // heap.c sizes the arena at 160 MB; this hands vitaGL the top of it and
-+  // leaves the rest to the engine.
-+  const GLboolean up = vglInitExtended(kGlLegacyPoolBytes, kWidth, kHeight,
-+                                       kGlRamThresholdBytes,
-+                                       SCE_GXM_MULTISAMPLE_NONE);
++  const int r = flutter_vita_gl_init(kWidth, kHeight, DevServerLog);
 +
-+  // Do not believe that return value. It is GL_FALSE on a context that works
-+  // -- three runs of the g1 spike exited on it while the console was showing
-+  // vitaGL's splash screen rotating at 60 fps. Probe instead.
++  // Probe rather than believe the return value: vitaGL's was GL_FALSE on a
++  // context that worked, three runs out of three in the g1 spike.
 +  const char* version = reinterpret_cast<const char*>(glGetString(GL_VERSION));
 +  if (version == nullptr) {
-+    VLog("flutter-vita: vitaGL has no context (vglInit returned %d)\n",
-+         static_cast<int>(up));
++    VLog("flutter-vita: %s has no context (init returned %d)\n",
++         flutter_vita_gl_backend(), r);
 +    return false;
 +  }
-+  VLog("flutter-vita: GL up -- %s / %s (vglInit returned %d)\n", version,
-+       reinterpret_cast<const char*>(glGetString(GL_RENDERER)),
-+       static_cast<int>(up));
-+
-+  // There used to be two vglSwapBuffers(GL_FALSE) here, to end vitaGL's boot
-+  // splashscreen before the engine drew anything. The library is now built
-+  // with NO_SPLASHSCREEN=1, so there is no splashscreen to end.
-+  //
-+  // Ending it was never free. The swap path signals the splash thread and then
-+  // waits on a semaphore with no timeout, and the thread only exits once its
-+  // fade-out alpha reaches zero -- SPLASH_FADE_SEC in, one second of fade back
-+  // out, about two seconds of rotating logo on every launch of every app once
-+  // GL became the default renderer. See patches/vitagl/README.md.
++  VLog("flutter-vita: GL up -- %s / %s (init returned %d)\n", version,
++       reinterpret_cast<const char*>(glGetString(GL_RENDERER)), r);
 +  return true;
 +}
 +
@@ -2621,7 +2627,7 @@ index 00000000..bbf8f039
 +    if (std::strcmp(name, s.name) == 0) return s.fn;
 +  }
 +
-+  if (void* p = vglGetProcAddress(name)) return p;
++  if (void* p = flutter_vita_gl_proc_address(name)) return p;
 +
 +  // Retry without the vendor suffix.
 +  //
@@ -2641,7 +2647,7 @@ index 00000000..bbf8f039
 +    if (len - slen >= sizeof base) continue;
 +    std::memcpy(base, name, len - slen);
 +    base[len - slen] = '\0';
-+    if (void* p = vglGetProcAddress(base)) return p;
++    if (void* p = flutter_vita_gl_proc_address(base)) return p;
 +  }
 +
 +  // Worth logging rather than swallowing. A driver that advertises an
@@ -2729,11 +2735,11 @@ index 00000000..bbf8f039
 +  // raster figure above is what to read when it does.
 +  const uint64_t swap_start = sceKernelGetSystemTimeWide();
 +  EnterPhase(kPhaseSwap);
-+  // GL_TRUE is `has_commondialog` in vitaGL's swap: it is what makes vitaGL
++  // The flag is `has_commondialog` in vitaGL's swap: it is what makes vitaGL
 +  // run sceCommonDialogUpdate against its own back buffer, which is how the
 +  // libime keyboard reaches the screen over GL content. Only while one is
 +  // open -- it is a per-frame cost with nothing to show for it otherwise.
-+  vglSwapBuffers(g_ime.open ? GL_TRUE : GL_FALSE);
++  flutter_vita_gl_swap(g_ime.open ? 1 : 0);
 +  g_gl_present_end_us = sceKernelGetSystemTimeWide();
 +  g_win_blit_us += g_gl_present_end_us - swap_start;
 +  g_gl_in_frame.store(false, std::memory_order_release);
@@ -2826,9 +2832,8 @@ index 00000000..bbf8f039
 +
 +  // Drain before terminate. Terminating with flips still queued is a
 +  // use-after-free of the buffers they name -- which is the same fault as the
-+  // one above, in the driver's own bookkeeping.
-+  sceGxmDisplayQueueFinish();
-+  sceGxmTerminate();
++  // one above, in the driver's own bookkeeping. The backend does both.
++  flutter_vita_gl_shutdown();
 +  VLog("flutter-vita: GPU released\n");
 +}
 +
@@ -3202,7 +3207,8 @@ index 00000000..bbf8f039
 +  // sceGxmInitialize is once per process, and a second call returns
 +  // SCE_GXM_ERROR_ALREADY_INITIALIZED.
 +  if (g_gl_enabled) {
-+    VLog("flutter-vita: GXM belongs to vitaGL; it composites the IME\n");
++    VLog("flutter-vita: GXM belongs to %s; it composites the IME\n",
++         flutter_vita_gl_backend());
 +  } else {
 +    SceGxmInitializeParams gxm = {};
 +    gxm.flags = 0;

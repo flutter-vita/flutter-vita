@@ -6,7 +6,7 @@ source and `gles2/surface.txt`; the area table's `done` column is set by hand
 and every change to it has to name its evidence in the last column.
 
 <!-- progress:begin -->
-**64% complete** (weighted areas, weights sum to 100).
+**68% complete** (weighted areas, weights sum to 100).
 
 | entry points | count |
 |---|---|
@@ -30,8 +30,8 @@ and every change to it has to name its evidence in the last column.
 | Shader translation: GLSL ES 1.00 to Cg | 16 | 80% | M2 on hardware 2026-09-13: all 46 corpus shaders translate and compile through `libshacccg` on the console (median 144 ms, max 1.9 s per shader, cold). Locals that shadow attributes are renamed. Missing: `half` for `mediump`, constructs outside the corpus arrive as named errors |
 | Programs: SceShaccCg compile, link, attribute and uniform reflection, uniform upload | 12 | 75% | M1: shader and program objects, link-time Cg compile, varying map, `glBindAttribLocation`, uniform table with locations, all `glUniform*` forms, matrix upload order verified by a translation through a `mat3`, fragment-program cache per blend state. M3 test: samplers bound to the unit `glUniform1i` named. Missing: relink and delete under load |
 | Pipeline state: blend, masks, scissor, viewport, line width, front face, getters | 6 | 75% | M1: blend func/equation (separate forms) verified by two hand-computed blended pixels; `glGetIntegerv`/`Floatv`/`Booleanv` table; `glFinish`. M3: texture and framebuffer bindings, pack and unpack alignment in the getters. Missing: `glLineWidth` applied, depth/stencil state |
-| Integration: `--gl gles2`, embedder switch, proc table, recording stubs, tracer | 6 | 30% | `tools/gles2-gen.py` generates `procs.c` (142 core names plus the extension names Skia asks for) and `stubs.c` (recording stubs writing `gles2-unimplemented.txt`). Missing: the build flag, the embedder switch, the tracer re-pointed |
-| Parity: gallery screenshots, test apps, bench, vitaGL removed | 8 | 0% | |
+| Integration: `--gl gles2`, embedder switch, proc table, recording stubs, tracer | 6 | 75% | `tools/gles2-gen.py` generates `procs.c` and `stubs.c`. The embedder calls five functions of `flutter_vita_gl.h` and nothing else of either library (patch 0004); `templates/vita-app/gl_gles2.c` and `gl_vitagl.c` answer; `build-vita-app.sh --gl gles2`. The gallery ran on it 2026-09-12 (`docs/results/gallery-fvita-gles2-2026-09-12.md`). Missing: the tracer re-pointed at `fvgl_get_proc_address`, IME compositing over our frames, the exit path checked |
+| Parity: gallery screenshots, test apps, bench, vitaGL removed | 8 | 10% | The gallery home screen and list draw as under vitaGL to the eye, 44 fps with 5.1 ms raster in the window before the scroll. Not yet compared scene by scene, no bench, test apps not run |
 <!-- areas:end -->
 
 ## Milestones
@@ -41,7 +41,7 @@ and every change to it has to name its evidence in the last column.
 | M0 | clear, scissor, present through our own sceGxm context | **done 2026-09-12**, `gles2/test` M0 passes 10 of 10 pixel checks on hardware |
 | M1 | a triangle from run-time-translated GLSL | **done 2026-09-12**, `gles2/test` M1 passes 8 of 8 (mat3 convention, blend, gl_FragCoord, VBO and client paths) |
 | M2 | the gallery's shaders translate and compile | **done 2026-09-13**, 46 of 46 on the console (`gles2/test` M2) |
-| M3 | the gallery draws under `--gl gles2` | textures and framebuffers pass `gles2/test` M3, 35 of 35 on hardware 2026-09-12; the build flag and the embedder switch are next |
+| M3 | the gallery draws under `--gl gles2` | **done 2026-09-12**: `gles2/test` M3 35 of 35; the gallery renders through the layer, 22 programs, no stub called (`docs/results/gallery-fvita-gles2-2026-09-12.md`) |
 | M4 | test apps and bench at parity | |
 | M5 | vitaGL and vitashark gone | |
 
