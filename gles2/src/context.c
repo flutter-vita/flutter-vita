@@ -15,6 +15,7 @@
 // the first draw or clear and closed when the target changes, when pixels are
 // read back, or when the frame is presented.
 #include <psp2/display.h>
+#include <psp2/io/fcntl.h>
 #include <psp2/kernel/clib.h>
 #include <stdarg.h>
 #include <stdio.h>
@@ -39,6 +40,26 @@ void fvgl_log(const char* fmt, ...) {
 
 void fvgl_set_error(GLenum error) {
   if (fvgl.error == GL_NO_ERROR) fvgl.error = error;
+}
+
+// ---- recording stubs -------------------------------------------------------
+
+#define FVGL_UNIMPLEMENTED_FILE "ux0:data/flutter-vita/gles2-unimplemented.txt"
+
+void fvgl_stub_called(const char* name) {
+  static const char* seen[64];
+  static int nseen;
+  fvgl_set_error(GL_INVALID_OPERATION);
+  for (int i = 0; i < nseen; i++) {
+    if (seen[i] == name) return;
+  }
+  if (nseen < 64) seen[nseen++] = name;
+  fvgl_log("unimplemented: %s", name);
+  const SceUID fd = sceIoOpen(FVGL_UNIMPLEMENTED_FILE, SCE_O_WRONLY | SCE_O_CREAT | SCE_O_APPEND, 0777);
+  if (fd < 0) return;
+  sceIoWrite(fd, name, strlen(name));
+  sceIoWrite(fd, "\n", 1);
+  sceIoClose(fd);
 }
 
 // ---- display chain ---------------------------------------------------------
@@ -227,6 +248,7 @@ void fvgl_scene_begin(void) {
     return;
   }
   fvgl.scene_open = true;
+  fvgl.bound_program = NULL;  // a new scene starts with no programs set
   // The raster state GL never changes for a 2D renderer is set once per scene.
   sceGxmSetFrontDepthFunc(fvgl.gxm, SCE_GXM_DEPTH_FUNC_ALWAYS);
   sceGxmSetBackDepthFunc(fvgl.gxm, SCE_GXM_DEPTH_FUNC_ALWAYS);
@@ -388,12 +410,29 @@ int fvgl_init(const FvglConfig* config) {
   if (r < 0) goto fail;
   if (clear_pipeline_init() < 0) goto fail;
 
+  if (fvgl_scratch_init() < 0) goto fail;
+  fvgl_draw_init();
+  // The GPU writes the number of each finished frame here.
+  fvgl.frame_done = sceGxmGetNotificationRegion();
+  *fvgl.frame_done = 0;
+  fvgl.frame = 1;
+
   // GLES 2.0 initial state.
   fvgl.error = GL_NO_ERROR;
   fvgl.color_mask[0] = fvgl.color_mask[1] = fvgl.color_mask[2] = fvgl.color_mask[3] = GL_TRUE;
   fvgl.scissor_enabled = false;
   fvgl.scissor[0] = 0; fvgl.scissor[1] = 0; fvgl.scissor[2] = fvgl.width; fvgl.scissor[3] = fvgl.height;
   fvgl.viewport[0] = 0; fvgl.viewport[1] = 0; fvgl.viewport[2] = fvgl.width; fvgl.viewport[3] = fvgl.height;
+  fvgl.blend.enabled = false;
+  fvgl.blend.src_rgb = fvgl.blend.src_alpha = GL_ONE;
+  fvgl.blend.dst_rgb = fvgl.blend.dst_alpha = GL_ZERO;
+  fvgl.blend.eq_rgb = fvgl.blend.eq_alpha = GL_FUNC_ADD;
+  fvgl.front_face = GL_CCW;
+  fvgl.depth_mask = GL_TRUE;
+  fvgl.line_width = 1.0f;
+  // gl_FragCoord on the display: GL's y is the row counted from the bottom.
+  fvgl.fc[0] = (float)fvgl.height;
+  fvgl.fc[1] = -1.0f;
   fvgl.up = true;
   fvgl_log("up: %dx%d, %d display buffers, stride %u", fvgl.width, fvgl.height, buffers, g_stride);
   return 0;
@@ -409,6 +448,11 @@ void fvgl_shutdown(void) {
     sceGxmFinish(fvgl.gxm);
   }
   sceGxmDisplayQueueFinish();
+  if (fvgl.patcher) fvgl_programs_shutdown();
+  fvgl_buffers_shutdown();
+  fvgl_draw_shutdown();
+  fvgl_scratch_shutdown();
+  fvgl_collect_garbage(true);
   FvglClearPipeline* c = &fvgl.clear;
   if (fvgl.patcher) {
     for (int i = 0; i < 16; i++) {
@@ -449,7 +493,14 @@ void fvgl_swap(void) {
   // A frame nobody drew into still has to go through the queue, or the chain
   // and the sync objects fall out of step with each other.
   fvgl_scene_begin();
-  fvgl_scene_end();
+  // The last scene of the frame carries the notification: when the GPU has
+  // run it, everything the frame referenced can go.
+  if (fvgl.scene_open) {
+    SceGxmNotification done = {.address = fvgl.frame_done, .value = fvgl.frame};
+    const int r = sceGxmEndScene(fvgl.gxm, NULL, &done);
+    if (r < 0) fvgl_log("sceGxmEndScene: 0x%08X", (unsigned)r);
+    fvgl.scene_open = false;
+  }
   FvglDisplayBuffer* back = &fvgl.display[fvgl.back];
   FvglDisplayBuffer* front = &fvgl.display[fvgl.front];
   sceGxmPadHeartbeat(&back->surface, back->sync);
@@ -458,6 +509,9 @@ void fvgl_swap(void) {
   if (r < 0) fvgl_log("sceGxmDisplayQueueAddEntry: 0x%08X", (unsigned)r);
   fvgl.front = fvgl.back;
   fvgl.back = (fvgl.back + 1) % fvgl.display_buffer_count;
+  fvgl.frame++;
+  fvgl_scratch_reset(fvgl.back);
+  fvgl_collect_garbage(false);
 }
 
 // ---- GL --------------------------------------------------------------------
@@ -500,16 +554,15 @@ static bool set_capability(GLenum cap, bool on) {
       fvgl.scissor_enabled = on;
       if (fvgl.scene_open) apply_region_clip();
       return true;
-    // Accepted and remembered by the pipeline state that lands with draw.c.
-    // Until then they are valid enums that change nothing.
-    case GL_BLEND:
-    case GL_CULL_FACE:
-    case GL_DEPTH_TEST:
-    case GL_DITHER:
+    case GL_BLEND: fvgl.blend.enabled = on; return true;
+    case GL_CULL_FACE: fvgl.cull_enabled = on; return true;
+    case GL_DEPTH_TEST: fvgl.depth_test_enabled = on; return true;
+    case GL_STENCIL_TEST: fvgl.stencil_test_enabled = on; return true;
+    case GL_DITHER: fvgl.dither_enabled = on; return true;
+    // Valid, remembered nowhere: no depth surface, no multisampling.
     case GL_POLYGON_OFFSET_FILL:
     case GL_SAMPLE_ALPHA_TO_COVERAGE:
     case GL_SAMPLE_COVERAGE:
-    case GL_STENCIL_TEST:
       return true;
     default:
       return false;
@@ -545,6 +598,7 @@ GL_APICALL void GL_APIENTRY glClear(GLbitfield mask) {
   apply_viewport(0, 0, fvgl.width, fvgl.height);
   sceGxmSetVertexProgram(fvgl.gxm, fvgl.clear.vertex);
   sceGxmSetFragmentProgram(fvgl.gxm, fp);
+  fvgl.bound_program = NULL;
   void* uniforms = NULL;
   sceGxmReserveFragmentDefaultUniformBuffer(fvgl.gxm, &uniforms);
   sceGxmSetUniformDataF(uniforms, fvgl.clear.color_param, 0, 4, fvgl.clear_color);
@@ -570,6 +624,7 @@ GL_APICALL void GL_APIENTRY glReadPixels(GLint x, GLint y, GLsizei w, GLsizei h,
   // Everything queued so far has to land in memory first.
   fvgl_scene_end();
   sceGxmFinish(fvgl.gxm);
+  *fvgl.frame_done = fvgl.frame - 1;  // nothing older than this frame is in flight now
   const uint8_t* src = fvgl.display[fvgl.back].data;
   uint8_t* dst = pixels;
   for (GLsizei row = 0; row < h; row++) {

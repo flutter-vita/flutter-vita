@@ -18,6 +18,9 @@ void fvgl_log(const char* fmt, ...) __attribute__((format(printf, 1, 2)));
 // Records the first GL error since the last glGetError, as the spec asks.
 void fvgl_set_error(GLenum error);
 
+// A recording stub was called: GL_INVALID_OPERATION, and the name on the card once.
+void fvgl_stub_called(const char* name);
+
 // ---- GPU memory ------------------------------------------------------------
 
 typedef enum FvglMemKind {
@@ -43,6 +46,131 @@ int fvgl_shacc_init(const char* module_path);
 SceGxmProgram* fvgl_shacc_compile(const char* cg_source, bool fragment,
                                   char* log, size_t log_size);
 void fvgl_shacc_shutdown(void);
+
+// ---- frames and deferred freeing ------------------------------------------
+//
+// The GPU runs behind the CPU. Memory a draw referenced cannot be freed until
+// that draw has executed, so a free is stamped with the frame number and
+// done once the GPU has signalled that frame complete.
+
+void fvgl_defer_free(SceUID uid);
+void fvgl_defer_free_usse(bool fragment, SceUID uid);
+uint32_t fvgl_gpu_completed_frame(void);
+void fvgl_collect_garbage(bool everything);
+
+// Per-frame scratch memory for client-side vertex arrays and converted
+// indices. Valid until the display buffer it belongs to comes round again.
+void* fvgl_scratch_alloc(size_t size, size_t align);
+void fvgl_scratch_reset(int display_index);
+int fvgl_scratch_init(void);
+void fvgl_scratch_shutdown(void);
+
+// ---- objects ---------------------------------------------------------------
+
+typedef struct FvglTable {
+  void** items;
+  unsigned count, cap;  // names are 1..count
+} FvglTable;
+
+unsigned fvgl_table_add(FvglTable* t, void* item);
+void* fvgl_table_get(const FvglTable* t, unsigned name);
+void fvgl_table_clear(FvglTable* t, unsigned name);
+
+typedef struct FvglBuffer {
+  SceUID uid;
+  uint8_t* data;
+  size_t size;      // what glBufferData set
+  size_t capacity;  // what the block holds
+  GLenum usage;
+  uint32_t last_frame_used;
+} FvglBuffer;
+
+#include "translate.h"
+
+typedef struct FvglShader {
+  GLenum type;
+  char* source;
+  bool compiled;
+  bool delete_pending;
+  int attached;  // programs holding it
+  FvglShaderInfo info;
+  char log[1024];
+} FvglShader;
+
+typedef struct FvglUniform {
+  char name[FVGL_NAME_MAX];
+  FvglType type;
+  int components;  // per element
+  int array;       // element count, 1 when not an array
+  const SceGxmProgramParameter* vp;
+  const SceGxmProgramParameter* fp;
+  float* values;   // array * components, GL layout (matrix columns in order)
+  bool is_sampler;
+  int unit;        // sampler: the texture unit glUniform1i set
+} FvglUniform;
+
+typedef struct FvglAttribute {
+  char name[FVGL_NAME_MAX];
+  int location;
+  const SceGxmProgramParameter* param;  // null when the compiler dropped it
+  int components;                       // the shader's
+} FvglAttribute;
+
+#define FVGL_MAX_VARIANTS 32
+
+typedef struct FvglVertexVariant {
+  uint8_t key[64];
+  int key_len;
+  SceGxmVertexProgram* program;
+} FvglVertexVariant;
+
+typedef struct FvglFragmentVariant {
+  uint32_t key;
+  SceGxmFragmentProgram* program;
+} FvglFragmentVariant;
+
+typedef struct FvglProgram {
+  FvglShader* vs;
+  FvglShader* fs;
+  unsigned vs_name, fs_name;
+  bool linked;
+  bool delete_pending;
+  char log[1024];
+  SceGxmProgram* vgxp;
+  SceGxmProgram* fgxp;
+  SceGxmShaderPatcherId vid, fid;
+  int uniform_count;
+  FvglUniform uniforms[FVGL_MAX_UNIFORMS];
+  int attribute_count;
+  FvglAttribute attributes[FVGL_MAX_ATTRIBUTES];
+  // glBindAttribLocation calls, applied at link.
+  int bound_count;
+  char bound_names[FVGL_MAX_ATTRIBUTES][FVGL_NAME_MAX];
+  int bound_locations[FVGL_MAX_ATTRIBUTES];
+  const SceGxmProgramParameter* fc_param;  // fvgl_fc, when the fragment shader reads gl_FragCoord
+  int vertex_variant_count;
+  FvglVertexVariant vertex_variants[FVGL_MAX_VARIANTS];
+  int fragment_variant_count;
+  FvglFragmentVariant fragment_variants[FVGL_MAX_VARIANTS];
+  bool uniforms_dirty;
+} FvglProgram;
+
+typedef struct FvglVertexAttribState {
+  bool enabled;
+  GLint size;
+  GLenum type;
+  GLboolean normalized;
+  GLsizei stride;
+  const void* pointer;
+  unsigned buffer;  // the GL_ARRAY_BUFFER bound at glVertexAttribPointer time
+  float constant[4];
+} FvglVertexAttribState;
+
+typedef struct FvglBlendState {
+  bool enabled;
+  GLenum src_rgb, dst_rgb, src_alpha, dst_alpha;
+  GLenum eq_rgb, eq_alpha;
+} FvglBlendState;
 
 // ---- the context -----------------------------------------------------------
 
@@ -96,13 +224,33 @@ typedef struct FvglContext {
 
   FvglClearPipeline clear;
 
-  // GL state this file owns.
+  // Frame bookkeeping. `frame` is the one being recorded; the GPU writes the
+  // number of the last one it finished into the notification slot.
+  uint32_t frame;
+  volatile unsigned* frame_done;
+
+  // GL state.
   GLenum error;
   float clear_color[4];
   GLboolean color_mask[4];
   bool scissor_enabled;
   GLint scissor[4];
   GLint viewport[4];
+  FvglBlendState blend;
+  GLenum front_face;
+  GLboolean depth_mask;
+  float line_width;
+  bool cull_enabled, depth_test_enabled, stencil_test_enabled, dither_enabled;
+
+  FvglTable shaders, programs, buffers;
+  FvglProgram* current_program;
+  FvglProgram* bound_program;  // what the GXM context last saw
+  unsigned array_buffer, element_buffer;
+  FvglVertexAttribState attribs[FVGL_MAX_ATTRIBUTES];
+
+  // The hidden fragment uniform behind gl_FragCoord: (a, b) with y = a + b * wpos.y.
+  float fc[2];
+  float bound_fc[2];
 } FvglContext;
 
 extern FvglContext fvgl;
@@ -111,6 +259,13 @@ extern FvglContext fvgl;
 // matches the GL state. Every draw and clear starts here.
 void fvgl_scene_begin(void);
 void fvgl_scene_end(void);
+
+// programs.c
+void fvgl_programs_shutdown(void);
+// draw.c
+void fvgl_draw_init(void);
+void fvgl_draw_shutdown(void);
+void fvgl_buffers_shutdown(void);
 
 // The GL calls implemented in context.c and registered in procs.c.
 GL_APICALL void GL_APIENTRY glClearColor(GLfloat, GLfloat, GLfloat, GLfloat);

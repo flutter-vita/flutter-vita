@@ -4,6 +4,9 @@
 // receiver so both can be pulled with `get`.
 //
 //   M0  clear, scissor, present: our own sceGxm context on the screen
+//   M1  two triangles from GLSL: translator, link, uniforms (a mat3 among
+//       them), VBO and client arrays, glDrawArrays and glDrawElements, blend,
+//       gl_FragCoord the way Skia uses it
 //
 // A test runs for a few seconds so the frame is also visible on the panel.
 #include <GLES2/gl2.h>
@@ -116,6 +119,162 @@ static int m0(void) {
   return failed;
 }
 
+// ---- M1 --------------------------------------------------------------------
+
+static const char kM1Vertex[] =
+    "#version 100\n"
+    "precision mediump float;\n"
+    "uniform highp mat3 uXf;\n"
+    "uniform highp vec4 uAdjust;\n"
+    "attribute highp vec2 aPos;\n"
+    "attribute mediump vec4 aColor;\n"
+    "varying mediump vec4 vColor;\n"
+    "void main() {\n"
+    "  vColor = aColor;\n"
+    "  highp vec3 p = uXf * vec3(aPos, 1.0);\n"
+    "  gl_Position = vec4(p.xy, 0.0, 1.0);\n"
+    "  gl_Position = vec4(gl_Position.xy * uAdjust.xz + gl_Position.ww * uAdjust.yw, 0.0, gl_Position.w);\n"
+    "}\n";
+
+static const char kM1Fragment[] =
+    "#version 100\n"
+    "precision mediump float;\n"
+    "uniform mediump vec4 uTint;\n"
+    "uniform highp vec2 u_skRTFlip;\n"
+    "varying mediump vec4 vColor;\n"
+    "void main() {\n"
+    "  highp vec4 sk_FragCoord = vec4(gl_FragCoord.x, u_skRTFlip.x + u_skRTFlip.y * gl_FragCoord.y, gl_FragCoord.z, gl_FragCoord.w);\n"
+    "  mediump float band = mod(floor(sk_FragCoord.y / 32.0), 2.0);\n"
+    "  gl_FragColor = vColor * uTint * mix(1.0, 0.5, band);\n"
+    "}\n";
+
+static GLuint m1_shader(GLenum type, const char* src) {
+  const GLuint s = glCreateShader(type);
+  glShaderSource(s, 1, &src, NULL);
+  glCompileShader(s);
+  GLint ok = 0;
+  glGetShaderiv(s, GL_COMPILE_STATUS, &ok);
+  if (!ok) {
+    char log[512];
+    glGetShaderInfoLog(s, sizeof log, NULL, log);
+    sayf("m1 shader %s did not compile: %s", type == GL_VERTEX_SHADER ? "vertex" : "fragment", log);
+  }
+  return s;
+}
+
+static int m1(void) {
+  glClearColor(0, 0, 0, 1);
+  glDisable(GL_SCISSOR_TEST);
+
+  const GLuint vs = m1_shader(GL_VERTEX_SHADER, kM1Vertex);
+  const GLuint fs = m1_shader(GL_FRAGMENT_SHADER, kM1Fragment);
+  const GLuint prog = glCreateProgram();
+  glAttachShader(prog, vs);
+  glAttachShader(prog, fs);
+  glBindAttribLocation(prog, 3, "aPos");
+  glBindAttribLocation(prog, 1, "aColor");
+  glLinkProgram(prog);
+  GLint linked = 0;
+  glGetProgramiv(prog, GL_LINK_STATUS, &linked);
+  if (!linked) {
+    char log[512];
+    glGetProgramInfoLog(prog, sizeof log, NULL, log);
+    sayf("m1 link failed: %s", log);
+    return 1;
+  }
+  sayf("m1 linked; aPos at %d, aColor at %d, uXf %d uAdjust %d uTint %d u_skRTFlip %d",
+       glGetAttribLocation(prog, "aPos"), glGetAttribLocation(prog, "aColor"), glGetUniformLocation(prog, "uXf"),
+       glGetUniformLocation(prog, "uAdjust"), glGetUniformLocation(prog, "uTint"), glGetUniformLocation(prog, "u_skRTFlip"));
+  glUseProgram(prog);
+
+  // Triangle A: a VBO, interleaved position and colour, red, drawn with a
+  // translation of +0.5 in x through the mat3 (GLSL column-major layout).
+  const float a[] = {
+      -0.9f, -0.9f, 1, 0, 0, 1,
+      -0.1f, -0.9f, 1, 0, 0, 1,
+      -0.9f, -0.1f, 1, 0, 0, 1,
+  };
+  GLuint vbo = 0;
+  glGenBuffers(1, &vbo);
+  glBindBuffer(GL_ARRAY_BUFFER, vbo);
+  glBufferData(GL_ARRAY_BUFFER, sizeof a, NULL, GL_DYNAMIC_DRAW);
+  glBufferSubData(GL_ARRAY_BUFFER, 0, sizeof a, a);
+  glEnableVertexAttribArray(3);
+  glEnableVertexAttribArray(1);
+  glVertexAttribPointer(3, 2, GL_FLOAT, GL_FALSE, 24, (const void*)0);
+  glVertexAttribPointer(1, 4, GL_FLOAT, GL_FALSE, 24, (const void*)8);
+  const float translate[9] = {1, 0, 0, 0, 1, 0, 0.5f, 0, 1};
+  const float identity[9] = {1, 0, 0, 0, 1, 0, 0, 0, 1};
+  glUniformMatrix3fv(glGetUniformLocation(prog, "uXf"), 1, GL_FALSE, translate);
+  glUniform4f(glGetUniformLocation(prog, "uAdjust"), 1, 0, 1, 0);
+  glUniform4f(glGetUniformLocation(prog, "uTint"), 1, 1, 1, 1);
+  glUniform2f(glGetUniformLocation(prog, "u_skRTFlip"), 544, -1);
+
+  // Triangle B: client-side arrays and client-side indices, a quad, blue at
+  // half alpha over A, identity matrix.
+  const float b_pos[] = {-0.6f, -0.45f, 0.05f, -0.45f, 0.05f, 0.1f, -0.6f, 0.1f};
+  const float b_col[] = {0, 0, 1, 0.5f, 0, 0, 1, 0.5f, 0, 0, 1, 0.5f, 0, 0, 1, 0.5f};
+  const unsigned short b_idx[] = {0, 1, 2, 0, 2, 3};
+
+  for (int frame = 0; frame < 181; frame++) {
+    glClear(GL_COLOR_BUFFER_BIT);
+    glDisable(GL_BLEND);
+    glBindBuffer(GL_ARRAY_BUFFER, vbo);
+    glVertexAttribPointer(3, 2, GL_FLOAT, GL_FALSE, 24, (const void*)0);
+    glVertexAttribPointer(1, 4, GL_FLOAT, GL_FALSE, 24, (const void*)8);
+    glUniformMatrix3fv(glGetUniformLocation(prog, "uXf"), 1, GL_FALSE, translate);
+    glDrawArrays(GL_TRIANGLES, 0, 3);
+
+    glEnable(GL_BLEND);
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+    glBindBuffer(GL_ARRAY_BUFFER, 0);
+    glVertexAttribPointer(3, 2, GL_FLOAT, GL_FALSE, 0, b_pos);
+    glVertexAttribPointer(1, 4, GL_FLOAT, GL_FALSE, 0, b_col);
+    glUniformMatrix3fv(glGetUniformLocation(prog, "uXf"), 1, GL_FALSE, identity);
+    glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_SHORT, b_idx);
+    if (frame < 180) fvgl_swap();
+  }
+
+  static const Expect expect[] = {
+      {520, 80, 255, 0, 0, "A alone, band 0: red"},
+      {300, 200, 128, 0, 128, "B over A, band 0"},
+      {600, 40, 128, 0, 0, "A alone, band 1: half red"},
+      {640, 100, 0, 0, 0, "outside both: black"},
+      {300, 320, 0, 0, 0, "above B, left of A's edge: black"},
+      {450, 250, 0, 0, 32, "B alone, band 1: quarter blue"},
+      {300, 160, 96, 0, 32, "B over A, band 1"},
+      {250, 200, 0, 0, 128, "B alone, band 0: half blue"},
+  };
+  const int w = 960, h = 544;
+  unsigned char* pixels = malloc((size_t)w * h * 4);
+  glReadPixels(0, 0, w, h, GL_RGBA, GL_UNSIGNED_BYTE, pixels);
+  const GLenum err = glGetError();
+  sayf("m1 glGetError 0x%04X", err);
+  const SceUID f = sceIoOpen(DIR "gles2-m1.rgba", SCE_O_WRONLY | SCE_O_CREAT | SCE_O_TRUNC, 0777);
+  if (f >= 0) {
+    sceIoWrite(f, pixels, (SceSize)(w * h * 4));
+    sceIoClose(f);
+  }
+  int failed = 0;
+  for (size_t i = 0; i < sizeof expect / sizeof expect[0]; i++) {
+    const Expect* e = &expect[i];
+    const unsigned char* px = pixels + ((size_t)e->y * w + e->x) * 4;
+    const int ok = abs(px[0] - e->r) <= 3 && abs(px[1] - e->g) <= 3 && abs(px[2] - e->b) <= 3;
+    sayf("m1 %s (%d,%d) got %3u %3u %3u want %3u %3u %3u  %s", ok ? "ok  " : "FAIL",
+         e->x, e->y, px[0], px[1], px[2], e->r, e->g, e->b, e->what);
+    failed += !ok;
+  }
+  free(pixels);
+  fvgl_swap();
+  glDeleteBuffers(1, &vbo);
+  glDeleteProgram(prog);
+  glDeleteShader(vs);
+  glDeleteShader(fs);
+  sayf("m1 %s: %d of %u checks failed", failed ? "FAILED" : "PASSED", failed,
+       (unsigned)(sizeof expect / sizeof expect[0]));
+  return failed;
+}
+
 int main(void) {
   sceIoMkdir(DIR, 0777);
   g_report = sceIoOpen(DIR "gles2-test.txt", SCE_O_WRONLY | SCE_O_CREAT | SCE_O_TRUNC, 0777);
@@ -125,7 +284,10 @@ int main(void) {
   config.log = say;
   const int r = fvgl_init(&config);
   sayf("fvgl_init %d", r);
-  if (r == 0) m0();
+  if (r == 0) {
+    m0();
+    m1();
+  }
   // A moment on screen so the result is also visible, then back.
   sceKernelDelayThread(1500 * 1000);
   hand_back();

@@ -1,0 +1,17 @@
+#version 100
+
+precision mediump float;
+precision mediump sampler2D;
+uniform sampler2D uTextureSampler_0_S0;
+varying highp vec2 vlocalCoord_S0;
+varying highp vec4 vtexSubset_S0;
+void main() {
+mediump vec4 outputColor_S0 = vec4(1.0);
+highp vec2 texCoord = vlocalCoord_S0;
+highp vec4 subset = vtexSubset_S0;
+texCoord = clamp(texCoord, subset.xy, subset.zw);
+outputColor_S0 = texture2D(uTextureSampler_0_S0, texCoord, -0.475);
+{
+gl_FragColor = outputColor_S0;
+}
+}
