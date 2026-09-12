@@ -173,10 +173,18 @@ MANIFEST="ux0:app/$TITLEID/.deploy-manifest"
 # to the console.
 HAVE="$(mktemp)"
 NEXT="$(mktemp)"
-trap 'rm -rf "$WORK" "$HAVE" "$NEXT"' EXIT
+LIST="$(mktemp)"
+trap 'rm -rf "$WORK" "$HAVE" "$NEXT" "$LIST"' EXIT
 say "$LDR" "get $MANIFEST" 60 > "$HAVE" 2>/dev/null || true
 # `get` on a missing file answers with an error line rather than nothing.
 grep -q '^ERR' "$HAVE" 2>/dev/null && : > "$HAVE"
+
+# The build's file list, in a file rather than a heredoc, because the removal
+# pass below has to ask it "is this path still in the build" once per manifest
+# line and a failed push must not read as a removal.
+( cd "$WORK" && find . -type f ! -name eboot.bin \
+    \( -not -path "./sce_sys/*" -o -path "./sce_sys/param2.sfo" \) \
+    | sed 's|^\./||' | sort ) > "$LIST"
 
 echo "==> data files"
 : > "$NEXT"
@@ -198,20 +206,126 @@ while read -r rel; do
   else
     echo "    !! push failed: $rel" >&2
   fi
-done <<EOF
-$( cd "$WORK" && find . -type f ! -name eboot.bin \
-    \( -not -path "./sce_sys/*" -o -path "./sce_sys/param2.sfo" \) \
-    | sed 's|^\./||' | sort )
-EOF
+done < "$LIST"
 printf '    %d pushed, %d already there\n' "$pushed" "$skipped"
+
+# Files the console has and the build no longer does.
+#
+# Without this the deploy only ever adds and overwrites, and anything dropped
+# from a package stays in ux0:app/<titleid> for the life of the install. On
+# 2026-09-09 assets/fonts/NotoEmoji-Regular.ttf was removed from the repo, from
+# tools/package-engine.sh and from templates/vita-app/CMakeLists.txt, the
+# gallery was rebuilt and deployed clean -- and `ls ux0:app/FVTA00002/fonts`
+# still listed it at 1,982,596 bytes beside the three files the build ships. It
+# was still in app0:/fonts and still a candidate for every codepoint, so the
+# removal it was supposed to demonstrate could not be observed at all.
+#
+# Two sources, because neither is enough on its own.
+#
+# The manifest is what this script pushed and is the only record that reaches
+# into directories the build has stopped filling entirely. It is not the truth
+# about the console, though: the deploy that drops a file also drops its line,
+# so a file stranded by an earlier version of this script is not in it -- which
+# is exactly the case above -- and a promote replaces ux0:app/<id> wholesale
+# without telling the host, which is the failure the comment on MANIFEST above
+# records.
+#
+# `ls` is the truth, and is asked only about the directories this build fills.
+# sce_sys is not one of them: the build list names sce_sys/param2.sfo alone,
+# and param.sfo and the LiveArea beside it were written by the install and are
+# not this pass's to remove.
+echo "==> stale files"
+GONE="$(mktemp)"
+DIRS="$(mktemp)"
+LSOUT="$(mktemp)"
+trap 'rm -rf "$WORK" "$HAVE" "$NEXT" "$LIST" "$GONE" "$DIRS" "$LSOUT"' EXIT
+: > "$GONE"
+
+while read -r sha rel; do
+  [ -n "$rel" ] || continue
+  # The manifest is read back off the console, so it is input. A path that
+  # climbs out of the title's directory is not one this may act on, and is not
+  # one worth carrying forward either.
+  case "$rel" in
+    /*|*..*) echo "    !! not touching odd manifest path: $rel" >&2; continue ;;
+  esac
+  grep -qxF "$rel" "$LIST" || printf '%s\n' "$rel" >> "$GONE"
+done < "$HAVE"
+
+# The dirname of every file in the build, plus the root for the files that have
+# none. `ls` caps at 200 entries, so a very large directory is swept in part --
+# that costs a stale file left behind, never a live one removed.
+{ sed -n 's|/[^/]*$||p' "$LIST" | grep -v '^sce_sys' | sort -u; echo "."; } \
+  | sort -u > "$DIRS"
+while read -r dir; do
+  if [ "$dir" = "." ]; then
+    base="ux0:app/$TITLEID"; prefix=""
+  else
+    base="ux0:app/$TITLEID/$dir"; prefix="$dir/"
+  fi
+  say "$LDR" "ls $base" 60 > "$LSOUT" 2>/dev/null || continue
+  # `-` is a file; `d` is a directory and is left alone, and so are the ERR and
+  # `(N entries)` lines, none of which start with one.
+  while read -r kind name; do
+    [ "$kind" = "-" ] || continue
+    [ -n "$name" ] || continue
+    rel="$prefix$name"
+    # Neither is in the build list and both belong on the console: eboot.bin is
+    # installed rather than pushed, and the manifest is this script's own.
+    case "$rel" in
+      eboot.bin|.deploy-manifest) continue ;;
+    esac
+    grep -qxF "$rel" "$LIST" && continue
+    grep -qxF "$rel" "$GONE" || printf '%s\n' "$rel" >> "$GONE"
+  done < "$LSOUT"
+done < "$DIRS"
+
+removed=0
+rmfail=0
+while read -r rel; do
+  [ -n "$rel" ] || continue
+  printf '    removing %s\n' "$rel"
+  reply="$(say "$LDR" "rm ux0:app/$TITLEID/$rel" 60)"
+  case "$reply" in
+    OK*) removed=$((removed + 1)) ;;
+    *)
+      echo "    !! rm $rel: ${reply:-no reply} — retried next deploy" >&2
+      # Back into the manifest if it was ever in it, because the manifest
+      # records what the console holds and the console still holds this.
+      awk -v r="$rel" '$2 == r { print; exit }' "$HAVE" >> "$NEXT"
+      rmfail=$((rmfail + 1)) ;;
+  esac
+done < "$GONE"
+if [ "$removed" -eq 0 ] && [ "$rmfail" -eq 0 ]; then
+  echo "    none"
+else
+  printf '    %d removed, %d could not be\n' "$removed" "$rmfail"
+fi
+if [ "$rmfail" -gt 0 ]; then
+  # The likeliest reason, and the fix. A receiver built before `rm` existed
+  # refuses the line rather than failing at it, and says so every deploy.
+  echo "    (a receiver without \`rm\` answers ERR here — ./tools/selfupdate-receiver.sh)" >&2
+fi
 
 # Written last, and only naming files the device confirmed. A push that failed
 # is absent from it and is retried next run.
+#
+# Retried, like the install and unlike the first version of this. The write is
+# small and idempotent, and the receiver's listener is non-blocking and single
+# threaded -- the same race `alive` probes six times for. On 2026-09-09 a
+# deploy printed "could not record the manifest" and the manifest was on the
+# console, complete and correct: the put had landed and the reply had not been
+# read. A retry costs a second and stops the script lying about the one file
+# whose whole job is to be believed next run.
 msize="$(wc -c < "$NEXT" | tr -d ' ')"
 if [ "${msize:-0}" -gt 0 ]; then
-  { printf 'put %s %s\n' "$msize" "$MANIFEST"; cat "$NEXT"; } \
-    | nc -w 60 "$HOST" "$LDR" | grep -q OK \
-    || echo "    !! could not record the manifest" >&2
+  ok=0
+  for _ in 1 2 3; do
+    { printf 'put %s %s\n' "$msize" "$MANIFEST"; cat "$NEXT"; } \
+      | nc -w 60 "$HOST" "$LDR" | grep -q OK && { ok=1; break; }
+    sleep 2
+  done
+  [ "$ok" -eq 1 ] || echo "    !! could not record the manifest" >&2
 fi
 
 if [ "$LAUNCH" -eq 1 ]; then
