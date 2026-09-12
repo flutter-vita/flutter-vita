@@ -9,6 +9,7 @@
 // smaller is rounded up here, which is why small GL buffers must share blocks
 // (a sub-allocator, when buffers.c arrives) rather than each take one.
 #include <psp2/kernel/sysmem.h>
+#include <psp2/kernel/threadmgr.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -98,6 +99,7 @@ void fvgl_usse_free(bool fragment, SceUID uid) {
 
 typedef struct Garbage {
   SceUID uid;
+  SceGxmRenderTarget* target;
   uint32_t frame;
   int8_t usse;  // -1 none, 0 vertex, 1 fragment
 } Garbage;
@@ -105,20 +107,42 @@ typedef struct Garbage {
 static Garbage* g_garbage;
 static int g_garbage_count, g_garbage_cap;
 
-static void garbage_push(SceUID uid, int8_t usse) {
-  if (uid < 0) return;
+static void garbage_push(SceUID uid, SceGxmRenderTarget* target, int8_t usse) {
+  if (uid < 0 && !target) return;
   if (g_garbage_count == g_garbage_cap) {
     g_garbage_cap = g_garbage_cap ? g_garbage_cap * 2 : 64;
     g_garbage = realloc(g_garbage, sizeof(Garbage) * (size_t)g_garbage_cap);
   }
-  g_garbage[g_garbage_count++] = (Garbage){uid, fvgl.frame, usse};
+  g_garbage[g_garbage_count++] = (Garbage){uid, target, fvgl.frame, usse};
 }
 
-void fvgl_defer_free(SceUID uid) { garbage_push(uid, -1); }
-void fvgl_defer_free_usse(bool fragment, SceUID uid) { garbage_push(uid, fragment ? 1 : 0); }
+void fvgl_defer_free(SceUID uid) { garbage_push(uid, NULL, -1); }
+void fvgl_defer_free_usse(bool fragment, SceUID uid) { garbage_push(uid, NULL, fragment ? 1 : 0); }
+void fvgl_defer_destroy_target(SceGxmRenderTarget* target) { garbage_push(-1, target, -1); }
 
 uint32_t fvgl_gpu_completed_frame(void) {
   return fvgl.frame_done ? *fvgl.frame_done : 0;
+}
+
+unsigned fvgl_stalls_previous_frame, fvgl_stalls_this_frame;
+
+void fvgl_wait_for_frame(uint32_t frame) {
+  if (fvgl_gpu_completed_frame() >= frame) return;
+  if (frame >= fvgl.frame) {
+    // The notification for this frame is not even queued yet.
+    fvgl_stalls_this_frame++;
+    fvgl_scene_end();
+    sceGxmFinish(fvgl.gxm);
+    *fvgl.frame_done = fvgl.frame - 1;
+    return;
+  }
+  fvgl_stalls_previous_frame++;
+  // The GPU is at most two frames behind; a frame is 16 ms at the display's
+  // rate. Well beyond that something else is wrong and waiting hides it.
+  for (int spins = 0; spins < 2000 && fvgl_gpu_completed_frame() < frame; spins++) {
+    sceKernelDelayThread(100);
+  }
+  if (fvgl_gpu_completed_frame() < frame) fvgl_log("frame %u not done after 200 ms", frame);
 }
 
 void fvgl_collect_garbage(bool everything) {
@@ -129,7 +153,8 @@ void fvgl_collect_garbage(bool everything) {
     // A block stamped with frame F was referenced by frame F at the latest,
     // so it is free once the GPU reports F done.
     if (everything || g->frame <= done) {
-      if (g->usse < 0) fvgl_mem_free(g->uid);
+      if (g->target) sceGxmDestroyRenderTarget(g->target);
+      else if (g->usse < 0) fvgl_mem_free(g->uid);
       else fvgl_usse_free(g->usse == 1, g->uid);
     } else {
       g_garbage[kept++] = *g;

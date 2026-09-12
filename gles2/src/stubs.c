@@ -9,27 +9,10 @@
 
 #define FVGL_STUB(name) fvgl_stub_called(#name)
 
-GL_APICALL void GL_APIENTRY glActiveTexture(GLenum texture) {
-  (void)texture;
-  FVGL_STUB(glActiveTexture);
-}
-
-GL_APICALL void GL_APIENTRY glBindFramebuffer(GLenum target, GLuint framebuffer) {
-  (void)target;
-  (void)framebuffer;
-  FVGL_STUB(glBindFramebuffer);
-}
-
 GL_APICALL void GL_APIENTRY glBindRenderbuffer(GLenum target, GLuint renderbuffer) {
   (void)target;
   (void)renderbuffer;
   FVGL_STUB(glBindRenderbuffer);
-}
-
-GL_APICALL void GL_APIENTRY glBindTexture(GLenum target, GLuint texture) {
-  (void)target;
-  (void)texture;
-  FVGL_STUB(glBindTexture);
 }
 
 GL_APICALL void GL_APIENTRY glBlendColor(GLfloat red, GLfloat green, GLfloat blue, GLfloat alpha) {
@@ -38,12 +21,6 @@ GL_APICALL void GL_APIENTRY glBlendColor(GLfloat red, GLfloat green, GLfloat blu
   (void)blue;
   (void)alpha;
   FVGL_STUB(glBlendColor);
-}
-
-GL_APICALL GLenum GL_APIENTRY glCheckFramebufferStatus(GLenum target) {
-  (void)target;
-  FVGL_STUB(glCheckFramebufferStatus);
-  return 0;
 }
 
 GL_APICALL void GL_APIENTRY glClearDepthf(GLfloat d) {
@@ -81,51 +58,15 @@ GL_APICALL void GL_APIENTRY glCompressedTexSubImage2D(GLenum target, GLint level
   FVGL_STUB(glCompressedTexSubImage2D);
 }
 
-GL_APICALL void GL_APIENTRY glCopyTexImage2D(GLenum target, GLint level, GLenum internalformat, GLint x, GLint y, GLsizei width, GLsizei height, GLint border) {
-  (void)target;
-  (void)level;
-  (void)internalformat;
-  (void)x;
-  (void)y;
-  (void)width;
-  (void)height;
-  (void)border;
-  FVGL_STUB(glCopyTexImage2D);
-}
-
-GL_APICALL void GL_APIENTRY glCopyTexSubImage2D(GLenum target, GLint level, GLint xoffset, GLint yoffset, GLint x, GLint y, GLsizei width, GLsizei height) {
-  (void)target;
-  (void)level;
-  (void)xoffset;
-  (void)yoffset;
-  (void)x;
-  (void)y;
-  (void)width;
-  (void)height;
-  FVGL_STUB(glCopyTexSubImage2D);
-}
-
 GL_APICALL void GL_APIENTRY glCullFace(GLenum mode) {
   (void)mode;
   FVGL_STUB(glCullFace);
-}
-
-GL_APICALL void GL_APIENTRY glDeleteFramebuffers(GLsizei n, const GLuint *framebuffers) {
-  (void)n;
-  (void)framebuffers;
-  FVGL_STUB(glDeleteFramebuffers);
 }
 
 GL_APICALL void GL_APIENTRY glDeleteRenderbuffers(GLsizei n, const GLuint *renderbuffers) {
   (void)n;
   (void)renderbuffers;
   FVGL_STUB(glDeleteRenderbuffers);
-}
-
-GL_APICALL void GL_APIENTRY glDeleteTextures(GLsizei n, const GLuint *textures) {
-  (void)n;
-  (void)textures;
-  FVGL_STUB(glDeleteTextures);
 }
 
 GL_APICALL void GL_APIENTRY glDepthFunc(GLenum func) {
@@ -147,36 +88,15 @@ GL_APICALL void GL_APIENTRY glFramebufferRenderbuffer(GLenum target, GLenum atta
   FVGL_STUB(glFramebufferRenderbuffer);
 }
 
-GL_APICALL void GL_APIENTRY glFramebufferTexture2D(GLenum target, GLenum attachment, GLenum textarget, GLuint texture, GLint level) {
-  (void)target;
-  (void)attachment;
-  (void)textarget;
-  (void)texture;
-  (void)level;
-  FVGL_STUB(glFramebufferTexture2D);
-}
-
 GL_APICALL void GL_APIENTRY glGenerateMipmap(GLenum target) {
   (void)target;
   FVGL_STUB(glGenerateMipmap);
-}
-
-GL_APICALL void GL_APIENTRY glGenFramebuffers(GLsizei n, GLuint *framebuffers) {
-  (void)n;
-  (void)framebuffers;
-  FVGL_STUB(glGenFramebuffers);
 }
 
 GL_APICALL void GL_APIENTRY glGenRenderbuffers(GLsizei n, GLuint *renderbuffers) {
   (void)n;
   (void)renderbuffers;
   FVGL_STUB(glGenRenderbuffers);
-}
-
-GL_APICALL void GL_APIENTRY glGenTextures(GLsizei n, GLuint *textures) {
-  (void)n;
-  (void)textures;
-  FVGL_STUB(glGenTextures);
 }
 
 GL_APICALL void GL_APIENTRY glGetActiveAttrib(GLuint program, GLuint index, GLsizei bufSize, GLsizei *length, GLint *size, GLenum *type, GLchar *name) {
@@ -209,14 +129,6 @@ GL_APICALL void GL_APIENTRY glGetAttachedShaders(GLuint program, GLsizei maxCoun
   FVGL_STUB(glGetAttachedShaders);
 }
 
-GL_APICALL void GL_APIENTRY glGetFramebufferAttachmentParameteriv(GLenum target, GLenum attachment, GLenum pname, GLint *params) {
-  (void)target;
-  (void)attachment;
-  (void)pname;
-  (void)params;
-  FVGL_STUB(glGetFramebufferAttachmentParameteriv);
-}
-
 GL_APICALL void GL_APIENTRY glGetRenderbufferParameteriv(GLenum target, GLenum pname, GLint *params) {
   (void)target;
   (void)pname;
@@ -230,20 +142,6 @@ GL_APICALL void GL_APIENTRY glGetShaderPrecisionFormat(GLenum shadertype, GLenum
   (void)range;
   (void)precision;
   FVGL_STUB(glGetShaderPrecisionFormat);
-}
-
-GL_APICALL void GL_APIENTRY glGetTexParameterfv(GLenum target, GLenum pname, GLfloat *params) {
-  (void)target;
-  (void)pname;
-  (void)params;
-  FVGL_STUB(glGetTexParameterfv);
-}
-
-GL_APICALL void GL_APIENTRY glGetTexParameteriv(GLenum target, GLenum pname, GLint *params) {
-  (void)target;
-  (void)pname;
-  (void)params;
-  FVGL_STUB(glGetTexParameteriv);
 }
 
 GL_APICALL void GL_APIENTRY glGetUniformfv(GLuint program, GLint location, GLfloat *params) {
@@ -287,28 +185,10 @@ GL_APICALL void GL_APIENTRY glHint(GLenum target, GLenum mode) {
   FVGL_STUB(glHint);
 }
 
-GL_APICALL GLboolean GL_APIENTRY glIsFramebuffer(GLuint framebuffer) {
-  (void)framebuffer;
-  FVGL_STUB(glIsFramebuffer);
-  return 0;
-}
-
 GL_APICALL GLboolean GL_APIENTRY glIsRenderbuffer(GLuint renderbuffer) {
   (void)renderbuffer;
   FVGL_STUB(glIsRenderbuffer);
   return 0;
-}
-
-GL_APICALL GLboolean GL_APIENTRY glIsTexture(GLuint texture) {
-  (void)texture;
-  FVGL_STUB(glIsTexture);
-  return 0;
-}
-
-GL_APICALL void GL_APIENTRY glPixelStorei(GLenum pname, GLint param) {
-  (void)pname;
-  (void)param;
-  FVGL_STUB(glPixelStorei);
 }
 
 GL_APICALL void GL_APIENTRY glPolygonOffset(GLfloat factor, GLfloat units) {
@@ -383,60 +263,6 @@ GL_APICALL void GL_APIENTRY glStencilOpSeparate(GLenum face, GLenum sfail, GLenu
   (void)dpfail;
   (void)dppass;
   FVGL_STUB(glStencilOpSeparate);
-}
-
-GL_APICALL void GL_APIENTRY glTexImage2D(GLenum target, GLint level, GLint internalformat, GLsizei width, GLsizei height, GLint border, GLenum format, GLenum type, const void *pixels) {
-  (void)target;
-  (void)level;
-  (void)internalformat;
-  (void)width;
-  (void)height;
-  (void)border;
-  (void)format;
-  (void)type;
-  (void)pixels;
-  FVGL_STUB(glTexImage2D);
-}
-
-GL_APICALL void GL_APIENTRY glTexParameterf(GLenum target, GLenum pname, GLfloat param) {
-  (void)target;
-  (void)pname;
-  (void)param;
-  FVGL_STUB(glTexParameterf);
-}
-
-GL_APICALL void GL_APIENTRY glTexParameterfv(GLenum target, GLenum pname, const GLfloat *params) {
-  (void)target;
-  (void)pname;
-  (void)params;
-  FVGL_STUB(glTexParameterfv);
-}
-
-GL_APICALL void GL_APIENTRY glTexParameteri(GLenum target, GLenum pname, GLint param) {
-  (void)target;
-  (void)pname;
-  (void)param;
-  FVGL_STUB(glTexParameteri);
-}
-
-GL_APICALL void GL_APIENTRY glTexParameteriv(GLenum target, GLenum pname, const GLint *params) {
-  (void)target;
-  (void)pname;
-  (void)params;
-  FVGL_STUB(glTexParameteriv);
-}
-
-GL_APICALL void GL_APIENTRY glTexSubImage2D(GLenum target, GLint level, GLint xoffset, GLint yoffset, GLsizei width, GLsizei height, GLenum format, GLenum type, const void *pixels) {
-  (void)target;
-  (void)level;
-  (void)xoffset;
-  (void)yoffset;
-  (void)width;
-  (void)height;
-  (void)format;
-  (void)type;
-  (void)pixels;
-  FVGL_STUB(glTexSubImage2D);
 }
 
 void eglQueryString_stub(void) { FVGL_STUB(eglQueryString); }

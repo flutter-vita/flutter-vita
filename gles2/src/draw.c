@@ -488,6 +488,7 @@ static void draw(GLenum mode, GLint first, unsigned count, unsigned vertex_count
   sceGxmSetFragmentProgram(fvgl.gxm, fp);
   if (fvgl.bound_program != p || p->uniforms_dirty || fvgl.bound_fc[0] != fvgl.fc[0] || fvgl.bound_fc[1] != fvgl.fc[1])
     upload_uniforms(p);
+  fvgl_bind_samplers(p);
   for (int s = 0; s < L.stream_count; s++) sceGxmSetVertexStream(fvgl.gxm, (unsigned)s, L.streams[s].base);
 
   const int r = sceGxmDraw(fvgl.gxm, prim, format, indices, count);

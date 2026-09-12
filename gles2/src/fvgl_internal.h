@@ -55,8 +55,14 @@ void fvgl_shacc_shutdown(void);
 
 void fvgl_defer_free(SceUID uid);
 void fvgl_defer_free_usse(bool fragment, SceUID uid);
+void fvgl_defer_destroy_target(SceGxmRenderTarget* target);
 uint32_t fvgl_gpu_completed_frame(void);
 void fvgl_collect_garbage(bool everything);
+// Blocks until the GPU reports `frame` done. A frame that is still being
+// recorded cannot complete, so for the current frame this finishes the
+// context instead. Both are counted, because both are stalls.
+void fvgl_wait_for_frame(uint32_t frame);
+extern unsigned fvgl_stalls_previous_frame, fvgl_stalls_this_frame;
 
 // Per-frame scratch memory for client-side vertex arrays and converted
 // indices. Valid until the display buffer it belongs to comes round again.
@@ -155,6 +161,35 @@ typedef struct FvglProgram {
   bool uniforms_dirty;
 } FvglProgram;
 
+typedef void (*FvglTexelConvert)(uint8_t* dst, const uint8_t* src, int texels);
+
+typedef struct FvglTexture {
+  SceUID uid;
+  uint8_t* data;
+  size_t bytes;  // of the block
+  int width, height;
+  GLenum format, type;  // the GL pair the storage was made for
+  unsigned bpp;         // bytes per texel in storage
+  unsigned src_bpp;     // bytes per texel as GL hands them in
+  FvglTexelConvert convert;  // client texels to storage texels, NULL for a copy
+  unsigned stride;      // bytes per row
+  SceGxmTextureFormat gxm_format;
+  SceGxmTexture gxm;
+  bool has_storage;
+  bool params_dirty;  // filters or wrap changed since gxm was set up
+  GLenum min_filter, mag_filter, wrap_s, wrap_t;
+  uint32_t last_frame_used;
+  // Made when the texture is first attached to a framebuffer.
+  SceGxmRenderTarget* target;
+  SceGxmColorSurface surface;
+} FvglTexture;
+
+typedef struct FvglFramebuffer {
+  unsigned color;  // texture name at GL_COLOR_ATTACHMENT0, 0 when none
+} FvglFramebuffer;
+
+#define FVGL_MAX_TEXTURE_UNITS 8
+
 typedef struct FvglVertexAttribState {
   bool enabled;
   GLint size;
@@ -215,6 +250,7 @@ typedef struct FvglContext {
   SceGxmRenderTarget* display_target;
   SceGxmDepthStencilSurface no_depth;
   int display_buffer_count;
+  unsigned display_stride;  // pixels per row of a display buffer
   FvglDisplayBuffer display[FVGL_MAX_DISPLAY_BUFFERS];
   int back, front;  // indices into display[]
 
@@ -242,11 +278,22 @@ typedef struct FvglContext {
   float line_width;
   bool cull_enabled, depth_test_enabled, stencil_test_enabled, dither_enabled;
 
-  FvglTable shaders, programs, buffers;
+  FvglTable shaders, programs, buffers, textures, framebuffers;
   FvglProgram* current_program;
   FvglProgram* bound_program;  // what the GXM context last saw
   unsigned array_buffer, element_buffer;
   FvglVertexAttribState attribs[FVGL_MAX_ATTRIBUTES];
+
+  int active_unit;
+  unsigned unit_2d[FVGL_MAX_TEXTURE_UNITS];    // GL_TEXTURE_2D binding per unit
+  unsigned unit_cube[FVGL_MAX_TEXTURE_UNITS];  // GL_TEXTURE_CUBE_MAP, bound and refused
+  GLint unpack_alignment, pack_alignment;
+  FvglTexture fallback;  // 1x1 opaque white: what an incomplete sampler reads
+
+  // The render target: the display, or the texture attached to the bound
+  // framebuffer. The scene, if one is open, is on `scene_target`.
+  unsigned bound_framebuffer;
+  FvglTexture* scene_target;
 
   // The hidden fragment uniform behind gl_FragCoord: (a, b) with y = a + b * wpos.y.
   float fc[2];
@@ -260,8 +307,25 @@ extern FvglContext fvgl;
 void fvgl_scene_begin(void);
 void fvgl_scene_end(void);
 
+// The texture the bound framebuffer draws into, NULL for the display.
+FvglTexture* fvgl_current_target(void);
+// The target's size, and whether GL rows are counted from its bottom
+// (the display) or match memory rows (a texture).
+void fvgl_target_extent(int* width, int* height, bool* flipped);
+
 // programs.c
 void fvgl_programs_shutdown(void);
+// textures.c
+int fvgl_textures_init(void);
+void fvgl_textures_shutdown(void);
+// Sets the fragment textures the program's samplers name. Called per draw.
+void fvgl_bind_samplers(FvglProgram* p);
+// framebuffers.c
+void fvgl_framebuffers_shutdown(void);
+// A render target and colour surface over the texture's storage, once.
+bool fvgl_texture_make_target(FvglTexture* t);
+// A texture is being deleted: framebuffers pointing at it lose the attachment.
+void fvgl_framebuffers_forget_texture(unsigned texture);
 // draw.c
 void fvgl_draw_init(void);
 void fvgl_draw_shutdown(void);

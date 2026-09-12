@@ -18,12 +18,14 @@ add_library(fvita_gles2 STATIC
   src/buffers.c
   src/context.c
   src/draw.c
+  src/framebuffers.c
   src/memory.c
   src/procs.c
   src/programs.c
   src/shacc.c
   src/state.c
   src/stubs.c
+  src/textures.c
   src/translate.c
 )
 target_include_directories(fvita_gles2 PUBLIC include)

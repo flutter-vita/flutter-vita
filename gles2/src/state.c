@@ -102,9 +102,9 @@ static int get_values(GLenum pname, float* v) {
     case GL_MAX_VERTEX_UNIFORM_VECTORS: v[0] = 128; return 1;
     case GL_MAX_FRAGMENT_UNIFORM_VECTORS: v[0] = 64; return 1;
     case GL_MAX_VARYING_VECTORS: v[0] = FVGL_MAX_VARYINGS; return 1;
-    case GL_MAX_TEXTURE_IMAGE_UNITS: v[0] = 8; return 1;
+    case GL_MAX_TEXTURE_IMAGE_UNITS: v[0] = FVGL_MAX_TEXTURE_UNITS; return 1;
     case GL_MAX_VERTEX_TEXTURE_IMAGE_UNITS: v[0] = 0; return 1;
-    case GL_MAX_COMBINED_TEXTURE_IMAGE_UNITS: v[0] = 8; return 1;
+    case GL_MAX_COMBINED_TEXTURE_IMAGE_UNITS: v[0] = FVGL_MAX_TEXTURE_UNITS; return 1;
     case GL_ALIASED_LINE_WIDTH_RANGE: v[0] = 1; v[1] = 1; return 2;
     case GL_ALIASED_POINT_SIZE_RANGE: v[0] = 1; v[1] = 1; return 2;
     case GL_NUM_COMPRESSED_TEXTURE_FORMATS: v[0] = 0; return 1;
@@ -117,7 +117,8 @@ static int get_values(GLenum pname, float* v) {
     case GL_STENCIL_BITS: v[0] = 0; return 1;
     case GL_IMPLEMENTATION_COLOR_READ_FORMAT: v[0] = GL_RGBA; return 1;
     case GL_IMPLEMENTATION_COLOR_READ_TYPE: v[0] = GL_UNSIGNED_BYTE; return 1;
-    case GL_PACK_ALIGNMENT: case GL_UNPACK_ALIGNMENT: v[0] = 4; return 1;
+    case GL_PACK_ALIGNMENT: v[0] = (float)fvgl.pack_alignment; return 1;
+    case GL_UNPACK_ALIGNMENT: v[0] = (float)fvgl.unpack_alignment; return 1;
     case GL_VIEWPORT:
       for (int i = 0; i < 4; i++) v[i] = (float)fvgl.viewport[i];
       return 4;
@@ -132,10 +133,11 @@ static int get_values(GLenum pname, float* v) {
       return 4;
     case GL_ARRAY_BUFFER_BINDING: v[0] = (float)fvgl.array_buffer; return 1;
     case GL_ELEMENT_ARRAY_BUFFER_BINDING: v[0] = (float)fvgl.element_buffer; return 1;
-    case GL_FRAMEBUFFER_BINDING: v[0] = 0; return 1;
+    case GL_FRAMEBUFFER_BINDING: v[0] = (float)fvgl.bound_framebuffer; return 1;
     case GL_RENDERBUFFER_BINDING: v[0] = 0; return 1;
-    case GL_ACTIVE_TEXTURE: v[0] = GL_TEXTURE0; return 1;
-    case GL_TEXTURE_BINDING_2D: v[0] = 0; return 1;
+    case GL_ACTIVE_TEXTURE: v[0] = (float)(GL_TEXTURE0 + (GLenum)fvgl.active_unit); return 1;
+    case GL_TEXTURE_BINDING_2D: v[0] = (float)fvgl.unit_2d[fvgl.active_unit]; return 1;
+    case GL_TEXTURE_BINDING_CUBE_MAP: v[0] = (float)fvgl.unit_cube[fvgl.active_unit]; return 1;
     case GL_CURRENT_PROGRAM: {
       float n = 0;
       for (unsigned i = 1; i <= fvgl.programs.count; i++)

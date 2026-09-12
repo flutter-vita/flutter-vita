@@ -4,8 +4,10 @@
 // Two conventions are decided here and everything else follows them:
 //
 //   * GL's window origin is bottom-left; the console's surfaces and its WPOS
-//     are top-left. The viewport transform flips (yScale is negative), the
-//     scissor is converted to rows, and glReadPixels reads rows bottom-up.
+//     are top-left. On the display the viewport transform flips (yScale is
+//     negative), the scissor is converted to rows, and glReadPixels reads rows
+//     bottom-up. A texture target is not flipped: its GL row 0 is its memory
+//     row 0 (framebuffers.c says why). fvgl_target_extent tells which holds.
 //   * The hardware's region clip works on 32x32 tiles, so it cannot be the
 //     scissor test on its own. It rejects whole tiles cheaply; the exact edge
 //     is a clip() against a rectangle uniform in every fragment program,
@@ -68,15 +70,13 @@ typedef struct DisplayCallbackData {
   void* address;
 } DisplayCallbackData;
 
-static unsigned g_stride;  // pixels per row of a display buffer
-
 static void display_callback(const void* data) {
   const DisplayCallbackData* d = data;
   SceDisplayFrameBuf fb;
   memset(&fb, 0, sizeof fb);
   fb.size = sizeof fb;
   fb.base = d->address;
-  fb.pitch = g_stride;
+  fb.pitch = fvgl.display_stride;
   fb.pixelformat = SCE_DISPLAY_PIXELFORMAT_A8B8G8R8;
   fb.width = (unsigned)fvgl.width;
   fb.height = (unsigned)fvgl.height;
@@ -201,7 +201,9 @@ static SceGxmFragmentProgram* clear_fragment_for_mask(unsigned gl_mask) {
 
 // The scissor as rows, clamped to the target. Returns false when it is empty.
 static bool scissor_rows(int* x0, int* y0, int* x1, int* y1) {
-  const int w = fvgl.width, h = fvgl.height;
+  int w, h;
+  bool flipped;
+  fvgl_target_extent(&w, &h, &flipped);
   if (!fvgl.scissor_enabled) {
     *x0 = 0; *y0 = 0; *x1 = w; *y1 = h;
     return true;
@@ -215,8 +217,13 @@ static bool scissor_rows(int* x0, int* y0, int* x1, int* y1) {
   if (sx1 <= sx0 || sy1 <= sy0) return false;
   *x0 = sx0;
   *x1 = sx1;
-  *y0 = h - sy1;  // GL top edge, as a row from the top
-  *y1 = h - sy0;
+  if (flipped) {
+    *y0 = h - sy1;  // GL top edge, as a row from the top
+    *y1 = h - sy0;
+  } else {
+    *y0 = sy0;
+    *y1 = sy1;
+  }
   return true;
 }
 
@@ -231,23 +238,48 @@ static void apply_region_clip(void) {
 }
 
 static void apply_viewport(int x, int y, int w, int h) {
-  // GL: NDC y = +1 is the top of the viewport, which is row H - (y + h).
-  sceGxmSetViewport(fvgl.gxm, (float)x + w * 0.5f, w * 0.5f,
-                    (float)(fvgl.height - y) - h * 0.5f, -h * 0.5f, 0.5f, 0.5f);
+  int tw, th;
+  bool flipped;
+  fvgl_target_extent(&tw, &th, &flipped);
+  if (flipped) {
+    // GL: NDC y = +1 is the top of the viewport, which is row H - (y + h).
+    sceGxmSetViewport(fvgl.gxm, (float)x + w * 0.5f, w * 0.5f,
+                      (float)(th - y) - h * 0.5f, -h * 0.5f, 0.5f, 0.5f);
+  } else {
+    sceGxmSetViewport(fvgl.gxm, (float)x + w * 0.5f, w * 0.5f, (float)y + h * 0.5f, h * 0.5f, 0.5f, 0.5f);
+  }
 }
 
 // ---- scenes ----------------------------------------------------------------
 
 void fvgl_scene_begin(void) {
-  if (fvgl.scene_open) return;
-  FvglDisplayBuffer* b = &fvgl.display[fvgl.back];
-  const int r = sceGxmBeginScene(fvgl.gxm, 0, fvgl.display_target, NULL, NULL,
-                                 b->sync, &b->surface, &fvgl.no_depth);
+  FvglTexture* target = fvgl_current_target();
+  if (fvgl.scene_open) {
+    if (fvgl.scene_target == target) return;
+    fvgl_scene_end();
+  }
+  int r;
+  if (target) {
+    if (!fvgl_texture_make_target(target)) {
+      fvgl_log("draw into a texture that cannot be a render target");
+      return;
+    }
+    r = sceGxmBeginScene(fvgl.gxm, 0, target->target, NULL, NULL, NULL, &target->surface, &fvgl.no_depth);
+    fvgl.fc[0] = 0.0f;  // gl_FragCoord.y is the row
+    fvgl.fc[1] = 1.0f;
+  } else {
+    FvglDisplayBuffer* b = &fvgl.display[fvgl.back];
+    r = sceGxmBeginScene(fvgl.gxm, 0, fvgl.display_target, NULL, NULL, b->sync, &b->surface, &fvgl.no_depth);
+    fvgl.fc[0] = (float)fvgl.height;  // GL's y is the row counted from the bottom
+    fvgl.fc[1] = -1.0f;
+  }
   if (r < 0) {
     fvgl_log("sceGxmBeginScene: 0x%08X", (unsigned)r);
     return;
   }
   fvgl.scene_open = true;
+  fvgl.scene_target = target;
+  if (target) target->last_frame_used = fvgl.frame;
   fvgl.bound_program = NULL;  // a new scene starts with no programs set
   // The raster state GL never changes for a 2D renderer is set once per scene.
   sceGxmSetFrontDepthFunc(fvgl.gxm, SCE_GXM_DEPTH_FUNC_ALWAYS);
@@ -264,13 +296,14 @@ void fvgl_scene_end(void) {
   const int r = sceGxmEndScene(fvgl.gxm, NULL, NULL);
   if (r < 0) fvgl_log("sceGxmEndScene: 0x%08X", (unsigned)r);
   fvgl.scene_open = false;
+  fvgl.scene_target = NULL;
 }
 
 // ---- init and teardown -----------------------------------------------------
 
 static int display_chain_init(int count) {
-  g_stride = ((unsigned)fvgl.width + 63u) & ~63u;
-  const size_t bytes = (size_t)g_stride * (size_t)fvgl.height * 4;
+  fvgl.display_stride = ((unsigned)fvgl.width + 63u) & ~63u;
+  const size_t bytes = (size_t)fvgl.display_stride * (size_t)fvgl.height * 4;
   fvgl.display_buffer_count = count;
   for (int i = 0; i < count; i++) {
     FvglDisplayBuffer* b = &fvgl.display[i];
@@ -282,7 +315,7 @@ static int display_chain_init(int count) {
                                    SCE_GXM_COLOR_SURFACE_SCALE_NONE,
                                    SCE_GXM_OUTPUT_REGISTER_SIZE_32BIT,
                                    (unsigned)fvgl.width, (unsigned)fvgl.height,
-                                   g_stride, b->data);
+                                   fvgl.display_stride, b->data);
     if (r < 0) {
       fvgl_log("sceGxmColorSurfaceInit %d: 0x%08X", i, (unsigned)r);
       return r;
@@ -412,6 +445,7 @@ int fvgl_init(const FvglConfig* config) {
 
   if (fvgl_scratch_init() < 0) goto fail;
   fvgl_draw_init();
+  if (fvgl_textures_init() < 0) goto fail;
   // The GPU writes the number of each finished frame here.
   fvgl.frame_done = sceGxmGetNotificationRegion();
   *fvgl.frame_done = 0;
@@ -430,11 +464,8 @@ int fvgl_init(const FvglConfig* config) {
   fvgl.front_face = GL_CCW;
   fvgl.depth_mask = GL_TRUE;
   fvgl.line_width = 1.0f;
-  // gl_FragCoord on the display: GL's y is the row counted from the bottom.
-  fvgl.fc[0] = (float)fvgl.height;
-  fvgl.fc[1] = -1.0f;
   fvgl.up = true;
-  fvgl_log("up: %dx%d, %d display buffers, stride %u", fvgl.width, fvgl.height, buffers, g_stride);
+  fvgl_log("up: %dx%d, %d display buffers, stride %u", fvgl.width, fvgl.height, buffers, fvgl.display_stride);
   return 0;
 
 fail:
@@ -443,16 +474,24 @@ fail:
 }
 
 void fvgl_shutdown(void) {
+  // Staged in the log: a hang here is otherwise a blank screen with no dump.
+  fvgl_log("shutdown: finish");
   if (fvgl.gxm) {
     fvgl_scene_end();
     sceGxmFinish(fvgl.gxm);
   }
+  fvgl_log("shutdown: display queue");
   sceGxmDisplayQueueFinish();
+  fvgl_log("shutdown: objects");
   if (fvgl.patcher) fvgl_programs_shutdown();
   fvgl_buffers_shutdown();
+  fvgl_framebuffers_shutdown();
+  fvgl_textures_shutdown();
   fvgl_draw_shutdown();
   fvgl_scratch_shutdown();
+  fvgl_log("shutdown: garbage");
   fvgl_collect_garbage(true);
+  fvgl_log("shutdown: patcher and context");
   FvglClearPipeline* c = &fvgl.clear;
   if (fvgl.patcher) {
     for (int i = 0; i < 16; i++) {
@@ -483,6 +522,7 @@ void fvgl_shutdown(void) {
   fvgl_mem_free(fvgl.vdm_uid);
   free(fvgl.host_mem);
   sceGxmTerminate();
+  fvgl_log("shutdown: down");
   memset(&fvgl, 0, sizeof fvgl);
 }
 
@@ -490,9 +530,17 @@ void fvgl_shutdown(void) {
 
 void fvgl_swap(void) {
   if (!fvgl.up) return;
-  // A frame nobody drew into still has to go through the queue, or the chain
-  // and the sync objects fall out of step with each other.
-  fvgl_scene_begin();
+  // The frame ends on the display, whatever was bound: a frame nobody drew
+  // into still has to go through the queue, or the chain and the sync objects
+  // fall out of step with each other, and a scene on a texture cannot carry
+  // the display's sync object.
+  if (fvgl.scene_open && fvgl.scene_target) fvgl_scene_end();
+  if (!fvgl.scene_open) {
+    const unsigned bound = fvgl.bound_framebuffer;
+    fvgl.bound_framebuffer = 0;
+    fvgl_scene_begin();
+    fvgl.bound_framebuffer = bound;
+  }
   // The last scene of the frame carries the notification: when the GPU has
   // run it, everything the frame referenced can go.
   if (fvgl.scene_open) {
@@ -500,6 +548,7 @@ void fvgl_swap(void) {
     const int r = sceGxmEndScene(fvgl.gxm, NULL, &done);
     if (r < 0) fvgl_log("sceGxmEndScene: 0x%08X", (unsigned)r);
     fvgl.scene_open = false;
+    fvgl.scene_target = NULL;
   }
   FvglDisplayBuffer* back = &fvgl.display[fvgl.back];
   FvglDisplayBuffer* front = &fvgl.display[fvgl.front];
@@ -595,7 +644,10 @@ GL_APICALL void GL_APIENTRY glClear(GLbitfield mask) {
   fvgl_scene_begin();
   if (!fvgl.scene_open) return;
   // A clear ignores the viewport. The region clip already matches the scissor.
-  apply_viewport(0, 0, fvgl.width, fvgl.height);
+  int tw, th;
+  bool flipped;
+  fvgl_target_extent(&tw, &th, &flipped);
+  apply_viewport(0, 0, tw, th);
   sceGxmSetVertexProgram(fvgl.gxm, fvgl.clear.vertex);
   sceGxmSetFragmentProgram(fvgl.gxm, fp);
   fvgl.bound_program = NULL;
@@ -625,20 +677,26 @@ GL_APICALL void GL_APIENTRY glReadPixels(GLint x, GLint y, GLsizei w, GLsizei h,
   fvgl_scene_end();
   sceGxmFinish(fvgl.gxm);
   *fvgl.frame_done = fvgl.frame - 1;  // nothing older than this frame is in flight now
-  const uint8_t* src = fvgl.display[fvgl.back].data;
+  const FvglTexture* t = fvgl_current_target();
+  int tw, th;
+  bool flipped;
+  fvgl_target_extent(&tw, &th, &flipped);
+  const uint8_t* src = t ? t->data : fvgl.display[fvgl.back].data;
+  const size_t src_stride = t ? t->stride : (size_t)fvgl.display_stride * 4;
+  const size_t row_bytes = ((size_t)w * 4 + (size_t)fvgl.pack_alignment - 1) & ~((size_t)fvgl.pack_alignment - 1);
   uint8_t* dst = pixels;
   for (GLsizei row = 0; row < h; row++) {
-    const int gy = y + row;  // GL row, bottom-up
-    const int sy = fvgl.height - 1 - gy;
+    const int gy = y + row;  // GL row
+    const int sy = flipped ? th - 1 - gy : gy;
     for (GLsizei col = 0; col < w; col++) {
       const int gx = x + col;
-      uint8_t* out = dst + ((size_t)row * (size_t)w + (size_t)col) * 4;
-      if (gx < 0 || gx >= fvgl.width || sy < 0 || sy >= fvgl.height) {
+      uint8_t* out = dst + (size_t)row * row_bytes + (size_t)col * 4;
+      if (gx < 0 || gx >= tw || sy < 0 || sy >= th) {
         out[0] = out[1] = out[2] = out[3] = 0;
         continue;
       }
       // A8B8G8R8 in a little-endian word is R, G, B, A in memory: GL_RGBA.
-      memcpy(out, src + ((size_t)sy * g_stride + (size_t)gx) * 4, 4);
+      memcpy(out, src + (size_t)sy * src_stride + (size_t)gx * 4, 4);
     }
   }
 }
