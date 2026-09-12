@@ -7,6 +7,8 @@
 //   M1  two triangles from GLSL: translator, link, uniforms (a mat3 among
 //       them), VBO and client arrays, glDrawArrays and glDrawElements, blend,
 //       gl_FragCoord the way Skia uses it
+//   M2  every shader in gles2/corpus through the translator and the
+//       console's Cg compiler
 //
 // A test runs for a few seconds so the frame is also visible on the panel.
 #include <GLES2/gl2.h>
@@ -16,6 +18,7 @@
 #include <psp2/io/fcntl.h>
 #include <psp2/io/stat.h>
 #include <psp2/kernel/processmgr.h>
+#include <psp2/io/dirent.h>
 #include <psp2/kernel/threadmgr.h>
 #include <stdarg.h>
 #include <stdio.h>
@@ -275,6 +278,59 @@ static int m1(void) {
   return failed;
 }
 
+// ---- M2 --------------------------------------------------------------------
+
+static char* read_file(const char* path, unsigned* size) {
+  const SceUID fd = sceIoOpen(path, SCE_O_RDONLY, 0);
+  if (fd < 0) return NULL;
+  const int n = (int)sceIoLseek(fd, 0, SCE_SEEK_END);
+  sceIoLseek(fd, 0, SCE_SEEK_SET);
+  char* s = malloc((size_t)n + 1);
+  const int got = sceIoRead(fd, s, (SceSize)n);
+  sceIoClose(fd);
+  if (got < 0) {
+    free(s);
+    return NULL;
+  }
+  s[got] = 0;
+  if (size) *size = (unsigned)got;
+  return s;
+}
+
+static int m2(void) {
+  const SceUID dir = sceIoDopen("app0:corpus");
+  if (dir < 0) {
+    sayf("m2 no corpus directory: 0x%08X", (unsigned)dir);
+    return 1;
+  }
+  int total = 0, failed = 0;
+  SceIoDirent ent;
+  while (sceIoDread(dir, &ent) > 0) {
+    if (ent.d_name[0] == '.') continue;
+    char path[256];
+    snprintf(path, sizeof path, "app0:corpus/%s", ent.d_name);
+    char* src = read_file(path, NULL);
+    if (!src) {
+      sayf("m2 %s: unreadable", ent.d_name);
+      failed++;
+      total++;
+      continue;
+    }
+    const int fragment = strstr(ent.d_name, "frag") != NULL;
+    char log[1024];
+    const SceUInt64 t0 = sceKernelGetProcessTimeWide();
+    const int r = fvgl_debug_compile(src, fragment, log, sizeof log);
+    const unsigned ms = (unsigned)((sceKernelGetProcessTimeWide() - t0) / 1000);
+    sayf("m2 %s %-20s %4u ms %s", r == 0 ? "ok  " : "FAIL", ent.d_name, ms, r == 0 ? "" : log);
+    failed += r != 0;
+    total++;
+    free(src);
+  }
+  sceIoDclose(dir);
+  sayf("m2 %s: %d of %d shaders failed", failed ? "FAILED" : "PASSED", failed, total);
+  return failed;
+}
+
 int main(void) {
   sceIoMkdir(DIR, 0777);
   g_report = sceIoOpen(DIR "gles2-test.txt", SCE_O_WRONLY | SCE_O_CREAT | SCE_O_TRUNC, 0777);
@@ -287,6 +343,7 @@ int main(void) {
   if (r == 0) {
     m0();
     m1();
+    m2();
   }
   // A moment on screen so the result is also visible, then back.
   sceKernelDelayThread(1500 * 1000);

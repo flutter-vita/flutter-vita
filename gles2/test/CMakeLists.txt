@@ -28,10 +28,19 @@ target_link_libraries(${PROJECT_NAME}
   SceIofilemgr_stub
 )
 
+# The shader corpus rides along, one FILE entry per shader, for M2.
+file(GLOB CORPUS "${CMAKE_SOURCE_DIR}/../corpus/*.glsl")
+set(CORPUS_FILES)
+foreach(f ${CORPUS})
+  get_filename_component(n "${f}" NAME)
+  list(APPEND CORPUS_FILES FILE "${f}" "corpus/${n}")
+endforeach()
+
 vita_create_self(${PROJECT_NAME}.self ${PROJECT_NAME} UNSAFE)
 vita_create_vpk(${PROJECT_NAME}.vpk ${VITA_TITLEID} ${PROJECT_NAME}.self
   VERSION ${VITA_VERSION}
   NAME ${VITA_APP_NAME}
+  ${CORPUS_FILES}
   FILE ${CMAKE_SOURCE_DIR}/../../templates/vita-app/livearea/icon0.png sce_sys/icon0.png
   FILE ${CMAKE_SOURCE_DIR}/../../templates/vita-app/livearea/template.xml sce_sys/livearea/contents/template.xml
   FILE ${CMAKE_SOURCE_DIR}/../../templates/vita-app/livearea/bg0.png sce_sys/livearea/contents/bg0.png

@@ -640,3 +640,22 @@ void fvgl_programs_shutdown(void) {
   memset(&fvgl.shaders, 0, sizeof fvgl.shaders);
   fvgl.current_program = fvgl.bound_program = NULL;
 }
+
+int fvgl_debug_compile(const char* glsl, int fragment, char* log, unsigned log_size) {
+  FvglShaderInfo info;
+  if (fvgl_translate(glsl, fragment != 0, NULL, NULL, &info, log, log_size) != 0) return -1;
+  FvglVaryingMap map;
+  map.count = info.varying_count;
+  for (int i = 0; i < info.varying_count; i++) snprintf(map.names[i], FVGL_NAME_MAX, "%s", info.varyings[i].name);
+  char* cg = NULL;
+  if (fvgl_translate(glsl, fragment != 0, &map, &cg, &info, log, log_size) != 0) return -1;
+  SceGxmProgram* gxp = fvgl_shacc_compile(cg, fragment != 0, log, log_size);
+  if (!gxp) {
+    fvgl_log("Cg the compiler refused:\n%s", cg);
+    free(cg);
+    return -1;
+  }
+  free(cg);
+  free(gxp);
+  return 0;
+}

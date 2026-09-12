@@ -6,7 +6,7 @@ source and `gles2/surface.txt`; the area table's `done` column is set by hand
 and every change to it has to name its evidence in the last column.
 
 <!-- progress:begin -->
-**45% complete** (weighted areas, weights sum to 100).
+**49% complete** (weighted areas, weights sum to 100).
 
 | entry points | count |
 |---|---|
@@ -27,7 +27,7 @@ and every change to it has to name its evidence in the last column.
 | Buffers and vertex input: VBO, IBO, attribute pointers, client arrays, draw calls | 14 | 60% | M1 on hardware 2026-09-12: VBO with `glBufferData(NULL)`+`glBufferSubData`, client arrays and client indices, `glDrawArrays`, `glDrawElements` (u8/u16/u32), line strips expanded, constant attributes via instance streams, vertex-program cache per layout. Missing: gallery-scale measurement of `fvgl_subdata_into_used_buffer`, variant eviction |
 | Textures: 2D, sub-image, copy, parameters, pixel store, formats | 10 | 0% | |
 | Framebuffers: render to texture, per-target viewport and scissor, readback | 10 | 10% | `glReadPixels` on the default framebuffer, M0 |
-| Shader translation: GLSL ES 1.00 to Cg | 16 | 60% | `gles2/src/translate.c`: all 46 corpus shaders translate on the host (`gles2/tools/glsl2cg.c`, sanitizers clean); M1 compiled a mat3 program with `gl_FragCoord`, `mod`, `mix` on the console. Missing: the 46 through the console compiler (M2), `half` for `mediump` |
+| Shader translation: GLSL ES 1.00 to Cg | 16 | 80% | M2 on hardware 2026-09-13: all 46 corpus shaders translate and compile through `libshacccg` on the console (median 144 ms, max 1.9 s per shader, cold). Locals that shadow attributes are renamed. Missing: `half` for `mediump`, constructs outside the corpus arrive as named errors |
 | Programs: SceShaccCg compile, link, attribute and uniform reflection, uniform upload | 12 | 65% | M1: shader and program objects, link-time Cg compile, varying map, `glBindAttribLocation`, uniform table with locations, all `glUniform*` forms, matrix upload order verified by a translation through a `mat3`, fragment-program cache per blend state. Missing: samplers bound to textures, relink and delete under load |
 | Pipeline state: blend, masks, scissor, viewport, line width, front face, getters | 6 | 70% | M1: blend func/equation (separate forms) verified by two hand-computed blended pixels; `glGetIntegerv`/`Floatv`/`Booleanv` table; `glFinish`. Missing: `glLineWidth` applied, depth/stencil state |
 | Integration: `--gl gles2`, embedder switch, proc table, recording stubs, tracer | 6 | 30% | `tools/gles2-gen.py` generates `procs.c` (142 core names plus the extension names Skia asks for) and `stubs.c` (recording stubs writing `gles2-unimplemented.txt`). Missing: the build flag, the embedder switch, the tracer re-pointed |
@@ -40,7 +40,7 @@ and every change to it has to name its evidence in the last column.
 |---|---|---|
 | M0 | clear, scissor, present through our own sceGxm context | **done 2026-09-12**, `gles2/test` M0 passes 10 of 10 pixel checks on hardware |
 | M1 | a triangle from run-time-translated GLSL | **done 2026-09-12**, `gles2/test` M1 passes 8 of 8 (mat3 convention, blend, gl_FragCoord, VBO and client paths) |
-| M2 | the gallery's 43 shaders translate and compile | |
+| M2 | the gallery's shaders translate and compile | **done 2026-09-13**, 46 of 46 on the console (`gles2/test` M2) |
 | M3 | the gallery draws under `--gl gles2` | |
 | M4 | test apps and bench at parity | |
 | M5 | vitaGL and vitashark gone | |

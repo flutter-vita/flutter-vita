@@ -131,6 +131,7 @@ typedef struct Sym {
   FvglType type;
   SymKind kind;
   int scope;
+  const char* alias;  // Cg spelling when it differs from the GLSL name
 } Sym;
 
 // ---- the translation state -------------------------------------------------
@@ -452,6 +453,7 @@ static void sym_add(Tx* tx, const char* name, int namelen, FvglType type, SymKin
   s->type = type;
   s->kind = kind;
   s->scope = tx->scope;
+  s->alias = NULL;
 }
 
 static Sym* sym_find(Tx* tx, const char* name, int namelen) {
@@ -980,7 +982,8 @@ static FvglType emit_ident(Tx* tx, Expr* e, Buf* out) {
     if (strcmp(e->name, "gl_PointSize") == 0) tx->uses_pointsize = true;
     if (strcmp(e->name, "gl_FragColor") == 0) tx->uses_fragcolor = true;
   }
-  emit_name(tx, out, e->name);
+  if (s->alias) buf_str(tx, out, s->alias);
+  else emit_name(tx, out, e->name);
   return s->type;
 }
 
@@ -1469,21 +1472,25 @@ static void indent(Tx* tx, Buf* out, int depth) {
   for (int i = 0; i < depth; i++) buf_str(tx, out, "  ");
 }
 
-static void emit_decl_list(Tx* tx, Decl* d, Buf* out, bool global) {
+static void emit_decl_list(Tx* tx, Decl* d, Buf* out, bool global, const char* alias) {
   for (; d; d = d->next) {
-    if (d->is_const) buf_str(tx, out, global ? "static const " : "const ");
-    buf_fmt(tx, out, "%s ", cg_type_name(tx, d->type, 0));
-    emit_name(tx, out, d->name);
-    if (d->type.array) buf_fmt(tx, out, "[%d]", d->type.array);
+    // The initializer first: it is evaluated before the name comes into scope.
+    Buf v = {0};
     if (d->init) {
-      Buf v = {0};
       const FvglType t = emit_expr(tx, d->init, &v);
       if (!type_same(t, d->type) && !(type_is_scalar(t) && type_is_scalar(d->type)))
         fail(tx, 0, "initializer of '%s' has a different type", d->name);
+    }
+    if (d->is_const) buf_str(tx, out, global ? "static const " : "const ");
+    buf_fmt(tx, out, "%s ", cg_type_name(tx, d->type, 0));
+    if (alias) buf_str(tx, out, alias);
+    else emit_name(tx, out, d->name);
+    if (d->type.array) buf_fmt(tx, out, "[%d]", d->type.array);
+    if (d->init) {
       buf_str(tx, out, " = ");
       buf_put(tx, out, v.s, v.len);
-      free(v.s);
     }
+    free(v.s);
     buf_str(tx, out, ";\n");
   }
 }
@@ -1505,8 +1512,24 @@ static void emit_body(Tx* tx, Stmt* s, Buf* out, int depth) {
   }
 }
 
-static void redeclare(Tx* tx, Decl* d) {
-  for (; d; d = d->next) sym_add(tx, d->name, d->namelen, d->type, d->is_const ? SYM_CONST : SYM_LOCAL, 0);
+// A local may shadow an attribute, a varying or a built-in in GLSL, where
+// main's body is a scope of its own. In Cg those are main's parameters and
+// live in the same scope as the body, so such a local is spelled differently.
+// The GLSL name stays what the program is asked about; only the text changes.
+static const char* shadow_alias(Tx* tx, const Decl* d) {
+  Sym* outer = sym_find(tx, d->name, d->namelen);
+  if (!outer || outer->scope != 0) return NULL;
+  if (outer->kind != SYM_ATTRIBUTE && outer->kind != SYM_VARYING && outer->kind != SYM_BUILTIN) return NULL;
+  char* alias = tx_alloc(tx, (size_t)d->namelen + 8);
+  snprintf(alias, (size_t)d->namelen + 8, "%s_l%d", d->name, tx->scope);
+  return alias;
+}
+
+static void redeclare(Tx* tx, Decl* d, const char* alias) {
+  for (; d; d = d->next) {
+    sym_add(tx, d->name, d->namelen, d->type, d->is_const ? SYM_CONST : SYM_LOCAL, 0);
+    tx->syms[tx->nsyms - 1].alias = alias;
+  }
 }
 
 static void emit_stmt(Tx* tx, Stmt* s, Buf* out, int depth) {
@@ -1526,9 +1549,10 @@ static void emit_stmt(Tx* tx, Stmt* s, Buf* out, int depth) {
       for (Decl* d = s->decls; d; d = d->next) {
         Decl one = *d;
         one.next = NULL;
+        const char* alias = shadow_alias(tx, d);
         indent(tx, out, depth);
-        emit_decl_list(tx, &one, out, false);
-        redeclare(tx, &one);
+        emit_decl_list(tx, &one, out, false, alias);
+        redeclare(tx, &one, alias);
       }
       return;
     case S_EXPR: {
@@ -1690,7 +1714,7 @@ static void emit_unit(Tx* tx, Buf* out) {
     if (!d->is_const) buf_str(tx, out, "uniform ");
     Decl one = *d;
     one.next = NULL;
-    emit_decl_list(tx, &one, out, true);
+    emit_decl_list(tx, &one, out, true, NULL);
   }
 
   // main's parameter list.

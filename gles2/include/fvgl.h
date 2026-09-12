@@ -38,6 +38,11 @@ void* fvgl_get_proc_address(const char* name);
 // Drains the display queue and releases sceGxm. Safe to call without init.
 void fvgl_shutdown(void);
 
+// For tests: translate one GLSL shader and run it through the console's Cg
+// compiler, standalone (its varyings get indices in declaration order).
+// 0 when the compiler accepted it, -1 with the reason in `log`.
+int fvgl_debug_compile(const char* glsl, int fragment, char* log, unsigned log_size);
+
 #ifdef __cplusplus
 }
 #endif
