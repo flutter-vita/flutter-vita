@@ -21,8 +21,8 @@ DOC = ROOT / "docs" / "gles2-progress.md"
 SURFACE = ROOT / "gles2" / "surface.txt"
 SRC = ROOT / "gles2" / "src"
 
-DEF = re.compile(r"GL_APIENTRY\s+(gl[A-Za-z0-9_]+)\s*\(")
-STUB = re.compile(r"FVGL_STUB\(\s*(gl[A-Za-z0-9_]+)")
+DEF = re.compile(r"GL_APIENTRY\s+((?:gl|egl)[A-Za-z0-9_]+)\s*\(")
+STUB = re.compile(r"FVGL_STUB\(\s*((?:gl|egl)[A-Za-z0-9_]+)")
 
 
 def surface():

@@ -50,6 +50,7 @@ ALIASES = {
     "glUniformBlockBindingEXT": None, "glGetActiveUniformBlockivEXT": None, "glGetActiveUniformBlockNameEXT": None,
     "glGetUniformIndicesEXT": None, "glGetActiveUniformsivEXT": None,
     "glGetFramebufferAttachmentParameteriv": "glGetFramebufferAttachmentParameteriv",
+    "eglQueryString": None,
 }
 
 

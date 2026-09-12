@@ -439,6 +439,7 @@ GL_APICALL void GL_APIENTRY glTexSubImage2D(GLenum target, GLint level, GLint xo
   FVGL_STUB(glTexSubImage2D);
 }
 
+void eglQueryString_stub(void) { FVGL_STUB(eglQueryString); }
 void glBeginQueryEXT_stub(void) { FVGL_STUB(glBeginQueryEXT); }
 void glBindBufferBaseEXT_stub(void) { FVGL_STUB(glBindBufferBaseEXT); }
 void glBindBufferRangeEXT_stub(void) { FVGL_STUB(glBindBufferRangeEXT); }

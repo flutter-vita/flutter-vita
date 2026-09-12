@@ -13,8 +13,8 @@ and every change to it has to name its evidence in the last column.
 | bound by Skia (`gles2/surface.txt`) | 114 |
 | called in some run, implemented | 43 of 59 |
 | never called, implemented anyway | 23 of 55 |
-| recording stubs | 47 |
-| missing | 1 |
+| recording stubs | 48 |
+| missing | 0 |
 <!-- progress:end -->
 
 ## Areas
@@ -50,7 +50,7 @@ and every change to it has to name its evidence in the last column.
 <!-- ledger:begin -->
 | entry point | measured | peak calls | state |
 |---|---|---|---|
-| `eglQueryString` | never | 0 | missing |
+| `eglQueryString` | never | 0 | stub |
 | `glActiveTexture` | called | 722 | stub |
 | `glAttachShader` | called | 58 | real |
 | `glBindAttribLocation` | called | 82 | real |

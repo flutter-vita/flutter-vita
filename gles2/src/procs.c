@@ -6,6 +6,7 @@
 
 #include "fvgl_internal.h"
 
+void eglQueryString_stub(void);
 void glBeginQueryEXT_stub(void);
 void glBindBufferBaseEXT_stub(void);
 void glBindBufferRangeEXT_stub(void);
@@ -215,6 +216,7 @@ static const struct { const char* name; void* fn; } kProcs[] = {
   {"glVertexAttrib4fv", (void*)glVertexAttrib4fv},
   {"glVertexAttribPointer", (void*)glVertexAttribPointer},
   {"glViewport", (void*)glViewport},
+  {"eglQueryString", (void*)eglQueryString_stub},
   {"glBeginQueryEXT", (void*)glBeginQueryEXT_stub},
   {"glBindBufferBaseEXT", (void*)glBindBufferBaseEXT_stub},
   {"glBindBufferRangeEXT", (void*)glBindBufferRangeEXT_stub},
