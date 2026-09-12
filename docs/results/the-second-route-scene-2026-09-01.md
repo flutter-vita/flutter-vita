@@ -1,5 +1,11 @@
 # The second route scene leaks 12 MB a sample, and the first never does
 
+> **Answered 2026-09-12.** The 200 KB a frame is one GPU texture per page
+> snapshot that the engine's unref queue dropped without deleting, because
+> this embedder has no resource context. Patch 0012 fixes it. The counters
+> that found it and why the growth looked positional are in
+> [snapshot-textures-2026-09-12.md](snapshot-textures-2026-09-12.md).
+
 2026-09-01. Gallery, GL, engine `058e0af2c2` built 16:16:16Z.
 
 ## What happens
