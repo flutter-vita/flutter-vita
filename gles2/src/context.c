@@ -473,25 +473,48 @@ fail:
   return -1;
 }
 
+// The shutdown stages, in the log and in a file of their own. The log is the
+// app's, and the receiver that takes over afterwards writes the same file, so
+// a hang here used to leave nothing behind (the gallery, 2026-09-12).
+#define FVGL_SHUTDOWN_FILE "ux0:data/flutter-vita/gles2-shutdown.txt"
+
+static void shutdown_stage(const char* what) {
+  static bool started;
+  fvgl_log("shutdown: %s", what);
+  const SceUID fd = sceIoOpen(FVGL_SHUTDOWN_FILE,
+                              SCE_O_WRONLY | SCE_O_CREAT | (started ? SCE_O_APPEND : SCE_O_TRUNC), 0777);
+  started = true;
+  if (fd < 0) return;
+  sceIoWrite(fd, what, strlen(what));
+  sceIoWrite(fd, "\n", 1);
+  sceIoClose(fd);
+}
+
 void fvgl_shutdown(void) {
-  // Staged in the log: a hang here is otherwise a blank screen with no dump.
-  fvgl_log("shutdown: finish");
+  char counts[128];
+  snprintf(counts, sizeof counts, "begin: %u programs %u textures %u buffers %u framebuffers, frame %u done %u",
+           fvgl.programs.count, fvgl.textures.count, fvgl.buffers.count, fvgl.framebuffers.count,
+           (unsigned)fvgl.frame, (unsigned)fvgl_gpu_completed_frame());
+  shutdown_stage(counts);
+  shutdown_stage("finish");
   if (fvgl.gxm) {
     fvgl_scene_end();
     sceGxmFinish(fvgl.gxm);
   }
-  fvgl_log("shutdown: display queue");
+  shutdown_stage("display queue");
   sceGxmDisplayQueueFinish();
-  fvgl_log("shutdown: objects");
+  shutdown_stage("programs");
   if (fvgl.patcher) fvgl_programs_shutdown();
+  shutdown_stage("buffers");
   fvgl_buffers_shutdown();
+  shutdown_stage("framebuffers and textures");
   fvgl_framebuffers_shutdown();
   fvgl_textures_shutdown();
   fvgl_draw_shutdown();
   fvgl_scratch_shutdown();
-  fvgl_log("shutdown: garbage");
+  shutdown_stage("garbage");
   fvgl_collect_garbage(true);
-  fvgl_log("shutdown: patcher and context");
+  shutdown_stage("patcher");
   FvglClearPipeline* c = &fvgl.clear;
   if (fvgl.patcher) {
     for (int i = 0; i < 16; i++) {
@@ -507,6 +530,7 @@ void fvgl_shutdown(void) {
   fvgl_mem_free(c->vertex_uid);
   fvgl_mem_free(c->index_uid);
   fvgl_shacc_shutdown();
+  shutdown_stage("display and context");
   for (int i = 0; i < FVGL_MAX_DISPLAY_BUFFERS; i++) {
     if (fvgl.display[i].sync) sceGxmSyncObjectDestroy(fvgl.display[i].sync);
     fvgl_mem_free(fvgl.display[i].uid);
@@ -521,8 +545,9 @@ void fvgl_shutdown(void) {
   fvgl_mem_free(fvgl.vertex_ring_uid);
   fvgl_mem_free(fvgl.vdm_uid);
   free(fvgl.host_mem);
+  shutdown_stage("terminate");
   sceGxmTerminate();
-  fvgl_log("shutdown: down");
+  shutdown_stage("down");
   memset(&fvgl, 0, sizeof fvgl);
 }
 

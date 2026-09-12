@@ -5,10 +5,14 @@
 // library's own API: everything else Skia reaches by name through
 // fvgl_get_proc_address.
 #include <fvgl.h>
+#include <psp2/kernel/threadmgr.h>
 #include <stddef.h>
 #include <stdio.h>
 
 #include "flutter_vita_gl.h"
+
+// bailout.c in a development build; absent from a release one.
+extern void vita_bail_to_loader(const char* reason) __attribute__((weak));
 
 static void (*g_log_line)(const char*);
 static int g_dialog_said;
@@ -48,6 +52,30 @@ void flutter_vita_gl_swap(int dialog_open) {
 
 void* flutter_vita_gl_proc_address(const char* name) { return fvgl_get_proc_address(name); }
 
-void flutter_vita_gl_shutdown(void) { fvgl_shutdown(); }
+// fvgl_shutdown did not return on the gallery's first exit (2026-09-12) and
+// the console sat on the last frame. The stages it reached are in
+// ux0:data/flutter-vita/gles2-shutdown.txt; this thread makes sure the
+// receiver comes up regardless.
+static volatile int g_shutdown_started, g_shutdown_done;
+
+static int shutdown_watchdog(SceSize args, void* argp) {
+  (void)args;
+  (void)argp;
+  sceKernelDelayThread(5 * 1000 * 1000);
+  if (g_shutdown_done) return 0;
+  log_line("fvita_gles2: shutdown did not return in 5 s; bailing to the receiver");
+  if (vita_bail_to_loader) vita_bail_to_loader("fvgl_shutdown did not return in 5 s");
+  return 0;
+}
+
+void flutter_vita_gl_shutdown(void) {
+  // Once. The bail-out above runs flutter_vita_gpu_shutdown a second time from
+  // the watchdog's thread while the first call may still be inside.
+  if (__sync_lock_test_and_set(&g_shutdown_started, 1)) return;
+  const SceUID w = sceKernelCreateThread("fvgl-shutdown-watchdog", shutdown_watchdog, 0x10000100, 0x4000, 0, 0, NULL);
+  if (w >= 0) sceKernelStartThread(w, 0, NULL);
+  fvgl_shutdown();
+  g_shutdown_done = 1;
+}
 
 const char* flutter_vita_gl_backend(void) { return "fvita_gles2"; }

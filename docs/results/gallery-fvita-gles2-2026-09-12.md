@@ -28,7 +28,16 @@ loop after a finished present, the UI thread and a `pthread` both waiting on
 recorded under vitaGL on 2026-09-11 (the bench's `page_swipe` scene), so it is
 the engine-side stall in the backlog, not the backend.
 
-**Open from this run:** the `handoff` was accepted and the receiver did not
-come up within 90 s, so the exit path (`flutter_vita_gpu_shutdown` →
-`fvgl_shutdown`) or the launch after it hung. The stage lines are in
-`app.log`; read them before changing anything.
+**The exit path, second run (22:40):** `handoff` from the home screen after
+two minutes at 60 fps (raster 5.6 ms). `gles2-shutdown.txt`:
+
+```
+begin: 31 programs 1315 textures 8 buffers 54 framebuffers, frame 7511 done 7510
+finish / display queue / programs / buffers / framebuffers and textures /
+garbage / patcher / display and context / terminate / down
+```
+
+The receiver came back. The first run's "receiver did not come up" was the
+poll, not the console: the receiver answers a cold connect after 2 to 4 s and
+the poll gave it 2. `tools/deploy.sh` waits 6 for that reason; so does every
+poll here now.
