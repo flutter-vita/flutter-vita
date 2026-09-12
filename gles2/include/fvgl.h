@@ -38,6 +38,21 @@ void* fvgl_get_proc_address(const char* name);
 // Drains the display queue and releases sceGxm. Safe to call without init.
 void fvgl_shutdown(void);
 
+// Counters, for a HUD or a log line. All cumulative since init except the
+// live ones, which are what the layer holds at the moment of the call.
+typedef struct FvglStats {
+  unsigned cdram_blocks, cdram_bytes;  // live memblocks the layer owns
+  unsigned lpddr_blocks, lpddr_bytes;
+  unsigned cdram_failures;   // CDRAM allocations the kernel refused
+  unsigned lpddr_fallbacks;  // textures that went to LPDDR because of one
+  unsigned garbage_pending;  // blocks freed by GL, still owned until the GPU is past them
+  unsigned textures_live, textures_bytes;  // textures with storage
+  unsigned targets_live;                   // textures that have been drawn into
+  unsigned stalls_previous_frame, stalls_this_frame;  // raster-thread waits for the GPU
+  unsigned frame, frame_done;  // the frame being built, the last one the GPU finished
+} FvglStats;
+void fvgl_stats(FvglStats* out);
+
 // For tests: translate one GLSL shader and run it through the console's Cg
 // compiler, standalone (its varyings get indices in declaration order).
 // 0 when the compiler accepted it, -1 with the reason in `log`.

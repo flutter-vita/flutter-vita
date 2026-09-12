@@ -139,10 +139,17 @@ static void texture_apply_params(FvglTexture* t) {
 
 // ---- storage ---------------------------------------------------------------
 
+static const size_t kFallbackBudget = 8u << 20;  // of main memory, for textures CDRAM refused
+static size_t g_fallback_bytes;
+
 static void texture_release_storage(FvglTexture* t) {
   if (fvgl.scene_target == t) fvgl_scene_end();
   if (t->target) fvgl_defer_destroy_target(t->target);
   t->target = NULL;
+  if (t->in_fallback) {
+    g_fallback_bytes -= t->bytes;
+    t->in_fallback = false;
+  }
   fvgl_defer_free(t->uid);
   t->uid = -1;
   t->data = NULL;
@@ -165,6 +172,19 @@ static bool texture_make_storage(FvglTexture* t, const Format* f, int width, int
   // to the GPU.
   const FvglMemKind kind = bytes >= 256 * 1024 ? FVGL_MEM_CDRAM : FVGL_MEM_LPDDR_UNCACHED;
   t->data = fvgl_mem_alloc(kind, bytes, &t->uid);
+  if (!t->data && kind == FVGL_MEM_CDRAM && g_fallback_bytes + bytes <= kFallbackBudget) {
+    // CDRAM is full. The GPU reads main memory too, slower, and a texture
+    // there beats GL_OUT_OF_MEMORY, which makes Skia drop the layer it was
+    // for. Bounded, because main memory is the app's: unbounded, a leak of
+    // 2 MiB render targets (the gallery's route scenes, 2026-09-12) took
+    // 43 MiB of it and the Dart heap could no longer grow.
+    t->data = fvgl_mem_alloc(FVGL_MEM_LPDDR_UNCACHED, bytes, &t->uid);
+    if (t->data) {
+      g_fallback_bytes += bytes;
+      t->in_fallback = true;
+      fvgl_note_lpddr_fallback();
+    }
+  }
   if (!t->data) {
     t->uid = -1;
     fvgl_set_error(GL_OUT_OF_MEMORY);
@@ -498,6 +518,17 @@ int fvgl_textures_init(void) {
   if (!texture_make_storage(f, format_find(GL_RGBA, GL_UNSIGNED_BYTE), 1, 1)) return -1;
   memset(f->data, 0xFF, 4);
   return 0;
+}
+
+void fvgl_texture_stats(FvglStats* out) {
+  out->textures_live = out->textures_bytes = out->targets_live = 0;
+  for (unsigned i = 0; i < fvgl.textures.count; i++) {
+    const FvglTexture* t = fvgl.textures.items[i];
+    if (!t || !t->has_storage) continue;
+    out->textures_live++;
+    out->textures_bytes += (unsigned)t->bytes;
+    if (t->target) out->targets_live++;
+  }
 }
 
 void fvgl_textures_shutdown(void) {

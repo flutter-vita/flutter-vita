@@ -130,7 +130,10 @@ run_one() {  # <sw|gl>
   # Always written, even when empty: the receiver can put a file and cannot
   # delete one, so a stale subset from the previous invocation would silently
   # restrict a run that asked for everything.
-  put "$SCENES" "ux0:data/flutter-vita/bench.only"
+  # A zero-byte put is refused by the Flutter receiver ("ERR size", measured
+  # 2026-09-12), so an empty subset goes as a newline; the app trims it to
+  # nothing and runs everything.
+  put "${SCENES:-$'\n'}" "ux0:data/flutter-vita/bench.only"
   # Cleared first so a stale file from the previous run cannot be mistaken for
   # this one's output.
   put "0"      "ux0:data/flutter-vita/bench-done"
@@ -158,12 +161,14 @@ run_one() {  # <sw|gl>
   # what the display controller is scanning.
   # Retried, because the first sample can be too early: on the GL path
   # sceDisplayGetFrameBuf has nothing to report until vitaGL has presented once.
-  local actual=unknown info=""
+  local actual=unknown backend=unknown info=""
   for _ in 1 2 3 4 5 6 7 8; do
     info="$(say "$DEV" shotinfo 8)"
+    # The GL side names its backend (ADR-0019): vitaGL or fvita_gles2.
     case "$info" in
-      *match=vitaGL*) actual=gl; break ;;
-      *match=yes*)    actual=sw; break ;;
+      *match=vitaGL*)      actual=gl; backend=vitaGL; break ;;
+      *match=fvita_gles2*) actual=gl; backend=fvita_gles2; break ;;
+      *match=yes*)         actual=sw; backend=software; break ;;
     esac
     sleep 2
   done
@@ -174,7 +179,7 @@ run_one() {  # <sw|gl>
     echo "   software.on and picks its own renderer." >&2
     return 1
   fi
-  echo "    renderer confirmed: $actual"
+  echo "    renderer confirmed: $actual ($backend)"
 
   # 20 minutes. The old budget was 180 s, which fitted the eighteen scenes
   # that existed on 2026-08-25 and nothing since: the suite is 34 scenes now

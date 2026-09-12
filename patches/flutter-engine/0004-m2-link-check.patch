@@ -73,10 +73,10 @@ index 61abe64a..0beff971 100644
  
 diff --git a/engine/src/flutter/shell/platform/embedder/flutter_vita_gl.h b/engine/src/flutter/shell/platform/embedder/flutter_vita_gl.h
 new file mode 100644
-index 00000000..0045b620
+index 00000000..e874011a
 --- /dev/null
 +++ b/engine/src/flutter/shell/platform/embedder/flutter_vita_gl.h
-@@ -0,0 +1,37 @@
+@@ -0,0 +1,43 @@
 +// The GL platform under Ganesh, as the app provides it.
 +//
 +// The engine draws through a GLES2 it resolves by name. What owns the GXM
@@ -108,6 +108,12 @@ index 00000000..0045b620
 +
 +// "vitaGL" or "fvita_gles2", for the log and the HUD.
 +const char* flutter_vita_gl_backend(void);
++
++// One line of the backend's own counters for the FRAMES line, or an empty
++// string. fvita_gles2 reports what it holds of each memory, live textures and
++// render targets, blocks waiting on the GPU, and how often a texture write or
++// a copy had to wait for it. Under 190 characters.
++void flutter_vita_gl_stats(char* out, int cap);
 +
 +#ifdef __cplusplus
 +}
@@ -283,10 +289,10 @@ index 00000000..a5e0625d
 +}  // extern "C"
 diff --git a/engine/src/flutter/shell/platform/embedder/vita_embedder.cc b/engine/src/flutter/shell/platform/embedder/vita_embedder.cc
 new file mode 100644
-index 00000000..75079d19
+index 00000000..f73bb2cc
 --- /dev/null
 +++ b/engine/src/flutter/shell/platform/embedder/vita_embedder.cc
-@@ -0,0 +1,3896 @@
+@@ -0,0 +1,3900 @@
 +// Copyright (c) 2026, the Flutter Authors. All rights reserved.
 +// Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
@@ -1871,9 +1877,12 @@ index 00000000..75079d19
 +  // tried, and does not work, because area is not work.
 +  const unsigned raster_us =
 +      static_cast<unsigned>(g_win_raster_us / g_win_frames);
++  // The GL backend's own counters, when it has any (flutter_vita_gl.h).
++  char gl_stats[192] = "";
++  if (g_gl_enabled) flutter_vita_gl_stats(gl_stats, sizeof gl_stats);
 +  VLog("flutter-vita: FRAMES active %u @ %u us = %u.%02u fps "
 +       "(raster %u us = %u%%, blit %u us = %u%%, dmg %u%%, hud %u us) "
-+       "| raster max %u us | idle gaps %u | max %u ms | gl wait %u us\n",
++       "| raster max %u us | idle gaps %u | max %u ms | gl wait %u us%s%s\n",
 +       g_win_active, active_us,
 +       active_us != 0 ? 1000000u / active_us : 0,
 +       active_us != 0 ? (100000000u / active_us) % 100 : 0, raster_us,
@@ -1882,7 +1891,8 @@ index 00000000..75079d19
 +       static_cast<unsigned>(g_win_hud_us / g_win_frames),
 +       static_cast<unsigned>(g_win_raster_max_us), g_win_idle,
 +       static_cast<unsigned>(g_win_max_gap_us / 1000),
-+       static_cast<unsigned>(g_win_gl_idle_us / g_win_frames));
++       static_cast<unsigned>(g_win_gl_idle_us / g_win_frames),
++       gl_stats[0] ? " | " : "", gl_stats);
 +  g_win_frames = 0;
 +  g_win_blit_us = 0;
 +  g_win_raster_us = 0;

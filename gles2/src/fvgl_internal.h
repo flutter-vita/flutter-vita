@@ -32,6 +32,8 @@ typedef enum FvglMemKind {
 // A memblock mapped for the GPU. size is rounded up to the block's granule.
 void* fvgl_mem_alloc(FvglMemKind kind, size_t size, SceUID* uid_out);
 void fvgl_mem_free(SceUID uid);
+void fvgl_note_lpddr_fallback(void);
+void fvgl_texture_stats(FvglStats* out);
 
 // USSE memory for shader code, mapped for the vertex or the fragment unit.
 void* fvgl_usse_alloc(bool fragment, size_t size, unsigned* usse_offset,
@@ -176,6 +178,7 @@ typedef struct FvglTexture {
   SceGxmTextureFormat gxm_format;
   SceGxmTexture gxm;
   bool has_storage;
+  bool in_fallback;  // storage is main memory because CDRAM was full
   bool params_dirty;  // filters or wrap changed since gxm was set up
   GLenum min_filter, mag_filter, wrap_s, wrap_t;
   uint32_t last_frame_used;

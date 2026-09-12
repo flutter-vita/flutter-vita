@@ -79,3 +79,18 @@ void flutter_vita_gl_shutdown(void) {
 }
 
 const char* flutter_vita_gl_backend(void) { return "fvita_gles2"; }
+
+// What the layer holds and how often the raster thread waited for the GPU.
+// CDRAM is the number to watch: the first gallery bench on this layer
+// (2026-09-12) ran it down to nothing in the route_* scenes while Skia's own
+// cache stayed at 4 MiB, and the kernel's free total cannot say who had it.
+void flutter_vita_gl_stats(char* out, int cap) {
+  FvglStats s;
+  fvgl_stats(&s);
+  snprintf(out, (size_t)cap,
+           "gles2 cdram %u blk %uK lpddr %u blk %uK tex %u %uK tgt %u garbage %u fail %u fallback %u stalls %u/%u "
+           "frame %u done %u",
+           s.cdram_blocks, s.cdram_bytes >> 10, s.lpddr_blocks, s.lpddr_bytes >> 10, s.textures_live,
+           s.textures_bytes >> 10, s.targets_live, s.garbage_pending, s.cdram_failures, s.lpddr_fallbacks,
+           s.stalls_previous_frame, s.stalls_this_frame, s.frame, s.frame_done);
+}

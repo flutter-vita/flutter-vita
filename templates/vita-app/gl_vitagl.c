@@ -83,3 +83,8 @@ void flutter_vita_gl_shutdown(void) {
 }
 
 const char* flutter_vita_gl_backend(void) { return "vitaGL"; }
+
+// vitaGL's counters are read by the embedder itself, as weak symbols, until M5.
+void flutter_vita_gl_stats(char* out, int cap) {
+  if (cap > 0) out[0] = 0;
+}

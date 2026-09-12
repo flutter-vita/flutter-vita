@@ -15,8 +15,38 @@
 
 #include "fvgl_internal.h"
 
+static int g_garbage_count;
+extern unsigned fvgl_stalls_previous_frame, fvgl_stalls_this_frame;
+
 static size_t round_up(size_t n, size_t granule) {
   return (n + granule - 1) & ~(granule - 1);
+}
+
+// What this layer holds of each memory, block by block. The kernel reports
+// the free totals; only the layer can say how much of the rest is its own and
+// how much of that is waiting in the garbage list for the GPU.
+static FvglStats g_live;
+
+static void live_add(bool cdram, size_t bytes, int sign) {
+  if (cdram) {
+    g_live.cdram_blocks += (unsigned)sign;
+    g_live.cdram_bytes += (unsigned)(sign * (long)bytes);
+  } else {
+    g_live.lpddr_blocks += (unsigned)sign;
+    g_live.lpddr_bytes += (unsigned)(sign * (long)bytes);
+  }
+}
+
+void fvgl_note_lpddr_fallback(void) { g_live.lpddr_fallbacks++; }
+
+void fvgl_stats(FvglStats* out) {
+  *out = g_live;
+  out->stalls_previous_frame = fvgl_stalls_previous_frame;
+  out->stalls_this_frame = fvgl_stalls_this_frame;
+  out->garbage_pending = (unsigned)g_garbage_count;
+  out->frame = fvgl.frame;
+  out->frame_done = fvgl_gpu_completed_frame();
+  fvgl_texture_stats(out);
 }
 
 void* fvgl_mem_alloc(FvglMemKind kind, size_t size, SceUID* uid_out) {
@@ -39,7 +69,10 @@ void* fvgl_mem_alloc(FvglMemKind kind, size_t size, SceUID* uid_out) {
   size = round_up(size, granule);
   const SceUID uid = sceKernelAllocMemBlock("fvgl", type, (SceSize)size, NULL);
   if (uid < 0) {
-    fvgl_log("memblock %u B kind %d: 0x%08X", (unsigned)size, kind, (unsigned)uid);
+    // Once per size, or a run out of CDRAM writes a line per texture.
+    static unsigned said;
+    if (said++ < 8) fvgl_log("memblock %u B kind %d: 0x%08X", (unsigned)size, kind, (unsigned)uid);
+    if (kind == FVGL_MEM_CDRAM) g_live.cdram_failures++;
     return NULL;
   }
   void* base = NULL;
@@ -50,6 +83,7 @@ void* fvgl_mem_alloc(FvglMemKind kind, size_t size, SceUID* uid_out) {
     sceKernelFreeMemBlock(uid);
     return NULL;
   }
+  live_add(kind == FVGL_MEM_CDRAM, size, 1);
   if (uid_out) *uid_out = uid;
   return base;
 }
@@ -57,7 +91,13 @@ void* fvgl_mem_alloc(FvglMemKind kind, size_t size, SceUID* uid_out) {
 void fvgl_mem_free(SceUID uid) {
   if (uid < 0) return;
   void* base = NULL;
-  if (sceKernelGetMemBlockBase(uid, &base) == 0) sceGxmUnmapMemory(base);
+  if (sceKernelGetMemBlockBase(uid, &base) == 0) {
+    SceKernelMemBlockInfo info = {.size = sizeof info};
+    if (sceKernelGetMemBlockInfoByAddr(base, &info) == 0) {
+      live_add(info.type == SCE_KERNEL_MEMBLOCK_TYPE_USER_CDRAM_RW, info.mappedSize, -1);
+    }
+    sceGxmUnmapMemory(base);
+  }
   sceKernelFreeMemBlock(uid);
 }
 
@@ -105,7 +145,7 @@ typedef struct Garbage {
 } Garbage;
 
 static Garbage* g_garbage;
-static int g_garbage_count, g_garbage_cap;
+static int g_garbage_cap;
 
 static void garbage_push(SceUID uid, SceGxmRenderTarget* target, int8_t usse) {
   if (uid < 0 && !target) return;
