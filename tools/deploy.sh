@@ -282,14 +282,24 @@ done < "$DIRS"
 
 removed=0
 rmfail=0
+no_rm=0
 while read -r rel; do
   [ -n "$rel" ] || continue
+  if [ "$no_rm" -eq 1 ]; then
+    # The receiver has no `rm`; it said so for the first file and would say so
+    # for every one. Asking again per file cost a hung connection and the
+    # whole time budget on 2026-09-13.
+    awk -v r="$rel" '$2 == r { print; exit }' "$HAVE" >> "$NEXT"
+    rmfail=$((rmfail + 1))
+    continue
+  fi
   printf '    removing %s\n' "$rel"
-  reply="$(say "$LDR" "rm ux0:app/$TITLEID/$rel" 60)"
+  reply="$(say "$LDR" "rm ux0:app/$TITLEID/$rel" 20)"
   case "$reply" in
     OK*) removed=$((removed + 1)) ;;
     *)
       echo "    !! rm $rel: ${reply:-no reply} — retried next deploy" >&2
+      case "$reply" in *"not served here"*) no_rm=1 ;; esac
       # Back into the manifest if it was ever in it, because the manifest
       # records what the console holds and the console still holds this.
       awk -v r="$rel" '$2 == r { print; exit }' "$HAVE" >> "$NEXT"
