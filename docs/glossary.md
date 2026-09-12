@@ -36,8 +36,8 @@ project-invented and should be used consistently in code and PRs.
 | **PSVshell** | Homebrew overclock/monitoring plugin. Relevant because the 333–500 MHz CPU range is user-controllable, so "the" clock speed is not a single number. |
 | **Extended memory mode** | A `param.sfo` flag letting a title claim substantially more than the default user memory budget. The difference between ~200 MB and ~330–400 MB usable. |
 | **`sce*` APIs** | Sony's system APIs. The ones we care about: `sceKernel*` (threads, memory, timing), `sceGxm` (GPU), `sceDisplay` (framebuffer/vblank), `sceTouch`, `sceCtrl`, `sceIme` (inline keyboard) and `sceImeDialog` (modal), `sceIo` (file IO), `sceNet` (sockets). |
-| **GXM** (`SceGxm`) | The Vita's native low-level graphics API — Sony's Metal or Vulkan, and the only way to talk to the GPU. Proprietary, roughly GLES2-era hardware exposed at a Vulkan-ish level of explicitness. **This project does not render with it** ([ADR-0003](adr/0003-software-rendering-first.md)): Skia draws every pixel on the CPU. It is still required, because a **common dialog** will only composite into a surface GXM manages — which took three pieces of setup and no rendering: `sceGxmMapMemory` on the framebuffer (a pointer valid to the CPU is meaningless to the GPU's MMU), a depth/stencil surface the render-target descriptor demands even though nothing tests depth, and a **sync object**. Leaving the last two null produces a `GPUCRASH` dump **with no faulting thread**: the GPU is asynchronous, so the call returns `0` and validation fails later, when there is no error path left and the driver can only kill the process. |
-| **vitaGL** | Community GLES1.1/2.0-ish implementation on top of GXM. The candidate acceleration path in [ADR-0003](adr/0003-software-rendering-first.md), and the best available reference for GXM usage. |
+| **GXM** (`SceGxm`) | The Vita's native low-level graphics API — Sony's Metal or Vulkan, and the only way to talk to the GPU. Proprietary, roughly GLES2-era hardware exposed at a Vulkan-ish level of explicitness. **The receiver does not render with it** ([ADR-0003](adr/0003-software-rendering-first.md), [ADR-0016](adr/0016-the-receiver-becomes-a-flutter-app.md)): there Skia draws every pixel on the CPU. Apps do, on the GPU path: through vitaGL today ([ADR-0014](adr/0014-gpu-backend-via-vitagl.md)) and through our own `gles2/` next ([ADR-0019](adr/0019-gles2-over-gxm-written-here.md)). It is still required, because a **common dialog** will only composite into a surface GXM manages — which took three pieces of setup and no rendering: `sceGxmMapMemory` on the framebuffer (a pointer valid to the CPU is meaningless to the GPU's MMU), a depth/stencil surface the render-target descriptor demands even though nothing tests depth, and a **sync object**. Leaving the last two null produces a `GPUCRASH` dump **with no faulting thread**: the GPU is asynchronous, so the call returns `0` and validation fails later, when there is no error path left and the driver can only kill the process. |
+| **vitaGL** | Community GLES1.1/2.0-ish implementation on top of GXM, with **vitashark** as its bridge to Sony's shader compiler. The GPU path today ([ADR-0014](adr/0014-gpu-backend-via-vitagl.md)). Both are **LGPL-3.0-or-later**, which puts a relink duty on every developer who ships a vpk; [ADR-0018](adr/0018-the-lgpl-obligation-in-every-vpk.md) decided to replace them with `gles2/`, written here under BSD-3 ([ADR-0019](adr/0019-gles2-over-gxm-written-here.md)). Not a reference for that work: no vitaGL source is opened while `gles2/` is written. |
 | **VM domain** | A process-wide set of memory blocks allocated by `sceKernelAllocMemBlockForVM` that can be flipped executable (`sceKernelOpenVMDomain`) or non-executable (`sceKernelCloseVMDomain`) **all at once**, with `sceKernelSyncVMDomain` flushing the I-cache. User-mode, no kernel plugin needed. Capped at **16 MiB per block**. The global-toggle granularity is why it suits load-once AOT ([ADR-0005](adr/0005-aot-snapshot-delivery.md)) but not JIT ([ADR-0001](adr/0001-aot-only-no-jit.md)). |
 | **Memory budget** | A region reserved at boot by `SceProcessmgr` for a class of process. Varies by firmware and boot flags — so "how much RAM do I get" has no single answer. |
 | **Enlarged memory mode** | A title attribute requesting extra user memory, documented in +29 MiB / +77 MiB / +109 MiB variants. Requested via `param.sfo`. Whether homebrew reliably receives it is a Phase 0.5 open item. |
@@ -109,3 +109,49 @@ over every frame: on a route scene most frames are the transition coasting, so
 `build_ms` reads 1.2 ms while the frame that builds the incoming page takes 46.
 Distinct also from the largest single build, which on every scene is its cold
 first frame. See [ADR-0017](adr/0017-the-gallery-becomes-the-benchmark.md).
+
+## Abbreviations
+
+What the letters stand for, and what the thing is in this project. Where Sony
+never published an expansion, the entry says so instead of inventing one.
+
+| Abbreviation | Stands for | Here |
+|---|---|---|
+| **GL** | Graphics Library, as in OpenGL | The API Skia draws through on the GPU path. |
+| **GLES**, **OpenGL ES 2.0** | OpenGL for Embedded Systems, version 2.0 | The API surface `gles2/` implements. Skia's `GrGLInterface` binds 114 of its functions by name; see `gles2/surface.txt`. |
+| **GLSL**, **GLSL ES 1.00** | OpenGL Shading Language, the ES dialect version 1.00 | What Skia emits for every shader (`#version 100`). `gles2/` translates it to Cg. |
+| **Cg** | C for Graphics, NVIDIA's shading language | The shading language the Vita's compiler accepts. Every shader on the console is Cg by the time the GPU sees it. |
+| **SceShaccCg**, `libshacccg.suprx` | Sony's names; read as "shader compiler, Cg" | The compiler module on the console. Sony's, not LGPL. Both vitaGL and `gles2/` hand it Cg at run time. |
+| **GXM** (`SceGxm`) | Sony's name for the graphics library; not expanded in any public document | The only way to the GPU. See its own entry above. |
+| **SGX** | PowerVR SGX, the GPU family; a product name, not expanded | The Vita's GPU is an SGX543MP4+, four cores. |
+| **USSE** | Universal Scalable Shader Engine, PowerVR's shader core | GXM's name for shader code memory: `sceGxmMapVertexUsseMemory`, `sceGxmMapFragmentUsseMemory`. |
+| **VDM** | Vertex Data Master, a PowerVR pipeline stage | The first ring buffer a GXM context needs, `SCE_GXM_DEFAULT_VDM_RING_BUFFER_SIZE`. |
+| **NDC** | Normalised Device Coordinates | Clip space after the divide by w, x and y in [-1, 1]. GL puts y = +1 at the top of the viewport; GXM's surfaces count rows from the top, so `gles2/` flips in the viewport transform. |
+| **WPOS** | Window POSition, a Cg fragment semantic | The fragment's pixel position, top-left origin. `gles2/` uses it for the exact scissor `clip()`. |
+| **VBO**, **IBO** | Vertex Buffer Object, Index Buffer Object (GL says element array buffer) | GL buffers. Skia orphans one per draw batch; freeing one the GPU still reads is the classic GXM crash. |
+| **FBO** | FrameBuffer Object | An off-screen render target. Every Skia `saveLayer` is one. |
+| **MSAA** | MultiSample Anti-Aliasing | Off everywhere: `SCE_GXM_MULTISAMPLE_NONE`. Skia anti-aliases in its shaders. |
+| **A8B8G8R8** | 8 bits each of alpha, blue, green, red, as one little-endian word | The display surface format. In memory the bytes are R, G, B, A, which is GL's `GL_RGBA`. |
+| **S8D24** | 8-bit stencil, 24-bit depth | The depth/stencil surface format GXM offers. `gles2/` has none yet; Skia in the gallery never touched stencil. |
+| **CDRAM** | Sony's name for the video memory; not expanded | 128 MB next to the GPU. Surfaces and textures. See its own entry above. |
+| **LPDDR** | Low-Power Double Data Rate SDRAM | The 512 MB main memory. `SCE_KERNEL_MEMBLOCK_TYPE_USER_RW_UNCACHE` is LPDDR the GPU reads without a CPU cache in the way. |
+| **UID** (`SceUID`) | Unique IDentifier | The kernel's handle for a memblock, thread, module or file. |
+| **PRX**, `.suprx`, `.skprx` | PlayStation Relocatable eXecutable; `su` user, `sk` kernel | A loadable module. `libshacccg.suprx` is one; so was the vitaGL module of `experiments/vitagl-module`. |
+| **SELF**, **ELF** | Signed ELF; Executable and Linkable Format | See their own entries above. |
+| **`eboot.bin`** | Sony's name for the main executable since the PSP, read there as encrypted boot | The app's SELF inside the vpk. |
+| **VPK** | Vita PacKage | The zip the console installs. |
+| **SFO** (`param.sfo`) | Sony's title-parameter file; the letters are not expanded in public documents | Title id, name, memory mode. |
+| **HEN**, **HENkaku**, **taiHEN** | Homebrew ENabler; *henkaku* is Japanese for transformation; *tai* is a prefix the taiHEN author chose | The exploit that allows homebrew, and the kernel plugin framework this project does not depend on. |
+| **PAF** (`ScePaf`) | Sony's application framework library; the letters are not expanded in public documents | The promoter imports from it, which is why the promoter looked "unavailable" for two weeks. See **Promote**. |
+| **NpDrm** | Network Platform (PlayStation Network) Digital Rights Management | Checks the package header on install; `0x80870005` is its answer to a header signed for another title. |
+| **AOT**, **JIT** | Ahead-Of-Time, Just-In-Time compilation | Dart is AOT here and only AOT ([ADR-0001](adr/0001-aot-only-no-jit.md)); the Vita has no writable executable memory. |
+| **ICU** | International Components for Unicode | Line breaking and word segmentation data, `icudtl.dat`. |
+| **DPR** | Device Pixel Ratio | Flutter's logical-to-physical pixel scale. 1.0 on the Vita, so text is about 31% smaller than on a phone at the same font size. |
+| **mDNS** | multicast Domain Name System | How `flutter-vita.local` resolves. The receiver and every app run a responder; the tools address the console by that name only. |
+| **FTP** | File Transfer Protocol | VitaShell's server on port 1337. Used once, to put the receiver on a console that has none; never in the deploy loop. |
+| **ADR** | Architecture Decision Record | `docs/adr/`. One decision, its context and its consequences per file. |
+| **LGPL**, **GPL** | GNU Lesser General Public License; GNU General Public License | vitaGL and vitashark are LGPL-3.0-or-later. LGPL §4 obliges whoever ships a statically linked binary to supply what a recipient needs to relink it. That duty is why `gles2/` exists ([ADR-0018](adr/0018-the-lgpl-obligation-in-every-vpk.md)). |
+| **BSD-3-Clause** | Berkeley Software Distribution licence, the three-clause form | This repository's licence, `gles2/` included. |
+| **MIT** | Massachusetts Institute of Technology licence, also called Expat | Khronos's `GLES2/gl2.h`, used from the SDK. |
+| **OFL** | SIL Open Font License, version 1.1 | Roboto and Roboto Mono. The licence text ships in every vpk as `fonts/OFL.txt`. |
+| **SDK** | Software Development Kit | VitaSDK, the community toolchain. |
