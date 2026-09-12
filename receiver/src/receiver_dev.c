@@ -1009,14 +1009,83 @@ static void cmd_rmtree(int sock, const char* path) {
     dev_server_send(sock, "ERR rmtree needs a directory under " RMTREE_ROOT "\n");
     return;
   }
+  // What the path is, before doing anything to it. This used to go straight to
+  // rmtree() and report OK whatever came back, so `rmtree` on a plain file
+  // answered "OK rmtree <path> (0 files, dopen 0x80010014)" -- the dopen had
+  // failed with ENOTDIR, nothing had been removed, and the caller was told the
+  // directory was clear. An OK that means "I did nothing" is worse than an
+  // error, because it is believed.
+  SceIoStat st;
+  memset(&st, 0, sizeof st);
+  if (sceIoGetstat(path, &st) < 0) {
+    // A path that was not there is the ordinary case for a caller clearing a
+    // staging directory before using it, so it is not an error.
+    snprintf(m, sizeof m, "OK rmtree %s (nothing there)\n", path);
+    dev_server_send(sock, m);
+    return;
+  }
+  if (!SCE_S_ISDIR(st.st_mode)) {
+    snprintf(m, sizeof m, "ERR rmtree %s is a file; use `rm`\n", path);
+    dev_server_send(sock, m);
+    return;
+  }
   int removed = 0;
   const int r = rmtree(path, 0, &removed);
-  sceIoRmdir(path);
-  // A path that was not there is the ordinary case for a caller clearing a
-  // staging directory before using it, so it is not an error.
-  snprintf(m, sizeof m, "OK rmtree %s (%d files, dopen 0x%08X)\n", path,
-           removed, (unsigned)r);
+  const int rd = sceIoRmdir(path);
+  if (r < 0) {
+    snprintf(m, sizeof m, "ERR rmtree %s dopen 0x%08X (%d files removed)\n",
+             path, (unsigned)r, removed);
+    note("rmtree %s failed 0x%08X after %d files", path, (unsigned)r, removed);
+    dev_server_send(sock, m);
+    return;
+  }
+  snprintf(m, sizeof m, "OK rmtree %s (%d files, rmdir 0x%08X)\n", path,
+           removed, (unsigned)rd);
   note("rmtree %s: %d files", path, removed);
+  dev_server_send(sock, m);
+}
+
+// Remove one file, anywhere.
+//
+// Not confined the way rmtree is, and the reason is that the confinement would
+// buy nothing: `put` already writes any path on this unauthenticated socket, so
+// anything `rm` could destroy could already be overwritten with a byte. What is
+// worth confining is recursion, and this has none -- it removes the single path
+// it was given and refuses a directory.
+//
+// It exists for tools/deploy.sh. The deploy pushes the files the build has and
+// used to say nothing about the ones it no longer has, so a file dropped from a
+// package stayed in ux0:app/<titleid> for the life of the install. On
+// 2026-09-09 that was assets/fonts/NotoEmoji-Regular.ttf: removed from the repo
+// and the package, redeployed clean, and still 1,982,596 bytes on the console
+// and still a candidate for every codepoint the font stack was asked for.
+static void cmd_rm(int sock, const char* path) {
+  char m[320];
+  SceIoStat st;
+  memset(&st, 0, sizeof st);
+  if (sceIoGetstat(path, &st) < 0) {
+    // Already gone is the outcome the caller wanted, and a deploy that removes
+    // the same stale file twice should not read as a failure. It still says so.
+    snprintf(m, sizeof m, "OK rm %s (not there)\n", path);
+    dev_server_send(sock, m);
+    return;
+  }
+  if (SCE_S_ISDIR(st.st_mode)) {
+    snprintf(m, sizeof m, "ERR rm %s is a directory; use `rmtree`\n", path);
+    dev_server_send(sock, m);
+    return;
+  }
+  const int r = sceIoRemove(path);
+  if (r < 0) {
+    // ux0:app/<self> is the read-only app0: mount and answers here; see the
+    // note on SELF_TITLEID.
+    snprintf(m, sizeof m, "ERR rm %s 0x%08X\n", path, (unsigned)r);
+    dev_server_send(sock, m);
+    return;
+  }
+  snprintf(m, sizeof m, "OK rm %s (%lld bytes)\n", path,
+           (long long)st.st_size);
+  note("rm %s", path);
   dev_server_send(sock, m);
 }
 
@@ -1247,6 +1316,12 @@ static int handle(int sock, const char* line, int* stop) {
   }
   if (strncmp(line, "rmtree ", 7) == 0) {
     cmd_rmtree(sock, line + 7);
+    return 1;
+  }
+  // Before `rmtree` would be wrong -- "rmtree " does not start with "rm " --
+  // but keep them adjacent so neither is read without the other.
+  if (strncmp(line, "rm ", 3) == 0) {
+    cmd_rm(sock, line + 3);
     return 1;
   }
   if (strncmp(line, "delete ", 7) == 0) {

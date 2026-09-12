@@ -138,6 +138,16 @@ console at all~~ one of two routes.
 > place today with no promoter and no tap. `ls` survives because it has repeatedly answered "is this path
 writable" without a rebuild, including twice in this session.
 
+> **`rm` came back, 2026-09-09.** It was on the drop list as a debugging verb.
+> It is not: without it `tools/deploy.sh` can only add and overwrite, so a file
+> dropped from a package stays in `ux0:app/<titleid>` for the life of the
+> install. `assets/fonts/NotoEmoji-Regular.ttf` was removed from the repo and
+> the package that day, the gallery was redeployed clean, and the console still
+> held it at 1,982,596 bytes — still in `app0:/fonts`, still a candidate for
+> every codepoint. The deploy's manifest already knows which files have gone;
+> it had no way to say so. Thirteen commands, and the recursive one is still
+> confined to `ux0:data`.
+
 ## The status model
 
 "Current status" is the field that justifies the screen, so it is worth being
