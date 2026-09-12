@@ -1,0 +1,608 @@
+// The sceGxm context, the display chain, and the GL state that lives on the
+// default framebuffer: clear, scissor, viewport, colour mask, readback.
+//
+// Two conventions are decided here and everything else follows them:
+//
+//   * GL's window origin is bottom-left; the console's surfaces and its WPOS
+//     are top-left. The viewport transform flips (yScale is negative), the
+//     scissor is converted to rows, and glReadPixels reads rows bottom-up.
+//   * The hardware's region clip works on 32x32 tiles, so it cannot be the
+//     scissor test on its own. It rejects whole tiles cheaply; the exact edge
+//     is a clip() against a rectangle uniform in every fragment program,
+//     starting with the clear's.
+//
+// A "scene" is sceGxm's unit of rendering into one target. One is opened by
+// the first draw or clear and closed when the target changes, when pixels are
+// read back, or when the frame is presented.
+#include <psp2/display.h>
+#include <psp2/kernel/clib.h>
+#include <stdarg.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+
+#include "fvgl_internal.h"
+
+FvglContext fvgl;
+
+// ---- diagnostics -----------------------------------------------------------
+
+void fvgl_log(const char* fmt, ...) {
+  char line[512];
+  va_list ap;
+  va_start(ap, fmt);
+  vsnprintf(line, sizeof line, fmt, ap);
+  va_end(ap);
+  if (fvgl.log) fvgl.log(line);
+  else sceClibPrintf("fvgl: %s\n", line);
+}
+
+void fvgl_set_error(GLenum error) {
+  if (fvgl.error == GL_NO_ERROR) fvgl.error = error;
+}
+
+// ---- display chain ---------------------------------------------------------
+
+typedef struct DisplayCallbackData {
+  void* address;
+} DisplayCallbackData;
+
+static unsigned g_stride;  // pixels per row of a display buffer
+
+static void display_callback(const void* data) {
+  const DisplayCallbackData* d = data;
+  SceDisplayFrameBuf fb;
+  memset(&fb, 0, sizeof fb);
+  fb.size = sizeof fb;
+  fb.base = d->address;
+  fb.pitch = g_stride;
+  fb.pixelformat = SCE_DISPLAY_PIXELFORMAT_A8B8G8R8;
+  fb.width = (unsigned)fvgl.width;
+  fb.height = (unsigned)fvgl.height;
+  sceDisplaySetFrameBuf(&fb, SCE_DISPLAY_SETBUF_NEXTFRAME);
+  sceDisplayWaitVblankStart();
+}
+
+// ---- shader patcher callbacks ---------------------------------------------
+
+static void* patcher_host_alloc(void* user, SceSize size) {
+  (void)user;
+  return malloc(size);
+}
+static void patcher_host_free(void* user, void* mem) {
+  (void)user;
+  free(mem);
+}
+
+// ---- the clear pipeline ----------------------------------------------------
+//
+// sceGxm has no clear. A clear is a triangle that covers the target, drawn
+// with the depth and stencil tests off and the colour mask of the moment.
+
+static const char kClearVertexCg[] =
+    "void main(float2 aPosition, float4 out vPosition : POSITION) {\n"
+    "  vPosition = float4(aPosition, 1.0f, 1.0f);\n"
+    "}\n";
+
+static const char kClearFragmentCg[] =
+    "uniform float4 uColor;\n"
+    "uniform float4 uScissor;\n"  // x0, y0(row), x1, y1(row), exclusive max
+    "float4 main(float4 wpos : WPOS) : COLOR {\n"
+    "  clip(float4(wpos.x - uScissor.x, uScissor.z - wpos.x,\n"
+    "              wpos.y - uScissor.y, uScissor.w - wpos.y));\n"
+    "  return uColor;\n"
+    "}\n";
+
+static int clear_pipeline_init(void) {
+  FvglClearPipeline* c = &fvgl.clear;
+  char log[1024];
+  c->vertex_gxp = fvgl_shacc_compile(kClearVertexCg, false, log, sizeof log);
+  if (!c->vertex_gxp) {
+    fvgl_log("clear vertex shader: %s", log);
+    return -1;
+  }
+  c->fragment_gxp = fvgl_shacc_compile(kClearFragmentCg, true, log, sizeof log);
+  if (!c->fragment_gxp) {
+    fvgl_log("clear fragment shader: %s", log);
+    return -1;
+  }
+  int r = sceGxmShaderPatcherRegisterProgram(fvgl.patcher, c->vertex_gxp, &c->vertex_id);
+  if (r < 0) {
+    fvgl_log("register clear vertex: 0x%08X", (unsigned)r);
+    return r;
+  }
+  r = sceGxmShaderPatcherRegisterProgram(fvgl.patcher, c->fragment_gxp, &c->fragment_id);
+  if (r < 0) {
+    fvgl_log("register clear fragment: 0x%08X", (unsigned)r);
+    return r;
+  }
+  const SceGxmProgramParameter* position =
+      sceGxmProgramFindParameterByName(c->vertex_gxp, "aPosition");
+  c->color_param = sceGxmProgramFindParameterByName(c->fragment_gxp, "uColor");
+  c->scissor_param = sceGxmProgramFindParameterByName(c->fragment_gxp, "uScissor");
+  if (!position || !c->color_param || !c->scissor_param) {
+    fvgl_log("clear shaders compiled without their parameters");
+    return -1;
+  }
+  SceGxmVertexAttribute attribute = {
+      .streamIndex = 0,
+      .offset = 0,
+      .format = SCE_GXM_ATTRIBUTE_FORMAT_F32,
+      .componentCount = 2,
+      .regIndex = (uint16_t)sceGxmProgramParameterGetResourceIndex(position),
+  };
+  SceGxmVertexStream stream = {.stride = 2 * sizeof(float),
+                               .indexSource = SCE_GXM_INDEX_SOURCE_INDEX_16BIT};
+  r = sceGxmShaderPatcherCreateVertexProgram(fvgl.patcher, c->vertex_id, &attribute, 1,
+                                             &stream, 1, &c->vertex);
+  if (r < 0) {
+    fvgl_log("clear vertex program: 0x%08X", (unsigned)r);
+    return r;
+  }
+  c->vertices = fvgl_mem_alloc(FVGL_MEM_LPDDR_UNCACHED, 3 * 2 * sizeof(float), &c->vertex_uid);
+  c->indices = fvgl_mem_alloc(FVGL_MEM_LPDDR_UNCACHED, 3 * sizeof(uint16_t), &c->index_uid);
+  if (!c->vertices || !c->indices) return -1;
+  // One triangle whose inside covers all of clip space.
+  const float v[6] = {-1.f, -1.f, 3.f, -1.f, -1.f, 3.f};
+  memcpy(c->vertices, v, sizeof v);
+  c->indices[0] = 0;
+  c->indices[1] = 1;
+  c->indices[2] = 2;
+  return 0;
+}
+
+static SceGxmFragmentProgram* clear_fragment_for_mask(unsigned gl_mask) {
+  FvglClearPipeline* c = &fvgl.clear;
+  if (c->fragment[gl_mask]) return c->fragment[gl_mask];
+  SceGxmBlendInfo blend;
+  memset(&blend, 0, sizeof blend);
+  blend.colorMask = (uint8_t)(((gl_mask & 1) ? SCE_GXM_COLOR_MASK_R : 0) |
+                              ((gl_mask & 2) ? SCE_GXM_COLOR_MASK_G : 0) |
+                              ((gl_mask & 4) ? SCE_GXM_COLOR_MASK_B : 0) |
+                              ((gl_mask & 8) ? SCE_GXM_COLOR_MASK_A : 0));
+  blend.colorFunc = SCE_GXM_BLEND_FUNC_NONE;
+  blend.alphaFunc = SCE_GXM_BLEND_FUNC_NONE;
+  blend.colorSrc = SCE_GXM_BLEND_FACTOR_ONE;
+  blend.colorDst = SCE_GXM_BLEND_FACTOR_ZERO;
+  blend.alphaSrc = SCE_GXM_BLEND_FACTOR_ONE;
+  blend.alphaDst = SCE_GXM_BLEND_FACTOR_ZERO;
+  const int r = sceGxmShaderPatcherCreateFragmentProgram(
+      fvgl.patcher, c->fragment_id, SCE_GXM_OUTPUT_REGISTER_FORMAT_UCHAR4,
+      SCE_GXM_MULTISAMPLE_NONE, &blend, c->vertex_gxp, &c->fragment[gl_mask]);
+  if (r < 0) {
+    fvgl_log("clear fragment program mask %u: 0x%08X", gl_mask, (unsigned)r);
+    return NULL;
+  }
+  return c->fragment[gl_mask];
+}
+
+// ---- scissor and viewport in the console's terms ---------------------------
+
+// The scissor as rows, clamped to the target. Returns false when it is empty.
+static bool scissor_rows(int* x0, int* y0, int* x1, int* y1) {
+  const int w = fvgl.width, h = fvgl.height;
+  if (!fvgl.scissor_enabled) {
+    *x0 = 0; *y0 = 0; *x1 = w; *y1 = h;
+    return true;
+  }
+  int sx0 = fvgl.scissor[0], sy0 = fvgl.scissor[1];
+  int sx1 = sx0 + fvgl.scissor[2], sy1 = sy0 + fvgl.scissor[3];
+  if (sx0 < 0) sx0 = 0;
+  if (sy0 < 0) sy0 = 0;
+  if (sx1 > w) sx1 = w;
+  if (sy1 > h) sy1 = h;
+  if (sx1 <= sx0 || sy1 <= sy0) return false;
+  *x0 = sx0;
+  *x1 = sx1;
+  *y0 = h - sy1;  // GL top edge, as a row from the top
+  *y1 = h - sy0;
+  return true;
+}
+
+static void apply_region_clip(void) {
+  int x0, y0, x1, y1;
+  if (!scissor_rows(&x0, &y0, &x1, &y1)) {
+    sceGxmSetRegionClip(fvgl.gxm, SCE_GXM_REGION_CLIP_ALL, 0, 0, 0, 0);
+    return;
+  }
+  sceGxmSetRegionClip(fvgl.gxm, SCE_GXM_REGION_CLIP_OUTSIDE, (unsigned)x0, (unsigned)y0,
+                      (unsigned)(x1 - 1), (unsigned)(y1 - 1));
+}
+
+static void apply_viewport(int x, int y, int w, int h) {
+  // GL: NDC y = +1 is the top of the viewport, which is row H - (y + h).
+  sceGxmSetViewport(fvgl.gxm, (float)x + w * 0.5f, w * 0.5f,
+                    (float)(fvgl.height - y) - h * 0.5f, -h * 0.5f, 0.5f, 0.5f);
+}
+
+// ---- scenes ----------------------------------------------------------------
+
+void fvgl_scene_begin(void) {
+  if (fvgl.scene_open) return;
+  FvglDisplayBuffer* b = &fvgl.display[fvgl.back];
+  const int r = sceGxmBeginScene(fvgl.gxm, 0, fvgl.display_target, NULL, NULL,
+                                 b->sync, &b->surface, &fvgl.no_depth);
+  if (r < 0) {
+    fvgl_log("sceGxmBeginScene: 0x%08X", (unsigned)r);
+    return;
+  }
+  fvgl.scene_open = true;
+  // The raster state GL never changes for a 2D renderer is set once per scene.
+  sceGxmSetFrontDepthFunc(fvgl.gxm, SCE_GXM_DEPTH_FUNC_ALWAYS);
+  sceGxmSetBackDepthFunc(fvgl.gxm, SCE_GXM_DEPTH_FUNC_ALWAYS);
+  sceGxmSetFrontDepthWriteEnable(fvgl.gxm, SCE_GXM_DEPTH_WRITE_DISABLED);
+  sceGxmSetBackDepthWriteEnable(fvgl.gxm, SCE_GXM_DEPTH_WRITE_DISABLED);
+  sceGxmSetCullMode(fvgl.gxm, SCE_GXM_CULL_NONE);
+  apply_region_clip();
+  apply_viewport(fvgl.viewport[0], fvgl.viewport[1], fvgl.viewport[2], fvgl.viewport[3]);
+}
+
+void fvgl_scene_end(void) {
+  if (!fvgl.scene_open) return;
+  const int r = sceGxmEndScene(fvgl.gxm, NULL, NULL);
+  if (r < 0) fvgl_log("sceGxmEndScene: 0x%08X", (unsigned)r);
+  fvgl.scene_open = false;
+}
+
+// ---- init and teardown -----------------------------------------------------
+
+static int display_chain_init(int count) {
+  g_stride = ((unsigned)fvgl.width + 63u) & ~63u;
+  const size_t bytes = (size_t)g_stride * (size_t)fvgl.height * 4;
+  fvgl.display_buffer_count = count;
+  for (int i = 0; i < count; i++) {
+    FvglDisplayBuffer* b = &fvgl.display[i];
+    b->data = fvgl_mem_alloc(FVGL_MEM_CDRAM, bytes, &b->uid);
+    if (!b->data) return -1;
+    memset(b->data, 0, bytes);
+    int r = sceGxmColorSurfaceInit(&b->surface, SCE_GXM_COLOR_FORMAT_A8B8G8R8,
+                                   SCE_GXM_COLOR_SURFACE_LINEAR,
+                                   SCE_GXM_COLOR_SURFACE_SCALE_NONE,
+                                   SCE_GXM_OUTPUT_REGISTER_SIZE_32BIT,
+                                   (unsigned)fvgl.width, (unsigned)fvgl.height,
+                                   g_stride, b->data);
+    if (r < 0) {
+      fvgl_log("sceGxmColorSurfaceInit %d: 0x%08X", i, (unsigned)r);
+      return r;
+    }
+    r = sceGxmSyncObjectCreate(&b->sync);
+    if (r < 0) {
+      fvgl_log("sceGxmSyncObjectCreate %d: 0x%08X", i, (unsigned)r);
+      return r;
+    }
+  }
+  fvgl.back = 0;
+  fvgl.front = count - 1;
+  return 0;
+}
+
+int fvgl_init(const FvglConfig* config) {
+  if (fvgl.up) return 0;
+  memset(&fvgl, 0, sizeof fvgl);
+  fvgl.width = config && config->width ? config->width : 960;
+  fvgl.height = config && config->height ? config->height : 544;
+  fvgl.log = config ? config->log : NULL;
+  int buffers = config && config->display_buffers ? config->display_buffers : 3;
+  if (buffers > FVGL_MAX_DISPLAY_BUFFERS) buffers = FVGL_MAX_DISPLAY_BUFFERS;
+  const char* compiler =
+      config && config->shacccg_path ? config->shacccg_path : "ur0:data/libshacccg.suprx";
+  fvgl.vdm_uid = fvgl.vertex_ring_uid = fvgl.fragment_ring_uid = fvgl.fragment_usse_uid = -1;
+  fvgl.patcher_buffer_uid = fvgl.patcher_vertex_usse_uid = fvgl.patcher_fragment_usse_uid = -1;
+  fvgl.clear.vertex_uid = fvgl.clear.index_uid = -1;
+  for (int i = 0; i < FVGL_MAX_DISPLAY_BUFFERS; i++) fvgl.display[i].uid = -1;
+
+  SceGxmInitializeParams init = {
+      .flags = 0,
+      .displayQueueMaxPendingCount = (unsigned)(buffers - 1),
+      .displayQueueCallback = display_callback,
+      .displayQueueCallbackDataSize = sizeof(DisplayCallbackData),
+      .parameterBufferSize = SCE_GXM_DEFAULT_PARAMETER_BUFFER_SIZE,
+  };
+  int r = sceGxmInitialize(&init);
+  if (r < 0) {
+    fvgl_log("sceGxmInitialize: 0x%08X", (unsigned)r);
+    return r;
+  }
+
+  // The context and its ring buffers.
+  fvgl.host_mem = malloc(SCE_GXM_MINIMUM_CONTEXT_HOST_MEM_SIZE);
+  void* vdm = fvgl_mem_alloc(FVGL_MEM_LPDDR_UNCACHED, SCE_GXM_DEFAULT_VDM_RING_BUFFER_SIZE, &fvgl.vdm_uid);
+  void* vertex = fvgl_mem_alloc(FVGL_MEM_LPDDR_UNCACHED, SCE_GXM_DEFAULT_VERTEX_RING_BUFFER_SIZE, &fvgl.vertex_ring_uid);
+  void* fragment = fvgl_mem_alloc(FVGL_MEM_LPDDR_UNCACHED, SCE_GXM_DEFAULT_FRAGMENT_RING_BUFFER_SIZE, &fvgl.fragment_ring_uid);
+  unsigned fragment_usse_offset = 0;
+  void* fragment_usse = fvgl_usse_alloc(true, SCE_GXM_DEFAULT_FRAGMENT_USSE_RING_BUFFER_SIZE,
+                                        &fragment_usse_offset, &fvgl.fragment_usse_uid);
+  if (!fvgl.host_mem || !vdm || !vertex || !fragment || !fragment_usse) goto fail;
+  SceGxmContextParams ctx = {
+      .hostMem = fvgl.host_mem,
+      .hostMemSize = SCE_GXM_MINIMUM_CONTEXT_HOST_MEM_SIZE,
+      .vdmRingBufferMem = vdm,
+      .vdmRingBufferMemSize = SCE_GXM_DEFAULT_VDM_RING_BUFFER_SIZE,
+      .vertexRingBufferMem = vertex,
+      .vertexRingBufferMemSize = SCE_GXM_DEFAULT_VERTEX_RING_BUFFER_SIZE,
+      .fragmentRingBufferMem = fragment,
+      .fragmentRingBufferMemSize = SCE_GXM_DEFAULT_FRAGMENT_RING_BUFFER_SIZE,
+      .fragmentUsseRingBufferMem = fragment_usse,
+      .fragmentUsseRingBufferMemSize = SCE_GXM_DEFAULT_FRAGMENT_USSE_RING_BUFFER_SIZE,
+      .fragmentUsseRingBufferOffset = fragment_usse_offset,
+  };
+  r = sceGxmCreateContext(&ctx, &fvgl.gxm);
+  if (r < 0) {
+    fvgl_log("sceGxmCreateContext: 0x%08X", (unsigned)r);
+    goto fail;
+  }
+
+  // The render target the display buffers are drawn through.
+  SceGxmRenderTargetParams target = {
+      .flags = 0,
+      .width = (uint16_t)fvgl.width,
+      .height = (uint16_t)fvgl.height,
+      .scenesPerFrame = 1,
+      .multisampleMode = SCE_GXM_MULTISAMPLE_NONE,
+      .multisampleLocations = 0,
+      .driverMemBlock = -1,
+  };
+  r = sceGxmCreateRenderTarget(&target, &fvgl.display_target);
+  if (r < 0) {
+    fvgl_log("sceGxmCreateRenderTarget: 0x%08X", (unsigned)r);
+    goto fail;
+  }
+  if (display_chain_init(buffers) < 0) goto fail;
+  sceGxmDepthStencilSurfaceInitDisabled(&fvgl.no_depth);
+
+  // The shader patcher, which turns compiled programs into ones bound to a
+  // vertex layout and a blend state.
+  enum { kPatcherBuffer = 512 * 1024, kPatcherUsse = 256 * 1024 };
+  unsigned vertex_usse_offset = 0;
+  void* patcher_buffer = fvgl_mem_alloc(FVGL_MEM_LPDDR_UNCACHED, kPatcherBuffer, &fvgl.patcher_buffer_uid);
+  void* patcher_vertex_usse = fvgl_usse_alloc(false, kPatcherUsse, &vertex_usse_offset, &fvgl.patcher_vertex_usse_uid);
+  unsigned patcher_fragment_usse_offset = 0;
+  void* patcher_fragment_usse = fvgl_usse_alloc(true, kPatcherUsse, &patcher_fragment_usse_offset, &fvgl.patcher_fragment_usse_uid);
+  if (!patcher_buffer || !patcher_vertex_usse || !patcher_fragment_usse) goto fail;
+  SceGxmShaderPatcherParams patcher = {
+      .userData = NULL,
+      .hostAllocCallback = patcher_host_alloc,
+      .hostFreeCallback = patcher_host_free,
+      .bufferAllocCallback = NULL,
+      .bufferFreeCallback = NULL,
+      .bufferMem = patcher_buffer,
+      .bufferMemSize = kPatcherBuffer,
+      .vertexUsseAllocCallback = NULL,
+      .vertexUsseFreeCallback = NULL,
+      .vertexUsseMem = patcher_vertex_usse,
+      .vertexUsseMemSize = kPatcherUsse,
+      .vertexUsseOffset = vertex_usse_offset,
+      .fragmentUsseAllocCallback = NULL,
+      .fragmentUsseFreeCallback = NULL,
+      .fragmentUsseMem = patcher_fragment_usse,
+      .fragmentUsseMemSize = kPatcherUsse,
+      .fragmentUsseOffset = patcher_fragment_usse_offset,
+  };
+  r = sceGxmShaderPatcherCreate(&patcher, &fvgl.patcher);
+  if (r < 0) {
+    fvgl_log("sceGxmShaderPatcherCreate: 0x%08X", (unsigned)r);
+    goto fail;
+  }
+
+  r = fvgl_shacc_init(compiler);
+  if (r < 0) goto fail;
+  if (clear_pipeline_init() < 0) goto fail;
+
+  // GLES 2.0 initial state.
+  fvgl.error = GL_NO_ERROR;
+  fvgl.color_mask[0] = fvgl.color_mask[1] = fvgl.color_mask[2] = fvgl.color_mask[3] = GL_TRUE;
+  fvgl.scissor_enabled = false;
+  fvgl.scissor[0] = 0; fvgl.scissor[1] = 0; fvgl.scissor[2] = fvgl.width; fvgl.scissor[3] = fvgl.height;
+  fvgl.viewport[0] = 0; fvgl.viewport[1] = 0; fvgl.viewport[2] = fvgl.width; fvgl.viewport[3] = fvgl.height;
+  fvgl.up = true;
+  fvgl_log("up: %dx%d, %d display buffers, stride %u", fvgl.width, fvgl.height, buffers, g_stride);
+  return 0;
+
+fail:
+  fvgl_shutdown();
+  return -1;
+}
+
+void fvgl_shutdown(void) {
+  if (fvgl.gxm) {
+    fvgl_scene_end();
+    sceGxmFinish(fvgl.gxm);
+  }
+  sceGxmDisplayQueueFinish();
+  FvglClearPipeline* c = &fvgl.clear;
+  if (fvgl.patcher) {
+    for (int i = 0; i < 16; i++) {
+      if (c->fragment[i]) sceGxmShaderPatcherReleaseFragmentProgram(fvgl.patcher, c->fragment[i]);
+    }
+    if (c->vertex) sceGxmShaderPatcherReleaseVertexProgram(fvgl.patcher, c->vertex);
+    if (c->fragment_id) sceGxmShaderPatcherUnregisterProgram(fvgl.patcher, c->fragment_id);
+    if (c->vertex_id) sceGxmShaderPatcherUnregisterProgram(fvgl.patcher, c->vertex_id);
+    sceGxmShaderPatcherDestroy(fvgl.patcher);
+  }
+  free(c->vertex_gxp);
+  free(c->fragment_gxp);
+  fvgl_mem_free(c->vertex_uid);
+  fvgl_mem_free(c->index_uid);
+  fvgl_shacc_shutdown();
+  for (int i = 0; i < FVGL_MAX_DISPLAY_BUFFERS; i++) {
+    if (fvgl.display[i].sync) sceGxmSyncObjectDestroy(fvgl.display[i].sync);
+    fvgl_mem_free(fvgl.display[i].uid);
+  }
+  if (fvgl.display_target) sceGxmDestroyRenderTarget(fvgl.display_target);
+  if (fvgl.gxm) sceGxmDestroyContext(fvgl.gxm);
+  fvgl_usse_free(true, fvgl.patcher_fragment_usse_uid);
+  fvgl_usse_free(false, fvgl.patcher_vertex_usse_uid);
+  fvgl_mem_free(fvgl.patcher_buffer_uid);
+  fvgl_usse_free(true, fvgl.fragment_usse_uid);
+  fvgl_mem_free(fvgl.fragment_ring_uid);
+  fvgl_mem_free(fvgl.vertex_ring_uid);
+  fvgl_mem_free(fvgl.vdm_uid);
+  free(fvgl.host_mem);
+  sceGxmTerminate();
+  memset(&fvgl, 0, sizeof fvgl);
+}
+
+// ---- present ---------------------------------------------------------------
+
+void fvgl_swap(void) {
+  if (!fvgl.up) return;
+  // A frame nobody drew into still has to go through the queue, or the chain
+  // and the sync objects fall out of step with each other.
+  fvgl_scene_begin();
+  fvgl_scene_end();
+  FvglDisplayBuffer* back = &fvgl.display[fvgl.back];
+  FvglDisplayBuffer* front = &fvgl.display[fvgl.front];
+  sceGxmPadHeartbeat(&back->surface, back->sync);
+  DisplayCallbackData data = {.address = back->data};
+  const int r = sceGxmDisplayQueueAddEntry(front->sync, back->sync, &data);
+  if (r < 0) fvgl_log("sceGxmDisplayQueueAddEntry: 0x%08X", (unsigned)r);
+  fvgl.front = fvgl.back;
+  fvgl.back = (fvgl.back + 1) % fvgl.display_buffer_count;
+}
+
+// ---- GL --------------------------------------------------------------------
+
+GL_APICALL void GL_APIENTRY glClearColor(GLfloat r, GLfloat g, GLfloat b, GLfloat a) {
+  fvgl.clear_color[0] = r < 0 ? 0 : r > 1 ? 1 : r;
+  fvgl.clear_color[1] = g < 0 ? 0 : g > 1 ? 1 : g;
+  fvgl.clear_color[2] = b < 0 ? 0 : b > 1 ? 1 : b;
+  fvgl.clear_color[3] = a < 0 ? 0 : a > 1 ? 1 : a;
+}
+
+GL_APICALL void GL_APIENTRY glColorMask(GLboolean r, GLboolean g, GLboolean b, GLboolean a) {
+  fvgl.color_mask[0] = r ? GL_TRUE : GL_FALSE;
+  fvgl.color_mask[1] = g ? GL_TRUE : GL_FALSE;
+  fvgl.color_mask[2] = b ? GL_TRUE : GL_FALSE;
+  fvgl.color_mask[3] = a ? GL_TRUE : GL_FALSE;
+}
+
+GL_APICALL void GL_APIENTRY glScissor(GLint x, GLint y, GLsizei w, GLsizei h) {
+  if (w < 0 || h < 0) {
+    fvgl_set_error(GL_INVALID_VALUE);
+    return;
+  }
+  fvgl.scissor[0] = x; fvgl.scissor[1] = y; fvgl.scissor[2] = w; fvgl.scissor[3] = h;
+  if (fvgl.scene_open) apply_region_clip();
+}
+
+GL_APICALL void GL_APIENTRY glViewport(GLint x, GLint y, GLsizei w, GLsizei h) {
+  if (w < 0 || h < 0) {
+    fvgl_set_error(GL_INVALID_VALUE);
+    return;
+  }
+  fvgl.viewport[0] = x; fvgl.viewport[1] = y; fvgl.viewport[2] = w; fvgl.viewport[3] = h;
+  if (fvgl.scene_open) apply_viewport(x, y, w, h);
+}
+
+static bool set_capability(GLenum cap, bool on) {
+  switch (cap) {
+    case GL_SCISSOR_TEST:
+      fvgl.scissor_enabled = on;
+      if (fvgl.scene_open) apply_region_clip();
+      return true;
+    // Accepted and remembered by the pipeline state that lands with draw.c.
+    // Until then they are valid enums that change nothing.
+    case GL_BLEND:
+    case GL_CULL_FACE:
+    case GL_DEPTH_TEST:
+    case GL_DITHER:
+    case GL_POLYGON_OFFSET_FILL:
+    case GL_SAMPLE_ALPHA_TO_COVERAGE:
+    case GL_SAMPLE_COVERAGE:
+    case GL_STENCIL_TEST:
+      return true;
+    default:
+      return false;
+  }
+}
+
+GL_APICALL void GL_APIENTRY glEnable(GLenum cap) {
+  if (!set_capability(cap, true)) fvgl_set_error(GL_INVALID_ENUM);
+}
+
+GL_APICALL void GL_APIENTRY glDisable(GLenum cap) {
+  if (!set_capability(cap, false)) fvgl_set_error(GL_INVALID_ENUM);
+}
+
+GL_APICALL void GL_APIENTRY glClear(GLbitfield mask) {
+  if (mask & ~(GLbitfield)(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT | GL_STENCIL_BUFFER_BIT)) {
+    fvgl_set_error(GL_INVALID_VALUE);
+    return;
+  }
+  // No depth or stencil surface exists yet, so those bits clear nothing.
+  if (!(mask & GL_COLOR_BUFFER_BIT)) return;
+  const unsigned gl_mask = (fvgl.color_mask[0] ? 1u : 0u) | (fvgl.color_mask[1] ? 2u : 0u) |
+                           (fvgl.color_mask[2] ? 4u : 0u) | (fvgl.color_mask[3] ? 8u : 0u);
+  if (gl_mask == 0) return;
+  int x0, y0, x1, y1;
+  if (!scissor_rows(&x0, &y0, &x1, &y1)) return;
+  SceGxmFragmentProgram* fp = clear_fragment_for_mask(gl_mask);
+  if (!fp) return;
+
+  fvgl_scene_begin();
+  if (!fvgl.scene_open) return;
+  // A clear ignores the viewport. The region clip already matches the scissor.
+  apply_viewport(0, 0, fvgl.width, fvgl.height);
+  sceGxmSetVertexProgram(fvgl.gxm, fvgl.clear.vertex);
+  sceGxmSetFragmentProgram(fvgl.gxm, fp);
+  void* uniforms = NULL;
+  sceGxmReserveFragmentDefaultUniformBuffer(fvgl.gxm, &uniforms);
+  sceGxmSetUniformDataF(uniforms, fvgl.clear.color_param, 0, 4, fvgl.clear_color);
+  const float scissor[4] = {(float)x0, (float)y0, (float)x1, (float)y1};
+  sceGxmSetUniformDataF(uniforms, fvgl.clear.scissor_param, 0, 4, scissor);
+  sceGxmSetVertexStream(fvgl.gxm, 0, fvgl.clear.vertices);
+  const int r = sceGxmDraw(fvgl.gxm, SCE_GXM_PRIMITIVE_TRIANGLES, SCE_GXM_INDEX_FORMAT_U16,
+                           fvgl.clear.indices, 3);
+  if (r < 0) fvgl_log("clear draw: 0x%08X", (unsigned)r);
+  apply_viewport(fvgl.viewport[0], fvgl.viewport[1], fvgl.viewport[2], fvgl.viewport[3]);
+}
+
+GL_APICALL void GL_APIENTRY glReadPixels(GLint x, GLint y, GLsizei w, GLsizei h, GLenum format,
+                                         GLenum type, void* pixels) {
+  if (format != GL_RGBA || type != GL_UNSIGNED_BYTE) {
+    fvgl_set_error(GL_INVALID_ENUM);
+    return;
+  }
+  if (w < 0 || h < 0) {
+    fvgl_set_error(GL_INVALID_VALUE);
+    return;
+  }
+  // Everything queued so far has to land in memory first.
+  fvgl_scene_end();
+  sceGxmFinish(fvgl.gxm);
+  const uint8_t* src = fvgl.display[fvgl.back].data;
+  uint8_t* dst = pixels;
+  for (GLsizei row = 0; row < h; row++) {
+    const int gy = y + row;  // GL row, bottom-up
+    const int sy = fvgl.height - 1 - gy;
+    for (GLsizei col = 0; col < w; col++) {
+      const int gx = x + col;
+      uint8_t* out = dst + ((size_t)row * (size_t)w + (size_t)col) * 4;
+      if (gx < 0 || gx >= fvgl.width || sy < 0 || sy >= fvgl.height) {
+        out[0] = out[1] = out[2] = out[3] = 0;
+        continue;
+      }
+      // A8B8G8R8 in a little-endian word is R, G, B, A in memory: GL_RGBA.
+      memcpy(out, src + ((size_t)sy * g_stride + (size_t)gx) * 4, 4);
+    }
+  }
+}
+
+GL_APICALL GLenum GL_APIENTRY glGetError(void) {
+  const GLenum e = fvgl.error;
+  fvgl.error = GL_NO_ERROR;
+  return e;
+}
+
+GL_APICALL const GLubyte* GL_APIENTRY glGetString(GLenum name) {
+  switch (name) {
+    case GL_VENDOR: return (const GLubyte*)"flutter-vita";
+    case GL_RENDERER: return (const GLubyte*)"fvita_gles2 over sceGxm";
+    case GL_VERSION: return (const GLubyte*)"OpenGL ES 2.0 fvita_gles2";
+    case GL_SHADING_LANGUAGE_VERSION: return (const GLubyte*)"OpenGL ES GLSL ES 1.00";
+    case GL_EXTENSIONS: return (const GLubyte*)"";
+    default:
+      fvgl_set_error(GL_INVALID_ENUM);
+      return NULL;
+  }
+}

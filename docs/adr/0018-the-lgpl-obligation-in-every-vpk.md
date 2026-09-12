@@ -1,6 +1,6 @@
 # ADR-0018: vitaGL is LGPL, and the obligation lands on every developer who ships
 
-**Status:** Proposed — the routes are measured, the choice is not made
+**Status:** Accepted 2026-09-12 — our own GLES2 over sceGxm; nothing LGPL in the vpk and nothing LGPL required on the console
 **Date:** 2026-09-09
 
 ## Context
@@ -198,12 +198,31 @@ no longer load bearing for either route above.
 
 ## Decision
 
-Not made. Two measurements decide it and both are in flight:
+**Write the GLES2 layer ourselves, over sceGxm, in this repo, under BSD-3.**
+ADR-0019 holds the scope and the rules. The other routes are closed, for
+reasons that are the project's and not the platform's:
 
-1. how many GL entry points the gallery's 34 bench scenes actually call, which
-   is what `experiments/gl-usage` counts;
-2. whether the GLSL Skia emits uses a narrow corner of the language or all of
-   it.
+| route | why not |
+|---|---|
+| A, ship the relink material | vitaGL stays in every vpk; every developer still carries the §4 duty and a 22 MB bundle |
+| vitaGL as a `.suprx` on the console | the vpk is clean but the console is not: a developer who ships closed source still depends on an LGPL module being installed, and this toolchain has to be handed to any developer without that string attached |
+| a licence exception from the author | not sought. The toolchain must not rest on a permission that one person can grant or withdraw |
+
+The measurements that were in flight when this was written are in:
+
+1. **Run-time entry points.** Three gallery runs: bound 114 or 115, called
+   60, 61 and 60. Union over the runs: 59 distinct functions called, 55 never
+   (all stencil, renderbuffers, instancing, VAOs, mapped buffers, program
+   binaries, group markers, `glUniform{1,2,3,4}i*`, `glUniformMatrix{2,4}fv`,
+   `glVertexAttrib*f*`, `glFlush`, `glFinish`, `glGenerateMipmap`).
+   `experiments/gl-usage` is the instrument and stays.
+2. **GLSL.** The dialect is the narrow corner: see "What Skia actually emits,
+   measured" above. 43 distinct shaders, `#version 100`, no structs, no user
+   functions, no `discard`, no `#extension`.
+
+So the surface to build is 114 names of which 59 need to do real work, and one
+shader dialect small enough to list. That is the size of the job, and it is
+tracked in percentages in `docs/gles2-progress.md`.
 
 ## Consequences either way
 
@@ -213,6 +232,5 @@ BSD-3-Clause. Neither waits on this decision.
 
 ## Revisit when
 
-Rinnegatamante grants an exception, or the module experiment's remaining fault
-is understood, or the run-time entry-point count comes in far enough below 126
-to change the shape of route B.
+Nothing external. The decision is a direction, and `docs/gles2-progress.md`
+says how far along it is.
