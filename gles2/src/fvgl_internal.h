@@ -45,6 +45,8 @@ void fvgl_usse_free(bool fragment, SceUID uid);
 int fvgl_shacc_init(const char* module_path);
 // Cg text in, a SceGxmProgram in host memory out (free() it after
 // unregistering). On failure returns 0 and puts the diagnostics in log.
+void fvgl_shader_cache_init(const char* dir);
+extern unsigned fvgl_shader_cache_hits, fvgl_shader_cache_misses;
 SceGxmProgram* fvgl_shacc_compile(const char* cg_source, bool fragment,
                                   char* log, size_t log_size);
 void fvgl_shacc_shutdown(void);

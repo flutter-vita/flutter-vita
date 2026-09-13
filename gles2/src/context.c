@@ -441,6 +441,7 @@ int fvgl_init(const FvglConfig* config) {
 
   r = fvgl_shacc_init(compiler);
   if (r < 0) goto fail;
+  fvgl_shader_cache_init(config ? config->shader_cache_dir : NULL);
   if (clear_pipeline_init() < 0) goto fail;
 
   if (fvgl_scratch_init() < 0) goto fail;

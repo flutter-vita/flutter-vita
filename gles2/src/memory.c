@@ -43,6 +43,8 @@ void fvgl_stats(FvglStats* out) {
   *out = g_live;
   out->stalls_previous_frame = fvgl_stalls_previous_frame;
   out->stalls_this_frame = fvgl_stalls_this_frame;
+  out->shader_cache_hits = fvgl_shader_cache_hits;
+  out->shader_cache_misses = fvgl_shader_cache_misses;
   out->garbage_pending = (unsigned)g_garbage_count;
   out->frame = fvgl.frame;
   out->frame_done = fvgl_gpu_completed_frame();

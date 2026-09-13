@@ -20,6 +20,10 @@ typedef struct FvglConfig {
   int display_buffers;
   // Sony's Cg compiler, loaded at init. 0 means "ur0:data/libshacccg.suprx".
   const char* shacccg_path;
+  // A directory for compiled programs, keyed by their source, so a shader
+  // compiles once per console rather than once per launch. Created if
+  // missing, parents included. 0 means no cache.
+  const char* shader_cache_dir;
   // Where diagnostics go. 0 means sceClibPrintf.
   void (*log)(const char* line);
 } FvglConfig;
@@ -49,6 +53,7 @@ typedef struct FvglStats {
   unsigned textures_live, textures_bytes;  // textures with storage
   unsigned targets_live;                   // textures that have been drawn into
   unsigned stalls_previous_frame, stalls_this_frame;  // raster-thread waits for the GPU
+  unsigned shader_cache_hits, shader_cache_misses;    // programs read from disk, programs compiled
   unsigned frame, frame_done;  // the frame being built, the last one the GPU finished
 } FvglStats;
 void fvgl_stats(FvglStats* out);

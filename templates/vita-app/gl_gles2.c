@@ -33,6 +33,11 @@ int flutter_vita_gl_init(int width, int height, void (*log)(const char*)) {
       .height = height,
       .display_buffers = 3,
       .shacccg_path = NULL,  // ur0:data/libshacccg.suprx
+      // Compiled programs, keyed by source, shared by every app on this
+      // console that uses the layer: the same Skia shader is the same text
+      // whichever app asked for it. vitaGL kept its cache in
+      // ux0:data/shader_cache; this one sits beside it.
+      .shader_cache_dir = "ux0:data/fvita_gles2/cache",
       .log = log_line,
   };
   return fvgl_init(&config);
@@ -89,8 +94,9 @@ void flutter_vita_gl_stats(char* out, int cap) {
   fvgl_stats(&s);
   snprintf(out, (size_t)cap,
            "gles2 cdram %u blk %uK lpddr %u blk %uK tex %u %uK tgt %u garbage %u fail %u fallback %u stalls %u/%u "
-           "frame %u done %u",
+           "shaders %u cached %u compiled frame %u done %u",
            s.cdram_blocks, s.cdram_bytes >> 10, s.lpddr_blocks, s.lpddr_bytes >> 10, s.textures_live,
            s.textures_bytes >> 10, s.targets_live, s.garbage_pending, s.cdram_failures, s.lpddr_fallbacks,
-           s.stalls_previous_frame, s.stalls_this_frame, s.frame, s.frame_done);
+           s.stalls_previous_frame, s.stalls_this_frame, s.shader_cache_hits, s.shader_cache_misses, s.frame,
+           s.frame_done);
 }
