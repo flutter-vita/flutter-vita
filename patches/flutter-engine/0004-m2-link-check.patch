@@ -289,10 +289,10 @@ index 00000000..a5e0625d
 +}  // extern "C"
 diff --git a/engine/src/flutter/shell/platform/embedder/vita_embedder.cc b/engine/src/flutter/shell/platform/embedder/vita_embedder.cc
 new file mode 100644
-index 00000000..f73bb2cc
+index 00000000..faf4456f
 --- /dev/null
 +++ b/engine/src/flutter/shell/platform/embedder/vita_embedder.cc
-@@ -0,0 +1,3900 @@
+@@ -0,0 +1,3921 @@
 +// Copyright (c) 2026, the Flutter Authors. All rights reserved.
 +// Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
@@ -3977,6 +3977,27 @@ index 00000000..f73bb2cc
 +  // block. VLogRaw is an sceIoWrite on an already-open handle.
 +  args.log_message_callback = OnLogMessage;
 +  args.log_tag = "dart";
++  // The VM's own GC report, one line per collection with its pause, into the
++  // same log: the only account of collection time this console can give,
++  // since it has no observatory. Opt-in by file, because it is a line every
++  // few frames on a busy screen. The shell's release allowlist admits the
++  // flag on this platform only (patch 0013).
++  static const char* kVmArgv[] = {"flutter-vita", "--dart-flags=--verbose_gc"};
++  // The file's first byte decides, because nothing in the dev loop can
++  // delete a file: "1" on, anything else off.
++  {
++    const SceUID fd = sceIoOpen("ux0:data/flutter-vita/gc.on", SCE_O_RDONLY, 0);
++    if (fd >= 0) {
++      char c = 0;
++      sceIoRead(fd, &c, 1);
++      sceIoClose(fd);
++      if (c == '1') {
++        args.command_line_argc = 2;
++        args.command_line_argv = kVmArgv;
++        VLog("flutter-vita: gc.on is 1, the VM reports every collection\n");
++      }
++    }
++  }
 +  // app0: is the read-only mount of the installed .vpk.
 +  args.assets_path = "app0:/flutter_assets";
 +  args.icu_data_path = "app0:/icudtl.dat";

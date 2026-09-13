@@ -225,6 +225,7 @@ would make Dart emit `SDIV`/`UDIV` that fault on the device.
 | `cpuinfo_vita.cc` | Fixed answers. One known device, nothing to probe: no `/proc`, no cpuid, no auxv. |
 | `thread_interrupter_vita.cc` | No-ops. The sampling profiler needs signals the Vita lacks, and nothing consumes samples without DevTools. No-ops rather than `UNREACHABLE()`, because a profiler that collects nothing beats one that aborts. |
 | `virtual_memory_vita.cc` | An aligned allocator over `sceKernelAllocMemBlock`. |
+| `syslog_vita.cc` | `VitaTrace` writes nothing unless `ux0:data/flutter-vita/trace.on` exists, checked once. Each line was a synced `sceIoWrite`, three per heap page allocation, and that made a scavenge cost 44 to 146 ms ([the record](../../docs/results/ui-thread-list-churn-2026-09-13.md)). |
 
 `virtual_memory_vita.cc` is short because source analysis established, before a
 line was written, that most of `virtual_memory_posix.cc` serves paths that

@@ -22,6 +22,7 @@ disposable; these patches are the artifact.
 | 0010 | [paragraph-timing](0010-paragraph-timing.patch) | Times `ui.Paragraph` construction, build and layout, because this port has no profiler |
 | 0011 | [where-the-memory-goes](0011-where-the-memory-goes.patch) | A per-60-draw report of what Skia's resource cache, Flutter's RasterCache, the glyph cache and the Skia unref queue actually hold |
 | 0012 | [delete-snapshot-textures-on-the-raster-context](0012-delete-snapshot-textures-on-the-raster-context.patch) | A page snapshot's GPU texture is deleted on the raster context; the unref queue has no resource context here and dropped every one of them ([the record](../../docs/results/snapshot-textures-2026-09-12.md)) |
+| 0013 | [the-gc-report-on-request](0013-the-gc-report-on-request.patch) | `--verbose_gc` joins the release allowlist on `__vita__`; the embedder passes it when `ux0:data/flutter-vita/gc.on` starts with `1` ([the record](../../docs/results/ui-thread-list-churn-2026-09-13.md)) |
 
 **There is no 0007.** It was `boringssl-no-asm-for-vita`, a bisect that put the
 Vita on BoringSSL's `no_asm_config` to test whether ARM assembly was crashing

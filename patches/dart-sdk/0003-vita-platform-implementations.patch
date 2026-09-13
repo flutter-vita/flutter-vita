@@ -1,9 +1,9 @@
 diff --git a/runtime/platform/syslog_vita.cc b/runtime/platform/syslog_vita.cc
 new file mode 100644
-index 00000000..076ded20
+index 00000000..66516d74
 --- /dev/null
 +++ b/runtime/platform/syslog_vita.cc
-@@ -0,0 +1,97 @@
+@@ -0,0 +1,113 @@
 +// Copyright (c) 2012, the Dart project authors.  Please see the AUTHORS file
 +// for details. All rights reserved. Use of this source code is governed by a
 +// BSD-style license that can be found in the LICENSE file.
@@ -68,7 +68,23 @@ index 00000000..076ded20
 +// Writes straight to sceIo and syncs every line. Slow and deliberately dumb:
 +// there is no debugger on this device, and a trace that survives a hard fault
 +// is worth more than a fast one that does not.
++//
++// Off unless ux0:data/flutter-vita/trace.on exists, checked once. Every line
++// is a synced write to the card, tens of milliseconds each, and the hot
++// caller is VirtualMemory::AllocateAligned with three lines per heap page: on
++// 2026-09-13 the gallery's list scene showed young-generation collections of
++// 44 to 146 ms, and their length followed the number of pages each one
++// allocated, not the bytes it copied. The port is shipped with this off; the
++// M1 rationale above (a trace from the first platform call, before the VM can
++// say anything) still holds when it is turned on.
++static int g_vita_trace = -1;
++
 +void VitaTrace(const char* format, ...) {
++  if (g_vita_trace < 0) {
++    SceIoStat st;
++    g_vita_trace = sceIoGetstat("ux0:data/flutter-vita/trace.on", &st) >= 0 ? 1 : 0;
++  }
++  if (g_vita_trace == 0) return;
 +  char buf[512];
 +  va_list ap;
 +  va_start(ap, format);
