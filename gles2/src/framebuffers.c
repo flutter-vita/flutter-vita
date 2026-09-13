@@ -45,7 +45,11 @@ void fvgl_target_extent(int* width, int* height, bool* flipped) {
 bool fvgl_texture_make_target(FvglTexture* t) {
   if (t->target) return true;
   if (!t->has_storage || t->gxm_format != SCE_GXM_TEXTURE_FORMAT_U8U8U8U8_ABGR) return false;
-  int r = sceGxmColorSurfaceInit(&t->surface, SCE_GXM_COLOR_FORMAT_A8B8G8R8, SCE_GXM_COLOR_SURFACE_LINEAR,
+  // The tiled layout, unless the console refuses it; contents are kept.
+  fvgl_texture_make_tiled(t);
+  if (t->target) return true;  // the conversion's blit made it
+  int r = sceGxmColorSurfaceInit(&t->surface, SCE_GXM_COLOR_FORMAT_A8B8G8R8,
+                                 t->tiled ? SCE_GXM_COLOR_SURFACE_TILED : SCE_GXM_COLOR_SURFACE_LINEAR,
                                  SCE_GXM_COLOR_SURFACE_SCALE_NONE, SCE_GXM_OUTPUT_REGISTER_SIZE_32BIT,
                                  (unsigned)t->width, (unsigned)t->height, t->stride / 4, t->data);
   if (r < 0) {

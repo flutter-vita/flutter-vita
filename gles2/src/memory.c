@@ -39,12 +39,23 @@ static void live_add(bool cdram, size_t bytes, int sign) {
 
 void fvgl_note_lpddr_fallback(void) { g_live.lpddr_fallbacks++; }
 
+unsigned fvgl_us_queue_wait, fvgl_us_garbage, fvgl_us_memblock;
+
 void fvgl_stats(FvglStats* out) {
   *out = g_live;
   out->stalls_previous_frame = fvgl_stalls_previous_frame;
   out->stalls_this_frame = fvgl_stalls_this_frame;
   out->shader_cache_hits = fvgl_shader_cache_hits;
   out->shader_cache_misses = fvgl_shader_cache_misses;
+  out->us_queue_wait = fvgl_us_queue_wait;
+  out->us_garbage = fvgl_us_garbage;
+  out->us_memblock = fvgl_us_memblock;
+  {
+    extern unsigned fvgl_us_gpu_latency, fvgl_us_gpu_latency_max, fvgl_frames_flipped;
+    out->us_gpu_latency = fvgl_us_gpu_latency;
+    out->us_gpu_latency_max = fvgl_us_gpu_latency_max;
+    out->frames_flipped = fvgl_frames_flipped;
+  }
   out->garbage_pending = (unsigned)g_garbage_count;
   out->frame = fvgl.frame;
   out->frame_done = fvgl_gpu_completed_frame();
@@ -69,6 +80,7 @@ void* fvgl_mem_alloc(FvglMemKind kind, size_t size, SceUID* uid_out) {
       break;
   }
   size = round_up(size, granule);
+  const uint64_t t0 = fvgl_now_us();
   const SceUID uid = sceKernelAllocMemBlock("fvgl", type, (SceSize)size, NULL);
   if (uid < 0) {
     // Once per size, or a run out of CDRAM writes a line per texture.
@@ -86,12 +98,14 @@ void* fvgl_mem_alloc(FvglMemKind kind, size_t size, SceUID* uid_out) {
     return NULL;
   }
   live_add(kind == FVGL_MEM_CDRAM, size, 1);
+  fvgl_us_memblock += (unsigned)(fvgl_now_us() - t0);
   if (uid_out) *uid_out = uid;
   return base;
 }
 
 void fvgl_mem_free(SceUID uid) {
   if (uid < 0) return;
+  const uint64_t t0 = fvgl_now_us();
   void* base = NULL;
   if (sceKernelGetMemBlockBase(uid, &base) == 0) {
     SceKernelMemBlockInfo info = {.size = sizeof info};
@@ -101,6 +115,7 @@ void fvgl_mem_free(SceUID uid) {
     sceGxmUnmapMemory(base);
   }
   sceKernelFreeMemBlock(uid);
+  fvgl_us_memblock += (unsigned)(fvgl_now_us() - t0);
 }
 
 void* fvgl_usse_alloc(bool fragment, size_t size, unsigned* usse_offset,
@@ -188,6 +203,7 @@ void fvgl_wait_for_frame(uint32_t frame) {
 }
 
 void fvgl_collect_garbage(bool everything) {
+  const uint64_t t0 = fvgl_now_us();
   const uint32_t done = fvgl_gpu_completed_frame();
   int kept = 0;
   for (int i = 0; i < g_garbage_count; i++) {
@@ -208,6 +224,7 @@ void fvgl_collect_garbage(bool everything) {
     g_garbage = NULL;
     g_garbage_cap = 0;
   }
+  fvgl_us_garbage += (unsigned)(fvgl_now_us() - t0);
 }
 
 // ---- scratch -----------------------------------------------------------------

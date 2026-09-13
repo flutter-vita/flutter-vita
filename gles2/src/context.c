@@ -68,10 +68,20 @@ void fvgl_stub_called(const char* name) {
 
 typedef struct DisplayCallbackData {
   void* address;
+  uint64_t queued_us;  // when the raster thread queued it
 } DisplayCallbackData;
+
+// The display queue's thread runs this once the GPU has finished the frame.
+// Its distance from the queueing is the GPU's latency for that frame, which
+// nothing else in the process can see.
+unsigned fvgl_us_gpu_latency, fvgl_us_gpu_latency_max, fvgl_frames_flipped;
 
 static void display_callback(const void* data) {
   const DisplayCallbackData* d = data;
+  const unsigned latency = (unsigned)(fvgl_now_us() - d->queued_us);
+  fvgl_us_gpu_latency += latency;
+  if (latency > fvgl_us_gpu_latency_max) fvgl_us_gpu_latency_max = latency;
+  fvgl_frames_flipped++;
   SceDisplayFrameBuf fb;
   memset(&fb, 0, sizeof fb);
   fb.size = sizeof fb;
@@ -581,8 +591,10 @@ void fvgl_swap(void) {
   FvglDisplayBuffer* back = &fvgl.display[fvgl.back];
   FvglDisplayBuffer* front = &fvgl.display[fvgl.front];
   sceGxmPadHeartbeat(&back->surface, back->sync);
-  DisplayCallbackData data = {.address = back->data};
+  const uint64_t t0 = fvgl_now_us();
+  DisplayCallbackData data = {.address = back->data, .queued_us = t0};
   const int r = sceGxmDisplayQueueAddEntry(front->sync, back->sync, &data);
+  fvgl_us_queue_wait += (unsigned)(fvgl_now_us() - t0);
   if (r < 0) fvgl_log("sceGxmDisplayQueueAddEntry: 0x%08X", (unsigned)r);
   fvgl.front = fvgl.back;
   fvgl.back = (fvgl.back + 1) % fvgl.display_buffer_count;
@@ -701,16 +713,26 @@ GL_APICALL void GL_APIENTRY glReadPixels(GLint x, GLint y, GLsizei w, GLsizei h,
     fvgl_set_error(GL_INVALID_VALUE);
     return;
   }
-  // Everything queued so far has to land in memory first.
+  // Everything queued so far has to land in memory first. A tiled target is
+  // read through a linear copy the GPU makes, which lands with the rest.
+  FvglTexture* t = fvgl_current_target();
+  FvglTexture* copy = NULL;
+  if (t && t->tiled) {
+    copy = fvgl_texture_linear_copy(t);
+    if (!copy) {
+      fvgl_set_error(GL_OUT_OF_MEMORY);
+      return;
+    }
+  }
   fvgl_scene_end();
   sceGxmFinish(fvgl.gxm);
   *fvgl.frame_done = fvgl.frame - 1;  // nothing older than this frame is in flight now
-  const FvglTexture* t = fvgl_current_target();
   int tw, th;
   bool flipped;
   fvgl_target_extent(&tw, &th, &flipped);
-  const uint8_t* src = t ? t->data : fvgl.display[fvgl.back].data;
-  const size_t src_stride = t ? t->stride : (size_t)fvgl.display_stride * 4;
+  const FvglTexture* read = copy ? copy : t;
+  const uint8_t* src = read ? read->data : fvgl.display[fvgl.back].data;
+  const size_t src_stride = read ? read->stride : (size_t)fvgl.display_stride * 4;
   const size_t row_bytes = ((size_t)w * 4 + (size_t)fvgl.pack_alignment - 1) & ~((size_t)fvgl.pack_alignment - 1);
   uint8_t* dst = pixels;
   for (GLsizei row = 0; row < h; row++) {
@@ -727,6 +749,7 @@ GL_APICALL void GL_APIENTRY glReadPixels(GLint x, GLint y, GLsizei w, GLsizei h,
       memcpy(out, src + (size_t)sy * src_stride + (size_t)gx * 4, 4);
     }
   }
+  fvgl_texture_scratch_free(copy);
 }
 
 GL_APICALL GLenum GL_APIENTRY glGetError(void) {

@@ -93,10 +93,11 @@ void flutter_vita_gl_stats(char* out, int cap) {
   FvglStats s;
   fvgl_stats(&s);
   snprintf(out, (size_t)cap,
-           "gles2 cdram %u blk %uK lpddr %u blk %uK tex %u %uK tgt %u garbage %u fail %u fallback %u stalls %u/%u "
-           "shaders %u cached %u compiled frame %u done %u",
+           "gles2 cdram %u/%uK lpddr %u/%uK tex %u/%uK tgt %u gc %u fail %u fb %u st %u/%u sh %u/%u "
+           "us q %u gc %u mb %u gpu %u max %u n %u fr %u/%u",
            s.cdram_blocks, s.cdram_bytes >> 10, s.lpddr_blocks, s.lpddr_bytes >> 10, s.textures_live,
            s.textures_bytes >> 10, s.targets_live, s.garbage_pending, s.cdram_failures, s.lpddr_fallbacks,
-           s.stalls_previous_frame, s.stalls_this_frame, s.shader_cache_hits, s.shader_cache_misses, s.frame,
-           s.frame_done);
+           s.stalls_previous_frame, s.stalls_this_frame, s.shader_cache_hits, s.shader_cache_misses,
+           s.us_queue_wait, s.us_garbage, s.us_memblock, s.us_gpu_latency, s.us_gpu_latency_max, s.frames_flipped,
+           s.frame, s.frame_done);
 }

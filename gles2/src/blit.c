@@ -113,31 +113,15 @@ void fvgl_blit_shutdown(void) {
   g_blit.index_uid = -1;
 }
 
-// Copies the GL rectangle (x, y, w, h) of the current target into rows
-// yoffset.. of `dst`, columns xoffset... `dst` is RGBA8 with storage and is
-// not the current target. Returns false when the GPU path is not available
-// and the caller has to do it on the CPU.
-bool fvgl_blit_from_target(FvglTexture* dst, int xoffset, int yoffset, int x, int y, int w, int h) {
+// Draws the source rectangle (x, y, w, h) of `source` (a texture of fw by
+// fh texels; `flipped` says its rows count from the bottom, as the display's
+// do in GL) into rows yoffset.. of `dst`, columns xoffset... `dst` is RGBA8
+// with storage. Ends whatever scene is open first, so that everything drawn
+// so far lands before the copy reads it, and leaves no scene open.
+bool fvgl_blit(FvglTexture* dst, int xoffset, int yoffset, const SceGxmTexture* source_in, int fw, int fh,
+               bool flipped, int x, int y, int w, int h) {
   if (!g_blit.up || !fvgl_texture_make_target(dst)) return false;
-  FvglTexture* from = fvgl_current_target();
-  int fw, fh;
-  bool flipped;
-  fvgl_target_extent(&fw, &fh, &flipped);
-
-  // The source, as a texture. A texture target already is one; the display's
-  // back buffer has the same layout and gets a descriptor of its own here.
-  SceGxmTexture source;
-  if (from) {
-    source = from->gxm;
-  } else {
-    const FvglDisplayBuffer* b = &fvgl.display[fvgl.back];
-    const int r = sceGxmTextureInitLinearStrided(&source, b->data, SCE_GXM_TEXTURE_FORMAT_U8U8U8U8_ABGR,
-                                                 (unsigned)fw, (unsigned)fh, fvgl.display_stride * 4);
-    if (r < 0) {
-      fvgl_log("blit: display as texture: 0x%08X", (unsigned)r);
-      return false;
-    }
-  }
+  SceGxmTexture source = *source_in;
   sceGxmTextureSetMagFilter(&source, SCE_GXM_TEXTURE_FILTER_POINT);
   sceGxmTextureSetUAddrMode(&source, SCE_GXM_TEXTURE_ADDR_CLAMP);
   sceGxmTextureSetVAddrMode(&source, SCE_GXM_TEXTURE_ADDR_CLAMP);
@@ -184,6 +168,35 @@ bool fvgl_blit_from_target(FvglTexture* dst, int xoffset, int yoffset, int x, in
   dst->last_frame_used = fvgl.frame;
   fvgl_blits++;
   return true;
+}
+
+// The current target as a blit source: a texture target's own descriptor, or
+// the display's back buffer, which has the same layout as a linear texture
+// and gets a descriptor of its own here.
+bool fvgl_current_target_as_texture(SceGxmTexture* out, int* fw, int* fh, bool* flipped) {
+  FvglTexture* from = fvgl_current_target();
+  fvgl_target_extent(fw, fh, flipped);
+  if (from) {
+    *out = from->gxm;
+    return true;
+  }
+  const FvglDisplayBuffer* b = &fvgl.display[fvgl.back];
+  const int r = sceGxmTextureInitLinearStrided(out, b->data, SCE_GXM_TEXTURE_FORMAT_U8U8U8U8_ABGR, (unsigned)*fw,
+                                               (unsigned)*fh, fvgl.display_stride * 4);
+  if (r < 0) fvgl_log("display as texture: 0x%08X", (unsigned)r);
+  return r >= 0;
+}
+
+// Copies the GL rectangle (x, y, w, h) of the current target into rows
+// yoffset.. of `dst`, columns xoffset... Returns false when the GPU path is
+// not available and the caller has to do it on the CPU.
+bool fvgl_blit_from_target(FvglTexture* dst, int xoffset, int yoffset, int x, int y, int w, int h) {
+  if (!g_blit.up || dst == fvgl_current_target()) return false;
+  SceGxmTexture source;
+  int fw, fh;
+  bool flipped;
+  if (!fvgl_current_target_as_texture(&source, &fw, &fh, &flipped)) return false;
+  return fvgl_blit(dst, xoffset, yoffset, &source, fw, fh, flipped, x, y, w, h);
 }
 
 unsigned fvgl_blits;

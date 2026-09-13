@@ -33,6 +33,11 @@ typedef enum FvglMemKind {
 void* fvgl_mem_alloc(FvglMemKind kind, size_t size, SceUID* uid_out);
 void fvgl_mem_free(SceUID uid);
 void fvgl_note_lpddr_fallback(void);
+extern unsigned fvgl_us_queue_wait, fvgl_us_garbage, fvgl_us_memblock;
+static inline uint64_t fvgl_now_us(void) {
+  extern uint64_t sceKernelGetProcessTimeWide(void);
+  return sceKernelGetProcessTimeWide();
+}
 void fvgl_texture_stats(FvglStats* out);
 
 // USSE memory for shader code, mapped for the vertex or the fragment unit.
@@ -181,6 +186,8 @@ typedef struct FvglTexture {
   SceGxmTexture gxm;
   bool has_storage;
   bool in_fallback;  // storage is main memory because CDRAM was full
+  bool tiled;        // 32x32 tiles, the layout render targets get; the CPU never touches it
+  bool linear_only;  // a staging texture the CPU reads: stays linear when drawn into
   bool params_dirty;  // filters or wrap changed since gxm was set up
   GLenum min_filter, mag_filter, wrap_s, wrap_t;
   uint32_t last_frame_used;
@@ -317,6 +324,15 @@ FvglTexture* fvgl_current_target(void);
 int fvgl_blit_init(void);
 void fvgl_blit_shutdown(void);
 bool fvgl_blit_from_target(FvglTexture* dst, int xoffset, int yoffset, int x, int y, int w, int h);
+bool fvgl_blit(FvglTexture* dst, int xoffset, int yoffset, const SceGxmTexture* source, int fw, int fh,
+               bool flipped, int x, int y, int w, int h);
+bool fvgl_current_target_as_texture(SceGxmTexture* out, int* fw, int* fh, bool* flipped);
+// A linear copy of a tiled texture for the CPU to read, made by the GPU and
+// finished. The caller frees it with fvgl_texture_scratch_free.
+FvglTexture* fvgl_texture_linear_copy(FvglTexture* t);
+FvglTexture* fvgl_texture_scratch_linear(int width, int height);
+void fvgl_texture_scratch_free(FvglTexture* t);
+bool fvgl_texture_make_tiled(FvglTexture* t);
 extern unsigned fvgl_blits;
 // The target's size, and whether GL rows are counted from its bottom
 // (the display) or match memory rows (a texture).

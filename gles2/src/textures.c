@@ -157,17 +157,29 @@ static void texture_release_storage(FvglTexture* t) {
   t->has_storage = false;
 }
 
-static bool texture_make_storage(FvglTexture* t, const Format* f, int width, int height) {
+// Storage in one of two layouts. Linear, strided: what the CPU writes and
+// the display scans out. Tiled, 32 by 32 texel tiles: what a render target
+// gets, because the GPU samples a linear surface at full screen slowly enough
+// that a page transition ran it past a vsync (docs/results/parity-2026-09-13.md);
+// the CPU never reads or writes a tiled texture directly, it goes through a
+// linear scratch texture and a blit.
+static bool g_tiled_refused;  // the console said no to a tiled texture once; stay linear after
+
+static bool texture_make_storage_layout(FvglTexture* t, const Format* f, int width, int height, bool tiled) {
   texture_release_storage(t);
   unsigned stride = (unsigned)width * f->bpp;
-  if (f->bpp == 4) {
+  unsigned rows = (unsigned)height;
+  if (tiled) {
+    stride = (((unsigned)width + 31u) & ~31u) * 4;
+    rows = ((unsigned)height + 31u) & ~31u;
+  } else if (f->bpp == 4) {
     // Any RGBA8 texture may be drawn into later: pad like the display.
     const unsigned px = ((unsigned)width + kTargetStrideGranule - 1) & ~(kTargetStrideGranule - 1);
     stride = px * 4;
   } else {
     stride = (stride + 15u) & ~15u;
   }
-  const size_t bytes = (size_t)stride * (size_t)height;
+  const size_t bytes = (size_t)stride * (size_t)rows;
   // Small textures in main memory, where the granule is 4 KiB; big ones next
   // to the GPU.
   const FvglMemKind kind = bytes >= 256 * 1024 ? FVGL_MEM_CDRAM : FVGL_MEM_LPDDR_UNCACHED;
@@ -190,10 +202,13 @@ static bool texture_make_storage(FvglTexture* t, const Format* f, int width, int
     fvgl_set_error(GL_OUT_OF_MEMORY);
     return false;
   }
-  const int r = sceGxmTextureInitLinearStrided(&t->gxm, t->data, f->gxm, (unsigned)width, (unsigned)height, stride);
+  const int r = tiled ? sceGxmTextureInitTiled(&t->gxm, t->data, f->gxm, (unsigned)width, (unsigned)height, 1)
+                      : sceGxmTextureInitLinearStrided(&t->gxm, t->data, f->gxm, (unsigned)width, (unsigned)height,
+                                                       stride);
   if (r < 0) {
-    fvgl_log("sceGxmTextureInitLinearStrided %dx%d stride %u format 0x%08X: 0x%08X", width, height, stride,
-             (unsigned)f->gxm, (unsigned)r);
+    fvgl_log("sceGxmTextureInit%s %dx%d stride %u format 0x%08X: 0x%08X", tiled ? "Tiled" : "LinearStrided",
+             width, height, stride, (unsigned)f->gxm, (unsigned)r);
+    if (tiled) g_tiled_refused = true;
     fvgl_mem_free(t->uid);
     t->uid = -1;
     t->data = NULL;
@@ -210,14 +225,100 @@ static bool texture_make_storage(FvglTexture* t, const Format* f, int width, int
   t->convert = f->convert;
   t->stride = stride;
   t->gxm_format = f->gxm;
+  t->tiled = tiled;
   t->has_storage = true;
   t->params_dirty = true;
   t->last_frame_used = 0;
   return true;
 }
 
-// Copies rows from client memory laid out with the unpack alignment.
+static bool texture_make_storage(FvglTexture* t, const Format* f, int width, int height) {
+  return texture_make_storage_layout(t, f, width, height, false);
+}
+
+static const Format* format_rgba8(void) { return format_find(GL_RGBA, GL_UNSIGNED_BYTE); }
+
+// A linear RGBA8 texture outside the object table, for staging.
+FvglTexture* fvgl_texture_scratch_linear(int width, int height) {
+  FvglTexture* t = texture_new();
+  t->linear_only = true;
+  if (!texture_make_storage_layout(t, format_rgba8(), width, height, false)) {
+    free(t);
+    return NULL;
+  }
+  return t;
+}
+
+void fvgl_texture_scratch_free(FvglTexture* t) {
+  if (!t) return;
+  texture_release_storage(t);
+  free(t);
+}
+
+// The texture in the tiled layout, contents kept. Once tiled it stays so.
+bool fvgl_texture_make_tiled(FvglTexture* t) {
+  if (t->tiled) return true;
+  if (!texture_is_rgba8(t) || t->linear_only || g_tiled_refused) return false;
+  // The old storage is the source of a blit into the new one; it stays
+  // mapped until the GPU is past this frame, which is after the blit.
+  FvglTexture old = *t;
+  t->uid = -1;
+  t->data = NULL;
+  t->target = NULL;
+  t->has_storage = false;
+  t->in_fallback = false;
+  if (!texture_make_storage_layout(t, format_rgba8(), old.width, old.height, true)) {
+    *t = old;
+    if (g_tiled_refused) fvgl_log("tiled render targets refused here; staying linear");
+    return false;
+  }
+  t->min_filter = old.min_filter;
+  t->mag_filter = old.mag_filter;
+  t->wrap_s = old.wrap_s;
+  t->wrap_t = old.wrap_t;
+  t->params_dirty = true;
+  if (old.target) fvgl_defer_destroy_target(old.target);
+  if (old.in_fallback) g_fallback_bytes -= old.bytes;
+  if (!fvgl_blit(t, 0, 0, &old.gxm, old.width, old.height, false, 0, 0, old.width, old.height)) {
+    fvgl_log("tiled conversion blit failed for %dx%d", old.width, old.height);
+  }
+  fvgl_defer_free(old.uid);
+  return true;
+}
+
+// A linear copy of `t`, finished, for the CPU to read.
+FvglTexture* fvgl_texture_linear_copy(FvglTexture* t) {
+  FvglTexture* copy = fvgl_texture_scratch_linear(t->width, t->height);
+  if (!copy) return NULL;
+  if (!fvgl_blit(copy, 0, 0, &t->gxm, t->width, t->height, false, 0, 0, t->width, t->height)) {
+    fvgl_texture_scratch_free(copy);
+    return NULL;
+  }
+  fvgl_wait_for_frame(fvgl.frame);
+  return copy;
+}
+
+static void texture_write_linear(FvglTexture* t, int x, int y, int w, int h, const void* pixels);
+
+// Copies rows from client memory laid out with the unpack alignment. A tiled
+// texture takes them through a linear staging texture and a blit, so the CPU
+// never has to know the tile order, and never waits for the GPU either.
 static void texture_write(FvglTexture* t, int x, int y, int w, int h, const void* pixels) {
+  if (!t->tiled) {
+    texture_write_linear(t, x, y, w, h, pixels);
+    return;
+  }
+  FvglTexture* staging = fvgl_texture_scratch_linear(w, h);
+  if (!staging) {
+    fvgl_set_error(GL_OUT_OF_MEMORY);
+    return;
+  }
+  texture_write_linear(staging, 0, 0, w, h, pixels);
+  if (!fvgl_blit(t, x, y, &staging->gxm, w, h, false, 0, 0, w, h)) fvgl_set_error(GL_OUT_OF_MEMORY);
+  fvgl_texture_scratch_free(staging);
+}
+
+static void texture_write_linear(FvglTexture* t, int x, int y, int w, int h, const void* pixels) {
   const size_t tight = (size_t)w * t->src_bpp;
   const size_t align = (size_t)fvgl.unpack_alignment;
   const size_t src_stride = (tight + align - 1) & ~(align - 1);
@@ -355,7 +456,7 @@ GL_APICALL void GL_APIENTRY glTexSubImage2D(GLenum target, GLint level, GLint xo
     return;
   }
   if (!pixels || width == 0 || height == 0) return;
-  texture_wait_idle(t);
+  if (!t->tiled) texture_wait_idle(t);
   texture_write(t, xoffset, yoffset, width, height, pixels);
 }
 
@@ -401,6 +502,10 @@ GL_APICALL void GL_APIENTRY glCopyTexSubImage2D(GLenum target, GLint level, GLin
   int fw, fh;
   bool flipped;
   fvgl_target_extent(&fw, &fh, &flipped);
+  if ((from && from->tiled) || t->tiled) {
+    fvgl_set_error(GL_OUT_OF_MEMORY);
+    return;
+  }
   const uint8_t* src;
   unsigned src_stride;
   if (from) {
