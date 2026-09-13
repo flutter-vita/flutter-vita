@@ -289,10 +289,10 @@ index 00000000..a5e0625d
 +}  // extern "C"
 diff --git a/engine/src/flutter/shell/platform/embedder/vita_embedder.cc b/engine/src/flutter/shell/platform/embedder/vita_embedder.cc
 new file mode 100644
-index 00000000..de4de0da
+index 00000000..4464b90e
 --- /dev/null
 +++ b/engine/src/flutter/shell/platform/embedder/vita_embedder.cc
-@@ -0,0 +1,4424 @@
+@@ -0,0 +1,4476 @@
 +// Copyright (c) 2026, the Flutter Authors. All rights reserved.
 +// Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
@@ -1016,8 +1016,50 @@ index 00000000..de4de0da
 +  // Deliberately sized from the descriptor the hardware returned rather than
 +  // from our own constants, so a mismatch shows up as a wrong-sized capture
 +  // instead of being silently papered over.
-+  *size = fb.pitch * fb.height * 4;
-+  return fb.base;
++  const unsigned bytes = fb.pitch * fb.height * 4;
++  *size = bytes;
++
++  // One frame, not a smear of forty. The send that follows takes a second or
++  // more over Wi-Fi, and the display chain has three buffers, so the GPU is
++  // back in this one two flips after the call: a capture of localsend's 30 Hz
++  // radar under fvita_gles2 came out with rows from later frames in it, some
++  // of them still unwritten. So the capture is a copy, taken right after a
++  // vblank starts, when this buffer has a whole frame period before anyone
++  // may write it again. The copy lives in a block of its own, allocated the
++  // first time and kept; a failed allocation falls back to the live buffer.
++  static void* snapshot = nullptr;
++  static unsigned snapshot_bytes = 0;
++  if (snapshot_bytes < bytes) {
++    const unsigned rounded = (bytes + 0xFFFu) & ~0xFFFu;
++    const SceUID uid = sceKernelAllocMemBlock(
++        "fvita-shot", SCE_KERNEL_MEMBLOCK_TYPE_USER_RW, rounded, nullptr);
++    void* base = nullptr;
++    if (uid >= 0 && sceKernelGetMemBlockBase(uid, &base) >= 0) {
++      snapshot = base;
++      snapshot_bytes = rounded;
++    }
++  }
++  if (snapshot == nullptr) return fb.base;
++  sceDisplayWaitVblankStart();
++  SceDisplayFrameBuf now_fb = {};
++  now_fb.size = sizeof(now_fb);
++  if (sceDisplayGetFrameBuf(&now_fb, SCE_DISPLAY_SETBUF_NEXTFRAME) >= 0 &&
++      now_fb.base != nullptr && now_fb.pitch == fb.pitch &&
++      now_fb.height == fb.height) {
++    fb = now_fb;  // the flip may have landed during the wait
++  }
++  const uint64_t t0 = sceKernelGetProcessTimeWide();
++  std::memcpy(snapshot, fb.base, bytes);
++  const unsigned copy_us =
++      static_cast<unsigned>(sceKernelGetProcessTimeWide() - t0);
++  const size_t len = std::strlen(describe);
++  if (len > 0 && len < describe_size) {
++    // Onto the same line, before its newline.
++    describe[len - 1] = '\0';
++    std::snprintf(describe + len - 1, describe_size - len + 1,
++                  " copy=%u us\n", copy_us);
++  }
++  return snapshot;
 +}
 +
 +// |dev_server_set_overlay_handler|
@@ -2585,7 +2627,17 @@ index 00000000..de4de0da
 +  const uint64_t now = sceKernelGetSystemTimeWide();
 +  const uint64_t since = now - g_last_present_us;
 +
-+  if (since < kStallUs) {
++  // A screen with nothing to draw is not a stall. The gallery never sits
++  // still, so this test was enough for it; wonderous parks on a static
++  // wonder for as long as nobody touches it, and the first run on
++  // fvita_gles2 filled its log with ten reports of a raster thread that was
++  // idle because it had been given nothing. With the raster idle and the UI
++  // thread answering its heartbeat, the app is waiting for input, and
++  // CheckUiThread below owns the other case.
++  const bool nothing_to_draw =
++      g_raster_phase.load(std::memory_order_acquire) == kPhaseIdle &&
++      g_hb_reply_us != 0 && now - g_hb_reply_us < kStallUs;
++  if (since < kStallUs || nothing_to_draw) {
 +    if (g_stall_reports != 0) {
 +      VLog("flutter-vita: UNSTALLED after %u ms and %u reports\n",
 +           static_cast<unsigned>(g_stall_reported_us != 0
