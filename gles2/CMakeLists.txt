@@ -15,6 +15,7 @@ endif()
 project(fvita_gles2 C)
 
 add_library(fvita_gles2 STATIC
+  src/blit.c
   src/buffers.c
   src/context.c
   src/draw.c

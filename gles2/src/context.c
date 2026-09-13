@@ -443,6 +443,7 @@ int fvgl_init(const FvglConfig* config) {
   if (r < 0) goto fail;
   fvgl_shader_cache_init(config ? config->shader_cache_dir : NULL);
   if (clear_pipeline_init() < 0) goto fail;
+  if (fvgl_blit_init() < 0) goto fail;
 
   if (fvgl_scratch_init() < 0) goto fail;
   fvgl_draw_init();
@@ -512,6 +513,7 @@ void fvgl_shutdown(void) {
   fvgl_framebuffers_shutdown();
   fvgl_textures_shutdown();
   fvgl_draw_shutdown();
+  fvgl_blit_shutdown();
   fvgl_scratch_shutdown();
   shutdown_stage("garbage");
   fvgl_collect_garbage(true);

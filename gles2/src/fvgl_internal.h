@@ -314,6 +314,10 @@ void fvgl_scene_end(void);
 
 // The texture the bound framebuffer draws into, NULL for the display.
 FvglTexture* fvgl_current_target(void);
+int fvgl_blit_init(void);
+void fvgl_blit_shutdown(void);
+bool fvgl_blit_from_target(FvglTexture* dst, int xoffset, int yoffset, int x, int y, int w, int h);
+extern unsigned fvgl_blits;
 // The target's size, and whether GL rows are counted from its bottom
 // (the display) or match memory rows (a texture).
 void fvgl_target_extent(int* width, int* height, bool* flipped);

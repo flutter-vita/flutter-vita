@@ -395,6 +395,9 @@ GL_APICALL void GL_APIENTRY glCopyTexSubImage2D(GLenum target, GLint level, GLin
     fvgl_set_error(GL_INVALID_OPERATION);
     return;
   }
+  if (width == 0 || height == 0) return;
+  if (fvgl_blit_from_target(t, xoffset, yoffset, x, y, width, height)) return;
+  // The CPU path, for a destination that cannot be a render target.
   int fw, fh;
   bool flipped;
   fvgl_target_extent(&fw, &fh, &flipped);
