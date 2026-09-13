@@ -30,7 +30,7 @@ else
   # The panel removes the file after reading it, so a request that is never
   # picked up is a panel that is not running -- which the screenshot shows.
   { printf 'put %s %s\n' "$(( ${#LINE} + 1 ))" "$REQ"; printf '%s\n' "$LINE"; } \
-    | nc -w 30 "$HOST" "$PORT" | grep -q OK \
+    | nc -4 -w 30 "$HOST" "$PORT" | grep -q OK \
     || { echo "!! the receiver did not take '$LINE'" >&2; exit 1; }
   # Two poll ticks: one to read the request, one to rebuild and present.
   sleep 2
@@ -40,6 +40,6 @@ fi
 mkdir -p "$(dirname "$OUT")"
 RAW="$(mktemp)"
 trap 'rm -f "$RAW"' EXIT
-printf 'shot\n' | nc -w 120 "$HOST" "$PORT" > "$RAW"
+printf 'shot\n' | nc -4 -w 120 "$HOST" "$PORT" > "$RAW"
 [ -s "$RAW" ] || { echo "!! empty framebuffer" >&2; exit 1; }
 "$HERE/rgba2png.py" "$RAW" "$OUT"

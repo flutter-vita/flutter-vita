@@ -63,7 +63,7 @@ else
 fi
 
 sample() {
-  printf 'diag\n' | nc -w 25 "$HOST" "$PORT" \
+  printf 'diag\n' | nc -4 -w 25 "$HOST" "$PORT" \
     || { echo "!! no answer from $HOST:$PORT" >&2; exit 1; }
 }
 

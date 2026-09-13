@@ -99,7 +99,7 @@ fi
 echo $$ > "$LOCK"
 trap 'rm -f "$LOCK"' EXIT
 
-say() { printf '%s\n' "$2" | nc -w "${3:-20}" "$HOST" "$1" 2>/dev/null; }
+say() { printf '%s\n' "$2" | nc -4 -w "${3:-20}" "$HOST" "$1" 2>/dev/null; }
 # Write a switch file, through whichever of the two is actually listening.
 #
 # Both the app and the receiver serve `put`, and which one holds the console
@@ -111,7 +111,7 @@ put() {  # <content> <device path>
   size=${#content}
   for port in "$DEV" "$LDR"; do
     reply="$(printf 'put %s %s\n%s' "$size" "$path" "$content" \
-      | nc -w 15 "$HOST" "$port" 2>/dev/null || true)"
+      | nc -4 -w 15 "$HOST" "$port" 2>/dev/null || true)"
     case "$reply" in *OK*) return 0 ;; esac
   done
   echo "!! could not write $path — nothing answered on $DEV or $LDR" >&2
@@ -262,8 +262,8 @@ run_one() {  # <sw|gl>
   local done=0 scene="" scene_at=0 stuck_n=0 now
   # nc's -w is an idle timeout, and the dev server keeps a connection open
   # for the next command, so every query here costs the full -w. Two seconds
-  # against a warm app, not the six a cold receiver needs: a miss only delays
-  # a poll.
+  # is plenty now that nc -4 skips the 5 s AAAA lookup (see deploy.sh): a
+  # miss only delays a poll.
   for i in $(seq 1 600); do
     if say "$DEV" "get ux0:data/flutter-vita/bench-done" 2 | grep -q '^1'; then
       done=1; break

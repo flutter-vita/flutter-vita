@@ -46,7 +46,7 @@ done
 
 [ -f "$VPK" ] || { echo "!! no $VPK — build the receiver first" >&2; exit 1; }
 
-say() { printf '%s\n' "$2" | nc -w "${3:-30}" "$HOST" "$1" 2>/dev/null; }
+say() { printf '%s\n' "$2" | nc -4 -w "${3:-30}" "$HOST" "$1" 2>/dev/null; }
 
 # A real command, not `nc -z`. The dev server's listener is non-blocking and a
 # bare connect races its accept loop -- an early run of this script had `nc -z`
@@ -117,7 +117,7 @@ put() {  # <local> <device path>
   # same mistake: a blank shell expansion once truncated a 12 MB eboot to
   # nothing, and the console then had a receiver that could not start.
   [ "${size:-0}" -gt 0 ] || { echo "!! refusing to put an empty $1" >&2; return 1; }
-  { printf 'put %s %s\n' "$size" "$2"; cat "$1"; } | nc -w 300 "$HOST" "$PORT" \
+  { printf 'put %s %s\n' "$size" "$2"; cat "$1"; } | nc -4 -w 300 "$HOST" "$PORT" \
     | grep -q OK || { echo "!! put failed: $2" >&2; return 1; }
   printf '    %-28s %9s B\n' "$2" "$size"
 }
@@ -154,4 +154,4 @@ echo
 echo "Installed into $TITLE_ID, $VERIFIED."
 echo "The running process is unchanged; the new build starts on the next launch."
 echo "The app can hand the console over without a tap:"
-echo "  printf 'handoff $TITLE_ID\\n' | nc $HOST $PORT"
+echo "  printf 'handoff $TITLE_ID\\n' | nc -4 $HOST $PORT"

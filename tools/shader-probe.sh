@@ -27,19 +27,19 @@ F="${2:?fragment shader}"
 put() {
   local src="$1" dst="$2" n
   n=$(wc -c < "$src" | tr -d ' ')
-  { printf 'put %s %s\n' "$n" "$dst"; cat "$src"; } | nc -w 30 "$HOST" "$PORT" \
+  { printf 'put %s %s\n' "$n" "$dst"; cat "$src"; } | nc -4 -w 30 "$HOST" "$PORT" \
     | grep -q OK || { echo "!! put $dst failed" >&2; exit 1; }
 }
 
 # Delete the previous answer first. Without this the poll below reads the file
 # from the last run and reports it as this one -- which produced two identical
 # timings to the microsecond and nearly cost a wrong conclusion.
-printf 'rm %s/result.txt\n' "$DIR" | nc -w 20 "$HOST" "$PORT" >/dev/null || true
+printf 'rm %s/result.txt\n' "$DIR" | nc -4 -w 20 "$HOST" "$PORT" >/dev/null || true
 if [ -n "$OPT" ]; then
   printf 'put %s %s/opt\n%s\n' "$(( ${#OPT} + 1 ))" "$DIR" "$OPT" \
-    | nc -w 20 "$HOST" "$PORT" >/dev/null
+    | nc -4 -w 20 "$HOST" "$PORT" >/dev/null
 else
-  printf 'rm %s/opt\n' "$DIR" | nc -w 20 "$HOST" "$PORT" >/dev/null || true
+  printf 'rm %s/opt\n' "$DIR" | nc -4 -w 20 "$HOST" "$PORT" >/dev/null || true
 fi
 
 # Every probe gets a unique comment appended.
@@ -58,14 +58,14 @@ V="$VN"; F="$FN"
 
 put "$V" "$DIR/v.glsl"
 put "$F" "$DIR/f.glsl"
-printf 'put 2 %s/go\n1\n' "$DIR" | nc -w 20 "$HOST" "$PORT" | grep -q OK \
+printf 'put 2 %s/go\n1\n' "$DIR" | nc -4 -w 20 "$HOST" "$PORT" | grep -q OK \
   || { echo "!! could not arm the probe" >&2; exit 1; }
 
 # A present every ~33 ms and a check every 60 of them: two seconds is generous,
 # and a compile that fails can take another second on top.
 for _ in $(seq 1 20); do
   sleep 1
-  OUT="$(printf 'get %s/result.txt\n' "$DIR" | nc -w 20 "$HOST" "$PORT" || true)"
+  OUT="$(printf 'get %s/result.txt\n' "$DIR" | nc -4 -w 20 "$HOST" "$PORT" || true)"
   case "$OUT" in
     LINK*|MISSING*) printf '%s\n' "$OUT"; exit 0 ;;
   esac

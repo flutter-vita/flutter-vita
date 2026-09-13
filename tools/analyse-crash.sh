@@ -53,7 +53,7 @@ while [ $# -gt 0 ]; do
   esac
 done
 
-say() { printf '%s\n' "$2" | nc -w "${3:-30}" "$HOST" "$1"; }
+say() { printf '%s\n' "$2" | nc -4 -w "${3:-30}" "$HOST" "$1"; }
 
 # Newest first, by the epoch second in the filename. `.tmp` names are dumps the
 # console was still writing when it went down, and are not readable.

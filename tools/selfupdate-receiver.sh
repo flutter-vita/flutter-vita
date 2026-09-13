@@ -90,7 +90,7 @@ STAGE="ux0:data/flutter-vita/receiver-update"
 # ux0:data is ordinary storage the receiver writes freely.
 MANIFEST_PATH="ux0:data/flutter-vita/$TITLE_ID.payload.sha"
 
-say() { printf '%s\n' "$2" | nc -w "${3:-30}" "$HOST" "$1"; }
+say() { printf '%s\n' "$2" | nc -4 -w "${3:-30}" "$HOST" "$1"; }
 # The console is addressed by name, always, everywhere.
 #
 # An earlier version of this resolved the name once and used the address for
@@ -115,7 +115,7 @@ put() {  # <local> <device path>
   # nothing, and the console then had a receiver that could not start.
   [ "${size:-0}" -gt 0 ] || { echo "!! refusing to put an empty $1" >&2; return 1; }
   local t0; t0=$(date +%s)
-  { printf 'put %s %s\n' "$size" "$2"; cat "$1"; } | nc -w 300 "$HOST" "$PORT" \
+  { printf 'put %s %s\n' "$size" "$2"; cat "$1"; } | nc -4 -w 300 "$HOST" "$PORT" \
     | grep -q OK || { echo "!! put failed: $2" >&2; return 1; }
   printf '    %-52s %9s B  %3ss\n' "${2#"$STAGE"/files/}" "$size" \
     "$(( $(date +%s) - t0 ))"
@@ -321,5 +321,5 @@ for _ in $(seq 1 20); do
   esac
 done
 echo "!! $UPDATER is still there, or the receiver stopped answering." >&2
-echo "   printf 'log\\n' | nc $HOST $PORT | tail -20" >&2
+echo "   printf 'log\\n' | nc -4 $HOST $PORT | tail -20" >&2
 exit 1

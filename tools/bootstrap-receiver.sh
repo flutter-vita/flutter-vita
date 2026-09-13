@@ -54,7 +54,7 @@ MSG
 
 for _ in $(seq 1 90); do
   sleep 4
-  if printf 'ping\n' | nc -w 4 "$NAME" 1341 2>/dev/null | grep -q '^pong receiver'; then
+  if printf 'ping\n' | nc -4 -w 4 "$NAME" 1341 2>/dev/null | grep -q '^pong receiver'; then
     echo "    $NAME is up. Everything from here on is by name."
     exit 0
   fi

@@ -81,14 +81,22 @@ while [ $# -gt 0 ]; do
   esac
 done
 
-say()  { printf '%s\n' "$2" | nc -w "${3:-30}" "$HOST" "$1" 2>/dev/null; }
+# -4 on every nc here and in the other tools. Without it macOS asks mDNS for
+# an AAAA record first, the console's responder has no IPv6 to answer with,
+# and getaddrinfo waits the full 5.00 s before it falls back to the A record.
+# Measured 2026-09-14: connect 5.01 s, reply 0.01 s; with -4 the whole ping is
+# 0.06 s. That one lookup was the "cold receiver" of every earlier note, and
+# it was paid once per file below: the 454-file wonderous bundle took 45 min.
+say()  { printf '%s\n' "$2" | nc -4 -w "${3:-30}" "$HOST" "$1" 2>/dev/null; }
 # Retried, because one connect is not evidence: the listeners are non-blocking
 # and a single probe races the accept loop.
 alive() {
   local port="$1" want="$2"
   # Six, not three: measured on 2026-08-21, the receiver answered on the fifth
   # probe from a cold connect. Three tries reported a live receiver as dead and
-  # sent the script down the "wait for a human tap" path for no reason.
+  # sent the script down the "wait for a human tap" path for no reason. (Most
+  # of that "cold" was the 5 s AAAA lookup above; the retries stay, because a
+  # receiver that has just started is a real case too.)
   for _ in 1 2 3 4 5 6; do
     # "receiver" matches both the C receiver's bare reply and the Flutter
     # receiver's "pong receiver <slot> <port>".
@@ -141,7 +149,7 @@ unzip -q "$VPK" -d "$WORK"
 SIZE="$(wc -c < "$WORK/eboot.bin" | tr -d ' ')"
 echo "==> staging eboot.bin ($SIZE bytes)"
 { printf 'stage %s\n' "$SIZE"; cat "$WORK/eboot.bin"; } \
-  | nc -w 300 "$HOST" "$LDR" | grep -q OK || {
+  | nc -4 -w 300 "$HOST" "$LDR" | grep -q OK || {
     echo "!! stage failed — wifi drop mid-transfer?" >&2; exit 1; }
 
 echo "==> installing"
@@ -200,7 +208,7 @@ while read -r rel; do
   fsize="$(wc -c < "$WORK/$rel" | tr -d ' ')"
   printf '    %s (%s B)\n' "$rel" "$fsize"
   if { printf 'put %s ux0:app/%s/%s\n' "$fsize" "$TITLEID" "$rel"; cat "$WORK/$rel"; } \
-       | nc -w 180 "$HOST" "$LDR" | grep -q OK; then
+       | nc -4 -w 180 "$HOST" "$LDR" | grep -q OK; then
     printf '%s %s\n' "$want" "$rel" >> "$NEXT"
     pushed=$((pushed + 1))
   else
@@ -332,7 +340,7 @@ if [ "${msize:-0}" -gt 0 ]; then
   ok=0
   for _ in 1 2 3; do
     { printf 'put %s %s\n' "$msize" "$MANIFEST"; cat "$NEXT"; } \
-      | nc -w 60 "$HOST" "$LDR" | grep -q OK && { ok=1; break; }
+      | nc -4 -w 60 "$HOST" "$LDR" | grep -q OK && { ok=1; break; }
     sleep 2
   done
   [ "$ok" -eq 1 ] || echo "    !! could not record the manifest" >&2

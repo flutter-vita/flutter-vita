@@ -27,7 +27,7 @@ VPK="${1:?usage: run-experiment.sh <vpk> <report-path>}"
 REPORT="${2:?usage: run-experiment.sh <vpk> <report-path>}"
 DEADLINE="${EXPERIMENT_DEADLINE:-90}"
 
-ldr() { printf '%s\n' "$1" | nc -w 3 "$HOST" "$LDR" 2>/dev/null; }
+ldr() { printf '%s\n' "$1" | nc -4 -w 3 "$HOST" "$LDR" 2>/dev/null; }
 
 wait_receiver() {
   local until=$((SECONDS + $1))
@@ -59,7 +59,7 @@ fi
 
 echo "==> report"
 for _ in 1 2 3 4 5 6; do
-  out="$(printf 'get %s\n' "$REPORT" | nc -w 8 "$HOST" "$LDR" 2>/dev/null)"
+  out="$(printf 'get %s\n' "$REPORT" | nc -4 -w 8 "$HOST" "$LDR" 2>/dev/null)"
   [ -n "$out" ] && { printf '%s\n' "$out"; exit 0; }
 done
 echo "!! no report at $REPORT" >&2

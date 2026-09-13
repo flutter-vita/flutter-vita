@@ -60,7 +60,7 @@ done
 [ -n "$VPK" ] && [ -f "$VPK" ] || { sed -n '2,44p' "$0" | sed 's/^# \{0,1\}//'; exit 2; }
 VPK="$(cd "$(dirname "$VPK")" && pwd)/$(basename "$VPK")"
 
-say() { printf '%s\n' "$2" | nc -w "${3:-30}" "$HOST" "$1"; }
+say() { printf '%s\n' "$2" | nc -4 -w "${3:-30}" "$HOST" "$1"; }
 # The console is addressed by name, always, everywhere.
 #
 # An earlier version of this resolved the name once and used the address for
@@ -104,7 +104,7 @@ esac
 put() {  # <local> <device path>
   local size; size=$(wc -c <"$1" | tr -d ' ')
   [ "${size:-0}" -gt 0 ] || { echo "!! refusing to put an empty $1" >&2; return 1; }
-  { printf 'put %s %s\n' "$size" "$2"; cat "$1"; } | nc -w 300 "$HOST" "$PORT" \
+  { printf 'put %s %s\n' "$size" "$2"; cat "$1"; } | nc -4 -w 300 "$HOST" "$PORT" \
     | grep -q OK || { echo "!! put failed: $2" >&2; return 1; }
   printf '    %-44s %9s B\n' "$2" "$size"
 }
@@ -113,7 +113,7 @@ if [ "$REPLACE" -eq 1 ]; then
   echo "==> replacing $TITLE_ID in place (no promote)"
   SIZE="$(wc -c < "$WORK/eboot.bin" | tr -d ' ')"
   { printf 'stage %s\n' "$SIZE"; cat "$WORK/eboot.bin"; } \
-    | nc -w 300 "$HOST" "$PORT" | grep -q OK || {
+    | nc -4 -w 300 "$HOST" "$PORT" | grep -q OK || {
       echo "!! stage failed — wifi drop mid-transfer?" >&2; exit 1; }
   say "$PORT" "install $TITLE_ID" 60 | grep -q OK || {
     echo "!! install failed" >&2; exit 1; }
@@ -174,7 +174,7 @@ else
   case "$RESULT" in
     OK*) ;;
     *) echo "!! promote failed. More in the receiver's log:" >&2
-       echo "     printf 'log\\n' | nc $HOST $PORT | tail -20" >&2
+       echo "     printf 'log\\n' | nc -4 $HOST $PORT | tail -20" >&2
        exit 1 ;;
   esac
   say "$PORT" "exist $TITLE_ID" 30 | sed 's/^/    /'
