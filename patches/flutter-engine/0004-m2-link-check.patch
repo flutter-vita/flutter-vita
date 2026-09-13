@@ -289,10 +289,10 @@ index 00000000..a5e0625d
 +}  // extern "C"
 diff --git a/engine/src/flutter/shell/platform/embedder/vita_embedder.cc b/engine/src/flutter/shell/platform/embedder/vita_embedder.cc
 new file mode 100644
-index 00000000..faf4456f
+index 00000000..de4de0da
 --- /dev/null
 +++ b/engine/src/flutter/shell/platform/embedder/vita_embedder.cc
-@@ -0,0 +1,3921 @@
+@@ -0,0 +1,4424 @@
 +// Copyright (c) 2026, the Flutter Authors. All rights reserved.
 +// Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
@@ -387,6 +387,40 @@ index 00000000..faf4456f
 +                                                           int x1, int y1,
 +                                                           int steps));
 +extern "C" void dev_server_set_overlay_handler(void (*overlay)(int on));
++
++// Another thread's registers. Sony's own VM hooks, the ones PSM's Mono used
++// for its GC: not in the SDK headers, but in its NID database, and the stub
++// libraries export them. The stall report needs a thread's real stack pointer
++// to scan its live frames rather than its history, and its pc and lr to name
++// the wait it is in; sceKernelGetThreadInfo gives neither.
++struct VitaCpuRegisters {
++  SceSize size;
++  SceUID cpu_id;
++  SceUInt32 reg[16];  // r0..r12, sp, lr, pc
++  SceUInt32 cpsr;
++  SceUInt32 teehbr;
++  SceUInt32 tpidrurw;
++};
++struct VitaVfpRegisters {
++  SceSize size;
++  SceUID cpu_id;
++  float reg[64];
++  SceUInt32 fpscr;
++};
++extern "C" int sceKernelGetThreadContextForVM(SceUID thread,
++                                              VitaCpuRegisters* cpu,
++                                              VitaVfpRegisters* vfp);
++extern "C" int _sceKernelGetThreadContextForVM(SceUID thread,
++                                               VitaCpuRegisters* cpu,
++                                               VitaVfpRegisters* vfp);
++extern "C" int sceKernelSuspendThreadForVM(SceUID thread);
++extern "C" int sceKernelResumeThreadForVM(SceUID thread);
++
++// Whether the UI-thread watchdog may relaunch a wedged app. Weak, like the
++// HUD switch below: release.c defines a strong 0 and a shipping app never
++// restarts itself. A dev build can also switch it off for one launch with
++// ux0:data/flutter-vita/watchdog.off starting with '1'.
++extern "C" __attribute__((weak)) int flutter_vita_watchdog = 1;
 +
 +// Whether a build wants the debug HUD.
 +//
@@ -2094,10 +2128,47 @@ index 00000000..faf4456f
 +// what it called to get there.
 +constexpr uintptr_t kUserTextLo = 0x81000000u;
 +constexpr uintptr_t kUserTextHi = 0x88000000u;
-+constexpr int kMaxFrames = 10;
++constexpr int kMaxFrames = 14;
++
++// The registers of a thread that is not this one, or false.
++//
++// Tried live first. If the kernel wants the thread parked for it, park it
++// for the read and let it go: a thread that is waiting does not notice, and a
++// thread that is spinning loses a few microseconds. `err` keeps the last
++// refusal so the report can say why a thread has no pc.
++bool ReadThreadRegisters(SceUID uid, VitaCpuRegisters* cpu, int* err) {
++  std::memset(cpu, 0, sizeof *cpu);
++  cpu->size = sizeof *cpu;
++  VitaVfpRegisters vfp;
++  std::memset(&vfp, 0, sizeof vfp);
++  vfp.size = sizeof vfp;
++  int r = sceKernelGetThreadContextForVM(uid, cpu, &vfp);
++  if (r < 0) {
++    // The user-side wrapper refused (0x8002710B, NO_MEMORY, on 2026-09-13,
++    // for every thread). The syscall behind it, and once more with the
++    // thread parked, before giving up.
++    cpu->size = sizeof *cpu;
++    r = _sceKernelGetThreadContextForVM(uid, cpu, &vfp);
++  }
++  if (r < 0) {
++    const int s = sceKernelSuspendThreadForVM(uid);
++    if (s >= 0) {
++      cpu->size = sizeof *cpu;
++      vfp.size = sizeof vfp;
++      r = sceKernelGetThreadContextForVM(uid, cpu, &vfp);
++      if (r < 0) r = _sceKernelGetThreadContextForVM(uid, cpu, &vfp);
++      sceKernelResumeThreadForVM(uid);
++    } else if (err != nullptr) {
++      *err = s;
++      return false;
++    }
++  }
++  if (err != nullptr) *err = r;
++  return r >= 0;
++}
 +
 +int ScanStack(const SceKernelThreadInfo& info, SceUID uid, uintptr_t* out,
-+              int* reported_free) {
++              int* reported_free, uintptr_t sp_hint) {
 +  const uintptr_t base = reinterpret_cast<uintptr_t>(info.stack);
 +  const uintptr_t top = base + static_cast<uintptr_t>(info.stackSize);
 +  if (reported_free != nullptr) *reported_free = 0;
@@ -2108,7 +2179,11 @@ index 00000000..faf4456f
 +  const int free_bytes = sceKernelGetThreadStackFreeSize(uid);
 +  if (reported_free != nullptr) *reported_free = free_bytes;
 +  uintptr_t sp;
-+  if (free_bytes > 0 && static_cast<uintptr_t>(free_bytes) < info.stackSize) {
++  if (sp_hint >= base && sp_hint < top) {
++    // The real one, from the thread's registers. Everything above it is live.
++    sp = sp_hint;
++  } else if (free_bytes > 0 &&
++             static_cast<uintptr_t>(free_bytes) < info.stackSize) {
 +    sp = base + static_cast<uintptr_t>(free_bytes);
 +  } else {
 +    // The call is documented but not promised for a thread that is not this
@@ -2134,6 +2209,139 @@ index 00000000..faf4456f
 +    out[n++] = v;
 +  }
 +  return n;
++}
++
++// Is the UI thread taking work? A platform message is a task on the UI
++// thread and its reply is a task back on this one, and neither depends on a
++// frame being scheduled or on a dart:io timer firing -- so a reply says the
++// UI thread runs, and no reply for seconds says it is wedged, whatever the
++// screen shows. One is sent a second, once a frame has ever been presented.
++// The reply comes from the framework's `flutter/navigation` handler, which
++// answers an unknown method with null; no app code is involved.
++uint64_t g_hb_sent_us = 0;     // the outstanding heartbeat, 0 if none
++uint64_t g_hb_reply_us = 0;    // when the last reply landed
++uint64_t g_hb_rtt_us = 0;      // its round trip
++uint64_t g_hb_rtt_max_us = 0;  // the slowest round trip so far
++uint32_t g_hb_replies = 0;
++
++// Where each thread last went to sleep.
++//
++// The kernel will not say where another thread is (see ScanStack), so the
++// threads say it themselves: a dev build wraps the blocking kernel calls at
++// link time (templates/vita-app/waits.c, `-Wl,--wrap=sceKernelWaitSema` and
++// friends) and every wait records its caller, the object, and -- the part
++// that makes the stack scan exact -- the stack pointer at the moment of the
++// wait. Frames above that pointer are live by construction. A release build
++// links no wrappers and this table stays empty.
++// Waits nest: a Dart monitor wait is a pthread condvar wait is a pte
++// semaphore wait is sceKernelWaitSema, and each wrapped level records
++// itself. The outermost level names the reason, the innermost the stack
++// pointer to scan from, so a thread keeps a short stack of them.
++constexpr int kWaitDepth = 4;
++struct WaitLevel {
++  uint8_t kind = 0;
++  uint32_t object = 0;
++  uintptr_t caller = 0;
++  uintptr_t sp = 0;
++  uint64_t since_us = 0;
++};
++struct WaitNote {
++  std::atomic<SceUID> uid{0};
++  std::atomic<int> depth{0};
++  // The thread's stack, so a wait can find its own note from its stack
++  // pointer without asking the kernel who it is. pthreads-embedded polls a
++  // blocked semaphore every 500 us (pte_osSemaphoreCancellablePend, seen in
++  // the disassembly on 2026-09-13), so every parked pthread passes through
++  // here two thousand times a second, and a syscall per pass was a
++  // measurable share of a frame.
++  uintptr_t stack_lo = 0;
++  uintptr_t stack_hi = 0;
++  WaitLevel level[kWaitDepth];
++  WaitLevel last;  // the outermost level of the previous wait
++  uint32_t count = 0;
++};
++constexpr int kMaxWaitNotes = 40;
++WaitNote g_waits[kMaxWaitNotes];
++
++const char* WaitKindName(int kind) {
++  switch (kind) {
++    case 1: return "sema";
++    case 2: return "evf";
++    case 3: return "mutex";
++    case 4: return "lwmutex";
++    case 5: return "cond";
++    case 6: return "lwcond";
++    case 7: return "signal";
++    case 8: return "delay";
++    case 9: return "dart-monitor";
++    case 10: return "std-condvar";
++    default: return "?";
++  }
++}
++
++WaitNote* WaitNoteByUid(SceUID uid) {
++  for (int i = 0; i < kMaxWaitNotes; i++) {
++    if (g_waits[i].uid.load(std::memory_order_acquire) == uid) return &g_waits[i];
++  }
++  // First wait on this thread: claim an empty slot, or one whose thread is
++  // gone. Dart's pool workers come and go, and forty slots would otherwise
++  // fill over a long run.
++  for (int pass = 0; pass < 2; pass++) {
++    for (int i = 0; i < kMaxWaitNotes; i++) {
++      SceUID have = g_waits[i].uid.load(std::memory_order_acquire);
++      if (pass == 1 && have != 0) {
++        SceKernelThreadInfo info;
++        std::memset(&info, 0, sizeof info);
++        info.size = sizeof info;
++        if (sceKernelGetThreadInfo(have, &info) >= 0) continue;
++        if (!g_waits[i].uid.compare_exchange_strong(have, uid)) continue;
++        return &g_waits[i];
++      }
++      if (have == 0 && g_waits[i].uid.compare_exchange_strong(have, uid)) {
++        return &g_waits[i];
++      }
++    }
++  }
++  return nullptr;
++}
++
++// The calling thread's note, found by its stack pointer. The kernel is asked
++// only for a thread this table has not seen, and once in a while after
++// that, in case a thread ended and another one inherited its stack.
++WaitNote* WaitNoteFor(uintptr_t sp) {
++  for (int i = 0; i < kMaxWaitNotes; i++) {
++    WaitNote& w = g_waits[i];
++    if (sp >= w.stack_lo && sp < w.stack_hi &&
++        w.uid.load(std::memory_order_acquire) != 0) {
++      if ((w.count & 1023u) != 0) return &w;
++      // Revalidate: same thread still?
++      if (w.uid.load(std::memory_order_relaxed) == sceKernelGetThreadId()) {
++        return &w;
++      }
++      w.stack_lo = w.stack_hi = 0;
++      break;
++    }
++  }
++  const SceUID uid = sceKernelGetThreadId();
++  WaitNote* w = WaitNoteByUid(uid);
++  if (w == nullptr) return nullptr;
++  if (w->stack_lo == 0) {
++    SceKernelThreadInfo info;
++    std::memset(&info, 0, sizeof info);
++    info.size = sizeof info;
++    if (sceKernelGetThreadInfo(uid, &info) >= 0 && info.stack != nullptr) {
++      w->stack_lo = reinterpret_cast<uintptr_t>(info.stack);
++      w->stack_hi = w->stack_lo + static_cast<uintptr_t>(info.stackSize);
++    }
++  }
++  return w;
++}
++
++const WaitNote* WaitNoteOf(SceUID uid) {
++  for (int i = 0; i < kMaxWaitNotes; i++) {
++    if (g_waits[i].uid.load(std::memory_order_acquire) == uid) return &g_waits[i];
++  }
++  return nullptr;
 +}
 +
 +// One buffer, because both callers want the same text and neither wants to own
@@ -2194,6 +2402,24 @@ index 00000000..faf4456f
 +                       VglCounter(&vgl_reserve_failed),
 +                       VglCounter(&vgl_bad_shader_cache),
 +                       VglCounter(&vgl_failed_compiles));
++  }
++
++  if (g_hb_reply_us != 0 || g_hb_sent_us != 0) {
++    n += std::snprintf(g_diag_text + n, cap - n,
++                       "flutter-vita:   ui thread: heartbeat replies %u,"
++                       " last %u ms ago, rtt %u us, max %u us",
++                       static_cast<unsigned>(g_hb_replies),
++                       static_cast<unsigned>(
++                           g_hb_reply_us != 0 ? (now - g_hb_reply_us) / 1000
++                                              : 0),
++                       static_cast<unsigned>(g_hb_rtt_us),
++                       static_cast<unsigned>(g_hb_rtt_max_us));
++    if (g_hb_sent_us != 0) {
++      n += std::snprintf(g_diag_text + n, cap - n,
++                         " -- NO REPLY for %u ms",
++                         static_cast<unsigned>((now - g_hb_sent_us) / 1000));
++    }
++    n += std::snprintf(g_diag_text + n, cap - n, "\n");
 +  }
 +
 +  // Whether the console is idle or busy, independent of this process. A stall
@@ -2262,9 +2488,53 @@ index 00000000..faf4456f
 +        static_cast<int>(info.lastExecutedCpuId),
 +        static_cast<unsigned>(reinterpret_cast<uintptr_t>(info.entry)));
 +
++    // Its registers, unless it is this thread: our own pc would be here.
++    VitaCpuRegisters regs;
++    int regs_err = 0;
++    const bool have_regs =
++        uid != sceKernelGetThreadId() && ReadThreadRegisters(uid, &regs, &regs_err);
++
++    // Where it said it went to sleep, if the build's wrappers told us:
++    // every level, outermost first, so the line reads as the reason and
++    // then the mechanism. The age is clamped: pte polls its semaphores
++    // about every half millisecond, so the innermost level's since_us can
++    // be newer than `now` above; the outermost level's is the real one.
++    const WaitNote* note = WaitNoteOf(uid);
++    uintptr_t sp_hint = have_regs ? regs.reg[13] : 0;
++    const int depth =
++        note != nullptr ? note->depth.load(std::memory_order_acquire) : 0;
++    if (depth > 0 && n < cap - 256) {
++      const int levels = depth < kWaitDepth ? depth : kWaitDepth;
++      sp_hint = note->level[levels - 1].sp;
++      const uint64_t since = note->level[0].since_us;
++      n += std::snprintf(g_diag_text + n, cap - n,
++                         "flutter-vita:     in (%u ms, wait #%u)",
++                         static_cast<unsigned>(
++                             now > since ? (now - since) / 1000 : 0),
++                         note->count);
++      for (int l = 0; l < levels && n < cap - 48; l++) {
++        n += std::snprintf(g_diag_text + n, cap - n, "%s %s 0x%08X from %08X",
++                           l == 0 ? "" : " >", WaitKindName(note->level[l].kind),
++                           note->level[l].object,
++                           static_cast<unsigned>(note->level[l].caller));
++      }
++      n += std::snprintf(g_diag_text + n, cap - n, "\n");
++    } else if (note != nullptr && note->count != 0 && n < cap - 128) {
++      n += std::snprintf(g_diag_text + n, cap - n,
++                         "flutter-vita:     last %s 0x%08X %u ms ago from %08X"
++                         " (wait #%u)\n",
++                         WaitKindName(note->last.kind), note->last.object,
++                         static_cast<unsigned>(
++                             now > note->last.since_us
++                                 ? (now - note->last.since_us) / 1000
++                                 : 0),
++                         static_cast<unsigned>(note->last.caller), note->count);
++    }
++
 +    uintptr_t frames[kMaxFrames];
 +    int reported_free = 0;
-+    const int frame_count = ScanStack(info, uid, frames, &reported_free);
++    const int frame_count =
++        ScanStack(info, uid, frames, &reported_free, sp_hint);
 +    if (n < cap - 96) {
 +      n += std::snprintf(g_diag_text + n, cap - n,
 +                         "flutter-vita:     stk 0x%08X+%u free %d frames %d\n",
@@ -2272,6 +2542,19 @@ index 00000000..faf4456f
 +                             reinterpret_cast<uintptr_t>(info.stack)),
 +                         static_cast<unsigned>(info.stackSize), reported_free,
 +                         frame_count);
++    }
++    if (n < cap - 96) {
++      if (have_regs) {
++        n += std::snprintf(g_diag_text + n, cap - n,
++                           "flutter-vita:     pc %08X lr %08X sp %08X\n",
++                           static_cast<unsigned>(regs.reg[15]),
++                           static_cast<unsigned>(regs.reg[14]),
++                           static_cast<unsigned>(regs.reg[13]));
++      } else if (uid != sceKernelGetThreadId()) {
++        n += std::snprintf(g_diag_text + n, cap - n,
++                           "flutter-vita:     regs refused 0x%08X\n",
++                           static_cast<unsigned>(regs_err));
++      }
 +    }
 +    if (frame_count > 0 && n < cap - 128) {
 +      n += std::snprintf(g_diag_text + n, cap - n, "flutter-vita:     at");
@@ -2806,6 +3089,39 @@ index 00000000..faf4456f
 +  NoteThread(sceKernelGetThreadId(), name);
 +}
 +
++// The wrappers' two calls. See WaitNote.
++//
++// Kept to a thread-id syscall, a scan of forty slots and a few stores: the
++// message loops go through here once per idle, Dart's monitors once per
++// message, and neither should notice.
++extern "C" void flutter_vita_wait_begin(int kind, unsigned object,
++                                        uintptr_t sp, uintptr_t caller) {
++  WaitNote* note = WaitNoteFor(sp);
++  if (note == nullptr) return;
++  const int d = note->depth.load(std::memory_order_relaxed);
++  if (d < kWaitDepth) {
++    WaitLevel& l = note->level[d];
++    l.kind = static_cast<uint8_t>(kind);
++    l.object = object;
++    l.caller = caller;
++    l.sp = sp;
++    l.since_us = sceKernelGetSystemTimeWide();
++  }
++  if (d == 0) note->count++;
++  note->depth.store(d + 1, std::memory_order_release);
++}
++
++extern "C" void flutter_vita_wait_end(void) {
++  uintptr_t sp;
++  __asm__ volatile("mov %0, sp" : "=r"(sp));
++  WaitNote* note = WaitNoteFor(sp);
++  if (note == nullptr) return;
++  const int d = note->depth.load(std::memory_order_relaxed);
++  if (d <= 0) return;
++  if (d == 1) note->last = note->level[0];
++  note->depth.store(d - 1, std::memory_order_release);
++}
++
 +// What the stall watchdog would print, on demand, over the dev server.
 +//
 +// The watchdog only speaks when presents have stopped, and half of what a
@@ -3175,6 +3491,191 @@ index 00000000..faf4456f
 +  out.message = reinterpret_cast<const uint8_t*>(json);
 +  out.message_size = std::strlen(json);
 +  FlutterEngineSendPlatformMessage(g_engine, &out);
++}
++
++// The UI-thread heartbeat, and the watchdog behind it.
++//
++// A frozen screen has two different causes that look the same from outside:
++// nothing scheduled a frame, or the UI thread cannot take a task. The stall
++// report reads threads from the outside and cannot always tell them apart.
++// A platform message can: it is a task on the UI thread and its reply is a
++// task back here, independent of frames and of dart:io timers. One goes up
++// every second once anything has been presented, and the round trip lands
++// in the stall report.
++//
++// When there has been no reply for kUiDeadUs, the report is taken twice,
++// five seconds apart, into ux0:data/flutter-vita/stall.txt; at kUiRelaunchUs
++// the log is copied to stall.log next to it and the app relaunches itself,
++// the same way the dev server's `relaunch` does. The host reads both files
++// after the fact, and a bench that hit this carries on with the next scene
++// instead of sitting on a frozen console until someone notices. Dev builds
++// only, see flutter_vita_watchdog.
++constexpr uint64_t kHeartbeatUs = 1000 * 1000;
++// A reply this late is a frame's worth of UI thread gone, and the same
++// report that describes a freeze describes it, taken while it is happening:
++// the wait-site table says what the UI thread is inside right now. Once per
++// ten seconds at most, so a slow scene does not fill the log with them.
++constexpr uint64_t kUiSlowUs = 300 * 1000;
++constexpr uint64_t kUiSlowRepeatUs = 10 * 1000 * 1000;
++uint64_t g_ui_slow_reported_us = 0;
++constexpr uint64_t kUiDeadUs = 20 * 1000 * 1000;
++constexpr uint64_t kUiSecondDumpUs = 25 * 1000 * 1000;
++constexpr uint64_t kUiRelaunchUs = 30 * 1000 * 1000;
++constexpr const char* kStallReportPath = "ux0:data/flutter-vita/stall.txt";
++constexpr const char* kStallLogPath = "ux0:data/flutter-vita/stall.log";
++int g_watchdog_dumps = 0;  // 0 none, 1 first, 2 second, 3 relaunching
++
++// On the platform thread, from DrainPlatformTasks.
++void HeartbeatReply(const uint8_t* /* data */, size_t /* size */,
++                    void* /* user_data */) {
++  const uint64_t now = sceKernelGetSystemTimeWide();
++  if (g_hb_sent_us != 0) {
++    g_hb_rtt_us = now - g_hb_sent_us;
++    if (g_hb_rtt_us > g_hb_rtt_max_us) g_hb_rtt_max_us = g_hb_rtt_us;
++    if (g_watchdog_dumps != 0) {
++      VLog("flutter-vita: WATCHDOG ui thread back after %u ms\n",
++           static_cast<unsigned>(g_hb_rtt_us / 1000));
++      g_watchdog_dumps = 0;
++    }
++  }
++  g_hb_reply_us = now;
++  g_hb_sent_us = 0;
++  g_hb_replies++;
++}
++
++void SendHeartbeat(uint64_t now) {
++  if (g_engine == nullptr) return;
++  FlutterPlatformMessageResponseHandle* handle = nullptr;
++  if (FlutterPlatformMessageCreateResponseHandle(g_engine, HeartbeatReply,
++                                                 nullptr, &handle) != kSuccess) {
++    return;
++  }
++  // JSONMethodCodec, which is what flutter/navigation speaks. The framework
++  // answers a method it does not know with null, which is all this needs.
++  static const char kCall[] =
++      "{\"method\":\"flutter-vita/heartbeat\",\"args\":null}";
++  FlutterPlatformMessage out = {};
++  out.struct_size = sizeof(FlutterPlatformMessage);
++  out.channel = "flutter/navigation";
++  out.message = reinterpret_cast<const uint8_t*>(kCall);
++  out.message_size = sizeof kCall - 1;
++  out.response_handle = handle;
++  g_hb_sent_us = now;
++  const FlutterEngineResult r = FlutterEngineSendPlatformMessage(g_engine, &out);
++  FlutterPlatformMessageReleaseResponseHandle(g_engine, handle);
++  if (r != kSuccess) g_hb_sent_us = 0;
++}
++
++// The build's switch, then the card's. Read once, logged once.
++bool WatchdogArmed() {
++  static int armed = -1;
++  if (armed >= 0) return armed == 1;
++  armed = flutter_vita_watchdog != 0 ? 1 : 0;
++  if (armed == 1) {
++    const SceUID fd =
++        sceIoOpen("ux0:data/flutter-vita/watchdog.off", SCE_O_RDONLY, 0);
++    if (fd >= 0) {
++      char c = 0;
++      if (sceIoRead(fd, &c, 1) == 1 && c == '1') armed = 0;
++      sceIoClose(fd);
++    }
++  }
++  VLog("flutter-vita: WATCHDOG %s\n",
++       armed == 1 ? "armed: a UI thread silent for 30 s relaunches the app"
++                  : "off");
++  return armed == 1;
++}
++
++void WriteStallReport(const char* which, uint64_t silent_us, bool append) {
++  std::lock_guard<std::mutex> lock(g_diag_mutex);
++  BuildDiag("WATCHDOG", sceKernelGetSystemTimeWide() - g_last_present_us);
++  const size_t len = std::strlen(g_diag_text);
++  // Into the log as well, so the two are side by side with the frames.
++  VLog("flutter-vita: WATCHDOG %s sample, ui thread silent %u ms\n", which,
++       static_cast<unsigned>(silent_us / 1000));
++  VLogRaw(g_diag_text, len);
++  const SceUID fd = sceIoOpen(
++      kStallReportPath,
++      SCE_O_WRONLY | SCE_O_CREAT | (append ? SCE_O_APPEND : SCE_O_TRUNC),
++      0777);
++  if (fd < 0) return;
++  char head[128];
++  const int hn = std::snprintf(head, sizeof head,
++                               "== %s sample, ui thread silent %u ms, "
++                               "present #%u\n",
++                               which, static_cast<unsigned>(silent_us / 1000),
++                               static_cast<unsigned>(g_frame_index));
++  sceIoWrite(fd, head, hn);
++  sceIoWrite(fd, g_diag_text, len);
++  sceIoClose(fd);
++}
++
++// app.log as it stands, copied whole: the relaunch truncates it.
++void CopyLogForStall() {
++  const SceUID in = sceIoOpen(LogPath(), SCE_O_RDONLY, 0);
++  if (in < 0) return;
++  const SceUID out =
++      sceIoOpen(kStallLogPath, SCE_O_WRONLY | SCE_O_CREAT | SCE_O_TRUNC, 0777);
++  if (out < 0) {
++    sceIoClose(in);
++    return;
++  }
++  const int kChunk = 64 * 1024;
++  char* buf = static_cast<char*>(std::malloc(kChunk));
++  if (buf != nullptr) {
++    for (;;) {
++      const int got = sceIoRead(in, buf, kChunk);
++      if (got <= 0) break;
++      sceIoWrite(out, buf, got);
++    }
++    std::free(buf);
++  }
++  sceIoClose(out);
++  sceIoClose(in);
++}
++
++// Once per platform-loop iteration, after the tasks have been drained.
++void CheckUiThread() {
++  if (g_last_present_us == 0) return;  // the framework is not up yet
++  const uint64_t now = sceKernelGetSystemTimeWide();
++  if (g_hb_sent_us == 0) {
++    if (now - g_hb_reply_us >= kHeartbeatUs) SendHeartbeat(now);
++    return;
++  }
++  const uint64_t silent = now - g_hb_sent_us;
++  // Not during the first frames: the first build of an app is a second of
++  // UI thread by design, and a report of it says nothing new.
++  if (silent >= kUiSlowUs && silent < kUiDeadUs && g_frame_index > 60 &&
++      now - g_ui_slow_reported_us >= kUiSlowRepeatUs) {
++    g_ui_slow_reported_us = now;
++    std::lock_guard<std::mutex> lock(g_diag_mutex);
++    BuildDiag("SLOW", now - g_last_present_us);
++    VLog("flutter-vita: SLOW ui thread, no heartbeat reply for %u ms\n",
++         static_cast<unsigned>(silent / 1000));
++    VLogRaw(g_diag_text, std::strlen(g_diag_text));
++    return;
++  }
++  if (silent < kUiDeadUs) return;
++  if (!WatchdogArmed()) return;
++  if (g_watchdog_dumps == 0) {
++    g_watchdog_dumps = 1;
++    WriteStallReport("first", silent, /*append=*/false);
++  } else if (g_watchdog_dumps == 1 && silent >= kUiSecondDumpUs) {
++    g_watchdog_dumps = 2;
++    WriteStallReport("second", silent, /*append=*/true);
++  } else if (g_watchdog_dumps == 2 && silent >= kUiRelaunchUs) {
++    g_watchdog_dumps = 3;
++    VLog("flutter-vita: WATCHDOG relaunching: ui thread silent %u ms,"
++         " report in %s, log copy in %s\n",
++         static_cast<unsigned>(silent / 1000), kStallReportPath,
++         kStallLogPath);
++    CopyLogForStall();
++    flutter_vita_gpu_shutdown();
++    sceKernelDelayThread(200 * 1000);
++    sceAppMgrLoadExec("app0:eboot.bin", nullptr, nullptr);
++    // Only reached if LoadExec refused.
++    VLog("flutter-vita: WATCHDOG sceAppMgrLoadExec returned\n");
++  }
 +}
 +
 +// One-time setup for the IME dialog.
@@ -4156,6 +4657,8 @@ index 00000000..faf4456f
 +    // Cheap unless the screen has actually frozen: one subtraction against a
 +    // timestamp the present path already keeps.
 +    CheckForStall();
++    // And one against the last heartbeat reply.
++    CheckUiThread();
 +
 +    // Sixty times a second is what the M1 spike does and it costs nothing
 +    // measurable; the call exists to reset a timer.

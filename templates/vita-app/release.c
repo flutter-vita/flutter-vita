@@ -18,6 +18,10 @@
 // Strong against the engine's weak `= 1`. See the comment above.
 int flutter_vita_debug_overlay = 0;
 
+// Same again for the UI-thread watchdog: a shipping app never relaunches
+// itself on a wedged UI thread, that is a dev-loop convenience.
+int flutter_vita_watchdog = 0;
+
 // Returns 0, not a negative: the embedder reads negative as "the socket would
 // not come up", and this one is not trying to come up.
 int dev_server_run(void (*log_line)(const char* msg),

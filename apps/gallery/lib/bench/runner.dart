@@ -42,6 +42,21 @@ const String kFromReceiverPath = '$kDataDir/bench.from-receiver';
 /// devserver.c -- Dart cannot launch a title itself.
 const String kHandoffPath = '$kDataDir/handoff.request';
 
+/// Which scene is running, as `i/n name`, rewritten at every scene start.
+///
+/// The host polls it to print progress, and reads it after a restart to know
+/// which scene the app was inside when it stopped. `-` between runs.
+const String kScenePath = '$kDataDir/bench-scene';
+
+/// The results so far, rewritten after every scene.
+///
+/// A run that the watchdog or a crash cuts short used to report nothing: the
+/// result file is written once, at the end. Now the app comes back, reads
+/// this, skips what it already measured and the scene it died in, and the
+/// final file carries every scene with the one that broke marked as such.
+/// `[]` between runs.
+const String kPartialPath = '$kDataDir/bench-partial.json';
+
 /// The engine receipt, shipped inside the vpk by templates/vita-app.
 const String kEngineManifest = 'app0:/engine.txt';
 
@@ -158,6 +173,92 @@ class BenchRunner {
 
   final FrameRecorder recorder = FrameRecorder();
   final List<SceneResult> results = <SceneResult>[];
+
+  /// Results carried over from before a restart, already as JSON. See
+  /// kPartialPath.
+  final List<Map<String, Object?>> carried = <Map<String, Object?>>[];
+
+  /// Scenes not to run again: carried, or the one the app restarted inside.
+  final Set<String> _skip = <String>{};
+
+  /// Every scene the suite has, in run order, for the `i/n` in bench-scene.
+  /// The three scene classes share no base type; name and label are all this
+  /// needs of them.
+  List<({String name, String label})> get _allScenes => [
+        for (final s in animatedScenes) (name: s.name, label: s.stresses.label),
+        for (final s in motionScenes) (name: s.name, label: s.stresses.label),
+        for (final s in drivenScenes) (name: s.name, label: s.stresses.label),
+        for (final s in routeScenes) (name: s.name, label: s.stresses.label),
+        for (final s in transitionScenes)
+          (name: s.name, label: s.stresses.label),
+        for (final s in modalScenes) (name: s.name, label: s.stresses.label),
+      ];
+
+  /// Pick up where a restarted run left off.
+  void _resume() {
+    final partial = _readJsonList(kPartialPath);
+    for (final m in partial) {
+      final name = m['name'];
+      if (name is String) {
+        carried.add(m);
+        _skip.add(name);
+      }
+    }
+    // `i/n name`, or `-`.
+    String inside = '';
+    try {
+      final f = File(kScenePath);
+      if (f.existsSync()) {
+        final parts = f.readAsStringSync().trim().split(' ');
+        if (parts.length == 2) inside = parts[1];
+      }
+    } on FileSystemException {
+      // Nothing to resume from.
+    }
+    if (inside.isNotEmpty && !_skip.contains(inside)) {
+      final scene = _allScenes.where((s) => s.name == inside).firstOrNull;
+      if (scene != null) {
+        carried.add(SceneResult.failed(
+          scene.name,
+          scene.label,
+          'interrupted: the app restarted inside this scene',
+        ).toJson());
+        _skip.add(inside);
+      }
+    }
+    if (_skip.isNotEmpty) {
+      print('bench: resuming after a restart, ${carried.length} carried'
+          '${inside.isNotEmpty ? ", $inside was interrupted" : ""}');
+    }
+  }
+
+  static List<Map<String, Object?>> _readJsonList(String path) {
+    try {
+      final f = File(path);
+      if (!f.existsSync()) return const [];
+      final v = jsonDecode(f.readAsStringSync());
+      if (v is List) return v.whereType<Map<String, Object?>>().toList();
+    } on FileSystemException {
+      // As if absent.
+    } on FormatException {
+      // A half-written file is a file with nothing in it.
+    }
+    return const [];
+  }
+
+  void _noteScene(String name) {
+    final all = _allScenes;
+    final i = all.indexWhere((s) => s.name == name) + 1;
+    _writeAtomic(kScenePath, '$i/${all.length} $name');
+  }
+
+  void _savePartial() {
+    final all = <Map<String, Object?>>[
+      ...carried,
+      ...results.map((r) => r.toJson()),
+    ];
+    _writeAtomic(kPartialPath, jsonEncode(all));
+  }
 
   /// Frames forced after each scene so the batched timings for its final
   /// frames arrive. Dropped from the window afterwards -- see
@@ -293,8 +394,10 @@ class BenchRunner {
 
   Future<void> runAll(BuildContext context, {void Function(String)? onProgress}) async {
     recorder.attach();
+    _resume();
     final only = onlyScenes();
-    bool wanted(String name) => only.isEmpty || only.contains(name);
+    bool wanted(String name) =>
+        (only.isEmpty || only.contains(name)) && !_skip.contains(name);
     if (only.isNotEmpty) {
       print('bench: restricted to ${only.length} scenes: ${only.join(', ')}');
     }
@@ -325,6 +428,7 @@ class BenchRunner {
         // left no way to say which of fifteen scenes was the one hanging, and
         // the whole cost of finding out was a rebuild.
         print('bench: scene ${scene.name}');
+        _noteScene(scene.name);
         await _quiet();
         try {
           await runAnimated(scene);
@@ -334,11 +438,13 @@ class BenchRunner {
           results.add(SceneResult.failed(scene.name, scene.stresses.label, '$e'));
           setStage(null);
         }
+        _savePartial();
       }
       for (final scene in drivenScenes) {
         if (!wanted(scene.name)) continue;
         onProgress?.call(scene.name);
         print('bench: scene ${scene.name}');
+        _noteScene(scene.name);
         await _quiet();
         try {
           await runDriven(scene);
@@ -348,11 +454,13 @@ class BenchRunner {
           results.add(SceneResult.failed(scene.name, scene.stresses.label, '$e'));
           setStage(null);
         }
+        _savePartial();
       }
       for (final scene in [...routeScenes, ...transitionScenes, ...modalScenes]) {
         if (!wanted(scene.name)) continue;
         onProgress?.call(scene.name);
         print('bench: scene ${scene.name}');
+        _noteScene(scene.name);
         await _quiet();
         if (!context.mounted) break;
         try {
@@ -368,6 +476,7 @@ class BenchRunner {
             nav.pop();
           }
         }
+        _savePartial();
       }
     } finally {
       recorder.detach();
@@ -400,7 +509,10 @@ class BenchRunner {
       // stamp, not comparable" -- it was right to.
       'taken': DateTime.now().toIso8601String(),
       if (engineStamp() case final String e) 'engine': e,
-      'scenes': results.map((r) => r.toJson()).toList(),
+      'scenes': <Map<String, Object?>>[
+        ...carried,
+        ...results.map((r) => r.toJson()),
+      ],
     };
     final text = const JsonEncoder.withIndent('  ').convert(payload);
     Directory(kDataDir).createSync(recursive: true);
@@ -413,6 +525,10 @@ class BenchRunner {
     } catch (_) {
       // The TESTS-tab copy is a convenience. Losing it must not lose the run.
     }
+    // Fresh for the next run, before the done marker: a host that arms the
+    // next run without touching these would otherwise resume into this one.
+    _writeAtomic(kPartialPath, '[]');
+    _writeAtomic(kScenePath, '-');
     File(kDonePath).writeAsStringSync('1', flush: true);
     _handBackIfAsked();
   }

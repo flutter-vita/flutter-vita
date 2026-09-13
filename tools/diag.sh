@@ -6,6 +6,11 @@
 #   ./tools/diag.sh --gap 15              a longer window between them
 #   ./tools/diag.sh --port 1341           the receiver instead of an app
 #   ./tools/diag.sh --elf path/to/elf     symbolicate the stack scans
+#   ./tools/diag.sh --resolve report.txt --elf path/to/elf
+#                                         no sampling: resolve a saved report
+#                                         (a STALL block from app.log, the
+#                                         watchdog's stall.txt, bench.sh's
+#                                         stuck file)
 #
 # Two samples, not one, and that is the whole reason this script exists rather
 # than a bare `printf 'diag\n' | nc`. Every per-thread figure in the report is
@@ -33,6 +38,7 @@ PORT="${DEV_PORT:-1339}"
 ELF=""
 GAP=5
 ONCE=0
+RESOLVE=""
 
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -41,20 +47,27 @@ while [ $# -gt 0 ]; do
     --port)    PORT="$2"; shift 2 ;;
     --host)    HOST="$2"; shift 2 ;;
     --elf)     ELF="$2"; shift 2 ;;
-    -h|--help) sed -n '2,27p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    --resolve) RESOLVE="$2"; shift 2 ;;
+    -h|--help) sed -n '2,32p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
     *)         echo "unknown option: $1" >&2; exit 2 ;;
   esac
 done
 
-RAW="$(mktemp)"
-trap 'rm -f "$RAW"' EXIT
+if [ -n "$RESOLVE" ]; then
+  [ -n "$ELF" ] || { echo "!! --resolve needs --elf" >&2; exit 2; }
+  [ -f "$RESOLVE" ] || { echo "!! no such report: $RESOLVE" >&2; exit 2; }
+  RAW="$RESOLVE"
+else
+  RAW="$(mktemp)"
+  trap 'rm -f "$RAW"' EXIT
+fi
 
 sample() {
   printf 'diag\n' | nc -w 25 "$HOST" "$PORT" \
     || { echo "!! no answer from $HOST:$PORT" >&2; exit 1; }
 }
 
-{
+[ -n "$RESOLVE" ] || {
   echo "== sample 1"
   sample
   if [ "$ONCE" != "1" ]; then
@@ -85,22 +98,61 @@ if not m:
 shift = (int(m.group(1), 16) | 1) - (elf_anchor | 1)
 print("load shift 0x%08X" % (shift & 0xffffffff))
 
+cache = {}
+def resolve(a):
+    e = (a - shift) & ~1
+    if e not in cache:
+        out = subprocess.run([a2l, '-f', '-C', '-e', elf, hex(e)],
+                             capture_output=True, text=True).stdout.split('\n')
+        fn = out[0] if out else '??'
+        loc = out[1] if len(out) > 1 else '??'
+        loc = re.sub(r'^.*/(flutter/|third_party/|src/)', '', loc)
+        cache[e] = (fn, loc)
+    return cache[e]
+
 thread = None
 for line in text.splitlines():
-    t = re.search(r'thr (.+?)\s+0x([0-9A-Fa-f]{8})\s', line)
+    if line.startswith('=='):
+        print("\n%s" % line)
+        continue
+    t = re.search(r'thr (.+?)\s+0x([0-9A-Fa-f]{8})\s+(\S+)\s+(\S+)\s+ran \+(\d+) us \((\d+)%\)', line)
     if t:
-        thread = "%s 0x%s" % (t.group(1), t.group(2))
+        thread = "%s 0x%s %s %s ran %s us (%s%%)" % t.groups()
+        continue
+    # The wait notes a dev build's wrappers leave (templates/vita-app/waits.c):
+    # each `from` is the return address of a wrapped wait, exact by
+    # construction. Outermost first, so the first name is the reason.
+    w = re.match(r'\s*flutter-vita:\s+(in|last) (.*)$', line)
+    if w and 'from' in line:
+        print("\n%s" % thread)
+        thread = None
+        body = w.group(2)
+        print("  %s %s" % (w.group(1), re.sub(r'from [0-9A-Fa-f]{8}', '', body).strip()))
+        for a in re.findall(r'from ([0-9A-Fa-f]{8})', body):
+            a = int(a, 16)
+            fn, loc = resolve(a)
+            print("  from %08X  %-44s %s" % (a, fn[:44], loc))
+        continue
+    # The registers, when the kernel gave them: pc is the wait itself, lr the
+    # caller, and both are exact where the scan below is a heuristic.
+    r = re.match(r'\s*flutter-vita:\s+pc ([0-9A-Fa-f]+) lr ([0-9A-Fa-f]+) sp ([0-9A-Fa-f]+)', line)
+    if r:
+        print("\n%s" % thread)
+        for name, a in (('pc', int(r.group(1), 16)), ('lr', int(r.group(2), 16))):
+            if 0x81000000 <= a < 0x88000000:
+                fn, loc = resolve(a)
+                print("  %s %08X  %-44s %s" % (name, a, fn[:44], loc))
+            else:
+                print("  %s %08X  (system module)" % (name, a))
+        thread = None  # the `at` line that follows belongs to the same header
         continue
     f = re.match(r'\s*flutter-vita:\s+at\s+(.*)$', line)
     if not f:
         continue
     addrs = [int(a, 16) for a in f.group(1).split()]
-    print("\n%s" % thread)
+    if thread is not None:
+        print("\n%s" % thread)
     for a in addrs:
-        e = (a - shift) & ~1
-        out = subprocess.run([a2l, '-f', '-C', '-e', elf, hex(e)],
-                             capture_output=True, text=True).stdout.split('\n')
-        fn = out[0] if out else '??'
-        loc = out[1] if len(out) > 1 else '??'
+        fn, loc = resolve(a)
         print("  %08X  %-44s %s" % (a, fn[:44], loc))
 PY

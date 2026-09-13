@@ -90,7 +90,21 @@ if(RELEASE)
 else()
   set(DEV_LOOP_SOURCES
     ${ENGINE_DIR}/src/devserver.c
-    ${CMAKE_CURRENT_SOURCE_DIR}/bailout.c)
+    ${CMAKE_CURRENT_SOURCE_DIR}/bailout.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/waits.c)
+  # waits.c only works if the blocking calls go through it. See its header.
+  list(APPEND EXTRA_LINK_OPTIONS
+    "-Wl,--wrap=sceKernelWaitSema"
+    "-Wl,--wrap=sceKernelWaitEventFlag"
+    "-Wl,--wrap=sceKernelLockLwMutex"
+    "-Wl,--wrap=sceKernelWaitCond"
+    "-Wl,--wrap=sceKernelWaitLwCond"
+    "-Wl,--wrap=sceKernelWaitSignal"
+    "-Wl,--wrap=sceKernelDelayThread"
+    # dart::ConditionVariable::WaitMicros, ::Wait, std::condition_variable::wait
+    "-Wl,--wrap=_ZN4dart17ConditionVariable10WaitMicrosEPNS_5MutexEx"
+    "-Wl,--wrap=_ZN4dart17ConditionVariable4WaitEPNS_5MutexEx"
+    "-Wl,--wrap=_ZNSt18condition_variable4waitERSt11unique_lockISt5mutexE")
 endif()
 
 # The GL under Ganesh. The embedder calls the five functions of

@@ -7,7 +7,17 @@
 #   ./tools/bench.sh --relaunch            reuse the installed build, skip deploy
 #   ./tools/bench.sh --leave sw|gl         renderer the console rests on (default gl)
 #   ./tools/bench.sh --scenes a,b,c        run only these scenes
+#   ./tools/bench.sh --stuck-after 150     seconds on one scene before it is stuck
 #   ./tools/bench.sh --host IP --receiver-port N
+#
+# A scene that does not end is handled, not waited on. The app itself relaunches
+# when its UI thread stops answering for 30 s (the embedder's watchdog, which
+# leaves stall.txt and stall.log on the card); this script covers the other
+# case, a UI thread that answers while the scene never advances: after
+# --stuck-after seconds on one scene it takes two `diag` samples and the log,
+# saves them under out/bench/, resolves the stacks against the ELF of this
+# build, and sends `relaunch`. Either way the app resumes from bench-partial.json,
+# skips the scene it was inside, marks it interrupted, and the run completes.
 #
 # gl.on is read once at startup, so comparing renderers is two runs and a
 # relaunch. This is that in one command: deploy, run, flip, relaunch, run, pull
@@ -56,6 +66,9 @@ BUILD=1
 # below reads what the display controller is scanning, so a stale binary is
 # caught before any scene runs.
 RELAUNCH=0
+# Seconds on one scene before the host declares it stuck. The longest scene is
+# under a minute on the GPU; software runs are slower and can raise this.
+STUCK_AFTER=150
 
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -64,6 +77,7 @@ while [ $# -gt 0 ]; do
     --only)        ONLY="$2"; shift 2 ;;
     --leave)       LEAVE="$2"; shift 2 ;;
     --scenes)      SCENES="$2"; shift 2 ;;
+    --stuck-after) STUCK_AFTER="$2"; shift 2 ;;
     --baseline)    WRITE_BASELINE=1; shift ;;
     --no-build)    BUILD=0; shift ;;
     --relaunch)    RELAUNCH=1; BUILD=0; shift ;;
@@ -115,6 +129,57 @@ fi
 # One run: set the renderer, deploy so the app restarts into it, wait for the
 # result file, pull it.
 #
+# The ELF of the build under test, for the stack scans. build-vita-app.sh
+# leaves it next to the vpk; a --no-build run of a vpk from elsewhere has none
+# that matches, and a mismatched ELF resolves to nonsense, so it is used only
+# when its eboot is the one in the vpk.
+elf_for_vpk() {
+  local elf="$ROOT/apps/gallery/build/vita/cmake/flutter_vita_app"
+  local built="$ROOT/apps/gallery/build/vita/cmake/flutter_vita_app.vpk"
+  [ -f "$elf" ] && [ -f "$built" ] || return 1
+  local a b
+  a="$(unzip -p "$APP_VPK" eboot.bin 2>/dev/null | md5 -q 2>/dev/null || true)"
+  b="$(unzip -p "$built" eboot.bin 2>/dev/null | md5 -q 2>/dev/null || true)"
+  [ -n "$a" ] && [ "$a" = "$b" ] || return 1
+  echo "$elf"
+}
+
+# Resolve the `at` lines of a saved report in place of the reader having to.
+resolve_report() {  # <report file>
+  local elf
+  elf="$(elf_for_vpk)" || { echo "       (no matching ELF, stacks left raw)"; return 0; }
+  "$HERE/diag.sh" --resolve "$1" --elf "$elf" > "$1.resolved" 2>&1 || true
+  echo "       resolved: $1.resolved"
+  # The two threads that matter, first frames only, so the verdict is on screen.
+  grep -A 6 -E "^(io.flutter.ui|io.flutter.raster) " "$1.resolved" | sed 's/^/       /' | head -n 16
+}
+
+# A scene has been running longer than any scene should. Take the evidence,
+# then get the console back.
+on_stuck() {  # <mode> <scene> <seconds> <n>
+  local mode="$1" scene="$2" secs="$3" n="$4"
+  local f="$OUT_DIR/$mode-stuck-$scene-$n.txt"
+  echo "    !! $scene has run for ${secs}s -- taking diag twice, then relaunching"
+  {
+    echo "== $mode $scene stuck after ${secs}s, sample 1"
+    say "$DEV" diag 12 || true
+    sleep 5
+    echo "== sample 2 (deltas are over the last 5s)"
+    say "$DEV" diag 12 || true
+    echo "== log"
+    say "$DEV" log 20 || true
+  } > "$f" 2>&1
+  echo "       $f"
+  resolve_report "$f"
+  say "$DEV" relaunch 10 >/dev/null || true
+  # Back up, on the same build, from the next scene.
+  for _ in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15; do
+    sleep 2
+    say "$DEV" ping 4 | grep -q pong && break
+  done
+  say "$DEV" "overlay off" 6 >/dev/null || true
+}
+
 # Deploying rather than relaunching is deliberate. `relaunch` reuses the
 # installed eboot, which is how a "software" run turned out to be GL on
 # 2026-08-22.
@@ -137,6 +202,13 @@ run_one() {  # <sw|gl>
   # Cleared first so a stale file from the previous run cannot be mistaken for
   # this one's output.
   put "0"      "ux0:data/flutter-vita/bench-done"
+  # And the resume state, so this run starts from scene one. The app clears
+  # both itself when it finishes; this covers a run that never did.
+  put "[]"     "ux0:data/flutter-vita/bench-partial.json"
+  put "-"      "ux0:data/flutter-vita/bench-scene"
+  # The watchdog's report, if it fires during this run. Cleared for the same
+  # reason: there is no rm, and a stale report reads as this run's.
+  put "-"      "ux0:data/flutter-vita/stall.txt"
 
   if [ "$RELAUNCH" -eq 1 ] && say "$DEV" ping 4 | grep -q pong; then
     echo "==> $mode: relaunching the installed build"
@@ -187,19 +259,46 @@ run_one() {  # <sw|gl>
   # that expires mid-run reports "the run never finished", which reads as a
   # hang and is not one.
   echo "==> $mode: running scenes"
-  local done=0
+  local done=0 scene="" scene_at=0 stuck_n=0 now
+  # nc's -w is an idle timeout, and the dev server keeps a connection open
+  # for the next command, so every query here costs the full -w. Two seconds
+  # against a warm app, not the six a cold receiver needs: a miss only delays
+  # a poll.
   for i in $(seq 1 600); do
-    if say "$DEV" "get ux0:data/flutter-vita/bench-done" 6 | grep -q '^1'; then
+    if say "$DEV" "get ux0:data/flutter-vita/bench-done" 2 | grep -q '^1'; then
       done=1; break
     fi
-    # Something every half minute, so a long run is distinguishable from a
-    # dead one without reading the app log.
-    if [ $((i % 15)) -eq 0 ]; then
-      echo "    still running (${i}0s)"
+    # Which scene, every other poll. Printed when it changes, so the run
+    # reads as progress rather than as silence -- and timed, so a scene that
+    # never ends is caught here rather than by someone watching the console.
+    if [ $((i % 2)) -eq 0 ]; then
+      local s
+      s="$(say "$DEV" "get ux0:data/flutter-vita/bench-scene" 2 | tr -d '\r\n' || true)"
+      now=$(date +%s)
+      if [ -n "$s" ] && [ "$s" != "$scene" ]; then
+        scene="$s"; scene_at=$now
+        echo "    $(date +%H:%M:%S) scene $scene"
+      elif [ -n "$scene" ] && [ "$scene" != "-" ] && [ $((now - scene_at)) -ge "$STUCK_AFTER" ]; then
+        stuck_n=$((stuck_n + 1))
+        on_stuck "$mode" "${scene##* }" "$((now - scene_at))" "$stuck_n"
+        scene=""; scene_at=$now
+      fi
     fi
     sleep 2
   done
   [ "$done" -eq 1 ] || { echo "!! $mode: the run never finished" >&2; return 1; }
+
+  # The watchdog's evidence, if it fired: stall.txt starts with a sample header
+  # rather than the dash written at arming.
+  local stall
+  stall="$(say "$DEV" "get ux0:data/flutter-vita/stall.txt" 20 || true)"
+  if [ "${stall#==}" != "$stall" ]; then
+    printf '%s\n' "$stall" > "$OUT_DIR/$mode-stall.txt"
+    say "$DEV" "get ux0:data/flutter-vita/stall.log" 30 > "$OUT_DIR/$mode-stall.log" || true
+    echo "    !! the app's watchdog relaunched it during this run"
+    echo "       $OUT_DIR/$mode-stall.txt (two diag samples), $OUT_DIR/$mode-stall.log"
+    resolve_report "$OUT_DIR/$mode-stall.txt"
+  fi
 
   say "$DEV" "get ux0:data/flutter-vita/bench-result.json" 30 \
     > "$OUT_DIR/$mode.json"
