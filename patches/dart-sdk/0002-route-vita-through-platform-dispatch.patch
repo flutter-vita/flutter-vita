@@ -1,31 +1,30 @@
 diff --git a/runtime/platform/synchronization.h b/runtime/platform/synchronization.h
-index 98144889..94ec30b1 100644
+index 98144889..b9a116f1 100644
 --- a/runtime/platform/synchronization.h
 +++ b/runtime/platform/synchronization.h
-@@ -18,7 +18,8 @@ namespace dart {
- using MutexImpl = absl::Mutex;
- using ConditionVariableImpl = absl::CondVar;
- #elif defined(DART_HOST_OS_LINUX) || defined(DART_HOST_OS_FUCHSIA) ||          \
--    defined(DART_HOST_OS_MACOS) || defined(DART_HOST_OS_ANDROID)
-+    defined(DART_HOST_OS_MACOS) || defined(DART_HOST_OS_ANDROID) ||            \
-+    defined(DART_HOST_OS_VITA)
+@@ -21,6 +21,22 @@ using ConditionVariableImpl = absl::CondVar;
+     defined(DART_HOST_OS_MACOS) || defined(DART_HOST_OS_ANDROID)
  using MutexImpl = pthread_mutex_t;
  using ConditionVariableImpl = pthread_cond_t;
++#elif defined(DART_HOST_OS_VITA)
++// The kernel's lightweight mutex and condition variable, not pthreads. The
++// pthread library on this platform builds its condition variables out of
++// semaphores and loses wakeups under broadcast: two threads parked on the
++// parallel marker's barrier stayed parked, one generation apart, on
++// 2026-09-13. See synchronization_vita.cc. The storage is the kernel's work
++// areas, spelled out so this header does not pull the SDK in.
++struct VitaLwMutex {
++  alignas(8) unsigned char work[32];  // SceKernelLwMutexWork
++};
++struct VitaLwCond {
++  alignas(8) unsigned char work[16];  // SceKernelLwCondWork
++  VitaLwMutex* bound;                 // the mutex it was created against
++};
++using MutexImpl = VitaLwMutex;
++using ConditionVariableImpl = VitaLwCond;
  #elif defined(DART_HOST_OS_WINDOWS)
-diff --git a/runtime/platform/synchronization_posix.cc b/runtime/platform/synchronization_posix.cc
-index b5d86595..81ca8f97 100644
---- a/runtime/platform/synchronization_posix.cc
-+++ b/runtime/platform/synchronization_posix.cc
-@@ -6,7 +6,8 @@
- 
- #if !defined(DART_USE_ABSL) &&                                                 \
-     (defined(DART_HOST_OS_LINUX) || defined(DART_HOST_OS_FUCHSIA) ||           \
--     defined(DART_HOST_OS_MACOS) || defined(DART_HOST_OS_ANDROID))
-+     defined(DART_HOST_OS_MACOS) || defined(DART_HOST_OS_ANDROID) ||           \
-+     defined(DART_HOST_OS_VITA))
- 
- #include "platform/synchronization.h"
- 
+ using MutexImpl = SRWLOCK;
+ using ConditionVariableImpl = CONDITION_VARIABLE;
 diff --git a/runtime/platform/threads.h b/runtime/platform/threads.h
 index 3710e2e4..d6dac346 100644
 --- a/runtime/platform/threads.h

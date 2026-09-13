@@ -10,14 +10,14 @@ disposable; these patches are the real artifact.
 | # | Patch | What it does |
 |---|---|---|
 | 0001 | [add-vita-host-and-target-os](0001-add-vita-host-and-target-os.patch) | Teaches Dart that `vita` is a platform |
-| 0002 | [route-vita-through-platform-dispatch](0002-route-vita-through-platform-dispatch.patch) | Adds `vita` to every per-OS `#if` chain that hard-errors |
+| 0002 | [route-vita-through-platform-dispatch](0002-route-vita-through-platform-dispatch.patch) | Adds `vita` to every per-OS `#if` chain that hard-errors. `synchronization.h` gets its own branch (kernel work areas, not pthread types); `synchronization_posix.cc` is back to upstream since 2026-09-13 |
 | 0003 | [vita-platform-implementations](0003-vita-platform-implementations.patch) | The Vita platform files themselves |
 | 0004 | [gn-vita-toolchain](0004-gn-vita-toolchain.patch) | Teaches the GN build about `vita` |
 | 0005 | [zlib-no-armv8-on-vita](0005-zlib-no-armv8-on-vita.patch) | **Applies to `third_party/zlib`, a separate repo** |
 | 0006 | [newlib-portability-fixes](0006-newlib-portability-fixes.patch) | Shared Dart sources that assume glibc or "not POSIX means Windows" |
 | 0007 | [vmlibraryhooks-entry-point](0007-vmlibraryhooks-entry-point.patch) | Marks `VMLibraryHooks` and its fields `vm:entry-point` so an embedder can install the timer hooks. **Affects the platform dill, not the runtime** — rebuild `vm_platform_product.dill`, not just the runtime |
 | 0008 | [dart-vita-embedder-library](0008-dart-vita-embedder-library.patch) | Adds `dart:vita`, the Dart-side embedder shim. **Three files**: the library, `libraries.json`, and the VM target's `extraRequiredLibraries` — omitting the last produces a byte-identical dill with no error |
-| 0009 | [vita-emulated-tls](0009-vita-emulated-tls.patch) | Replaces libgcc's `__emutls_get_address`. **Without this every `thread_local` in the runtime is one shared global**, because `__gthread_active_p()` is a weak reference to `pthread_cancel` that never links — and forcing it in crashes instead, since emutls uses a statically initialised pthread mutex VitaSDK does not support. **See the rule below** — this is the one file in the series implementing a non-nullable ABI contract, and getting that wrong cost two sessions |
+| 0009 | [vita-emulated-tls](0009-vita-emulated-tls.patch) | Replaces libgcc's `__emutls_get_address`; also owns `platform_sources.gni`, which lists `synchronization_vita.cc` since 2026-09-13. **Without this every `thread_local` in the runtime is one shared global**, because `__gthread_active_p()` is a weak reference to `pthread_cancel` that never links — and forcing it in crashes instead, since emutls uses a statically initialised pthread mutex VitaSDK does not support. **See the rule below** — this is the one file in the series implementing a non-nullable ABI contract, and getting that wrong cost two sessions |
 
 | 0010 | [runtime-bin-for-vita](0010-runtime-bin-for-vita.patch) | `dart:io`'s native layer, plus dropping `-latomic`. **New in Phase 2** — the engine's embedder depends on `runtime/bin` unconditionally, which Phase 1 excluded |
 
@@ -225,6 +225,7 @@ would make Dart emit `SDIV`/`UDIV` that fault on the device.
 | `cpuinfo_vita.cc` | Fixed answers. One known device, nothing to probe: no `/proc`, no cpuid, no auxv. |
 | `thread_interrupter_vita.cc` | No-ops. The sampling profiler needs signals the Vita lacks, and nothing consumes samples without DevTools. No-ops rather than `UNREACHABLE()`, because a profiler that collects nothing beats one that aborts. |
 | `virtual_memory_vita.cc` | An aligned allocator over `sceKernelAllocMemBlock`. |
+| `synchronization_vita.cc` | `dart::Mutex` on `SceKernelLwMutex`, `dart::ConditionVariable` on `SceKernelLwCond`, bound to the mutex on its first wait. pthreads-embedded builds its condition variables from semaphores and lost a broadcast on the parallel marker's barrier; the UI thread froze about every other benchmark run ([the record](../../docs/results/the-frozen-ui-thread-2026-09-13.md)). 0002 no longer routes Vita into `synchronization_posix.cc`. |
 | `syslog_vita.cc` | `VitaTrace` writes nothing unless `ux0:data/flutter-vita/trace.on` exists, checked once. Each line was a synced `sceIoWrite`, three per heap page allocation, and that made a scavenge cost 44 to 146 ms ([the record](../../docs/results/ui-thread-list-churn-2026-09-13.md)). |
 
 `virtual_memory_vita.cc` is short because source analysis established, before a

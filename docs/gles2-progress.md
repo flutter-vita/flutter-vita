@@ -6,7 +6,7 @@ source and `gles2/surface.txt`; the area table's `done` column is set by hand
 and every change to it has to name its evidence in the last column.
 
 <!-- progress:begin -->
-**74% complete** (weighted areas, weights sum to 100).
+**75% complete** (weighted areas, weights sum to 100).
 
 | entry points | count |
 |---|---|
@@ -31,7 +31,7 @@ and every change to it has to name its evidence in the last column.
 | Programs: SceShaccCg compile, link, attribute and uniform reflection, uniform upload | 12 | 80% | M1: shader and program objects, link-time Cg compile, varying map, `glBindAttribLocation`, uniform table with locations, all `glUniform*` forms, matrix upload order verified by a translation through a `mat3`, fragment-program cache per blend state. M3 test: samplers bound to the unit `glUniform1i` named. Programs cached on disk by the hash of their Cg text (`ux0:data/fvita_gles2/cache`): the second launch of the bench read 62 of 64 from disk and compiled 2 (2026-09-13). Missing: relink and delete under load |
 | Pipeline state: blend, masks, scissor, viewport, line width, front face, getters | 6 | 75% | M1: blend func/equation (separate forms) verified by two hand-computed blended pixels; `glGetIntegerv`/`Floatv`/`Booleanv` table; `glFinish`. M3: texture and framebuffer bindings, pack and unpack alignment in the getters. Missing: `glLineWidth` applied, depth/stencil state |
 | Integration: `--gl gles2`, embedder switch, proc table, recording stubs, tracer | 6 | 80% | `tools/gles2-gen.py` generates `procs.c` and `stubs.c`. The embedder calls six functions of `flutter_vita_gl.h` and nothing else of either library (patch 0004); `templates/vita-app/gl_gles2.c` and `gl_vitagl.c` answer; `build-vita-app.sh --gl gles2`. The gallery ran on it 2026-09-12 (`docs/results/gallery-fvita-gles2-2026-09-12.md`). The exit path tears down 1315 textures and 54 render targets and hands back (`gles2-shutdown.txt`, watchdog in `gl_gles2.c`). `fvgl_stats` on every FRAMES line: it found the engine's snapshot-texture leak the same day (patch 0012). Missing: the tracer re-pointed at `fvgl_get_proc_address`, IME compositing over our frames |
-| Parity: gallery screenshots, test apps, bench, vitaGL removed | 8 | 55% | Same engine, same day, both backends, 34 scenes (`docs/results/parity-2026-09-13.md`): after the shader cache, the GPU copy and tiled render targets, sums vitaGL against fvita_gles2 are worst 4450 against 4667 ms, stall 10750 against 9783 ms, raster 221 against 191 ms; raster equal or lower on 27 of 36 scenes, higher by the rule on the two Zoom transitions only. Open: the Zoom transition's GPU time (13 to 18 ms a frame), screenshots scene by scene, the five test apps not run on gles2 |
+| Parity: gallery screenshots, test apps, bench, vitaGL removed | 8 | 60% | Same engine, same hour, both backends, 36 scenes, build 23 (`docs/results/parity-2026-09-13.md`, fourth section): sums vitaGL against fvita_gles2 are worst 3567 against 3033 ms, stall 11267 against 7650 ms, raster 216 against 212 ms; raster equal or lower on 20 of 36, higher by more than a millisecond on the Zoom route pushes and switch_fade. The freeze that stopped every other run was the Dart port's condition variable, fixed (`docs/results/the-frozen-ui-thread-2026-09-13.md`); material_3_demo renders and runs on gles2. Open: the Zoom transition's GPU time, screenshots scene by scene, four test apps not run on gles2 |
 <!-- areas:end -->
 
 ## Milestones

@@ -267,19 +267,20 @@ index 00000000..c73ea793
 +
 +#endif  // defined(DART_HOST_OS_VITA)
 diff --git a/runtime/platform/platform_sources.gni b/runtime/platform/platform_sources.gni
-index 62007a99..7fe9eac1 100644
+index 62007a99..5864aa6d 100644
 --- a/runtime/platform/platform_sources.gni
 +++ b/runtime/platform/platform_sources.gni
-@@ -32,6 +32,8 @@ platform_sources = [
+@@ -32,6 +32,9 @@ platform_sources = [
    "syslog_android.cc",
    "syslog_fuchsia.cc",
    "syslog_linux.cc",
 +  "emutls_vita.cc",
++  "synchronization_vita.cc",
 +  "syslog_vita.cc",
    "syslog_macos.cc",
    "syslog_win.cc",
    "text_buffer.cc",
-@@ -47,6 +49,7 @@ platform_sources = [
+@@ -47,6 +50,7 @@ platform_sources = [
    "utils_android.cc",
    "utils_fuchsia.cc",
    "utils_linux.cc",

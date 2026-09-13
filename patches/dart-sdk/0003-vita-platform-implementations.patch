@@ -1,3 +1,198 @@
+diff --git a/runtime/platform/synchronization_vita.cc b/runtime/platform/synchronization_vita.cc
+new file mode 100644
+index 00000000..eeb9f821
+--- /dev/null
++++ b/runtime/platform/synchronization_vita.cc
+@@ -0,0 +1,189 @@
++// Copyright (c) 2024, the Dart project authors.  Please see the AUTHORS file
++// for details. All rights reserved. Use of this source code is governed by a
++// BSD-style license that can be found in the LICENSE file.
++
++#include "platform/globals.h"  // NOLINT
++
++#if defined(DART_HOST_OS_VITA)
++
++// Mutex and ConditionVariable on the kernel's lightweight objects.
++//
++// The pthread library on this platform is pthreads-embedded: a mutex is a
++// kernel semaphore, and a condition variable is two semaphores and a set of
++// counters that the waiters and the signaller keep in step by hand. Under
++// pthread_cond_broadcast with two waiters it lost a wakeup. The parallel
++// marker's ThreadBarrier -- generation counter, NotifyAll, waiters loop until
++// the generation moves -- is the tightest user of that pattern in the VM, and
++// on 2026-09-13 the UI thread and a pool worker were found parked on the same
++// barrier one generation apart: the worker had been released and had reached
++// the next Sync(), the UI thread never woke from the previous one. The app
++// froze with all four cores idle, on both GL backends, and did so in about
++// half the benchmark runs.
++//
++// SceKernelLwMutex and SceKernelLwCond are what the kernel offers in their
++// place: an uncontended lock is an atomic in user memory, a contended one and
++// every wait is a syscall, and a broadcast is a kernel operation over the
++// wait queue rather than a protocol between threads. A condition variable is
++// created against one mutex, which is how the VM uses them: a Monitor is one
++// Mutex and one ConditionVariable, and nothing waits on a ConditionVariable
++// with two different mutexes. The binding happens on the first wait, because
++// Monitor constructs its members in order and the ConditionVariable cannot
++// see the Mutex before then.
++
++#include <psp2/kernel/error.h>
++#include <psp2/kernel/processmgr.h>
++#include <psp2/kernel/threadmgr.h>
++
++#include <atomic>
++
++#include "platform/assert.h"
++#include "platform/synchronization.h"
++
++namespace dart {
++
++static_assert(sizeof(VitaLwMutex::work) == sizeof(SceKernelLwMutexWork),
++              "VitaLwMutex must hold a SceKernelLwMutexWork");
++static_assert(sizeof(VitaLwCond::work) == sizeof(SceKernelLwCondWork),
++              "VitaLwCond must hold a SceKernelLwCondWork");
++
++static SceKernelLwMutexWork* Work(VitaLwMutex* m) {
++  return reinterpret_cast<SceKernelLwMutexWork*>(m->work);
++}
++static SceKernelLwCondWork* Work(VitaLwCond* c) {
++  return reinterpret_cast<SceKernelLwCondWork*>(c->work);
++}
++
++Mutex::Mutex() {
++  const int result = sceKernelCreateLwMutex(Work(&mutex_), "dart-mutex",
++                                            SCE_KERNEL_ATTR_THREAD_FIFO, 0,
++                                            nullptr);
++  if (result < 0) {
++    FATAL("sceKernelCreateLwMutex failed: 0x%08x", result);
++  }
++}
++
++Mutex::~Mutex() {
++  const int result = sceKernelDeleteLwMutex(Work(&mutex_));
++  ASSERT(result >= 0);
++  (void)result;
++}
++
++void Mutex::Lock() {
++  const int result = sceKernelLockLwMutex(Work(&mutex_), 1, nullptr);
++  if (result < 0) {
++    FATAL("sceKernelLockLwMutex failed: 0x%08x", result);
++  }
++  owner_.Acquire();
++}
++
++bool Mutex::TryLock() {
++  if (sceKernelTryLockLwMutex(Work(&mutex_), 1) < 0) {
++    return false;
++  }
++  owner_.Acquire();
++  return true;
++}
++
++void Mutex::Unlock() {
++  owner_.Release();
++  const int result = sceKernelUnlockLwMutex(Work(&mutex_), 1);
++  if (result < 0) {
++    FATAL("sceKernelUnlockLwMutex failed: 0x%08x", result);
++  }
++}
++
++ConditionVariable::ConditionVariable() {
++  cv_.bound = nullptr;
++}
++
++ConditionVariable::~ConditionVariable() {
++  if (cv_.bound != nullptr) {
++    const int result = sceKernelDeleteLwCond(Work(&cv_));
++    ASSERT(result >= 0);
++    (void)result;
++  }
++}
++
++// Under the mutex, which is what serialises the first wait against every
++// other. Notify from a thread that does not hold the mutex can read `bound`
++// as null while this runs and skip the signal, and that is the same lost
++// signal any condition variable gives a notify that races ahead of the wait;
++// the VM's waiters check their predicate before they wait.
++static void Bind(VitaLwCond* cv, VitaLwMutex* mutex) {
++  if (cv->bound == mutex) return;
++  RELEASE_ASSERT(cv->bound == nullptr);
++  const int result = sceKernelCreateLwCond(Work(cv), "dart-cond",
++                                           SCE_KERNEL_ATTR_THREAD_FIFO,
++                                           Work(mutex), nullptr);
++  if (result < 0) {
++    FATAL("sceKernelCreateLwCond failed: 0x%08x", result);
++  }
++  std::atomic_thread_fence(std::memory_order_release);
++  cv->bound = mutex;
++}
++
++ConditionVariable::WaitResult ConditionVariable::Wait(Mutex* mutex,
++                                                      int64_t millis) {
++  static_assert(kNoTimeout * kMicrosecondsPerMillisecond == kNoTimeout);
++  return WaitMicros(mutex, millis * kMicrosecondsPerMillisecond);
++}
++
++ConditionVariable::WaitResult ConditionVariable::WaitMicros(
++    Mutex* mutex,
++    int64_t timeout_micros) {
++  Bind(&cv_, &mutex->mutex_);
++  mutex->owner_.Release();
++  WaitResult retval = kNotified;
++  if (timeout_micros == kNoTimeout) {
++    const int result = sceKernelWaitLwCond(Work(&cv_), nullptr);
++    if (result < 0) {
++      FATAL("sceKernelWaitLwCond failed: 0x%08x", result);
++    }
++  } else {
++    // The kernel takes a 32-bit count of microseconds. A longer wait is a
++    // sequence of them against one deadline, so that a timeout means the
++    // deadline and not the end of a slice.
++    const int64_t deadline =
++        static_cast<int64_t>(sceKernelGetProcessTimeWide()) + timeout_micros;
++    for (;;) {
++      const int64_t left =
++          deadline - static_cast<int64_t>(sceKernelGetProcessTimeWide());
++      if (left <= 0) {
++        retval = kTimedOut;
++        break;
++      }
++      constexpr int64_t kMaxSliceUs = 0x7FFFFFFF;
++      unsigned int slice =
++          static_cast<unsigned int>(left > kMaxSliceUs ? kMaxSliceUs : left);
++      const int result = sceKernelWaitLwCond(Work(&cv_), &slice);
++      if (result >= 0) break;
++      if (static_cast<unsigned int>(result) != SCE_KERNEL_ERROR_WAIT_TIMEOUT) {
++        FATAL("sceKernelWaitLwCond failed: 0x%08x", result);
++      }
++      if (left <= kMaxSliceUs) {
++        retval = kTimedOut;
++        break;
++      }
++    }
++  }
++  mutex->owner_.Acquire();
++  return retval;
++}
++
++void ConditionVariable::Notify() {
++  if (cv_.bound == nullptr) return;  // nothing has ever waited
++  const int result = sceKernelSignalLwCond(Work(&cv_));
++  ASSERT(result >= 0);
++  (void)result;
++}
++
++void ConditionVariable::NotifyAll() {
++  if (cv_.bound == nullptr) return;
++  const int result = sceKernelSignalLwCondAll(Work(&cv_));
++  ASSERT(result >= 0);
++  (void)result;
++}
++
++}  // namespace dart
++
++#endif  // defined(DART_HOST_OS_VITA)
 diff --git a/runtime/platform/syslog_vita.cc b/runtime/platform/syslog_vita.cc
 new file mode 100644
 index 00000000..66516d74
