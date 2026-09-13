@@ -2,10 +2,11 @@
 //
 // The language accepted is the one measured in gles2/corpus: scalar, vector
 // and matrix types, uniforms (arrays included), attributes, varyings, one
-// `main`, blocks, `if`, `for`, `while`, `do`, assignments, the arithmetic
-// operators, swizzles, constructors, and the built-in functions in the table
-// below. Anything else stops with an error that names it, so a new app's
-// shader turns into a line in a log and then a line in this file.
+// `main`, user functions defined before their first call (Skia's child
+// effects come as one), blocks, `if`, `for`, `while`, `do`, assignments, the
+// arithmetic operators, swizzles, constructors, and the built-in functions in
+// the table below. Anything else stops with an error that names it, so a new
+// app's shader turns into a line in a log and then a line in this file.
 //
 // What the translation has to get right, beyond spelling:
 //
@@ -92,8 +93,25 @@ typedef struct Decl {
   FvglType type;
   Expr* init;
   bool is_const;
+  const char* qual;  // a parameter's "out " or "inout ", else NULL
   struct Decl* next;
 } Decl;
+
+// A user function. GLSL's and Cg's agree on shape, so the body goes through
+// the same emitter as main's; what differs is what it may see. Attributes,
+// varyings and the gl_ names are main's parameters in Cg, so a function that
+// reads one is refused and told to take it as an argument, which is how Skia
+// writes them anyway.
+typedef struct Func {
+  const char* name;
+  int namelen;
+  FvglType ret;
+  Decl* params;
+  int nparams;
+  struct Stmt* body;
+  int line;
+  struct Func* next;
+} Func;
 
 typedef enum StmtKind {
   S_BLOCK,
@@ -159,6 +177,9 @@ struct Tx {
   Decl* attributes;
   Decl* varyings;
   Stmt* main_body;
+  Func* funcs;      // in definition order
+  bool in_func;     // parsing a function body: `return x;` is allowed
+  Func* cur_func;   // emitting one: return types and visibility are its
   bool uses_fragcoord, uses_pointsize, uses_fragcolor;
 };
 
@@ -814,7 +835,10 @@ static Stmt* parse_statement(Tx* tx) {
   if (tok_is(t, "return")) {
     next(tx);
     Stmt* s = stmt_new(tx, S_RETURN, t->line);
-    if (!tok_is(peek(tx), ";")) fail(tx, t->line, "'return' with a value inside main");
+    if (!tok_is(peek(tx), ";")) {
+      if (!tx->in_func) fail(tx, t->line, "'return' with a value inside main");
+      s->expr = parse_expression(tx);
+    }
     expect(tx, ";");
     return s;
   }
@@ -857,6 +881,70 @@ static void add_builtins(Tx* tx) {
   }
 }
 
+static Func* func_find(Tx* tx, const char* name, int namelen) {
+  for (Func* f = tx->funcs; f; f = f->next) {
+    if (f->namelen == namelen && strncmp(f->name, name, (size_t)namelen) == 0) return f;
+  }
+  return NULL;
+}
+
+// `type name(params) { body }`, after the type and the name have been read.
+// Prototypes are refused: Skia defines a helper before the line that calls
+// it, and a call to a name with no body yet would need a second pass.
+static void parse_function(Tx* tx, FvglType ret, Token* name) {
+  if (func_find(tx, name->s, name->len)) fail(tx, name->line, "function '%.*s' is defined twice", name->len, name->s);
+  if (sym_find(tx, name->s, name->len)) fail(tx, name->line, "'%.*s' is already a variable", name->len, name->s);
+  Func* f = tx_alloc(tx, sizeof *f);
+  f->name = intern(tx, name->s, name->len);
+  f->namelen = name->len;
+  f->ret = ret;
+  f->line = name->line;
+  expect(tx, "(");
+  scope_push(tx);
+  Decl** tail = &f->params;
+  if (tok_is(peek(tx), "void") && tok_is(peek2(tx), ")")) next(tx);
+  if (!accept(tx, ")")) {
+    do {
+      const char* qual = NULL;
+      for (;;) {
+        Token* t = peek(tx);
+        if (tok_is(t, "out")) qual = "out ";
+        else if (tok_is(t, "inout")) qual = "inout ";
+        else if (tok_is(t, "in") || tok_is(t, "const") || tok_is(t, "highp") || tok_is(t, "mediump") ||
+                 tok_is(t, "lowp")) { /* the default, or a precision: dropped */ }
+        else break;
+        next(tx);
+      }
+      Token* tt = peek(tx);
+      FvglType type;
+      if (!type_by_name(tt, &type)) fail(tx, tt->line, "expected a parameter type, found '%.*s'", tt->len, tt->s);
+      if (type.base == FVGL_T_VOID) fail(tx, tt->line, "a parameter of type void");
+      next(tx);
+      Token* pn = expect_ident(tx);
+      Decl* d = tx_alloc(tx, sizeof *d);
+      d->name = intern(tx, pn->s, pn->len);
+      d->namelen = pn->len;
+      d->type = type;
+      d->type.array = parse_array_size(tx);
+      d->qual = qual;
+      sym_add(tx, d->name, d->namelen, d->type, SYM_LOCAL, pn->line);
+      *tail = d;
+      tail = &d->next;
+      f->nparams++;
+    } while (accept(tx, ","));
+    expect(tx, ")");
+  }
+  if (tok_is(peek(tx), ";"))
+    fail(tx, name->line, "prototype of '%s': define a function before its first call instead", f->name);
+  tx->in_func = true;
+  f->body = parse_block(tx);
+  tx->in_func = false;
+  scope_pop(tx);
+  Func** ft = &tx->funcs;
+  while (*ft) ft = &(*ft)->next;
+  *ft = f;
+}
+
 static void parse_unit(Tx* tx) {
   Decl** gtail = &tx->globals;
   Decl** atail = &tx->attributes;
@@ -887,8 +975,10 @@ static void parse_unit(Tx* tx) {
     // Function definition?
     if (peek(tx)->kind == TK_IDENT && tok_is(peek2(tx), "(")) {
       Token* name = next(tx);
-      if (!tok_is(name, "main"))
-        fail(tx, name->line, "user-defined function '%.*s' is not supported (only main)", name->len, name->s);
+      if (!tok_is(name, "main")) {
+        parse_function(tx, type, name);
+        continue;
+      }
       if (type.base != FVGL_T_VOID) fail(tx, name->line, "main must return void");
       expect(tx, "(");
       if (!accept(tx, ")")) {
@@ -977,6 +1067,9 @@ static FvglType emit_number(Tx* tx, Expr* e, Buf* out) {
 static FvglType emit_ident(Tx* tx, Expr* e, Buf* out) {
   Sym* s = sym_find(tx, e->name, e->namelen);
   if (!s) fail(tx, e->line, "'%s' is not declared", e->name);
+  if (tx->cur_func && (s->kind == SYM_ATTRIBUTE || s->kind == SYM_VARYING || s->kind == SYM_BUILTIN))
+    fail(tx, e->line, "'%s' inside '%s': only main sees attributes, varyings and gl_ names; pass it as an argument",
+         e->name, tx->cur_func->name);
   if (s->kind == SYM_BUILTIN) {
     if (strcmp(e->name, "gl_FragCoord") == 0) tx->uses_fragcoord = true;
     if (strcmp(e->name, "gl_PointSize") == 0) tx->uses_pointsize = true;
@@ -1186,6 +1279,25 @@ static FvglType emit_call(Tx* tx, Expr* e, Buf* out) {
     return ctor;
   }
 
+  Func* f = func_find(tx, e->name, e->namelen);
+  if (f) {
+    if (e->nargs != f->nparams) fail(tx, e->line, "%s takes %d arguments, got %d", e->name, f->nparams, e->nargs);
+    Decl* p = f->params;
+    for (int i = 0; i < e->nargs; i++, p = p->next) {
+      if (!type_same(types[i], p->type) && !(type_is_scalar(types[i]) && type_is_scalar(p->type)))
+        fail(tx, e->line, "argument %d of %s is not a %s", i + 1, e->name, cg_type_name(tx, p->type, e->line));
+    }
+    emit_name(tx, out, e->name);
+    buf_str(tx, out, "(");
+    for (int i = 0; i < e->nargs; i++) {
+      if (i) buf_str(tx, out, ", ");
+      buf_put(tx, out, args[i].s, args[i].len);
+      free(args[i].s);
+    }
+    buf_str(tx, out, ")");
+    return f->ret;
+  }
+
   const struct Builtin* b = NULL;
   for (size_t i = 0; i < sizeof kBuiltins / sizeof kBuiltins[0]; i++) {
     if (strcmp(kBuiltins[i].glsl, e->name) == 0) {
@@ -1195,7 +1307,7 @@ static FvglType emit_call(Tx* tx, Expr* e, Buf* out) {
   }
   if (!b) {
     if (sym_find(tx, e->name, e->namelen)) fail(tx, e->line, "'%s' is a variable, not a function", e->name);
-    fail(tx, e->line, "function '%s' is not a GLSL ES 1.00 built-in (user functions are not supported)", e->name);
+    fail(tx, e->line, "function '%s' is not a GLSL ES 1.00 built-in and not defined above its call", e->name);
   }
   if (e->nargs < b->min_args || e->nargs > b->max_args)
     fail(tx, e->line, "%s takes %d to %d arguments, got %d", b->glsl, b->min_args, b->max_args, e->nargs);
@@ -1663,6 +1775,24 @@ static void emit_stmt(Tx* tx, Stmt* s, Buf* out, int depth) {
     }
     case S_RETURN:
       indent(tx, out, depth);
+      if (tx->cur_func) {
+        const Func* f = tx->cur_func;
+        if (s->expr) {
+          Buf v = {0};
+          const FvglType t = emit_expr(tx, s->expr, &v);
+          if (!type_same(t, f->ret) && !(type_is_scalar(t) && type_is_scalar(f->ret)))
+            fail(tx, s->line, "'%s' returns a %s, it is declared %s", f->name, cg_type_name(tx, t, s->line),
+                 cg_type_name(tx, f->ret, s->line));
+          buf_str(tx, out, "return ");
+          buf_put(tx, out, v.s, v.len);
+          buf_str(tx, out, ";\n");
+          free(v.s);
+        } else {
+          if (f->ret.base != FVGL_T_VOID) fail(tx, s->line, "'%s' returns without a value", f->name);
+          buf_str(tx, out, "return;\n");
+        }
+        return;
+      }
       buf_str(tx, out, tx->fragment ? "return gl_FragColor;\n" : "return;\n");
       return;
     case S_DISCARD:
@@ -1708,6 +1838,29 @@ static void emit_unit(Tx* tx, Buf* out) {
   for (int i = 0; i < tx->main_body->nitems; i++) emit_stmt(tx, tx->main_body->items[i], &body, 1);
   scope_pop(tx);
 
+  // Then the user functions, each in a scope holding its parameters. They see
+  // the uniforms, which are file-scope in Cg as in GLSL, and nothing of main's.
+  Buf fns = {0};
+  for (Func* f = tx->funcs; f; f = f->next) {
+    tx->cur_func = f;
+    buf_fmt(tx, &fns, "\n%s ", cg_type_name(tx, f->ret, f->line));
+    emit_name(tx, &fns, f->name);
+    buf_str(tx, &fns, "(");
+    scope_push(tx);
+    int i = 0;
+    for (Decl* p = f->params; p; p = p->next, i++) {
+      buf_fmt(tx, &fns, "%s%s%s ", i ? ", " : "", p->qual ? p->qual : "", cg_type_name(tx, p->type, f->line));
+      emit_name(tx, &fns, p->name);
+      if (p->type.array) buf_fmt(tx, &fns, "[%d]", p->type.array);
+      sym_add(tx, p->name, p->namelen, p->type, SYM_LOCAL, f->line);
+    }
+    buf_str(tx, &fns, ") {\n");
+    for (int k = 0; k < f->body->nitems; k++) emit_stmt(tx, f->body->items[k], &fns, 1);
+    scope_pop(tx);
+    buf_str(tx, &fns, "}\n");
+  }
+  tx->cur_func = NULL;
+
   buf_str(tx, out, kPrelude);
   if (tx->uses_fragcoord) buf_str(tx, out, "uniform float2 fvgl_fc;\n");
   for (Decl* d = tx->globals; d; d = d->next) {
@@ -1716,6 +1869,8 @@ static void emit_unit(Tx* tx, Buf* out) {
     one.next = NULL;
     emit_decl_list(tx, &one, out, true, NULL);
   }
+  buf_put(tx, out, fns.s ? fns.s : "", fns.len);
+  free(fns.s);
 
   // main's parameter list.
   buf_str(tx, out, tx->fragment ? "\nfloat4 main(" : "\nvoid main(");
