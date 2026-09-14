@@ -59,8 +59,9 @@ only. `modal_sheet` stalled 1017 ms in run 25 and 0 in runs 24 and 26;
 2850 and 2850. Only `route_text_uniq` rose in both (183 to 1167 and 967).
 Nothing in builds 25 and 26 touched the GL path itself; the shot copy and
 the stall-check guard run outside the frame. So this is the run-to-run
-spread of one console, not a cost of removing the shims. A third run on the
-same build would settle it and was not worth the 25 minutes today.
+spread of one console, not a cost of removing the shims. The runs that
+followed the same morning (`docs/results/log-writes-on-the-frame-threads-2026-09-14.md`)
+found where a good part of that spread comes from.
 
 **The receiver.** The engine pin moved to the archive built at
 2026-09-14T06:19:23Z (`archive_sha256 a2f902e2…`), which carries the UI-thread
