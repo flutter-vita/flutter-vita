@@ -724,9 +724,11 @@ static int supervisor_enabled(void) {
 // responder since 10, so the host side needs nothing installed. It is known to
 // work on this console, because localsend's discovery is multicast UDP.
 //
-// Scope, deliberately: A records for one name. No service enumeration, no
-// PTR/SRV/TXT, no conflict probing, no goodbye packets. Two consoles running
-// this at once would both claim the name; one console is the case this serves.
+// Scope, deliberately: A records for one name, and the NSEC that says there
+// is no AAAA, since a resolver that asks IPv6 first otherwise waits its whole
+// timeout before it asks again. No service enumeration, no PTR/SRV/TXT, no
+// conflict probing, no goodbye packets. Two consoles running this at once
+// would both claim the name; one console is the case this serves.
 //
 // It does not fix Wi-Fi dropping. What it removes is having to ask what the
 // address is, not having to reconnect.
@@ -868,29 +870,9 @@ static unsigned int mdns_self_addr(void) {
   return in.s_addr;
 }
 
-// One A record, multicast to the group. QDCOUNT is zero and the answer carries
-// the name in full, which is what lets the reply stand alone.
-// Returns 1 if the packet left the console.
-//
-// The return used to be void and every caller did `g_mdns_announced++`
-// regardless, so mdns.txt reported a healthy responder while sceNetSendto was
-// refusing every packet and nothing was on the wire. A status file that cannot
-// see the most common failure is worse than none: it is the file you read to
-// rule that failure out.
-static int mdns_respond(const char* name) {
-  const unsigned int addr = mdns_self_addr();
-  if (addr == 0) {
-    g_mdns_noaddr++;
-    return 0;
-  }
-  if (g_mdns_sock < 0) return 0;
-
-  unsigned char out[128];
-  memset(out, 0, sizeof out);
-  out[2] = 0x84;  // QR=1, AA=1
-  out[7] = 1;     // ANCOUNT=1
-  int at = 12;
-  at += mdns_write_name(out + at, name);
+// The A record for `name`, at `out`. Returns the bytes written.
+static int mdns_write_a(unsigned char* out, const char* name, unsigned int addr) {
+  int at = mdns_write_name(out, name);
   out[at++] = 0; out[at++] = 1;        // TYPE=A
   out[at++] = 0x80; out[at++] = 1;     // CLASS=IN, cache-flush
   out[at++] = 0; out[at++] = 0;
@@ -898,7 +880,70 @@ static int mdns_respond(const char* name) {
   out[at++] = (unsigned char)(MDNS_TTL & 0xFF);
   out[at++] = 0; out[at++] = 4;        // RDLENGTH
   memcpy(out + at, &addr, 4);
-  at += 4;
+  return at + 4;
+}
+
+// The NSEC record for `name`: "this name has an A record and nothing else".
+// RFC 6762 section 6.1. The next-domain-name field is the record's own name,
+// and the type bitmap is window 0, one byte, bit 1 set for type A.
+//
+// Without it a resolver that asks for AAAA first hears nothing and waits its
+// full timeout before it asks for A: macOS waits 5.00 s, on every connect.
+// That was the "cold receiver" in every note before 2026-09-14. The tools
+// pass -4 to nc now, and this makes any other client fast too: a browser at
+// localsend, curl, a Python script.
+static int mdns_write_nsec(unsigned char* out, const char* name) {
+  int at = mdns_write_name(out, name);
+  out[at++] = 0; out[at++] = 47;       // TYPE=NSEC
+  out[at++] = 0x80; out[at++] = 1;     // CLASS=IN, cache-flush
+  out[at++] = 0; out[at++] = 0;
+  out[at++] = (unsigned char)(MDNS_TTL >> 8);
+  out[at++] = (unsigned char)(MDNS_TTL & 0xFF);
+  const int rdlength_at = at;
+  at += 2;
+  at += mdns_write_name(out + at, name);  // next domain name: itself
+  out[at++] = 0;                          // window block 0
+  out[at++] = 1;                          // bitmap length 1
+  out[at++] = 0x40;                       // type 1, A
+  const int rdlength = at - rdlength_at - 2;
+  out[rdlength_at] = (unsigned char)(rdlength >> 8);
+  out[rdlength_at + 1] = (unsigned char)(rdlength & 0xFF);
+  return at;
+}
+
+// One answer, multicast to the group. QDCOUNT is zero and the records carry
+// the name in full, which is what lets the reply stand alone. For an A or
+// ANY question and for an announcement the answer is the A record with the
+// NSEC as an additional record; for an AAAA question the NSEC is the answer
+// and the A record rides along, so the asker learns the address in the same
+// packet. Returns 1 if the packet left the console.
+//
+// The return used to be void and every caller did `g_mdns_announced++`
+// regardless, so mdns.txt reported a healthy responder while sceNetSendto was
+// refusing every packet and nothing was on the wire. A status file that cannot
+// see the most common failure is worse than none: it is the file you read to
+// rule that failure out.
+static int mdns_respond_type(const char* name, int negative_aaaa) {
+  const unsigned int addr = mdns_self_addr();
+  if (addr == 0) {
+    g_mdns_noaddr++;
+    return 0;
+  }
+  if (g_mdns_sock < 0) return 0;
+
+  unsigned char out[256];
+  memset(out, 0, sizeof out);
+  out[2] = 0x84;  // QR=1, AA=1
+  out[7] = 1;     // ANCOUNT=1
+  out[11] = 1;    // ARCOUNT=1
+  int at = 12;
+  if (negative_aaaa) {
+    at += mdns_write_nsec(out + at, name);
+    at += mdns_write_a(out + at, name, addr);
+  } else {
+    at += mdns_write_a(out + at, name, addr);
+    at += mdns_write_nsec(out + at, name);
+  }
 
   SceNetSockaddrIn to;
   memset(&to, 0, sizeof to);
@@ -913,6 +958,8 @@ static int mdns_respond(const char* name) {
   }
   return 1;
 }
+
+static int mdns_respond(const char* name) { return mdns_respond_type(name, 0); }
 
 // Join the group again against whatever interface we are on now.
 //
@@ -1020,8 +1067,8 @@ static int mdns_thread(SceSize args, void* argp) {
       }
       if (hit == NULL || after + 4 > n) break;
       const int qtype = (pkt[after] << 8) | pkt[after + 1];
-      if (qtype == 1 || qtype == 255) {  // A, or ANY
-        mdns_respond(hit);
+      if (qtype == 1 || qtype == 255 || qtype == 28) {  // A, ANY, or AAAA
+        mdns_respond_type(hit, qtype == 28);
         g_mdns_queries++;
         g_mdns_last_query = (SceInt64)sceKernelGetProcessTimeWide();
         mdns_write_status();
