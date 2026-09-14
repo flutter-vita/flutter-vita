@@ -1,24 +1,26 @@
-// Count what an app really asks of vitaGL.
+// Count what an app really asks of the GL layer.
 //
 // Built into the app with --extra-source and
-// --extra-link-option -Wl,--wrap=vglGetProcAddress, so every name Skia resolves
-// comes through here and every call it then makes goes through a thunk.
+// --link-option -Wl,--wrap=fvgl_get_proc_address, so every name Skia resolves
+// comes through here and every call it then makes goes through a thunk:
 //
-// This exists to size one decision: whether a GLES2 layer of our own over GXM
-// is a subset of vitaGL or a rewrite of it. vitaGL answers 372 GL names and
-// nothing static can narrow that, because Skia binds by name and vitaGL's
-// lookup table references them all.
+//   ./tools/build-vita-app.sh apps/gallery \
+//       --extra-source experiments/gl-usage/gl_usage.c \
+//       --extra-source experiments/gl-usage/gl_thunks.S \
+//       --link-option -Wl,--wrap=fvgl_get_proc_address
 //
-// Three call paths are outside this count and all three are small and known.
-// Fifteen GL functions are linked into the engine by symbol rather than
-// resolved: glAttachShader, glCompileShader, glCreateProgram, glCreateShader,
-// glDeleteProgram, glDeleteShader, glGetIntegerv, glGetProgramInfoLog,
-// glGetProgramiv, glGetShaderInfoLog, glGetShaderiv, glGetString,
-// glLinkProgram, glShaderSource and glTexParameterf. Seven more are the
-// engine's own VitaGl* shims, which Skia gets before vglGetProcAddress is
-// consulted. And five vgl* calls are the vitaGL API proper: vglInitExtended,
-// vglSetShaderCachePath, vglSetupRuntimeShaderCompiler, vglSwapBuffers and
-// vglGetProcAddress itself.
+// It sized ADR-0019's decision against vitaGL (372 names answered, and nothing
+// static could narrow that, because Skia binds by name). It now measures the
+// layer of our own: fvita_gles2 answers 142 names, 35 of them recording stubs,
+// and `gles2/surface.txt` carries this tool's counts, which is what
+// tools/gles2-progress.py reads for the ledger. A new app is measured the
+// same way: build it with the three options above, drive it, pull
+// ux0:data/flutter-vita/gl-usage.txt, and merge the peaks into surface.txt.
+//
+// Two call paths are outside this count and both are small and known. The
+// embedder's link probe calls thirteen GL functions by symbol (glCreateShader
+// through glDeleteProgram, glGetString) once at start-up. And the layer's own
+// six flutter_vita_gl.h functions are not GL.
 #include <psp2/io/fcntl.h>
 #include <psp2/io/stat.h>
 #include <psp2/kernel/threadmgr.h>
@@ -39,15 +41,15 @@ extern unsigned char gl_thunks[];
 static char g_names[SLOTS][32];
 static int g_used;
 
-void* __real_vglGetProcAddress(const char* name);
+void* __real_fvgl_get_proc_address(const char* name);
 
 // Defined by gl_shaders.c when it is in the build, and weak so that it is not.
 __attribute__((weak)) void __wrap_glShaderSource(unsigned int, int,
                                                  const char* const*,
                                                  const int*);
 
-void* __wrap_vglGetProcAddress(const char* name) {
-  void* real = __real_vglGetProcAddress(name);
+void* __wrap_fvgl_get_proc_address(const char* name) {
+  void* real = __real_fvgl_get_proc_address(name);
   if (!real) return real;
 
   // Skia compiles through the pointer it was handed, so a wrap on the symbol
@@ -56,8 +58,9 @@ void* __wrap_vglGetProcAddress(const char* name) {
     return (void*)__wrap_glShaderSource;
   }
 
-  // vitaGL answers several names with one function, so match on the target
-  // rather than the name. Two thunks for one function would count it twice.
+  // A layer may answer several names with one function (vitaGL did), so match
+  // on the target rather than the name. Two thunks for one function would
+  // count it twice.
   for (int i = 0; i < g_used; i++) {
     if (gl_targets[i] == real) return gl_thunks + (unsigned)i * THUNK;
   }

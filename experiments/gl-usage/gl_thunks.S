@@ -1,10 +1,10 @@
 @ One counting thunk per GL entry point Skia binds.
 @
-@ Skia does not call vitaGL by symbol. It asks VitaGlProcResolver for a name
-@ and stores the pointer, so a link map cannot say what an app uses: vitaGL's
-@ vglGetProcAddress holds a name table that references every entry point it
-@ has, and --gc-sections therefore keeps all 372 of them, glBegin and gluLookAt
-@ included. The only way to count what an app calls is to count the calls.
+@ Skia does not call the GL layer by symbol. It asks VitaGlProcResolver for a
+@ name and stores the pointer, so a link map cannot say what an app uses: the
+@ resolver's name table (gles2/src/procs.c now, vitaGL's 372 names before)
+@ references every entry point, and --gc-sections keeps them all. The only
+@ way to count what an app calls is to count the calls.
 @
 @ gl_usage.c hands out gl_thunks + i*64 in place of the real pointer. Each
 @ thunk works out its own index from its own address, so all 384 copies are the
