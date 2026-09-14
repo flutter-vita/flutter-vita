@@ -5,13 +5,14 @@ become one, with the hardware checks added and a strip of live numbers
 above every tab. What does the console do when they share a process, and
 what does the strip cost a scene?
 
-**Builds:** gallery builds 30 to 39 of 2026-09-14, all on `fvita_gles2`.
+**Builds:** gallery builds 30 to 44 of 2026-09-14, all on `fvita_gles2`.
 Build 30 is the first combined app; 31 to 34 fix what its first run broke;
 35 moves the layer's teardown to the raster thread; 36 to 38 measure the
-strip; 39 runs each hardware check on a thread of its own. Bench results
+strip; 39 runs each hardware check on a thread of its own; 40 to 44 rework
+the strip and close the third teardown crash. Bench results
 `out/bench/gl-gles2-run{35,36-hudoff,37,38}-2026-09-14.json`; the crash
-dumps `psp2core-1789374460` (build 29) and `psp2core-1789384814` (build 33,
-truncated) from `ux0:data/`.
+dumps `psp2core-1789374460` (build 29), `psp2core-1789384814` (build 33,
+truncated) and `psp2core-1789387924` (build 38) from `ux0:data/`.
 
 ## The first run, and what it took down
 
@@ -75,6 +76,24 @@ one of them a second time. Two fixes, in layers:
 Runs 34 to 38 relaunched and handed off five times without a fault. The
 second dump was truncated by the receiver's launch and could not be read.
 
+The third came from the relaunch that was to start build 38's hardware
+suite, four seconds into the teardown, on the main thread:
+
+```
+thread "FVTA00002" CRASHED (Data abort exception)
+  fvgl_gpu_completed_frame    ldr r2,[r2] with r2 = 0x70026420
+  fvgl_stats
+```
+
+The strip's once-a-second `vita/stats` read runs on the main thread and
+ends in `fvgl_stats`, which reads the `frame_done` notification region;
+`sceGxmTerminate` had unmapped it. The object entry points were guarded
+by `up` since build 34; the stats read was not. It now answers the last
+full snapshot while the layer is down, and the pointer is dropped before
+terminate (build 40). The suite itself never ran: the log of the four
+seconds was overwritten by the next launch, and the wait read as the
+suite hanging.
+
 ## The hardware checks, first answers
 
 Build 30's Hardware tab, run by the person (`hardware-result.json`):
@@ -96,12 +115,28 @@ Build 30's Hardware tab, run by the person (`hardware-result.json`):
 | front camera, back camera | fail | sceCameraStart: 0x80024003 | `SCE_KERNEL_ERROR_VARANGE_IS_NOT_PHYSICAL_CONTINUOUS`: the frame buffer must be a PHYCONT memblock; build 31 allocates one |
 | keyboard | eye | nothing typed | the IME opened (`IME open (client 1 ...)`) and drew nothing: the layer did not run `sceCommonDialogUpdate`. Build 31's layer does, in swap, while the embedder's dialog flag is up |
 
-Build 39's run of the automatic group did not come back: the app went off
-the network 139 s in, and the log could not be pulled before this record
-was written. The camera is the check that blocks in the system if any does
-(`sceCameraRead` with `mode 1` waits for a frame), so build 39 runs every
-check on a thread of its own with a 15 s deadline and leaves breadcrumbs in
-the log at each camera step.
+Build 38's host run of the automatic group never started (the teardown
+crash above). Build 39 runs every check on a thread of its own with a
+15 s deadline, since `sceCameraRead` with `mode 1` waits for a frame, and
+leaves breadcrumbs in the log at each camera step. Build 42's automatic
+group, launched by the deploy with `hardware.on` still armed:
+
+| check | state | detail |
+|---|---|---|
+| console | pass | Vita, firmware 3.73 |
+| battery and clocks | pass | 98% 30.3°C 4.13 V; arm 444 bus 222 gpu 222 MHz |
+| storage | pass | ux0: 7.0 of 7.4 GB free |
+| clock | pass | network time known, up 2 s |
+| wi-fi | pass | signal 48% |
+| http over tls | pass | generate_204 in 366 ms |
+| gyro and accelerometer | pass | accel 0.12 -0.08 -1.00 (1.02 g), gyro 0 0 0.01 |
+| front camera | eye | frame 4, 320x240 in 78 ms, mean 10.3 sd 1.7 (flat: covered, or dark) |
+| back camera | eye | frame 1, 320x240 in 24 ms, mean 8.5 sd 1.2 (flat: covered, or dark) |
+
+Seven pass, two by eye, none failed, none timed out. The cameras give
+frames in under 80 ms through the PHYCONT buffer; the frames were dark
+because the console lay face down on a desk. The six checks that need a
+person are not run by the deploy.
 
 ## What the strip costs a scene
 
@@ -124,9 +159,27 @@ account for it (the PARAGRAPHS line prices a paragraph at 0.7 to 0.9 ms);
 finding the rest is open. `mallinfo` was the first suspect and is not it:
 sampled at 9 to 390 us.
 
-So the strip stays on screen through a scene, with the scene's name live
-in its title, and its numbers hold still until the scene is over (build
-38). Run 38's sums are within the spread of runs 23 to 30.
+Build 38 held the strip still through a scene; the person's word on it
+was "static values". Since build 42 the strip ticks twice a second and
+stays live through the scenes, and `tools/bench.sh` sets `hud.off` for
+its scenes runs so the host's stall counts compare with the runs before
+the strip. A run from the console's own TESTS tab pays the tick.
+
+The strip itself is a two-row monospace table at 12 px since build 40,
+captions over values: `fps`, `ui thread`, `raster`, `gpu busy`, `cpu
+cores %`, `ram MB`, `cdram MB`, `heap MB`, `battery`. The memory cells
+read used / total. The totals were to come from `sceAppMgrGetBudgetInfo`;
+on 3.73 the SceAppMgrUser wrapper and the syscall under it both answer
+0x8080201C to this process (builds 41 and 42, launched from the receiver
+and from the home screen), so the embedder reports the standard
+application budget (256 MiB main, 112 MiB CDRAM, 26 MiB phycont) and says
+so in the reply. The 26 is what `sceKernelGetFreeMemorySize` reports
+before anything is allocated; the other two agree with the first sample.
+The heap's total is the arena cap the app sets, 160 MiB, which mallinfo's
+`arena` (what malloc has taken so far) does not say. Two paragraphs, not
+one per cell: this console lays out a paragraph in 0.7 to 1 ms, and the
+tick already lands in a slow frame. At 2 Hz on the panel, 4 of 60 ticks
+had a frame over 12 ms, three of them in the first two seconds.
 
 ## The route scenes and the app's Navigator
 
