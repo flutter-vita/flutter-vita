@@ -15,8 +15,8 @@
 #   EXTRA_DEFINES   ;-list of K=V preprocessor defines
 #   EXTRA_LINK_OPTIONS  ;-list of extra linker flags
 #   RELEASE         ON to link release.c instead of the dev loop
-#   FLUTTER_VITA_GL vitagl (default) or gles2: which GL sits under Ganesh
-#                   (ADR-0019). gles2 builds gles2/ from source, at GLES2_DIR.
+#   GLES2_DIR       the fvita_gles2 source, built into the app (ADR-0019);
+#                   default ../../gles2 from this file
 cmake_minimum_required(VERSION 3.16)
 
 if(NOT DEFINED CMAKE_TOOLCHAIN_FILE)
@@ -107,21 +107,14 @@ else()
     "-Wl,--wrap=_ZNSt18condition_variable4waitERSt11unique_lockISt5mutexE")
 endif()
 
-# The GL under Ganesh. The embedder calls the five functions of
-# flutter_vita_gl.h and nothing else of either library; one of these two files
-# answers, and the link block below brings the matching archive.
-set(FLUTTER_VITA_GL "vitagl" CACHE STRING "vitagl or gles2")
-if(FLUTTER_VITA_GL STREQUAL "gles2")
-  set(GLES2_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../../gles2" CACHE PATH "fvita_gles2 source")
-  add_subdirectory("${GLES2_DIR}" fvita_gles2)
-  set(GL_PLATFORM_SOURCE ${CMAKE_CURRENT_SOURCE_DIR}/gl_gles2.c)
-  set(GL_LIBS fvita_gles2 ${FVITA_GLES2_LIBS})
-  message(STATUS "GL: fvita_gles2 from ${GLES2_DIR}")
-elseif(FLUTTER_VITA_GL STREQUAL "vitagl")
-  set(GL_PLATFORM_SOURCE ${CMAKE_CURRENT_SOURCE_DIR}/gl_vitagl.c)
-else()
-  message(FATAL_ERROR "FLUTTER_VITA_GL is ${FLUTTER_VITA_GL}; vitagl or gles2")
-endif()
+# The GL under Ganesh: fvita_gles2, built from source into every app
+# (ADR-0019). The embedder calls the six functions of flutter_vita_gl.h and
+# nothing else of it; gl_gles2.c answers. vitaGL sat here until 2026-09-14.
+set(GLES2_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../../gles2" CACHE PATH "fvita_gles2 source")
+add_subdirectory("${GLES2_DIR}" fvita_gles2)
+set(GL_PLATFORM_SOURCE ${CMAKE_CURRENT_SOURCE_DIR}/gl_gles2.c)
+set(GL_LIBS fvita_gles2 ${FVITA_GLES2_LIBS})
+message(STATUS "GL: fvita_gles2 from ${GLES2_DIR}")
 
 add_executable(${PROJECT_NAME}
   ${SNAPSHOT_S}
@@ -149,9 +142,9 @@ target_compile_definitions(${PROJECT_NAME} PRIVATE ${EXTRA_DEFINES})
 set_target_properties(${PROJECT_NAME} PROPERTIES LINKER_LANGUAGE CXX)
 
 target_link_options(${PROJECT_NAME} PRIVATE
-  # Set from the outside for measurement builds. experiments/gl-usage passes
-  # -Wl,--wrap=vglGetProcAddress here, which is the only way to see what an app
-  # asks of vitaGL: Skia binds by name, so no link map can tell you.
+  # Set from the outside for measurement builds: experiments/gl-usage wrapped
+  # the GL proc lookup here to see what an app asks of GL, since Skia binds by
+  # name and no link map can tell you.
   ${EXTRA_LINK_OPTIONS}
 
   # vita-elf-create appends ~32 KB of SCE metadata after the first LOAD segment
@@ -171,41 +164,6 @@ target_link_options(${PROJECT_NAME} PRIVATE
   "-Wl,-u,pthread_cancel"
 )
 
-# Prefer a vitaGL built from source over the VitaSDK package.
-#
-# FLUTTER_VITA_VITAGL points at a checkout built with
-# `make HAVE_SHADER_CACHE=1 TEXTURES_SPEEDHACK=1`; patches/vitagl/README.md says
-# why. Without the cache, Ganesh recompiles every shader on every launch --
-# ADR-0014 measured 205 ms against ~3 ms once cached.
-#
-# vitaGL and the shader compiler under it, for the GL path (ADR-0014).
-#
-# Order matters: vitaGL calls into vitashark, vitashark into SceShaccCgExt,
-# and that into taiHEN's *ForUser* hooks, which patch SceShaccCg inside this
-# process and die with it. ADR-0011 declined kernel plugins and SceShell
-# modules, not this.
-#
-# Linked unconditionally, even for a software-path app: the branch is a
-# runtime one, and a binary that cannot take it is not a fallback.
-if(FLUTTER_VITA_GL STREQUAL "vitagl")
-  if(DEFINED ENV{FLUTTER_VITA_VITAGL} AND EXISTS "$ENV{FLUTTER_VITA_VITAGL}/libvitaGL.a")
-    message(STATUS "vitaGL: $ENV{FLUTTER_VITA_VITAGL} (built from source)")
-    set(VITAGL_LIB "$ENV{FLUTTER_VITA_VITAGL}/libvitaGL.a")
-  else()
-    message(WARNING "vitaGL: VitaSDK package -- no shader cache, every launch recompiles")
-    set(VITAGL_LIB vitaGL)
-  endif()
-  set(GL_LIBS
-    ${VITAGL_LIB}
-    vitashark
-    SceShaccCg_stub
-    SceShaccCgExt
-    taihen_stub
-    mathneon
-    # vitaGL's vgl_memcpy goes through the DMAC for anything large.
-    SceKernelDmacMgr_stub)
-endif()
-
 target_link_libraries(${PROJECT_NAME}
   # --whole-archive, and this is load-bearing rather than cautious. The engine
   # relies on static initialisers in translation units nothing references by
@@ -213,7 +171,7 @@ target_link_libraries(${PROJECT_NAME}
   # undefined reference, so a plain link succeeds and then fails at runtime.
   -Wl,--whole-archive "${ENGINE_LIB}" -Wl,--no-whole-archive
 
-  # The GL under Ganesh, chosen above.
+  # fvita_gles2 and what it needs: sceGxm and Sony's shader compiler.
   ${GL_LIBS}
 
   SceDisplay_stub SceCtrl_stub SceTouch_stub SceIofilemgr_stub

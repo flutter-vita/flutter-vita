@@ -41,7 +41,7 @@ enum Stresses {
   /// A runtime fragment shader -- ShaderMask, ink_sparkle, the overscroll
   /// stretch. Untested territory until 2026-09-01, because until then a whole
   /// class of Skia program would not compile at all
-  /// (patches/vitagl/0004).
+  /// (docs/results/shader-compile-failures-2026-09-01.md).
   shader,
 
   /// Relayout every frame. Distinct from `fill` because the cost is in the

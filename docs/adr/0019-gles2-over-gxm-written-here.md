@@ -1,6 +1,7 @@
 # ADR-0019: GLES2 over sceGxm, written here
 
-**Status:** Accepted
+**Status:** Accepted; the only GL in the tree since 2026-09-14, when vitaGL
+and vitashark left it (M5 in `docs/gles2-progress.md`)
 **Date:** 2026-09-12
 
 ## Context

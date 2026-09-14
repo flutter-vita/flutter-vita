@@ -84,7 +84,7 @@ final List<AnimatedScene> animatedScenes = <AnimatedScene>[
   //   row 3  Opacity(0.16) over an opaque fill     a different route
   //
   // If rows 1 and 2 come out opaque, the colour API is exonerated and the bug
-  // is in how a translucent solid fill reaches vitaGL. If row 3 is correct and
+  // is in how a translucent solid fill reaches the GL. If row 3 is correct and
   // the others are not, the layer path blends and the direct fill does not.
   AnimatedScene(
     name: 'alpha_probe',
@@ -634,8 +634,8 @@ final List<AnimatedScene> motionScenes = <AnimatedScene>[
   ),
   // A runtime fragment shader over the whole viewport. Worth having for the
   // first time now that Skia's programs actually compile
-  // (patches/vitagl/0004); before that this scene would have measured the
-  // fallback, silently.
+  // (docs/results/shader-compile-failures-2026-09-01.md); before that this
+  // scene would have measured the fallback, silently.
   AnimatedScene(
     name: 'shader_mask',
     stresses: Stresses.shader,

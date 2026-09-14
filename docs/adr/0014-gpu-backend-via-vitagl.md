@@ -1,7 +1,9 @@
 # ADR-0014: The raster pass is the bottleneck, so the GPU becomes the target
 
 **Status:** Accepted — direction settled by measurement; the gating experiment
-passed all four exit criteria on hardware on 2026-08-22
+passed all four exit criteria on hardware on 2026-08-22. The GPU stays the
+target; the vitaGL this ADR chose to reach it was replaced by `gles2/` on
+2026-09-14 ([ADR-0019](0019-gles2-over-gxm-written-here.md))
 **Date:** 2026-08-21
 
 ## Context

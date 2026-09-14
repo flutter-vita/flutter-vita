@@ -28,36 +28,16 @@ It is taken from the Flutter SDK at the pinned revision — the same sources thi
 project builds — so it describes the components actually linked. The only delta
 is this project's own patches, which are covered by [LICENSE](LICENSE).
 
-## vitaGL and vitaShaRK are LGPL, not BSD
+## Nothing LGPL, since 2026-09-14
 
-Everything above is BSD-3. Two components are not, and they are linked into
-every `eboot.bin` this toolchain produces, software-path apps included.
-
-| Component | Licence |
-|---|---|
-| [vitaGL](https://github.com/Rinnegatamante/vitaGL) | LGPL-3.0-or-later |
-| [vitaShaRK](https://github.com/Rinnegatamante/vitaShaRK) | LGPL-3.0-or-later |
-
-vitaGL gives us GLES2 over `sceGxm` and vitaShaRK compiles shaders through
-Sony's `libshacccg`. Both are Rinnegatamante's, both ship as static archives,
-and `templates/vita-app/CMakeLists.txt` links them unconditionally.
-
-Section 4 of LGPL-3 allows a combined work with a statically linked library on
-one further condition: whoever conveys the binary must also supply what a
-recipient needs to relink it against a modified version of that library. Object
-files and the link line satisfy that. So does a shared library mechanism, under
-section 4(d)(1), which is why the module route exists in
-[ADR-0018](docs/adr/0018-the-lgpl-obligation-in-every-vpk.md).
-
-**This applies to you if you ship a `.vpk` built with this toolchain.** It is
-not a duty this project can discharge on your behalf, because you are the one
-conveying the binary. Alongside `LICENSE.engine`, ship vitaGL's `COPYING` and
-`COPYING.LESSER`, the vitaGL and vitaShaRK sources at the revisions in
-[VERSIONS.md](VERSIONS.md), the patch series in [patches/vitagl/](patches/vitagl/),
-and your application's object files.
-
-ADR-0018 is measuring whether this stays true. Read it before you build a
-release pipeline around the paragraph above.
+Until that date every `eboot.bin` this toolchain produced linked vitaGL and
+vitaShaRK, both LGPL-3.0-or-later, and the paragraph that stood here told
+whoever shipped a `.vpk` what section 4 of the LGPL asked of them. ADR-0018
+found that obligation landing on every developer, ADR-0019 decided to write
+the GLES2 layer here instead, and `gles2/` is that layer: BSD-3, this
+project's own, over `sceGxm` and Sony's `libshacccg` on the console. No
+vitaGL, no vitaShaRK, no taiHEN in the link. The history is in the two ADRs
+and in git; nothing about it applies to a `.vpk` built from this tree.
 
 ## The two fonts, and what still has to be done about them
 
@@ -100,7 +80,6 @@ and does not reach them.
 | Series | Licence it inherits |
 |---|---|
 | `patches/dart-sdk/`, `patches/flutter-engine/`, `patches/skia/` | BSD-3-Clause |
-| `patches/vitagl/` | LGPL-3.0-or-later |
 | `patches/abseil/` | Apache-2.0 |
 | `patches/boringssl/` | see BoringSSL's own `LICENSE` |
 | `patches/test-apps/` | whatever each application uses; they are unrelated projects |
@@ -114,6 +93,7 @@ and does not reach them.
 | Roboto (`Roboto-Regular.ttf`) | SIL Open Font License 1.1 |
 | Roboto Mono (`RobotoMono-Regular.ttf`) | SIL Open Font License 1.1 |
 | VitaSDK headers and stub libraries | see the VitaSDK distribution; not redistributed here |
+| `gles2/` (fvita_gles2) | BSD-3-Clause, this project's ([LICENSE](LICENSE)) |
 
 This project vendors no third-party source. `third_party/` is checked out by
 tooling and is not committed; the exact revisions are pinned in

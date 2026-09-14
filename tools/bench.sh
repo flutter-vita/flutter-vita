@@ -231,14 +231,14 @@ run_one() {  # <sw|gl>
   # What the app asked for is not what it got if the binary predates the opt-in
   # switch, so the renderer in the results comes from shotinfo, which reports
   # what the display controller is scanning.
-  # Retried, because the first sample can be too early: on the GL path
-  # sceDisplayGetFrameBuf has nothing to report until vitaGL has presented once.
+  # Retried, because the first sample can be too early: sceDisplayGetFrameBuf
+  # has nothing to report until the layer has presented once.
   local actual=unknown backend=unknown info=""
   for _ in 1 2 3 4 5 6 7 8; do
     info="$(say "$DEV" shotinfo 8)"
-    # The GL side names its backend (ADR-0019): vitaGL or fvita_gles2.
+    # The GL side names its backend (ADR-0019); vitaGL was the other name
+    # until 2026-09-14.
     case "$info" in
-      *match=vitaGL*)      actual=gl; backend=vitaGL; break ;;
       *match=fvita_gles2*) actual=gl; backend=fvita_gles2; break ;;
       *match=yes*)         actual=sw; backend=software; break ;;
     esac
@@ -315,9 +315,10 @@ for m in $MODES; do run_one "$m"; done
 #
 # This used to be software unconditionally, because a hard crash under GL wedges
 # the console (ADR-0014). Two things changed on 2026-09-01: the reservation that
-# took GXM down is checked (patches/vitagl/0002) and the shader that would not
-# link now links (0004). The old default meanwhile left every app launched after
-# a bench run silently on the software path, including runs read as GL.
+# took GXM down became checked and the shader that would not link linked (both
+# in vitaGL then, docs/results/shader-compile-failures-2026-09-01.md). The old
+# default meanwhile left every app launched after a bench run silently on the
+# software path, including runs read as GL.
 #
 # So the resting state is GL, and --leave sw restores the old behaviour.
 put "$([ "$LEAVE" = sw ] && echo 1 || echo 0)" "ux0:data/flutter-vita/software.on"

@@ -23,12 +23,12 @@ ADR-0001 through ADR-0004 are back-filled from §1 of `Flutter Vita Plan.md`
 | [0011](0011-crash-recovery-without-taihen.md) | A crash returns to the receiver by exiting cleanly | Accepted — **amended 2026-08-21**: no kernel plugins or SceShell modules; in-process user hooks permitted |
 | [0012](0012-test-apps-as-measurement-instrument.md) | The test apps is an instrument, and its output is a diff | Accepted — five axes, one control, patch size is the score |
 | [0013](0013-ffi-needs-static-linking.md) | `dart:ffi` needs static linking, and that is the admission test | Accepted — decided one app in and one app out |
-| [0014](0014-gpu-backend-via-vitagl.md) | The raster pass is the bottleneck, so the GPU becomes the target | **Accepted** — raster is 97% of a frame; engine work gated on an experiment |
+| [0014](0014-gpu-backend-via-vitagl.md) | The raster pass is the bottleneck, so the GPU becomes the target | Accepted — raster is 97% of a frame; the GPU stays the target. The vitaGL under it was replaced by `gles2/` on 2026-09-14 (0019) |
 | [0015](0015-four-products-one-audience.md) | The toolchain is four products with one audience | Accepted — the product boundary ends at the `.vpk` |
 | [0016](0016-the-receiver-becomes-a-flutter-app.md) | The receiver becomes a Flutter app, and stops being invisible | Accepted — pinned engine, software rendering, C layer holds the port |
 | [0017](0017-the-gallery-becomes-the-benchmark.md) | The gallery becomes the benchmark, and a scene is the unit | Accepted — scripted scenes, a stall is 2+ frames at or below 30 fps, gated on a committed baseline |
-| [0018](0018-the-lgpl-obligation-in-every-vpk.md) | vitaGL is LGPL, and the obligation lands on every developer who ships | Accepted — our own GLES2 over sceGxm; no LGPL in the vpk, none required on the console |
-| [0019](0019-gles2-over-gxm-written-here.md) | GLES2 over sceGxm, written here | Accepted — 114 names, 59 real first, shaders via SceShaccCg, clean room, progress in `docs/gles2-progress.md` |
+| [0018](0018-the-lgpl-obligation-in-every-vpk.md) | vitaGL is LGPL, and the obligation lands on every developer who ships | Accepted — our own GLES2 over sceGxm; no LGPL in the vpk, none required on the console. Done 2026-09-14: vitaGL and vitashark are out of the tree |
+| [0019](0019-gles2-over-gxm-written-here.md) | GLES2 over sceGxm, written here | Accepted — 114 names, shaders via SceShaccCg, clean room. The only GL in the tree since 2026-09-14 (M5); progress in `docs/gles2-progress.md` |
 
 ## Open questions not yet decided
 

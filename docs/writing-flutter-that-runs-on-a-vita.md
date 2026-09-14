@@ -4,7 +4,7 @@ Everything here is measured on hardware by
 [the gallery's benchmark](../apps/gallery/lib/bench), on the GPU path, and
 every claim names the scene it came from so you can re-run it. See
 [ADR-0017](adr/0017-the-gallery-becomes-the-benchmark.md) for how the suite
-works and [ADR-0014](adr/0014-gpu-backend-via-vitagl.md) for the renderer.
+works and [ADR-0019](adr/0019-gles2-over-gxm-written-here.md) for the renderer.
 
 The frame budget is **16.67 ms**. The console is a 444 MHz Cortex-A9.
 
@@ -132,8 +132,10 @@ building.
 - **`list_churn`** — a scrolling `ListView` of `ListTile`s is the worst scene
   in the suite at ~127 ms. Three `Text` widgets per tile, tiles recycled
   constantly; section 1 explains it entirely.
-- **Text input** — the IME cannot composite over vitaGL, so an app that needs
-  a keyboard needs `software.on` for now (ADR-0014).
+- **Text input** — the inline keyboard (`SceIme`, libime) composites after
+  the frame is presented and asks nothing of the renderer; it ran under vitaGL
+  and the software path (ADR-0014). Nobody has driven it on `fvita_gles2` yet
+  (2026-09-14).
 
 ## 6. Ship the fonts your app needs
 

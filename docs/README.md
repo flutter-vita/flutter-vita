@@ -37,8 +37,10 @@ and the framework, drawing through the Vita's GPU. The receiver in
 `receiver/app/` is itself a Flutter application — tabs, lists, touch, a
 monospace log view — and it is what installs everything else.
 
-The renderer is Skia on GLES2 through vitaGL onto `sceGxm`
-([ADR-0014](adr/0014-gpu-backend-via-vitagl.md)). Route transitions hold 60 fps
+The renderer is Skia on GLES2 through `fvita_gles2`, this repository's own
+layer in `gles2/`, onto `sceGxm` ([ADR-0019](adr/0019-gles2-over-gxm-written-here.md);
+vitaGL carried it from 2026-08-22 to 2026-09-14,
+[ADR-0014](adr/0014-gpu-backend-via-vitagl.md)). Route transitions hold 60 fps
 at a median 16.67 ms. Where the GPU wins it wins by 6-18x over the software
 path, and there is no scene where software is faster.
 

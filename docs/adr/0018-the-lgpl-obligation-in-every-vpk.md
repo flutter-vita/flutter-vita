@@ -1,6 +1,6 @@
 # ADR-0018: vitaGL is LGPL, and the obligation lands on every developer who ships
 
-**Status:** Accepted 2026-09-12 — our own GLES2 over sceGxm; nothing LGPL in the vpk and nothing LGPL required on the console
+**Status:** Accepted 2026-09-12 — our own GLES2 over sceGxm; nothing LGPL in the vpk and nothing LGPL required on the console. Carried out 2026-09-14: vitaGL and vitashark are out of the tree (`docs/results/m5-vitagl-out-2026-09-14.md`)
 **Date:** 2026-09-09
 
 ## Context

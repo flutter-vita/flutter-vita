@@ -11,7 +11,7 @@ Flutter framework (Dart AOT)
         v
 Flutter engine + Skia
         v
-GLES2 -> vitaGL -> sceGxm
+GLES2 -> fvita_gles2 (gles2/, this repo) -> sceGxm
         v
 PowerVR SGX543MP4+
 ```
@@ -27,7 +27,7 @@ again in each frame is too slow.
 | Flutter version | 3.44.8. This version is fixed. |
 | Consoles | PS Vita 1000 and PS Vita 2000, with HENkaku |
 | Hot reload | No. This port uses AOT only. See [No hot reload](#no-hot-reload). |
-| Renderer | Skia on GLES2, through vitaGL. A software renderer is also available, but it is 6 to 18 times more slow. |
+| Renderer | Skia on GLES2, through `fvita_gles2`, this project's own GLES2 over `sceGxm` ([ADR-0019](docs/adr/0019-gles2-over-gxm-written-here.md)). A software renderer is also available, but it is 6 to 18 times more slow. |
 
 One person made this port. That is the wrong number of people, and this is why
 the repository is now open. There are sharp edges. We write them down. We do not
@@ -148,7 +148,7 @@ help.
 | `templates/vita-app/` | The C entry point, the crash supervisor, and the CMake files. Each application is built from these. |
 | `packages/` | Vita implementations of federated plugins |
 | `apps/` | `conformance` measures what operates. `gallery` shows how it looks. |
-| `patches/` | The Vita patch series for Dart, Skia, the engine, and vitaGL |
+| `patches/` | The Vita patch series for Dart, Skia, and the engine |
 | `tools/` | Build, install, measure, and examine crashes |
 | `docs/adr/` | Why each decision was made, and what would change it |
 
@@ -159,9 +159,11 @@ forces behind the decision, and what must change for it to be examined again.
 
 Start with these three:
 
-- [ADR-0003](docs/adr/0003-software-rendering-first.md) and
-  [ADR-0014](docs/adr/0014-gpu-backend-via-vitagl.md): why the renderer began in
-  software, and why it moved to the GPU.
+- [ADR-0003](docs/adr/0003-software-rendering-first.md),
+  [ADR-0014](docs/adr/0014-gpu-backend-via-vitagl.md) and
+  [ADR-0019](docs/adr/0019-gles2-over-gxm-written-here.md): why the renderer
+  began in software, why it moved to the GPU, and why the GLES2 under it is
+  written here.
 - [ADR-0016](docs/adr/0016-the-receiver-becomes-a-flutter-app.md): why the
   receiver is a Flutter application and not a small C program.
 - [ADR-0002](docs/adr/0002-skia-not-impeller.md): why Skia and not Impeller.

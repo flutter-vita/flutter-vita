@@ -1,9 +1,8 @@
 // The GL platform under Ganesh, provided by fvita_gles2 (ADR-0019).
 //
-// One of two answers to flutter_vita_gl.h; gl_vitagl.c is the other, and
-// FLUTTER_VITA_GL in CMakeLists.txt picks. fvgl.h is the whole of the
-// library's own API: everything else Skia reaches by name through
-// fvgl_get_proc_address.
+// The answer to flutter_vita_gl.h (gl_vitagl.c was the other until
+// 2026-09-14). fvgl.h is the whole of the library's own API: everything else
+// Skia reaches by name through fvgl_get_proc_address.
 #include <fvgl.h>
 #include <psp2/kernel/threadmgr.h>
 #include <stddef.h>
@@ -35,8 +34,8 @@ int flutter_vita_gl_init(int width, int height, void (*log)(const char*)) {
       .shacccg_path = NULL,  // ur0:data/libshacccg.suprx
       // Compiled programs, keyed by source, shared by every app on this
       // console that uses the layer: the same Skia shader is the same text
-      // whichever app asked for it. vitaGL kept its cache in
-      // ux0:data/shader_cache; this one sits beside it.
+      // whichever app asked for it. (vitaGL kept its cache in
+      // ux0:data/shader_cache; that directory is nobody's now.)
       .shader_cache_dir = "ux0:data/fvita_gles2/cache",
       .log = log_line,
   };
