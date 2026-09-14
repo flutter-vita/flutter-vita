@@ -394,7 +394,8 @@ class _HardwareTabState extends State<HardwareTab> {
     final sd = (r['stddev'] as num?)?.toDouble() ?? 0;
     return (
       sd > 5 ? CheckState.pass : CheckState.eye,
-      'frame ${r['frame']} ${w}x$h in ${r['took_ms']} ms, mean ${_n(r['mean'])} sd ${_n(sd)}'
+      'frame ${r['frame']} of ${r['frames'] ?? '?'} ${w}x$h in ${r['took_ms']} ms, '
+          'mean ${_n(r['mean'])} sd ${_n(sd)}'
           '${sd > 5 ? '' : ' (flat: covered, or dark)'}',
       r
     );

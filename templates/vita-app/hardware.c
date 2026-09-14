@@ -378,6 +378,24 @@ static int check_mic(char* out, size_t cap) {
 
 // ---- cameras ---------------------------------------------------------------
 
+// Mean and variance of the green channel over a 32x32 grid of samples: a
+// covered lens is under 5, a room is in the hundreds.
+static void camera_brightness(const void* frame, int w, int h, double* mean, double* var) {
+  const uint8_t* px = frame;
+  double sum = 0, sq = 0;
+  unsigned n = 0;
+  for (int y = 0; y < h; y += 8) {
+    for (int x = 0; x < w; x += 10) {
+      const double g = px[(y * w + x) * 4 + 1];
+      sum += g;
+      sq += g * g;
+      n++;
+    }
+  }
+  *mean = sum / n;
+  *var = sq / n - *mean * *mean;
+}
+
 // One 320x240 ABGR frame from a camera, written to a file the Dart side
 // decodes and shows. The reply carries a measure of the frame's variance, so
 // an all-black frame from a covered lens reads as such without a person.
@@ -423,39 +441,48 @@ static int check_camera(char* out, size_t cap, int which) {
     sceKernelFreeMemBlock(mb);
     return reply_err(out, cap, "sceCameraStart", r);
   }
-  // The first frames are exposure settling; the tenth is a picture.
+  // The sensor's exposure takes most of a second to settle from the black
+  // it starts at. Build 42 read ten times with mode 1 and had frame 4 after
+  // 78 ms: a read returns the frame there is, it does not wait for a new
+  // one, and frame 4 of a face-up console was black (mean 10 of 255). So
+  // this reads until thirty new frames have come or 1.5 s has passed, and
+  // logs the brightness along the way, so the settle shows in the log.
   SceCameraRead rd;
   const uint64_t t0 = sceKernelGetProcessTimeWide();
-  for (int i = 0; i < 10 && r >= 0; i++) {
+  uint64_t last_frame = 0;
+  unsigned new_frames = 0, reads = 0;
+  double mean = 0, var = 0;
+  while (r >= 0) {
     memset(&rd, 0, sizeof rd);
     rd.size = sizeof rd;
-    rd.mode = 1;  // wait for the next frame
+    rd.mode = 1;
     r = sceCameraRead(which, &rd);
-    if (i == 0 || r < 0) hw_log("camera %d: read %d -> 0x%08X frame %llu", which, i, (unsigned)r, (unsigned long long)rd.frame);
+    reads++;
+    if (reads == 1 || r < 0) hw_log("camera %d: read -> 0x%08X frame %llu", which, (unsigned)r, (unsigned long long)rd.frame);
+    if (r < 0) break;
+    const unsigned ms = (unsigned)((sceKernelGetProcessTimeWide() - t0) / 1000);
+    if (rd.frame != last_frame) {
+      last_frame = rd.frame;
+      new_frames++;
+      if (new_frames == 1 || new_frames == 5 || new_frames == 15 || new_frames == 30) {
+        camera_brightness(base, kW, kH, &mean, &var);
+        hw_log("camera %d: frame %llu at %u ms, mean %.1f sd %.1f", which, (unsigned long long)rd.frame, ms,
+               mean, sqrt(var < 0 ? 0 : var));
+      }
+      if (new_frames >= 30) break;
+    }
+    if (ms > 1500) break;
+    sceKernelDelayThread(4 * 1000);
   }
   const unsigned took_ms = (unsigned)((sceKernelGetProcessTimeWide() - t0) / 1000);
   sceCameraStop(which);
   sceCameraClose(which);
-  hw_log("camera %d: stopped after %u ms", which, took_ms);
+  hw_log("camera %d: stopped after %u ms, %u reads, %u new frames", which, took_ms, reads, new_frames);
   if (r < 0) {
     sceKernelFreeMemBlock(mb);
     return reply_err(out, cap, "sceCameraRead", r);
   }
-  // Variance of the green channel over a 32x32 grid of samples: a covered
-  // lens is under 5, a room is in the hundreds.
-  const uint8_t* px = base;
-  double sum = 0, sq = 0;
-  unsigned n = 0;
-  for (int y = 0; y < kH; y += 8) {
-    for (int x = 0; x < kW; x += 10) {
-      const double g = px[(y * kW + x) * 4 + 1];
-      sum += g;
-      sq += g * g;
-      n++;
-    }
-  }
-  const double mean = sum / n;
-  const double var = sq / n - mean * mean;
+  camera_brightness(base, kW, kH, &mean, &var);
   const SceUID fd = sceIoOpen(path, SCE_O_WRONLY | SCE_O_CREAT | SCE_O_TRUNC, 0777);
   int wrote = -1;
   if (fd >= 0) {
@@ -465,9 +492,9 @@ static int check_camera(char* out, size_t cap, int which) {
   sceKernelFreeMemBlock(mb);
   if (wrote != kBytes) return reply_err(out, cap, "write camera frame", wrote);
   return reply_ok(out, cap,
-                  "{\"path\":\"%s\",\"width\":%d,\"height\":%d,\"frame\":%llu,\"mean\":%.1f,\"stddev\":%.1f,"
-                  "\"took_ms\":%u}",
-                  path, kW, kH, (unsigned long long)rd.frame, mean, sqrt(var < 0 ? 0 : var), took_ms);
+                  "{\"path\":\"%s\",\"width\":%d,\"height\":%d,\"frame\":%llu,\"frames\":%u,\"mean\":%.1f,"
+                  "\"stddev\":%.1f,\"took_ms\":%u}",
+                  path, kW, kH, (unsigned long long)rd.frame, new_frames, mean, sqrt(var < 0 ? 0 : var), took_ms);
 }
 
 // ---- dispatch --------------------------------------------------------------

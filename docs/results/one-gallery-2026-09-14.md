@@ -133,10 +133,26 @@ group, launched by the deploy with `hardware.on` still armed:
 | front camera | eye | frame 4, 320x240 in 78 ms, mean 10.3 sd 1.7 (flat: covered, or dark) |
 | back camera | eye | frame 1, 320x240 in 24 ms, mean 8.5 sd 1.2 (flat: covered, or dark) |
 
-Seven pass, two by eye, none failed, none timed out. The cameras give
-frames in under 80 ms through the PHYCONT buffer; the frames were dark
-because the console lay face down on a desk. The six checks that need a
-person are not run by the deploy.
+Seven pass, two by eye, none failed, none timed out. The camera frames
+were black, and the console lay face up: the front camera had the
+ceiling in front of it. Build 42 took frame 4, 78 ms after
+`sceCameraStart`; a `sceCameraRead` with `mode 1` returns the frame there
+is and does not wait for a new one, and the sensor's exposure starts at
+black. Build 45 reads until thirty new frames have come, and logs the
+brightness on the way:
+
+```
+camera 0: frame 1 at 63 ms, mean 8.7 sd 1.5
+camera 0: frame 10 at 148 ms, mean 11.1 sd 2.6
+camera 0: frame 16 at 345 ms, mean 50.4 sd 24.0
+camera 0: frame 21 at 645 ms, mean 82.2 sd 39.6
+camera 0: stopped after 739 ms, 68 reads, 30 new frames
+camera 1: frame 30 at 969 ms, mean 52.6 sd 10.3
+```
+
+The front camera's frame shows the ceiling lamp, the back camera's the
+desk. Nine pass on build 45. The six checks that need a person are not
+run by the deploy.
 
 ## What the strip costs a scene
 
