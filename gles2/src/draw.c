@@ -289,6 +289,8 @@ static bool build_layout(FvglProgram* p, GLint first, unsigned vertex_count, Lay
   return true;
 }
 
+unsigned fvgl_vertex_variants, fvgl_fragment_variants, fvgl_variants_uncached;
+
 static SceGxmVertexProgram* vertex_variant(FvglProgram* p, const Layout* L) {
   for (int i = 0; i < p->vertex_variant_count; i++) {
     FvglVertexVariant* v = &p->vertex_variants[i];
@@ -312,7 +314,9 @@ static SceGxmVertexProgram* vertex_variant(FvglProgram* p, const Layout* L) {
     memcpy(v->key, L->key, (size_t)L->key_len);
     v->key_len = L->key_len;
     v->program = vp;
+    fvgl_vertex_variants++;
   } else {
+    fvgl_variants_uncached++;
     fvgl_log("program has more than %d vertex layouts; one is not cached", FVGL_MAX_VARIANTS);
   }
   return vp;
@@ -386,7 +390,9 @@ static SceGxmFragmentProgram* fragment_variant(FvglProgram* p) {
     p->fragment_variants[p->fragment_variant_count].key = key;
     p->fragment_variants[p->fragment_variant_count].program = fp;
     p->fragment_variant_count++;
+    fvgl_fragment_variants++;
   } else {
+    fvgl_variants_uncached++;
     fvgl_log("program has more than %d blend states; one is not cached", FVGL_MAX_VARIANTS);
   }
   return fp;

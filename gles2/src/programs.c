@@ -149,6 +149,8 @@ static void program_release_gxm(FvglProgram* p) {
     sceGxmShaderPatcherReleaseVertexProgram(fvgl.patcher, p->vertex_variants[i].program);
   for (int i = 0; i < p->fragment_variant_count; i++)
     sceGxmShaderPatcherReleaseFragmentProgram(fvgl.patcher, p->fragment_variants[i].program);
+  fvgl_vertex_variants -= (unsigned)p->vertex_variant_count;
+  fvgl_fragment_variants -= (unsigned)p->fragment_variant_count;
   p->vertex_variant_count = p->fragment_variant_count = 0;
   if (p->vid) sceGxmShaderPatcherUnregisterProgram(fvgl.patcher, p->vid);
   if (p->fid) sceGxmShaderPatcherUnregisterProgram(fvgl.patcher, p->fid);
@@ -276,9 +278,15 @@ static void add_uniforms(FvglProgram* p, const FvglShaderInfo* info, const SceGx
   }
 }
 
+// Where the raster thread's link time goes, cumulative: the whole of
+// glLinkProgram, and the part of it that reads programs back from the card.
+unsigned fvgl_us_link, fvgl_us_cache_read;
+
 GL_APICALL void GL_APIENTRY glLinkProgram(GLuint program) {
   FvglProgram* p = program_get(program, "glLinkProgram");
   if (!p) return;
+  const uint64_t t0 = fvgl_now_us();
+  const unsigned read0 = fvgl_us_cache_read;
   program_release_gxm(p);
   p->log[0] = 0;
   if (!p->vs || !p->fs) {
@@ -392,9 +400,11 @@ GL_APICALL void GL_APIENTRY glLinkProgram(GLuint program) {
 
   p->linked = true;
   p->uniforms_dirty = true;
-  fvgl_log("program %u linked: %d attributes, %d uniforms, %d varyings, vs %u B, fs %u B", program,
-           p->attribute_count, p->uniform_count, map.count, sceGxmProgramGetSize(p->vgxp),
-           sceGxmProgramGetSize(p->fgxp));
+  const unsigned took = (unsigned)(fvgl_now_us() - t0);
+  fvgl_us_link += took;
+  fvgl_log("program %u linked: %d attributes, %d uniforms, %d varyings, vs %u B, fs %u B, %u us (card %u us)",
+           program, p->attribute_count, p->uniform_count, map.count, sceGxmProgramGetSize(p->vgxp),
+           sceGxmProgramGetSize(p->fgxp), took, fvgl_us_cache_read - read0);
 }
 
 GL_APICALL void GL_APIENTRY glUseProgram(GLuint program) {

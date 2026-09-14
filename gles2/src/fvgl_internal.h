@@ -72,6 +72,9 @@ void fvgl_collect_garbage(bool everything);
 // context instead. Both are counted, because both are stalls.
 void fvgl_wait_for_frame(uint32_t frame);
 extern unsigned fvgl_stalls_previous_frame, fvgl_stalls_this_frame;
+extern unsigned fvgl_subdata_into_used_buffer;
+extern unsigned fvgl_vertex_variants, fvgl_fragment_variants, fvgl_variants_uncached;
+extern unsigned fvgl_us_link, fvgl_us_cache_read;
 
 // Per-frame scratch memory for client-side vertex arrays and converted
 // indices. Valid until the display buffer it belongs to comes round again.

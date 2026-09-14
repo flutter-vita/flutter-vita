@@ -47,9 +47,15 @@ void fvgl_stats(FvglStats* out) {
   out->stalls_this_frame = fvgl_stalls_this_frame;
   out->shader_cache_hits = fvgl_shader_cache_hits;
   out->shader_cache_misses = fvgl_shader_cache_misses;
+  out->subdata_into_used = fvgl_subdata_into_used_buffer;
+  out->vertex_variants = fvgl_vertex_variants;
+  out->fragment_variants = fvgl_fragment_variants;
+  out->variants_uncached = fvgl_variants_uncached;
   out->us_queue_wait = fvgl_us_queue_wait;
   out->us_garbage = fvgl_us_garbage;
   out->us_memblock = fvgl_us_memblock;
+  out->us_link = fvgl_us_link;
+  out->us_cache_read = fvgl_us_cache_read;
   {
     extern unsigned fvgl_us_gpu_latency, fvgl_us_gpu_latency_max, fvgl_frames_flipped;
     out->us_gpu_latency = fvgl_us_gpu_latency;

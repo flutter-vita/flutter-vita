@@ -51,8 +51,13 @@ static void cache_path(char* out, size_t cap, uint64_t key, bool fragment) {
 static SceGxmProgram* cache_read(uint64_t key, bool fragment) {
   char path[192];
   cache_path(path, sizeof path, key, fragment);
+  extern unsigned fvgl_us_cache_read;
+  const uint64_t t0 = fvgl_now_us();
   const SceUID fd = sceIoOpen(path, SCE_O_RDONLY, 0);
-  if (fd < 0) return NULL;
+  if (fd < 0) {
+    fvgl_us_cache_read += (unsigned)(fvgl_now_us() - t0);
+    return NULL;
+  }
   const SceOff size = sceIoLseek(fd, 0, SCE_SEEK_END);
   sceIoLseek(fd, 0, SCE_SEEK_SET);
   SceGxmProgram* program = NULL;
@@ -64,6 +69,7 @@ static SceGxmProgram* cache_read(uint64_t key, bool fragment) {
     }
   }
   sceIoClose(fd);
+  fvgl_us_cache_read += (unsigned)(fvgl_now_us() - t0);
   // A truncated or foreign file must not reach the patcher.
   if (program && (sceGxmProgramCheck(program) < 0 || sceGxmProgramGetSize(program) != (unsigned)size)) {
     free(program);

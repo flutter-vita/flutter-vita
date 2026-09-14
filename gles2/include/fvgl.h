@@ -54,10 +54,16 @@ typedef struct FvglStats {
   unsigned targets_live;                   // textures that have been drawn into
   unsigned stalls_previous_frame, stalls_this_frame;  // raster-thread waits for the GPU
   unsigned shader_cache_hits, shader_cache_misses;    // programs read from disk, programs compiled
+  unsigned subdata_into_used;  // glBufferSubData into a buffer a draw of the same frame read
+  // Patched programs alive: one vertex program per (GL program, vertex
+  // layout), one fragment program per (GL program, blend state); and how many
+  // draws made one that no table had room for, which is a leak until eviction exists.
+  unsigned vertex_variants, fragment_variants, variants_uncached;
   // Where the raster thread's time goes inside the layer, microseconds,
   // cumulative: the wait to queue a frame for scan-out, releasing GPU memory
   // the GPU is past, mapping and unmapping memblocks.
   unsigned us_queue_wait, us_garbage, us_memblock;
+  unsigned us_link, us_cache_read;  // glLinkProgram, and its reads of the on-card program cache
   // From queueing a frame to the display queue's thread taking it, which is
   // when the GPU has finished it: the sum, the largest, and how many frames.
   unsigned us_gpu_latency, us_gpu_latency_max, frames_flipped;
