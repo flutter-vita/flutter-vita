@@ -73,16 +73,16 @@ index 61abe64a..0beff971 100644
  
 diff --git a/engine/src/flutter/shell/platform/embedder/flutter_vita_gl.h b/engine/src/flutter/shell/platform/embedder/flutter_vita_gl.h
 new file mode 100644
-index 00000000..fe3c655e
+index 00000000..099556d8
 --- /dev/null
 +++ b/engine/src/flutter/shell/platform/embedder/flutter_vita_gl.h
-@@ -0,0 +1,43 @@
+@@ -0,0 +1,49 @@
 +// The GL platform under Ganesh, as the app provides it.
 +//
 +// The engine draws through a GLES2 it resolves by name. What owns the GXM
 +// context, the display chain and the swap is fvita_gles2, built from the
 +// repo's gles2/ into every app (ADR-0019; vitaGL was the other answer until
-+// 2026-09-14). The embedder calls these six and nothing else of it;
++// 2026-09-14). The embedder calls these seven and nothing else of it;
 +// templates/vita-app/gl_gles2.c answers.
 +#ifndef FLUTTER_SHELL_PLATFORM_EMBEDDER_FLUTTER_VITA_GL_H_
 +#define FLUTTER_SHELL_PLATFORM_EMBEDDER_FLUTTER_VITA_GL_H_
@@ -112,8 +112,14 @@ index 00000000..fe3c655e
 +// One line of the backend's own counters for the FRAMES line, or an empty
 +// string. fvita_gles2 reports what it holds of each memory, live textures and
 +// render targets, blocks waiting on the GPU, and how often a texture write or
-+// a copy had to wait for it. Under 190 characters.
++// a copy had to wait for it. Under 250 characters.
 +void flutter_vita_gl_stats(char* out, int cap);
++
++// GPU time so far, in microseconds: the sum over presented frames of the time
++// from queueing the frame to the display queue taking it, which is when the
++// GPU finished it. `frames` gets how many frames that covers. The vita/stats
++// channel turns two readings into "GPU busy" for a HUD.
++unsigned flutter_vita_gl_gpu_us(unsigned* frames);
 +
 +#ifdef __cplusplus
 +}
@@ -289,10 +295,10 @@ index 00000000..a5e0625d
 +}  // extern "C"
 diff --git a/engine/src/flutter/shell/platform/embedder/vita_embedder.cc b/engine/src/flutter/shell/platform/embedder/vita_embedder.cc
 new file mode 100644
-index 00000000..3af7254e
+index 00000000..1f967400
 --- /dev/null
 +++ b/engine/src/flutter/shell/platform/embedder/vita_embedder.cc
-@@ -0,0 +1,4373 @@
+@@ -0,0 +1,4549 @@
 +// Copyright (c) 2026, the Flutter Authors. All rights reserved.
 +// Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
@@ -368,6 +374,14 @@ index 00000000..3af7254e
 +#include "flutter/shell/platform/embedder/embedder.h"
 +#include "flutter/shell/platform/embedder/embedder_software_frame_damage.h"
 +#include "flutter/shell/platform/embedder/flutter_vita_gl.h"
++
++// The Hardware tab's checks, defined by templates/vita-app/hardware.c when the
++// app builds it. Takes the method name and the JSONMethodCodec body, writes a
++// JSONMethodCodec envelope (`[result]` or `[code, message, details]`) into
++// `out`, returns its length or -1.
++extern "C" int flutter_vita_hardware_call(const char* method, const char* body,
++                                          size_t body_len, char* out,
++                                          size_t cap) __attribute__((weak));
 +
 +// M1's on-device dev server, at spikes/m1-vpk/src/devserver.{c,h}, compiled
 +// into this binary by the m3 spike's CMakeLists.
@@ -1594,17 +1608,36 @@ index 00000000..3af7254e
 +// is exactly what happened before the arena was raised to 160 MB, and is the
 +// first thing to check when a run dies with the budget looking healthy.
 +//
-+// mallinfo walks the free list, so this is not free. Called once per HUD window
-+// and once per logged frame, never per frame.
-+unsigned HeapUsedMb() {
-+  const struct mallinfo mi = mallinfo();
-+  return static_cast<unsigned>(mi.uordblks / (1024 * 1024));
++// mallinfo walks every free chunk of the arena with the malloc lock held, and
++// every thread that allocates meanwhile waits for it: the UI thread building
++// a frame, the raster thread recording one. So it is sampled, at most once
++// every five seconds whoever asks, and its cost is kept next to the sample
++// so a run can say what it paid. Until 2026-09-14 it ran once a second from
++// the present line and, with the gallery's stats channel, once more from the
++// main thread; the gallery's run 34 had a 83..133 ms frame in nearly every
++// scene, on the second.
++struct HeapSample {
++  unsigned used_mb, arena_mb, cost_us;
++};
++
++HeapSample HeapNow() {
++  static std::mutex mutex;
++  static HeapSample sample;
++  static uint64_t taken_us = 0;
++  std::lock_guard<std::mutex> lock(mutex);
++  const uint64_t now = sceKernelGetSystemTimeWide();
++  if (taken_us == 0 || now - taken_us > 5 * 1000 * 1000) {
++    const struct mallinfo mi = mallinfo();
++    sample.cost_us = static_cast<unsigned>(sceKernelGetSystemTimeWide() - now);
++    sample.used_mb = static_cast<unsigned>(mi.uordblks / (1024 * 1024));
++    sample.arena_mb = static_cast<unsigned>(mi.arena / (1024 * 1024));
++    taken_us = now;
++  }
++  return sample;
 +}
 +
-+unsigned HeapArenaMb() {
-+  const struct mallinfo mi = mallinfo();
-+  return static_cast<unsigned>(mi.arena / (1024 * 1024));
-+}
++unsigned HeapUsedMb() { return HeapNow().used_mb; }
++unsigned HeapArenaMb() { return HeapNow().arena_mb; }
 +
 +void HudUpdate() {
 +  const unsigned active_us =
@@ -1845,11 +1878,13 @@ index 00000000..3af7254e
 +    SceKernelFreeMemorySizeInfo mem;
 +    mem.size = sizeof(mem);
 +    if (sceKernelGetFreeMemorySize(&mem) >= 0) {
++      const HeapSample heap = HeapNow();
 +      VLog("flutter-vita: present #%u row_bytes=%u height=%u "
-+           "heap=%uM/%uM free user=%dK cdram=%dK phycont=%dK\n",
++           "heap=%uM/%uM (mallinfo %u us) free user=%dK cdram=%dK "
++           "phycont=%dK\n",
 +           frames, static_cast<unsigned>(row_bytes),
-+           static_cast<unsigned>(height), HeapUsedMb(), HeapArenaMb(),
-+           mem.size_user / 1024, mem.size_cdram / 1024,
++           static_cast<unsigned>(height), heap.used_mb, heap.arena_mb,
++           heap.cost_us, mem.size_user / 1024, mem.size_cdram / 1024,
 +           mem.size_phycont / 1024);
 +    } else {
 +      VLog("flutter-vita: present #%u row_bytes=%u height=%u\n", frames,
@@ -3093,6 +3128,16 @@ index 00000000..3af7254e
 +  return n < cap ? n : cap - 1;
 +}
 +
++extern FlutterEngine g_engine;  // defined with the platform messages, below
++
++namespace {
++std::atomic<int> g_gl_teardown_done{0};
++void TeardownOnRasterThread(void*) {
++  flutter_vita_gl_shutdown();
++  g_gl_teardown_done.store(1, std::memory_order_release);
++}
++}  // namespace
++
 +extern "C" void flutter_vita_gpu_shutdown(void) {
 +  if (!g_gl_enabled) return;
 +  VLog("flutter-vita: releasing the GPU before exit\n");
@@ -3109,7 +3154,28 @@ index 00000000..3af7254e
 +  // Drain before terminate. Terminating with flips still queued is a
 +  // use-after-free of the buffers they name -- which is the same fault as the
 +  // one above, in the driver's own bookkeeping. The backend does both.
-+  flutter_vita_gl_shutdown();
++  //
++  // On the raster thread when it will take the task: that is the one thread
++  // that calls GL, and between frames it still does -- Skia frees what it
++  // has not used for a while -- so a teardown from any other thread races
++  // it. The gallery's build 29 (2026-09-14, 26 minutes in) died that way, a
++  // glDeleteTextures inside the layer's texture loop, a double free. A
++  // raster thread that does not get to the task in two seconds is stuck,
++  // and a stuck thread is not calling GL either: tear down from here then.
++  bool posted = false;
++  if (g_engine != nullptr) {
++    posted = FlutterEnginePostRenderThreadTask(g_engine, TeardownOnRasterThread,
++                                               nullptr) == kSuccess;
++  }
++  for (int i = 0; posted && i < 400 &&
++                  !g_gl_teardown_done.load(std::memory_order_acquire);
++       i++) {
++    sceKernelDelayThread(5 * 1000);
++  }
++  if (!g_gl_teardown_done.load(std::memory_order_acquire)) {
++    VLog("flutter-vita: raster thread did not take the teardown; from this thread\n");
++    flutter_vita_gl_shutdown();
++  }
 +  VLog("flutter-vita: GPU released\n");
 +}
 +
@@ -3977,10 +4043,126 @@ index 00000000..3af7254e
 +    preview[i] = (c >= 0x20 && c < 0x7F) ? c : '.';
 +  }
 +  preview[n] = '\0';
-+  VLog("flutter-vita: channel %s [%u] %s%s\n",
-+       message->channel != nullptr ? message->channel : "(null)",
-+       static_cast<unsigned>(message->message_size), preview,
-+       message->message_size > n ? "..." : "");
++  // The stats channel is polled once a second by any app with the HUD strip;
++  // a log line per poll would be most of the log.
++  const bool is_stats = message->channel != nullptr &&
++                        std::strcmp(message->channel, "vita/stats") == 0;
++  if (!is_stats) {
++    VLog("flutter-vita: channel %s [%u] %s%s\n",
++         message->channel != nullptr ? message->channel : "(null)",
++         static_cast<unsigned>(message->message_size), preview,
++         message->message_size > n ? "..." : "");
++  }
++
++  if (is_stats) {
++    // What the console is doing this second, for a HUD. JSONMethodCodec,
++    // method `read`, one object back. Frame times are not here: Dart has them
++    // from FrameTiming with less plumbing and the same clock. What only this
++    // side can see is the cores, the GPU, the battery and the memory.
++    //
++    // Each rate is over the interval since the previous read, so the first
++    // read after launch reports zeros for them.
++    static uint64_t last_us = 0;
++    static uint64_t last_idle[4] = {0, 0, 0, 0};
++    static unsigned last_gpu_us = 0, last_gpu_frames = 0;
++    const uint64_t now = sceKernelGetSystemTimeWide();
++    const uint64_t window = last_us != 0 ? now - last_us : 0;
++    unsigned idle_pct[4] = {0, 0, 0, 0};
++    SceKernelSystemInfo sys;
++    std::memset(&sys, 0, sizeof sys);
++    sys.size = sizeof sys;
++    if (sceKernelGetSystemInfo(&sys) >= 0) {
++      for (int c = 0; c < 4; c++) {
++        const uint64_t idle = sys.cpuInfo[c].idleClock;
++        if (window != 0 && idle >= last_idle[c]) {
++          const uint64_t d = idle - last_idle[c];
++          idle_pct[c] = static_cast<unsigned>(d * 100 / window);
++          if (idle_pct[c] > 100) idle_pct[c] = 100;
++        }
++        last_idle[c] = idle;
++      }
++    }
++    // GPU time is the layer's display-queue latency summed over the frames it
++    // flipped: from queueing a frame to the GPU finishing it. Over the wall
++    // interval that is "busy"; it passes 100% when frames queue behind each
++    // other, which is the point at which the GPU is the bottleneck.
++    unsigned gpu_pct = 0, gpu_us_per_frame = 0;
++    if (g_gl_enabled) {
++      unsigned frames = 0;
++      const unsigned gpu_us = flutter_vita_gl_gpu_us(&frames);
++      if (window != 0 && gpu_us >= last_gpu_us) {
++        const unsigned d = gpu_us - last_gpu_us;
++        gpu_pct = static_cast<unsigned>(static_cast<uint64_t>(d) * 100 / window);
++        const unsigned df = frames - last_gpu_frames;
++        if (df != 0) gpu_us_per_frame = d / df;
++      }
++      last_gpu_us = gpu_us;
++      last_gpu_frames = frames;
++    }
++    last_us = now;
++    SceKernelFreeMemorySizeInfo mem;
++    mem.size = sizeof(mem);
++    int mem_user_k = -1, mem_cdram_k = -1;
++    if (sceKernelGetFreeMemorySize(&mem) >= 0) {
++      mem_user_k = mem.size_user / 1024;
++      mem_cdram_k = mem.size_cdram / 1024;
++    }
++    // Battery: the only temperature user mode can read on this console. The
++    // SoC's needs the kernel (PSVshell reads it as a plugin), which this
++    // project does not do (ADR-0001), so the HUD labels this one "battery".
++    const int batt_c100 = scePowerGetBatteryTemp();
++    char reply[512];
++    const int rn = std::snprintf(
++        reply, sizeof reply,
++        "[{\"cpu_idle\":[%u,%u,%u,%u],\"gpu_pct\":%u,\"gpu_us\":%u,"
++        "\"batt_c\":%d.%02d,\"batt_pct\":%d,\"charging\":%s,"
++        "\"mem_user_k\":%d,\"mem_cdram_k\":%d,\"heap_mb\":%u,"
++        "\"arm_mhz\":%d,\"gpu_mhz\":%d,\"window_us\":%u}]",
++        idle_pct[0], idle_pct[1], idle_pct[2], idle_pct[3], gpu_pct,
++        gpu_us_per_frame, batt_c100 / 100, std::abs(batt_c100 % 100),
++        scePowerGetBatteryLifePercent(),
++        scePowerIsBatteryCharging() ? "true" : "false", mem_user_k,
++        mem_cdram_k, HeapUsedMb(), scePowerGetArmClockFrequency(),
++        scePowerGetGpuClockFrequency(), static_cast<unsigned>(window));
++    if (message->response_handle != nullptr && g_engine != nullptr && rn > 0) {
++      FlutterEngineSendPlatformMessageResponse(
++          g_engine, message->response_handle,
++          reinterpret_cast<const uint8_t*>(reply), static_cast<size_t>(rn));
++    }
++    return;
++  }
++
++  if (message->channel != nullptr &&
++      std::strcmp(message->channel, "vita/hardware") == 0) {
++    // Hardware checks for the gallery's Hardware tab: cameras, audio, motion,
++    // touch panels, buttons, storage. The code is the app's, in
++    // templates/vita-app/hardware.c, behind this weak hook, so a shipping app
++    // drops it the way it drops the bail-out. Without the hook every method
++    // answers with an error envelope and the tab says so.
++    const char* body = reinterpret_cast<const char*>(message->message);
++    const size_t len = message->message_size;
++    const char* m = JsonFindValue(body, len, "method");
++    char method[48] = {0};
++    if (m != nullptr) JsonUnescape(m, body + len, method, sizeof method);
++    static char reply[64 * 1024];
++    int rn = -1;
++    if (flutter_vita_hardware_call != nullptr) {
++      rn = flutter_vita_hardware_call(method, body, len, reply, sizeof reply);
++    }
++    if (rn < 0) {
++      rn = std::snprintf(reply, sizeof reply,
++                         "[\"unavailable\",\"%s: %s\",null]", method,
++                         flutter_vita_hardware_call == nullptr
++                             ? "hardware.c is not in this build"
++                             : "the check failed");
++    }
++    if (message->response_handle != nullptr && g_engine != nullptr && rn > 0) {
++      FlutterEngineSendPlatformMessageResponse(
++          g_engine, message->response_handle,
++          reinterpret_cast<const uint8_t*>(reply), static_cast<size_t>(rn));
++    }
++    return;
++  }
 +
 +  if (message->channel != nullptr &&
 +      std::strcmp(message->channel, "vita/browser") == 0) {
