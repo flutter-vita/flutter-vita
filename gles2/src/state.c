@@ -109,6 +109,11 @@ static int get_values(GLenum pname, float* v) {
     case GL_ALIASED_POINT_SIZE_RANGE: v[0] = 1; v[1] = 1; return 2;
     case GL_NUM_COMPRESSED_TEXTURE_FORMATS: v[0] = 0; return 1;
     case GL_NUM_SHADER_BINARY_FORMATS: v[0] = 0; return 1;
+    // GL_NUM_PROGRAM_BINARY_FORMATS_OES. Not advertised, and Skia asks anyway
+    // and trusts the count (GrGLCaps.cpp, fProgramBinarySupport); zero turns
+    // its program cache off, which is right, the compiled programs live in
+    // this layer's own cache on the card.
+    case 0x87FE: v[0] = 0; return 1;
     case GL_SUBPIXEL_BITS: v[0] = 4; return 1;
     case GL_SAMPLE_BUFFERS: v[0] = 0; return 1;
     case GL_SAMPLES: v[0] = 0; return 1;
@@ -190,4 +195,38 @@ GL_APICALL void GL_APIENTRY glGetBooleanv(GLenum pname, GLboolean* data) {
     return;
   }
   for (int i = 0; i < n; i++) data[i] = v[i] != 0;
+}
+
+// What a `precision` qualifier buys in a shader compiled here. Skia reads this
+// once for the fragment stage (GrGLCaps::initGLSL) to learn whether half and
+// float are the same width, and it steers what it writes in `half`.
+//
+// The truth today is that every qualifier is 32-bit float: the translator
+// spells lowp, mediump and highp as Cg `float`, so the ranges below are IEEE
+// single for all three. When mediump becomes Cg `half` (on the backlog), the
+// medium and low rows here change with it, or Skia will be told a lie.
+// Integers are 32-bit too; GLES asks for their precision as 0.
+GL_APICALL void GL_APIENTRY glGetShaderPrecisionFormat(GLenum shadertype, GLenum precisiontype, GLint* range,
+                                                        GLint* precision) {
+  if (shadertype != GL_VERTEX_SHADER && shadertype != GL_FRAGMENT_SHADER) {
+    fvgl_set_error(GL_INVALID_ENUM);
+    return;
+  }
+  switch (precisiontype) {
+    case GL_LOW_FLOAT:
+    case GL_MEDIUM_FLOAT:
+    case GL_HIGH_FLOAT:
+      if (range) { range[0] = 127; range[1] = 127; }
+      if (precision) *precision = 23;
+      return;
+    case GL_LOW_INT:
+    case GL_MEDIUM_INT:
+    case GL_HIGH_INT:
+      if (range) { range[0] = 31; range[1] = 30; }
+      if (precision) *precision = 0;
+      return;
+    default:
+      fvgl_set_error(GL_INVALID_ENUM);
+      return;
+  }
 }

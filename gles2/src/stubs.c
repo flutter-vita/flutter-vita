@@ -136,14 +136,6 @@ GL_APICALL void GL_APIENTRY glGetRenderbufferParameteriv(GLenum target, GLenum p
   FVGL_STUB(glGetRenderbufferParameteriv);
 }
 
-GL_APICALL void GL_APIENTRY glGetShaderPrecisionFormat(GLenum shadertype, GLenum precisiontype, GLint *range, GLint *precision) {
-  (void)shadertype;
-  (void)precisiontype;
-  (void)range;
-  (void)precision;
-  FVGL_STUB(glGetShaderPrecisionFormat);
-}
-
 GL_APICALL void GL_APIENTRY glGetUniformfv(GLuint program, GLint location, GLfloat *params) {
   (void)program;
   (void)location;
