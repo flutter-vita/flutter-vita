@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Build-to-running in one command, without touching the console.
 #
-#   ./tools/deploy.sh apps/conformance          build, then deploy
+#   ./tools/deploy.sh apps/gallery               build, then deploy
 #   ./tools/deploy.sh apps/gallery --no-build   deploy what is already built
 #   ./tools/deploy.sh --vpk path/to/app.vpk
 #   ./tools/deploy.sh --vpk x.vpk --receiver-port 1342

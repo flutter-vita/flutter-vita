@@ -21,6 +21,7 @@
 
 #include <malloc.h>
 #include <stdarg.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -99,29 +100,55 @@ static void record_memory(void) {
 extern void flutter_vita_gpu_shutdown(void) __attribute__((weak));
 extern void flutter_vita_log_flush(void) __attribute__((weak));
 
+// Which thread bailed, and from where. The gallery's build 30 left
+// "abort()" and a memory line and nothing else: no log tail, no shutdown
+// stages, and no way to tell the raster thread from the UI thread or a
+// Skia abort from a Dart one. The thread's name says which; the caller's
+// address, read against the .elf with tools/analyse-crash.sh, says whence.
+static void record_where(const void* caller) {
+  SceKernelThreadInfo info;
+  memset(&info, 0, sizeof info);
+  info.size = sizeof info;
+  const int r = sceKernelGetThreadInfo(sceKernelGetThreadId(), &info);
+  char msg[160];
+  snprintf(msg, sizeof msg, "  on thread %s, called from 0x%08X",
+           r >= 0 ? info.name : "(unknown)", (unsigned)(uintptr_t)caller);
+  record(msg);
+}
+
 void vita_bail_to_loader(const char* reason) {
+  vita_bail_to_loader_from(reason, __builtin_return_address(0));
+}
+
+void vita_bail_to_loader_from(const char* reason, const void* caller) {
   // Re-entry is a real possibility: the launch below can fail, and anything it
   // touches could abort again. A second pass would recurse until the stack ran
   // out, which is a worse ending than the one being avoided.
   static volatile int bailing = 0;
   if (__sync_lock_test_and_set(&bailing, 1)) {
+    record("  bailed again while bailing; exiting");
     sceKernelExitProcess(1);
   }
 
   record(reason != NULL ? reason : "(no reason given)");
   record_memory();
+  record_where(caller);
 
-  // 0xFFFFF rather than the documented 0x20000, matching what the receiver
-  // itself uses to launch the app; it is the value known to work on this
-  // console.
+  // Each step leaves a line before it starts, so a step that never returns
+  // names itself. 0xFFFFF rather than the documented 0x20000 for the
+  // launch, matching what the receiver itself uses to launch the app; it
+  // is the value known to work on this console.
   if (flutter_vita_gpu_shutdown != NULL) {
+    record("  releasing the GPU");
     flutter_vita_gpu_shutdown();
   }
   // The engine log's last lines are in a ring until its writer thread gets
   // to them, and after the exit below nobody does.
   if (flutter_vita_log_flush != NULL) {
+    record("  flushing the log");
     flutter_vita_log_flush();
   }
+  record("  launching the receiver");
 
   {
     char uri[48];
@@ -148,7 +175,7 @@ void vita_bail_to_loader(const char* reason) {
 // libc wins. Dart's OS::Abort() is `PrepareToAbort(); abort();`, so every FATAL,
 // UNREACHABLE and failed ASSERT in the VM arrives here.
 void abort(void) {
-  vita_bail_to_loader("abort()");
+  vita_bail_to_loader_from("abort()", __builtin_return_address(0));
   // abort is [[noreturn]] and sceKernelExitProcess is not marked as such in
   // the VitaSDK headers, so the compiler cannot see that this is unreachable.
   for (;;) {

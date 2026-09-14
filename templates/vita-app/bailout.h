@@ -11,6 +11,11 @@ extern "C" {
 // console for someone to dismiss by hand.
 void vita_bail_to_loader(const char* reason);
 
+// The same, naming the address to record as the caller. abort() passes its
+// own return address, so the record names the code that aborted rather than
+// abort itself.
+void vita_bail_to_loader_from(const char* reason, const void* caller);
+
 #ifdef __cplusplus
 }
 #endif

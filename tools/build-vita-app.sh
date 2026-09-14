@@ -20,6 +20,7 @@
 #
 #   vita:
 #     title_id: FVTA00003        # optional; derived from the package name
+#     hardware_checks: true      # optional; the gallery's Hardware tab (hardware.c)
 #     name: My App               # optional; defaults to the package name
 #
 # Title id resolution: --title-id, then pubspec vita.title_id, then a value
@@ -138,6 +139,11 @@ if grep -q '^vita:[[:space:]]*$' "$APP_DIR/pubspec.yaml"; then HAS_VITA_BLOCK=1;
 # Precedence: explicit flag, then the app's own pubspec, then a default.
 [ -n "$TITLE_ID" ]  || TITLE_ID="$(vita_key title_id)"
 [ -n "$APP_NAME" ]  || APP_NAME="$(vita_key name)"
+# `hardware_checks: true` compiles templates/vita-app/hardware.c and links the
+# camera, motion and audio stubs; the gallery's Hardware tab needs it and no
+# other app does.
+HARDWARE_CHECKS="OFF"
+[ "$(vita_key hardware_checks)" = "true" ] && HARDWARE_CHECKS="ON"
 
 # The package name and the display name are different things and only one of
 # them is safe in a path. `vita.name: Counter Demo` is correct as a LiveArea
@@ -330,6 +336,7 @@ cmake -S "${FLUTTER_VITA_TEMPLATE:-$ROOT/templates/vita-app}" -B "$OUT_DIR/cmake
   -DRELEASE="$RELEASE" \
   -DEXTRA_DEFINES="$EXTRA_DEFINES" \
   -DEXTRA_LINK_OPTIONS="$EXTRA_LINK_OPTIONS" \
+  -DHARDWARE_CHECKS="$HARDWARE_CHECKS" \
   -DGLES2_DIR="$ROOT/gles2" \
   -DTOOLS_DIR="$ROOT/tools" >/dev/null
 cmake --build "$OUT_DIR/cmake" -j"$(getconf _NPROCESSORS_ONLN 2>/dev/null || echo 4)"

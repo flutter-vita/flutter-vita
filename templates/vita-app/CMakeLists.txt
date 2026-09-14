@@ -85,6 +85,11 @@ set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=gnu++20 -Wall -O2 -g")
 # RELEASE=ON is that build: release.c is the five stubs plus that zero. Nothing
 # else here changes, so a release app is the same link with two files swapped
 # for one. `overlay off` on the dev server toggles the HUD at runtime.
+if(HARDWARE_CHECKS)
+  set(HARDWARE_SOURCES ${CMAKE_CURRENT_SOURCE_DIR}/hardware.c)
+  set(HARDWARE_LIBS SceCamera_stub SceMotion_stub SceAudio_stub SceAudioIn_stub SceAvPlayer_stub)
+endif()
+
 if(RELEASE)
   set(DEV_LOOP_SOURCES ${CMAKE_CURRENT_SOURCE_DIR}/release.c)
 else()
@@ -108,7 +113,7 @@ else()
 endif()
 
 # The GL under Ganesh: fvita_gles2, built from source into every app
-# (ADR-0019). The embedder calls the six functions of flutter_vita_gl.h and
+# (ADR-0019). The embedder calls the seven functions of flutter_vita_gl.h and
 # nothing else of it; gl_gles2.c answers. vitaGL sat here until 2026-09-14.
 set(GLES2_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../../gles2" CACHE PATH "fvita_gles2 source")
 add_subdirectory("${GLES2_DIR}" fvita_gles2)
@@ -129,6 +134,10 @@ add_executable(${PROJECT_NAME}
   # registers its own commands and port from a constructor, which is what lets
   # it be an ordinary app built from this template.
   ${EXTRA_SOURCES}
+  # The gallery's Hardware tab: cameras, microphone, motion, audio, behind the
+  # embedder's weak vita/hardware hook. Only when the app's pubspec asks
+  # (`hardware_checks: true`); see hardware.c.
+  ${HARDWARE_SOURCES}
 )
 target_include_directories(${PROJECT_NAME} PRIVATE ${ENGINE_DIR}/src ${ENGINE_DIR}/include)
 # For EXTRA_SOURCES to be configured from the outside -- the receiver builds
@@ -185,6 +194,7 @@ target_link_libraries(${PROJECT_NAME}
   # For the receiver's timestamps. The clock is whatever the console was last
   # set to, so nothing sorts by it, but it still shows two lines an hour apart.
   SceRtc_stub
+  ${HARDWARE_LIBS}
   pthread m
 )
 

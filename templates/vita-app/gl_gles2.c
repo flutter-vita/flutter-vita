@@ -44,13 +44,15 @@ int flutter_vita_gl_init(int width, int height, void (*log)(const char*)) {
 
 void flutter_vita_gl_swap(int dialog_open) {
   // A common dialog over the frame needs sceCommonDialogUpdate run against
-  // the back buffer before it is queued. Not done yet under this backend:
-  // the keyboard is invisible over GL content until it is, and the tracker
-  // (docs/gles2-progress.md) carries it.
+  // the back buffer before it is queued; the layer does that inside its
+  // swap while the flag is up. Until 2026-09-14 it did not, and the
+  // keyboard opened invisibly over GL content: the gallery's hardware tab
+  // saw "IME open" in the log and nothing on the panel.
   if (dialog_open && !g_dialog_said) {
-    log_line("flutter-vita: a common dialog is open; fvita_gles2 does not composite it yet");
+    log_line("flutter-vita: a common dialog is open; fvita_gles2 composites it");
     g_dialog_said = 1;
   }
+  fvgl_set_common_dialog(dialog_open);
   fvgl_swap();
 }
 
@@ -84,6 +86,15 @@ void flutter_vita_gl_shutdown(void) {
 
 const char* flutter_vita_gl_backend(void) { return "fvita_gles2"; }
 
+// The GPU's own time, not the display queue's latency: the layer's meter
+// thread reads the completion notification every millisecond.
+unsigned flutter_vita_gl_gpu_us(unsigned* frames) {
+  FvglStats s;
+  fvgl_stats(&s);
+  if (frames) *frames = s.frames_gpu_done;
+  return s.us_gpu_busy;
+}
+
 // What the layer holds and how often the raster thread waited for the GPU.
 // CDRAM is the number to watch: the first gallery bench on this layer
 // (2026-09-12) ran it down to nothing in the route_* scenes while Skia's own
@@ -93,11 +104,11 @@ void flutter_vita_gl_stats(char* out, int cap) {
   fvgl_stats(&s);
   snprintf(out, (size_t)cap,
            "gles2 cdram %u/%uK lpddr %u/%uK tex %u/%uK tgt %u gc %u fail %u fb %u st %u/%u sh %u/%u "
-           "sub %u var %u/%u/%u us q %u gc %u mb %u ln %u/%u gpu %u max %u n %u fr %u/%u",
+           "sub %u var %u/%u/%u us q %u gc %u mb %u ln %u/%u gpu %u max %u n %u busy %u/%u fr %u/%u",
            s.cdram_blocks, s.cdram_bytes >> 10, s.lpddr_blocks, s.lpddr_bytes >> 10, s.textures_live,
            s.textures_bytes >> 10, s.targets_live, s.garbage_pending, s.cdram_failures, s.lpddr_fallbacks,
            s.stalls_previous_frame, s.stalls_this_frame, s.shader_cache_hits, s.shader_cache_misses,
            s.subdata_into_used, s.vertex_variants, s.fragment_variants, s.variants_uncached, s.us_queue_wait,
            s.us_garbage, s.us_memblock, s.us_link, s.us_cache_read, s.us_gpu_latency, s.us_gpu_latency_max,
-           s.frames_flipped, s.frame, s.frame_done);
+           s.frames_flipped, s.us_gpu_busy, s.frames_gpu_done, s.frame, s.frame_done);
 }

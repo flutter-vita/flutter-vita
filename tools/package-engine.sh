@@ -138,7 +138,7 @@ echo "==> stripping debug info"
 arm-vita-eabi-strip --strip-debug "$STAGE/lib/libflutter_engine_vita.a"
 
 cp "$ENGINE_SRC/flutter/shell/platform/embedder/embedder.h" "$STAGE/include/"
-# The six functions the embedder wants from the GL the app links (ADR-0019).
+# The seven functions the embedder wants from the GL the app links (ADR-0019).
 # The template's gl_gles2.c implements them over fvita_gles2.
 cp "$ENGINE_SRC/flutter/shell/platform/embedder/flutter_vita_gl.h" "$STAGE/include/"
 
