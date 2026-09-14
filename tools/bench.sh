@@ -200,6 +200,11 @@ run_one() {  # <sw|gl>
   echo "==> $mode: arming"
   put "$swval" "ux0:data/flutter-vita/software.on"
   put "1"      "ux0:data/flutter-vita/bench.on"
+  # The gallery's strip of live numbers ticks twice a second through the
+  # scenes and its frame costs them stalls (run 35 against 36, 2026-09-14).
+  # Frozen for the host's runs, so their sums compare with the runs before
+  # the strip; a run from the console's own TESTS tab keeps it live.
+  put "1"      "ux0:data/flutter-vita/hud.off"
   # Always written, even when empty: the receiver can put a file and cannot
   # delete one, so a stale subset from the previous invocation would silently
   # restrict a run that asked for everything.
@@ -323,6 +328,7 @@ run_suite() {  # <conformance|hardware>
   echo "==> $suite: arming"
   put "0" "ux0:data/flutter-vita/bench.on"
   put "0" "ux0:data/flutter-vita/software.on"
+  put "0" "ux0:data/flutter-vita/hud.off"
   put "1" "ux0:data/flutter-vita/$suite.on"
   put "0" "ux0:data/flutter-vita/$suite-done"
   put "-" "ux0:data/flutter-vita/stall.txt"
@@ -398,6 +404,7 @@ fi
 # So the resting state is GL, and --leave sw restores the old behaviour.
 put "$([ "$LEAVE" = sw ] && echo 1 || echo 0)" "ux0:data/flutter-vita/software.on"
 put "0" "ux0:data/flutter-vita/bench.on"
+put "0" "ux0:data/flutter-vita/hud.off"
 
 echo
 python3 "$HERE/bench-report.py" \

@@ -1,4 +1,3 @@
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 import 'package:path_provider_vita/path_provider_vita.dart';
@@ -125,9 +124,6 @@ class _ShellState extends State<Shell> with TickerProviderStateMixin {
   /// The scene's name while one runs, for the strip.
   final ValueNotifier<String?> _scene = ValueNotifier<String?>(null);
 
-  /// "A scene owns the stage", for the strip's pause.
-  late final ValueListenable<bool> _stagePresent = _StagePresent(_stage);
-
   @override
   void dispose() {
     _stage.dispose();
@@ -146,7 +142,6 @@ class _ShellState extends State<Shell> with TickerProviderStateMixin {
               RepaintBoundary(
                 child: HudStrip(
                   frozen: _hudFrozen,
-                  paused: _stagePresent,
                   leading: ValueListenableBuilder<String?>(
                     valueListenable: _scene,
                     builder: (context, scene, _) => _StripTitle(
@@ -229,18 +224,6 @@ class _ShellState extends State<Shell> with TickerProviderStateMixin {
       };
 }
 
-/// `stage != null`, as a listenable of its own.
-class _StagePresent extends ValueListenable<bool> {
-  _StagePresent(this._stage);
-  final ValueListenable<Widget?> _stage;
-  @override
-  bool get value => _stage.value != null;
-  @override
-  void addListener(VoidCallback listener) => _stage.addListener(listener);
-  @override
-  void removeListener(VoidCallback listener) => _stage.removeListener(listener);
-}
-
 class _StripTitle extends StatelessWidget {
   const _StripTitle({required this.tab, required this.scene});
   final String tab;
@@ -253,15 +236,17 @@ class _StripTitle extends StatelessWidget {
           children: [
             const FlutterLogo(size: 16),
             const SizedBox(width: 8),
-            Text(
-              scene == null ? 'GALLERY  ·  $tab' : '$tab  ·  $scene',
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: const TextStyle(
-                fontSize: 12,
-                letterSpacing: 1.4,
-                fontWeight: FontWeight.w700,
-                color: Color(0xFFE6EAF2),
+            Flexible(
+              child: Text(
+                scene == null ? tab : '$tab  ·  $scene',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  fontSize: 12,
+                  letterSpacing: 1.4,
+                  fontWeight: FontWeight.w700,
+                  color: Color(0xFFE6EAF2),
+                ),
               ),
             ),
           ],

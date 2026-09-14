@@ -285,7 +285,7 @@ class _HardwareTabState extends State<HardwareTab> {
                 mag > 0.6 && mag < 1.6; // about one g, in any orientation
             return (
               ok ? CheckState.pass : CheckState.fail,
-              'accel ${a.map((v) => _n(v, 2)).join(' ')} (|a| ${_n(mag, 2)} g²) gyro ${g.map((v) => _n(v, 2)).join(' ')}',
+              'accel ${a.map((v) => _n(v, 2)).join(' ')} (|a| ${_n(mag, 2)} g) gyro ${g.map((v) => _n(v, 2)).join(' ')}',
               r
             );
           },
