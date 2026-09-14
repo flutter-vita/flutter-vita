@@ -1,25 +1,37 @@
 # Apps
 
-## `conformance/` — committed
-
-What this port can actually do, measured on hardware rather than assumed. It
-runs one probe per capability and renders the results on the panel.
-
-**The screen is the reporting channel on purpose.** Files, sockets and `print`
-are all things being tested here, so reporting through any of them would be
-circular. Rendering and the dev server's `shot` are what M3 already proved.
-
-Probes are ordered safest-first, so that a native crash — which takes the app
-down and loses the screen with it — still tells you something: everything
-visible passed, and the first missing row is the one that killed it.
-
 ## `gallery/` — committed
 
-What this port *looks like*, judged by eye. Split from `conformance/` because
-the two produce a verdict differently: conformance computes a boolean about
-itself and reports 45/45 with no human involved, which is what makes it
-runnable on every deploy. A widget either looks right or it does not, and no
-app can assess that about itself.
+Everything this port is measured with, on one panel, five tabs:
+
+- **Panel**: what the port *looks like*, judged by eye. A widget either looks
+  right or it does not, and no app can assess that about itself.
+- **Scenes**: the benchmark of [ADR-0017](../docs/adr/0017-the-gallery-becomes-the-benchmark.md),
+  36 scenes, driven by `tools/bench.sh`.
+- **Conformance**: what this port can actually do, one probe per capability
+  (78 of them), measured on hardware rather than assumed. Its own app until
+  2026-09-14. Probes are ordered safest-first, so that a native crash still
+  tells you something: everything above the first missing row passed. The
+  journal `ux0:data/flutter-vita/conformance.txt` survives the process; the
+  resume file skips the probe that killed the last attempt.
+- **Hardware**: does each piece of the console answer, and with what. Cameras,
+  microphone, speaker (a tone, then an mp3 through the console's own player),
+  motion sensors, both touch panels, buttons and sticks, battery, storage,
+  Wi-Fi, HTTP over TLS, the clock, the keyboard. The C side is
+  `templates/vita-app/hardware.c`, compiled in because this app's pubspec says
+  `hardware_checks: true`. Checks a person has to judge (a picture, a sound)
+  end in the `EYE` state.
+- **Results**: the last run of each suite, read back from the card.
+
+Above every tab a strip shows what the console is doing this second: frames
+per second and UI/raster time from the framework's own `FrameTiming`; the four
+cores, GPU busy, the battery's temperature and charge, free memory from the
+embedder over `vita/stats`. The strip is not drawn while a Scene runs.
+
+Three switches on the card start an unattended run and the run writes a
+result file and a done marker the host waits for: `bench.on`
+(`bench-result.json`, `bench-done`), `conformance.on`, `hardware.on`.
+`tools/bench.sh --suite scenes|conformance|hardware|all` writes them.
 
 ## `test-apps/` — checkouts gitignored, manifest committed
 

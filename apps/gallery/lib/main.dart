@@ -1,38 +1,67 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+
+import 'package:path_provider_vita/path_provider_vita.dart';
+import 'package:shared_preferences_vita/shared_preferences_vita.dart';
 
 import 'bench/bench_page.dart';
 import 'bench/runner.dart';
+import 'conformance/conformance_tab.dart';
+import 'hardware/hardware_tab.dart';
+import 'hud.dart';
+import 'panel_page.dart';
+import 'results_tab.dart';
 
-/// What this port looks like, judged by eye.
+/// Everything this port is measured with, on one panel.
 ///
-/// Separate from the conformance suite because of how each produces a verdict.
-/// Conformance computes a boolean about itself, which is what makes it runnable
-/// on every deploy. A widget either looks right or it does not, and no app can
-/// assess that about itself.
+/// Five tabs on a rail down the left, the shape the receiver has. Panel is
+/// what the port looks like, judged by eye. Scenes is the benchmark of
+/// ADR-0017. Conformance is the probe suite that was its own app until
+/// 2026-09-14. Hardware asks each piece of the console to answer. Results
+/// reads the three result files back. Above all of them, the whole width,
+/// a strip with what the console is doing this second (hud.dart); it stays
+/// while a scene runs.
 ///
-/// Folding them together would cost the conformance run its automation.
+/// Three switches on the card start an unattended run on one tab and the run
+/// writes a result file and a done marker: bench.on, conformance.on,
+/// hardware.on. tools/bench.sh writes them.
 void main() {
   // A positive control for the engine's log_message_callback. Dart print had
-  // no destination on this port until 2026-08-24 -- it went to a stdout the
-  // device does not own -- so the conformance app writes its results to a file
-  // by hand. If this line does not appear in m3.log, that is still true and
-  // nothing else in the log about Dart can be trusted to be complete.
+  // no destination on this port until 2026-08-24; if this line does not appear
+  // in the log, nothing else in it about Dart is complete.
   print('gallery: dart print reaches the engine log');
   FlutterError.onError = (details) {
     print('gallery: FlutterError ${details.exceptionAsString()}');
     FlutterError.presentError(details);
   };
-  // Started by the host rather than by a person: tools/bench.sh writes
-  // bench.on and relaunches, and the app goes straight to the benchmark and
-  // runs it unattended. A person opening the gallery normally never sees this
-  // branch. ADR-0017.
-  runApp(GalleryApp(autoBench: switchOn(kSwitchPath)));
+  // The two non-endorsed vita implementations the conformance probes use. A
+  // non-endorsed implementation is not found automatically, so the app
+  // registers it: the two lines ADR-0009 asks an app author for.
+  PathProviderVita.registerWith();
+  SharedPreferencesVita.registerWith();
+
+  final autoBench = switchOn(kSwitchPath);
+  final autoConformance = !autoBench && switchOn(kConformanceSwitchPath);
+  final autoHardware =
+      !autoBench && !autoConformance && switchOn(kHardwareSwitchPath);
+  runApp(GalleryApp(
+    autoBench: autoBench,
+    autoConformance: autoConformance,
+    autoHardware: autoHardware,
+  ));
 }
 
 class GalleryApp extends StatelessWidget {
-  const GalleryApp({super.key, this.autoBench = false});
+  const GalleryApp({
+    super.key,
+    this.autoBench = false,
+    this.autoConformance = false,
+    this.autoHardware = false,
+  });
 
   final bool autoBench;
+  final bool autoConformance;
+  final bool autoHardware;
 
   @override
   Widget build(BuildContext context) => MaterialApp(
@@ -42,204 +71,271 @@ class GalleryApp extends StatelessWidget {
           colorSchemeSeed: const Color(0xFF4C8DFF),
           scaffoldBackgroundColor: const Color(0xFF10131A),
         ),
-        home: autoBench ? const BenchPage(autoRun: true) : const Gallery(),
+        home: Shell(
+          initialTab: autoBench
+              ? 1
+              : autoConformance
+                  ? 2
+                  : autoHardware
+                      ? 3
+                      : 0,
+          autoBench: autoBench,
+          autoConformance: autoConformance,
+          autoHardware: autoHardware,
+        ),
       );
 }
 
-class Gallery extends StatefulWidget {
-  const Gallery({super.key});
+class Shell extends StatefulWidget {
+  const Shell({
+    super.key,
+    required this.initialTab,
+    required this.autoBench,
+    required this.autoConformance,
+    required this.autoHardware,
+  });
+
+  final int initialTab;
+  final bool autoBench;
+  final bool autoConformance;
+  final bool autoHardware;
+
   @override
-  State<Gallery> createState() => _GalleryState();
+  State<Shell> createState() => _ShellState();
 }
 
-class _GalleryState extends State<Gallery> {
-  final _single = TextEditingController(text: 'tap to edit');
-  final _multi = TextEditingController();
-  final _obscured = TextEditingController();
-  var _checked = true;
-  var _slider = 0.4;
-  var _choice = 0;
-  var _taps = 0;
+const _tabNames = ['PANEL', 'SCENES', 'CONFORMANCE', 'HARDWARE', 'RESULTS'];
 
-  @override
-  void initState() {
-    super.initState();
-    // The readback line below is the point of this column -- it shows what the
-    // *controllers* hold, which is what proves the IME result reached the
-    // framework rather than being painted into the field by the dialog. A
-    // TextField repaints itself when its controller changes; the summary is a
-    // sibling and does not, so without these it reported the value from before
-    // the edit and looked like the round trip had failed.
-    for (final c in [_single, _multi, _obscured]) {
-      c.addListener(() => setState(() {}));
-    }
-  }
+class _ShellState extends State<Shell> with TickerProviderStateMixin {
+  late int _tab = widget.initialTab;
+
+  /// hud.off on the card: a strip that does nothing, for measuring what the
+  /// live one costs. Read once; the switch is the host's.
+  static final bool _hudFrozen = switchOn('$kDataDir/hud.off');
+
+  /// The benchmark scene being measured, or null. While one is mounted it
+  /// takes the content area: the rail goes, the strip stays. The tabs stay
+  /// in the tree behind it (Offstage, so they cost no layout and no paint):
+  /// the Scenes tab owns the run, and a State that is unmounted mid-run
+  /// cannot make the next AnimationController. Build 30 did that, and every
+  /// animated scene threw "Null check operator used on a null value" from
+  /// State.context.
+  final ValueNotifier<Widget?> _stage = ValueNotifier<Widget?>(null);
+
+  /// The scene's name while one runs, for the strip.
+  final ValueNotifier<String?> _scene = ValueNotifier<String?>(null);
+
+  /// "A scene owns the stage", for the strip's pause.
+  late final ValueListenable<bool> _stagePresent = _StagePresent(_stage);
 
   @override
   void dispose() {
-    _single.dispose();
-    _multi.dispose();
-    _obscured.dispose();
+    _stage.dispose();
+    _scene.dispose();
     super.dispose();
   }
 
   @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      body: SafeArea(
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Padding(
-              padding: const EdgeInsets.fromLTRB(12, 8, 12, 4),
-              child: Row(
-                children: [
-                  const Expanded(
-                    child: Text('flutter-vita gallery',
-                        style: TextStyle(
-                            fontSize: 15, fontWeight: FontWeight.bold)),
-                  ),
-                  // The gallery's stated job is "what this port looks like,
-                  // judged by eye"; this is the other half, added by ADR-0017,
-                  // and it produces numbers instead of impressions.
-                  TextButton(
-                    onPressed: () => Navigator.of(context).push(
-                      MaterialPageRoute<void>(
-                          builder: (_) => const BenchPage()),
+  Widget build(BuildContext context) => Scaffold(
+        body: SafeArea(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              // Its own layer: the strip repaints once a second and a scene
+              // underneath must not be repainted with it.
+              RepaintBoundary(
+                child: HudStrip(
+                  frozen: _hudFrozen,
+                  paused: _stagePresent,
+                  leading: ValueListenableBuilder<String?>(
+                    valueListenable: _scene,
+                    builder: (context, scene, _) => _StripTitle(
+                      tab: _tabNames[_tab],
+                      scene: scene,
                     ),
-                    child: const Text('benchmark'),
                   ),
-                ],
+                ),
               ),
+              const Divider(height: 1, color: Color(0xFF262B36)),
+              Expanded(
+                // A Navigator of its own, so a route a scene pushes lands
+                // here, under the strip, rather than over the whole screen.
+                child: Navigator(
+                  onGenerateRoute: (_) => MaterialPageRoute<void>(
+                    builder: (_) => ValueListenableBuilder<Widget?>(
+                      valueListenable: _stage,
+                      builder: (context, stage, tabs) => Stack(
+                        fit: StackFit.expand,
+                        children: [
+                          Offstage(offstage: stage != null, child: tabs),
+                          if (stage != null)
+                            // Material, not Scaffold. ListTile and
+                            // CircleAvatar reach for Material.of(context)!,
+                            // which in release is a null check on nothing
+                            // and takes the run down once per frame. A bare
+                            // Material is one background rect; a Scaffold
+                            // would add furniture the scene would then be
+                            // measured painting.
+                            Material(
+                              color: Theme.of(context).scaffoldBackgroundColor,
+                              child: stage,
+                            ),
+                        ],
+                      ),
+                      child: _tabs(),
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+
+  Widget _tabs() => Row(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          _Rail(current: _tab, onPick: (i) => setState(() => _tab = i)),
+          const VerticalDivider(width: 1, color: Color(0xFF262B36)),
+          Expanded(
+            // Every tab stays built: a run on one keeps going while another
+            // is looked at, and a result stays on its tab. IndexedStack keeps
+            // the hidden tabs' animations going too (Visibility.maintain),
+            // which is the panel's spinner drawing 60 frames a second behind
+            // whatever is shown; TickerMode stops that. The Scenes run is
+            // not affected: its controller ticks on this State's provider.
+            child: IndexedStack(
+              index: _tab,
+              children: [
+                for (var i = 0; i < _tabNames.length; i++)
+                  TickerMode(enabled: i == _tab, child: _tabBody(i)),
+              ],
             ),
-            const Divider(height: 1),
-            Expanded(
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  // Two columns, because 960x544 is wide and short: a single
-                  // scrolling column would put half of this below the fold on
-                  // a panel with no scrollbar and no keyboard to page with.
-                  Expanded(child: _textColumn()),
-                  const VerticalDivider(width: 1),
-                  Expanded(child: _widgetColumn()),
-                ],
+          ),
+        ],
+      );
+
+  Widget _tabBody(int i) => switch (i) {
+        0 => const PanelTab(),
+        1 => BenchPage(
+            stage: _stage,
+            scene: _scene,
+            vsync: this,
+            autoRun: widget.autoBench,
+          ),
+        2 => ConformanceTab(autoRun: widget.autoConformance),
+        3 => HardwareTab(autoRun: widget.autoHardware),
+        _ => const ResultsTab(),
+      };
+}
+
+/// `stage != null`, as a listenable of its own.
+class _StagePresent extends ValueListenable<bool> {
+  _StagePresent(this._stage);
+  final ValueListenable<Widget?> _stage;
+  @override
+  bool get value => _stage.value != null;
+  @override
+  void addListener(VoidCallback listener) => _stage.addListener(listener);
+  @override
+  void removeListener(VoidCallback listener) => _stage.removeListener(listener);
+}
+
+class _StripTitle extends StatelessWidget {
+  const _StripTitle({required this.tab, required this.scene});
+  final String tab;
+  final String? scene;
+
+  @override
+  Widget build(BuildContext context) => Padding(
+        padding: const EdgeInsets.only(left: 10),
+        child: Row(
+          children: [
+            const FlutterLogo(size: 16),
+            const SizedBox(width: 8),
+            Text(
+              scene == null ? 'GALLERY  ·  $tab' : '$tab  ·  $scene',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                fontSize: 12,
+                letterSpacing: 1.4,
+                fontWeight: FontWeight.w700,
+                color: Color(0xFFE6EAF2),
               ),
             ),
           ],
         ),
+      );
+}
+
+/// The tabs, down the left. The receiver's shape: a landscape panel has
+/// width to spare and no height to spare, and a 44 px row is a target a
+/// thumb hits without aiming.
+class _Rail extends StatelessWidget {
+  const _Rail({required this.current, required this.onPick});
+  final int current;
+  final ValueChanged<int> onPick;
+
+  @override
+  Widget build(BuildContext context) => Container(
+        width: 150,
+        color: const Color(0xFF161A23),
+        padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 8),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            for (var i = 0; i < _tabNames.length; i++)
+              _RailItem(
+                label: _tabNames[i],
+                selected: i == current,
+                onTap: () => onPick(i),
+              ),
+          ],
+        ),
+      );
+}
+
+class _RailItem extends StatelessWidget {
+  const _RailItem({
+    required this.label,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final String label;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    const accent = Color(0xFF4C8DFF);
+    final colour = selected ? accent : const Color(0xFF9AA4B8);
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: onTap,
+      child: Container(
+        height: 44,
+        margin: const EdgeInsets.only(bottom: 6),
+        padding: const EdgeInsets.symmetric(horizontal: 12),
+        alignment: Alignment.centerLeft,
+        decoration: BoxDecoration(
+          color: selected ? accent.withValues(alpha: 0.16) : null,
+          borderRadius: BorderRadius.circular(8),
+        ),
+        child: Text(
+          label,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: TextStyle(
+            fontSize: 12,
+            height: 1.0,
+            letterSpacing: 1.4,
+            fontWeight: FontWeight.w700,
+            color: colour,
+          ),
+        ),
       ),
     );
   }
-
-  /// Everything that needs the IME. This is the half that Phase 8 is about:
-  /// tapping any of these should raise the system keyboard and the typed text
-  /// should come back into the field.
-  Widget _textColumn() => ListView(
-        padding: const EdgeInsets.all(12),
-        children: [
-          const Text('text input', style: TextStyle(fontWeight: FontWeight.bold)),
-          const SizedBox(height: 8),
-          TextField(
-            controller: _single,
-            decoration: const InputDecoration(
-              labelText: 'single line',
-              border: OutlineInputBorder(),
-              isDense: true,
-            ),
-          ),
-          const SizedBox(height: 10),
-          TextField(
-            controller: _multi,
-            maxLines: 3,
-            decoration: const InputDecoration(
-              labelText: 'multiline',
-              hintText: 'several lines',
-              border: OutlineInputBorder(),
-              isDense: true,
-            ),
-          ),
-          const SizedBox(height: 10),
-          TextField(
-            controller: _obscured,
-            obscureText: true,
-            decoration: const InputDecoration(
-              labelText: 'obscured',
-              border: OutlineInputBorder(),
-              isDense: true,
-            ),
-          ),
-          const SizedBox(height: 10),
-          // Reads back what the controllers hold, so a screenshot alone shows
-          // whether the IME result actually reached the framework rather than
-          // just being painted into the field by the dialog.
-          Text(
-            'single: "${_single.text}"\n'
-            'multi: ${_multi.text.split('\n').length} line(s)\n'
-            'obscured: ${_obscured.text.length} char(s)',
-            style: const TextStyle(
-                fontSize: 11, fontFamily: 'monospace', color: Color(0xFF8B94A7)),
-          ),
-        ],
-      );
-
-  /// Everything that does not. Proves the render path across the widget
-  /// families an ordinary app is built from — and it is deliberately touch
-  /// operable, because touch is the only input this port has until ADR-0010's
-  /// layer 1 lands.
-  Widget _widgetColumn() => ListView(
-        padding: const EdgeInsets.all(12),
-        children: [
-          const Text('widgets', style: TextStyle(fontWeight: FontWeight.bold)),
-          const SizedBox(height: 4),
-          Row(
-            children: [
-              FilledButton(
-                onPressed: () => setState(() => _taps++),
-                child: const Text('tap'),
-              ),
-              const SizedBox(width: 8),
-              OutlinedButton(
-                onPressed: () => setState(() => _taps = 0),
-                child: const Text('reset'),
-              ),
-              const SizedBox(width: 10),
-              Text('$_taps', style: const TextStyle(fontFamily: 'monospace')),
-            ],
-          ),
-          SwitchListTile(
-            dense: true,
-            contentPadding: EdgeInsets.zero,
-            title: const Text('switch'),
-            value: _checked,
-            onChanged: (v) => setState(() => _checked = v),
-          ),
-          Slider(
-            value: _slider,
-            onChanged: (v) => setState(() => _slider = v),
-          ),
-          SegmentedButton<int>(
-            segments: const [
-              ButtonSegment(value: 0, label: Text('one')),
-              ButtonSegment(value: 1, label: Text('two')),
-            ],
-            selected: {_choice},
-            onSelectionChanged: (s) => setState(() => _choice = s.first),
-          ),
-          const SizedBox(height: 8),
-          const LinearProgressIndicator(value: 0.6),
-          const SizedBox(height: 10),
-          Row(
-            children: const [
-              Icon(Icons.videogame_asset, size: 20),
-              SizedBox(width: 8),
-              Icon(Icons.wifi, size: 20),
-              SizedBox(width: 8),
-              Icon(Icons.folder, size: 20),
-              SizedBox(width: 8),
-              CircularProgressIndicator(strokeWidth: 2),
-            ],
-          ),
-        ],
-      );
 }

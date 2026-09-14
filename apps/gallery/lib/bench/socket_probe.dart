@@ -78,7 +78,8 @@ Future<SocketProbe> _run(int reps) async {
   final server = await ServerSocket.bind(InternetAddress.loopbackIPv4, 0);
   print('bench: socket 2 bound port ${server.port}');
   final acceptedFuture = server.first;
-  final client = await Socket.connect(InternetAddress.loopbackIPv4, server.port);
+  final client =
+      await Socket.connect(InternetAddress.loopbackIPv4, server.port);
   print('bench: socket 3 connected');
   final accepted = await acceptedFuture;
   print('bench: socket 4 accepted');

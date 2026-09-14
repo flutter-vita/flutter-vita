@@ -148,8 +148,7 @@ class SceneStats {
         'build_max_ms': _r(buildMaxMs),
         'raster_ms': _r(rasterMs),
         'worst_frames': worstFrames.map((f) => f.toJson()).toList(),
-        'heaviest_builds':
-            heaviestBuilds.map((f) => f.toJson()).toList(),
+        'heaviest_builds': heaviestBuilds.map((f) => f.toJson()).toList(),
       };
 
   static double _r(double v) => (v * 100).roundToDouble() / 100;
@@ -230,8 +229,7 @@ class FrameRecorder {
     final periods = <double>[];
     final samples = <FrameSample>[];
     for (var i = 1; i < window.length; i++) {
-      final prev =
-          window[i - 1].timestampInMicroseconds(FramePhase.vsyncStart);
+      final prev = window[i - 1].timestampInMicroseconds(FramePhase.vsyncStart);
       final next = window[i].timestampInMicroseconds(FramePhase.vsyncStart);
       final ms = (next - prev) / 1000.0;
       if (ms <= 0 || ms >= 5000) continue;
@@ -260,8 +258,7 @@ class FrameRecorder {
       // interesting question is usually "are the slow frames in the same
       // place" and that needs more than one of them.
       final t = window[i];
-      double at(FramePhase phase) =>
-          t.timestampInMicroseconds(phase) / 1000.0;
+      double at(FramePhase phase) => t.timestampInMicroseconds(phase) / 1000.0;
       samples.add(FrameSample(
         index: i,
         periodMs: ms,

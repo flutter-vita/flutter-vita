@@ -9,6 +9,9 @@
 #   ./tools/bench.sh --scenes a,b,c        run only these scenes
 #   ./tools/bench.sh --stuck-after 150     seconds on one scene before it is stuck
 #   ./tools/bench.sh --host IP --receiver-port N
+#   ./tools/bench.sh --suite conformance   the probe suite, unattended, out/bench/conformance.json
+#   ./tools/bench.sh --suite hardware      the hardware checks, out/bench/hardware.json
+#   ./tools/bench.sh --suite all           scenes, then conformance, then hardware
 #
 # A scene that does not end is handled, not waited on. The app itself relaunches
 # when its UI thread stops answering for 30 s (the embedder's watchdog, which
@@ -69,9 +72,14 @@ RELAUNCH=0
 # Seconds on one scene before the host declares it stuck. The longest scene is
 # under a minute on the GPU; software runs are slower and can raise this.
 STUCK_AFTER=150
+# Which of the gallery's suites: scenes (the benchmark, the default),
+# conformance, hardware, or all three in that order. Each is started by its
+# own switch on the card and ends with its own done marker (apps/README.md).
+SUITE="scenes"
 
 while [ $# -gt 0 ]; do
   case "$1" in
+    --suite)       SUITE="$2"; shift 2 ;;
     --host)        HOST="$2"; shift 2 ;;
     --receiver-port) LDR="$2"; shift 2 ;;
     --only)        ONLY="$2"; shift 2 ;;
@@ -307,9 +315,76 @@ run_one() {  # <sw|gl>
   echo "    $OUT_DIR/$mode.json"
 }
 
+# The conformance and hardware suites: arm the switch, relaunch (or deploy),
+# wait for the done marker, pull the result. No renderer flip, no baseline;
+# their verdicts are pass counts, printed here and kept as JSON.
+run_suite() {  # <conformance|hardware>
+  local suite="$1"
+  echo "==> $suite: arming"
+  put "0" "ux0:data/flutter-vita/bench.on"
+  put "0" "ux0:data/flutter-vita/software.on"
+  put "1" "ux0:data/flutter-vita/$suite.on"
+  put "0" "ux0:data/flutter-vita/$suite-done"
+  put "-" "ux0:data/flutter-vita/stall.txt"
+  if [ "$RELAUNCH" -eq 1 ] && say "$DEV" ping 4 | grep -q pong; then
+    echo "==> $suite: relaunching the installed build"
+    say "$DEV" relaunch 10 >/dev/null || true
+  elif say "$DEV" ping 4 | grep -q pong; then
+    echo "==> $suite: relaunching the installed build (deployed for the scenes)"
+    say "$DEV" relaunch 10 >/dev/null || true
+  else
+    echo "==> $suite: deploying"
+    VITA_HOST="$HOST" "$HERE/deploy.sh" --vpk "$APP_VPK" --receiver-port "$LDR" \
+      >"$OUT_DIR/$suite-deploy.log" 2>&1 || true
+  fi
+  echo "==> $suite: running"
+  local started done=0 i
+  started=$(date +%s)
+  for i in $(seq 1 300); do
+    if say "$DEV" "get ux0:data/flutter-vita/$suite-done" 2 | grep -q '^1'; then
+      done=1; break
+    fi
+    # Once every 20 s, so the wait reads as progress rather than silence.
+    [ $((i % 10)) -eq 0 ] && echo "    $(date +%H:%M:%S) $suite running, $(( $(date +%s) - started )) s"
+    sleep 2
+  done
+  put "0" "ux0:data/flutter-vita/$suite.on"
+  [ "$done" -eq 1 ] || { echo "!! $suite: the run never finished" >&2; return 1; }
+  say "$DEV" "get ux0:data/flutter-vita/$suite-result.json" 30 > "$OUT_DIR/$suite.json"
+  python3 - "$OUT_DIR/$suite.json" "$suite" <<'PY' || return 1
+import json, sys
+d = json.load(open(sys.argv[1]))
+suite = sys.argv[2]
+print(f"    {sys.argv[1]}  ({d.get('engine', 'no engine stamp')})")
+if suite == "conformance":
+    print(f"    {d['pass']} pass  {d['fail']} fail  {d['skip']} skip")
+    for p in d["probes"]:
+        if p["outcome"] == "fail":
+            print(f"      FAIL {p['group']}/{p['name']}  {p['detail']}")
+else:
+    print(f"    {d['pass']} pass  {d['fail']} fail  {d['eye']} by eye  {d['off']} off")
+    for c in d["checks"]:
+        if c["state"] != "pass":
+            print(f"      {c['state'].upper():4s} {c['title']}: {c['detail']}")
+PY
+}
+
+case "$SUITE" in
+  scenes|all) ;;
+  conformance|hardware)
+    run_suite "$SUITE"
+    exit $? ;;
+  *) echo "unknown suite: $SUITE (scenes, conformance, hardware, all)" >&2; exit 2 ;;
+esac
+
 MODES="sw gl"
 [ -n "$ONLY" ] && MODES="$ONLY"
 for m in $MODES; do run_one "$m"; done
+if [ "$SUITE" = all ]; then
+  RELAUNCH=1
+  run_suite conformance || true
+  run_suite hardware || true
+fi
 
 # What renderer the console is left on.
 #

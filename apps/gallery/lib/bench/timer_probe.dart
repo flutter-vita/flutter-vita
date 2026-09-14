@@ -52,8 +52,8 @@ class TimerProbe {
 
   Map<String, Object> toJson() => {
         'label': label,
-        'actual_ms': actualMs.map(
-            (k, v) => MapEntry('$k', (v * 10).roundToDouble() / 10)),
+        'actual_ms': actualMs
+            .map((k, v) => MapEntry('$k', (v * 10).roundToDouble() / 10)),
         if (framePeriodMs != null)
           'frame_period_ms': (framePeriodMs! * 10).roundToDouble() / 10,
       };

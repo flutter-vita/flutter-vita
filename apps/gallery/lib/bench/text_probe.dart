@@ -258,8 +258,7 @@ void _full(TextStyle style, String text) {
     ..pushStyle(style.getTextStyle(textScaler: TextScaler.noScaling))
     ..addText(text)
     ..pop();
-  final p = b.build()
-    ..layout(const ui.ParagraphConstraints(width: _kWidth));
+  final p = b.build()..layout(const ui.ParagraphConstraints(width: _kWidth));
   p.dispose();
 }
 
@@ -305,12 +304,12 @@ void _block(String? kind, String text) {
       b.pushStyle(ui.TextStyle(fontFamily: 'Roboto', fontSize: 12));
       break;
     case 'diff':
-      b.pushStyle(ui.TextStyle(fontFamily: 'Roboto', fontSize: 12, height: 1.43));
+      b.pushStyle(
+          ui.TextStyle(fontFamily: 'Roboto', fontSize: 12, height: 1.43));
       break;
   }
   b.addText(text);
-  final p = b.build()
-    ..layout(const ui.ParagraphConstraints(width: _kWidth));
+  final p = b.build()..layout(const ui.ParagraphConstraints(width: _kWidth));
   p.dispose();
 }
 

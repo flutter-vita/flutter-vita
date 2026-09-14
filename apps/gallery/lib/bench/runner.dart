@@ -26,6 +26,15 @@ const String kDonePath = '$kDataDir/bench-done';
 const String kSwitchPath = '$kDataDir/bench.on';
 const String kSoftwareSwitchPath = '$kDataDir/software.on';
 
+/// The other two suites of this app, same shape: a '1' starts an unattended
+/// run on that tab, the run writes `<suite>-result.json` and `<suite>-done`.
+const String kConformanceSwitchPath = '$kDataDir/conformance.on';
+const String kHardwareSwitchPath = '$kDataDir/hardware.on';
+const String kConformanceResultPath = '$kDataDir/conformance-result.json';
+const String kConformanceDonePath = '$kDataDir/conformance-done';
+const String kHardwareResultPath = '$kDataDir/hardware-result.json';
+const String kHardwareDonePath = '$kDataDir/hardware-done';
+
 /// Where suites write results now that more than one app has them.
 ///
 /// bench-result.json stays as well: the host tools read it, and a suite that
@@ -284,7 +293,8 @@ class BenchRunner {
   }
 
   Future<void> runAnimated(AnimatedScene scene) async {
-    final controller = AnimationController(vsync: vsync, duration: scene.duration);
+    final controller =
+        AnimationController(vsync: vsync, duration: scene.duration);
     // Mounted and given one frame to settle before measurement starts, so the
     // scene's first build -- widget creation, image decode, text layout that
     // will be cached -- is not charged to the animation.
@@ -317,8 +327,39 @@ class BenchRunner {
     await SchedulerBinding.instance.endOfFrame;
   }
 
-  Future<void> runRoute(RouteScene scene, BuildContext context) async {
-    final navigator = Navigator.of(context, rootNavigator: true);
+  /// The route scenes' own Navigator, mounted on the stage for the length
+  /// of the route section.
+  ///
+  /// Not the app's. A push rebuilds the route underneath (everything that
+  /// depends on ModalRoute.of, and in the combined app that was the rail and
+  /// five tabs) and snapshots it for the Zoom transition; with the app's
+  /// Navigator that put 15 ms of build and a 133 ms first frame on every
+  /// push in run 34 that run 30 did not have. Here the route underneath is
+  /// one empty Material and the Hero the route_hero scene flies from.
+  final GlobalKey<NavigatorState> _routeHost = GlobalKey<NavigatorState>();
+
+  Widget _routeHostWidget() => Navigator(
+        key: _routeHost,
+        onGenerateRoute: (_) => MaterialPageRoute<void>(
+          builder: (context) => Material(
+            color: Theme.of(context).scaffoldBackgroundColor,
+            // The source the route_hero scene flies from. Without a Hero of
+            // the same tag under the route there is nothing to animate
+            // between, and the scene silently measures a plain push.
+            child: const Align(
+              alignment: Alignment.topLeft,
+              child: Hero(
+                tag: 'bench-hero',
+                child: SizedBox(width: 1, height: 1),
+              ),
+            ),
+          ),
+        ),
+      );
+
+  Future<void> runRoute(RouteScene scene) async {
+    final navigator = _routeHost.currentState!;
+    final context = _routeHost.currentContext!;
 
     // Never await Navigator.push. Its Future completes when the route is
     // *popped*, so awaiting it before the matching pop is a deadlock that looks
@@ -392,7 +433,8 @@ class BenchRunner {
     await SchedulerBinding.instance.endOfFrame;
   }
 
-  Future<void> runAll(BuildContext context, {void Function(String)? onProgress}) async {
+  Future<void> runAll(BuildContext context,
+      {void Function(String)? onProgress}) async {
     recorder.attach();
     _resume();
     final only = onlyScenes();
@@ -435,7 +477,8 @@ class BenchRunner {
         } catch (e, st) {
           print('bench: scene ${scene.name} threw: $e');
           print('$st');
-          results.add(SceneResult.failed(scene.name, scene.stresses.label, '$e'));
+          results
+              .add(SceneResult.failed(scene.name, scene.stresses.label, '$e'));
           setStage(null);
         }
         _savePartial();
@@ -451,44 +494,52 @@ class BenchRunner {
         } catch (e, st) {
           print('bench: scene ${scene.name} threw: $e');
           print('$st');
-          results.add(SceneResult.failed(scene.name, scene.stresses.label, '$e'));
+          results
+              .add(SceneResult.failed(scene.name, scene.stresses.label, '$e'));
           setStage(null);
         }
         _savePartial();
       }
-      for (final scene in [...routeScenes, ...transitionScenes, ...modalScenes]) {
-        if (!wanted(scene.name)) continue;
+      final routeSection = [...routeScenes, ...transitionScenes, ...modalScenes]
+          .where((s) => wanted(s.name))
+          .toList();
+      if (routeSection.isNotEmpty) {
+        setStage(_routeHostWidget());
+        await SchedulerBinding.instance.endOfFrame;
+        await SchedulerBinding.instance.endOfFrame;
+      }
+      for (final scene in routeSection) {
         onProgress?.call(scene.name);
         print('bench: scene ${scene.name}');
         _noteScene(scene.name);
         await _quiet();
-        if (!context.mounted) break;
+        if (_routeHost.currentState == null) break;
         try {
-          await runRoute(scene, context);
+          await runRoute(scene);
         } catch (e, st) {
           print('bench: scene ${scene.name} threw: $e');
           print('$st');
-          results.add(SceneResult.failed(scene.name, scene.stresses.label, '$e'));
+          results
+              .add(SceneResult.failed(scene.name, scene.stresses.label, '$e'));
           // A modal that threw mid-push can leave its route on the stack, and
           // the next scene would then measure a transition on top of it.
-          final nav = Navigator.of(context, rootNavigator: true);
-          while (nav.canPop()) {
+          final nav = _routeHost.currentState;
+          while (nav != null && nav.canPop()) {
             nav.pop();
           }
         }
         _savePartial();
       }
+      if (routeSection.isNotEmpty) {
+        setStage(null);
+        await SchedulerBinding.instance.endOfFrame;
+      }
     } finally {
       recorder.detach();
-      // Whatever went wrong, come back to the root. A run that ends on a
-      // pushed page leaves the console looking hung and the next run starting
-      // from somewhere it does not expect.
-      if (context.mounted) {
-        final nav = Navigator.of(context, rootNavigator: true);
-        while (nav.canPop()) {
-          nav.pop();
-        }
-      }
+      // Whatever went wrong, clear the stage. A run that ends on a pushed
+      // page leaves the console looking hung and the next run starting from
+      // somewhere it does not expect; the route host goes with the stage.
+      setStage(null);
     }
   }
 
@@ -552,16 +603,19 @@ class BenchRunner {
     }
   }
 
-  /// Write via a .part file and a rename, the only atomic operation here.
-  ///
-  /// A reader that catches a half-written result must not be able to parse it
-  /// as a short one: the receiver would show a run that lost most of its scenes
-  /// as a run that measured three.
-  void _writeAtomic(String path, String text) {
-    final tmp = File('$path.part');
-    tmp.writeAsStringSync(text, flush: true);
-    final target = File(path);
-    if (target.existsSync()) target.deleteSync();
-    tmp.renameSync(path);
-  }
+  void _writeAtomic(String path, String text) => writeAtomic(path, text);
+}
+
+/// Write via a .part file and a rename, the only atomic operation here.
+///
+/// A reader that catches a half-written result must not be able to parse it
+/// as a short one: the receiver would show a run that lost most of its scenes
+/// as a run that measured three. Shared with the conformance and hardware
+/// suites since they moved into this app.
+void writeAtomic(String path, String text) {
+  final tmp = File('$path.part');
+  tmp.writeAsStringSync(text, flush: true);
+  final target = File(path);
+  if (target.existsSync()) target.deleteSync();
+  tmp.renameSync(path);
 }

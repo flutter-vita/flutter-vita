@@ -263,8 +263,7 @@ Widget _wrapped({bool text = true}) {
             color: HSVColor.fromAHSV(1, h * 360, 0.55, 0.75).toColor(),
             child: text
                 ? Center(
-                    child: Text('$i',
-                        style: const TextStyle(fontSize: 12)),
+                    child: Text('$i', style: const TextStyle(fontSize: 12)),
                   )
                 : null,
           );
@@ -420,7 +419,8 @@ class _TxRoute<T> extends PageRoute<T> {
   @override
   Duration get transitionDuration => transitions.transitionDuration;
   @override
-  Duration get reverseTransitionDuration => transitions.reverseTransitionDuration;
+  Duration get reverseTransitionDuration =>
+      transitions.reverseTransitionDuration;
   @override
   Color? get barrierColor => null;
   @override
@@ -560,7 +560,8 @@ final List<RouteScene> modalScenes = <RouteScene>[
       content: const Text('a scrim over the whole screen, and a scaled fade'),
       actions: [TextButton(onPressed: () {}, child: const Text('ok'))],
     ),
-    route: (context, page) => DialogRoute<void>(context: context, builder: page),
+    route: (context, page) =>
+        DialogRoute<void>(context: context, builder: page),
   ),
   RouteScene(
     name: 'modal_sheet',
@@ -773,8 +774,8 @@ final List<DrivenScene> drivenScenes = <DrivenScene>[
     drive: () async {
       const id = 7;
       const at = Offset(300, 200);
-      GestureBinding.instance
-          .handlePointerEvent(const PointerDownEvent(pointer: id, position: at));
+      GestureBinding.instance.handlePointerEvent(
+          const PointerDownEvent(pointer: id, position: at));
       await _settle(60);
       GestureBinding.instance
           .handlePointerEvent(const PointerUpEvent(pointer: id, position: at));
@@ -800,8 +801,8 @@ class _AlphaProbe extends StatelessWidget {
             SizedBox(
               width: 150,
               child: Text(label,
-                  style: const TextStyle(
-                      fontSize: 12, color: Color(0xFFE6EDF5))),
+                  style:
+                      const TextStyle(fontSize: 12, color: Color(0xFFE6EDF5))),
             ),
             SizedBox(width: 220, height: 34, child: swatch),
           ],
