@@ -42,6 +42,17 @@ void fvgl_note_lpddr_fallback(void) { g_live.lpddr_fallbacks++; }
 unsigned fvgl_us_queue_wait, fvgl_us_garbage, fvgl_us_memblock;
 
 void fvgl_stats(FvglStats* out) {
+  // Readers come from other threads than the one tearing the layer down:
+  // the app's stats channel runs on its main thread once a second, and on
+  // 2026-09-14 (the gallery's build 38, a relaunch) it read the frame_done
+  // notification region after sceGxmTerminate had unmapped it, a data abort
+  // in the teardown. While the layer is down a reader gets the last full
+  // snapshot; `up` goes false 20 ms before anything is freed.
+  static FvglStats last;
+  if (!fvgl.up) {
+    *out = last;
+    return;
+  }
   *out = g_live;
   out->stalls_previous_frame = fvgl_stalls_previous_frame;
   out->stalls_this_frame = fvgl_stalls_this_frame;
@@ -69,6 +80,7 @@ void fvgl_stats(FvglStats* out) {
   out->frame = fvgl.frame;
   out->frame_done = fvgl_gpu_completed_frame();
   fvgl_texture_stats(out);
+  last = *out;
 }
 
 void* fvgl_mem_alloc(FvglMemKind kind, size_t size, SceUID* uid_out) {

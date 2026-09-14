@@ -634,6 +634,9 @@ void fvgl_shutdown(void) {
   fvgl_mem_free(fvgl.vdm_uid);
   free(fvgl.host_mem);
   shutdown_stage("terminate");
+  // The notification region goes with sceGxmTerminate; nothing after this
+  // point may read it, and fvgl_gpu_completed_frame answers 0 without it.
+  fvgl.frame_done = NULL;
   sceGxmTerminate();
   shutdown_stage("down");
   memset(&fvgl, 0, sizeof fvgl);
