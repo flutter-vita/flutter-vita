@@ -128,6 +128,10 @@ add_executable(${PROJECT_NAME}
   ${DEV_LOOP_SOURCES}
   ${GL_PLATFORM_SOURCE}
   ${CMAKE_CURRENT_SOURCE_DIR}/heap.c
+  # pthread_cond_* on the kernel's LwCond, in every build: an object file
+  # defining them means the SDK's polling ones are never pulled from
+  # libpthread. See its header.
+  ${CMAKE_CURRENT_SOURCE_DIR}/pthread_cond.c
   # Product-specific C, compiled beside the dev server. The receiver (ADR-0016)
   # registers its own commands and port from a constructor, which is what lets
   # it be an ordinary app built from this template.
