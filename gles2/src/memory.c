@@ -58,9 +58,12 @@ void fvgl_stats(FvglStats* out) {
   out->us_cache_read = fvgl_us_cache_read;
   {
     extern unsigned fvgl_us_gpu_latency, fvgl_us_gpu_latency_max, fvgl_frames_flipped;
+    extern unsigned fvgl_us_gpu_busy, fvgl_frames_gpu_done;
     out->us_gpu_latency = fvgl_us_gpu_latency;
     out->us_gpu_latency_max = fvgl_us_gpu_latency_max;
     out->frames_flipped = fvgl_frames_flipped;
+    out->us_gpu_busy = fvgl_us_gpu_busy;
+    out->frames_gpu_done = fvgl_frames_gpu_done;
   }
   out->garbage_pending = (unsigned)g_garbage_count;
   out->frame = fvgl.frame;

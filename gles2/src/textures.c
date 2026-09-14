@@ -341,6 +341,7 @@ static void texture_wait_idle(FvglTexture* t) {
 // ---- GL: objects -----------------------------------------------------------
 
 GL_APICALL void GL_APIENTRY glGenTextures(GLsizei n, GLuint* textures) {
+  if (!fvgl.up) return;
   if (n < 0) {
     fvgl_set_error(GL_INVALID_VALUE);
     return;
@@ -357,6 +358,7 @@ GL_APICALL void GL_APIENTRY glActiveTexture(GLenum texture) {
 }
 
 GL_APICALL void GL_APIENTRY glBindTexture(GLenum target, GLuint texture) {
+  if (!fvgl.up) return;
   if (target != GL_TEXTURE_2D && target != GL_TEXTURE_CUBE_MAP) {
     fvgl_set_error(GL_INVALID_ENUM);
     return;
@@ -370,6 +372,7 @@ GL_APICALL void GL_APIENTRY glBindTexture(GLenum target, GLuint texture) {
 }
 
 GL_APICALL void GL_APIENTRY glDeleteTextures(GLsizei n, const GLuint* textures) {
+  if (!fvgl.up) return;
   if (n < 0) {
     fvgl_set_error(GL_INVALID_VALUE);
     return;
@@ -388,7 +391,7 @@ GL_APICALL void GL_APIENTRY glDeleteTextures(GLsizei n, const GLuint* textures) 
   }
 }
 
-GL_APICALL GLboolean GL_APIENTRY glIsTexture(GLuint texture) { return texture_get(texture) != NULL; }
+GL_APICALL GLboolean GL_APIENTRY glIsTexture(GLuint texture) { if (!fvgl.up) return GL_FALSE; return texture_get(texture) != NULL; }
 
 // ---- GL: images ------------------------------------------------------------
 
@@ -405,6 +408,7 @@ GL_APICALL void GL_APIENTRY glPixelStorei(GLenum pname, GLint param) {
 GL_APICALL void GL_APIENTRY glTexImage2D(GLenum target, GLint level, GLint internalformat, GLsizei width,
                                          GLsizei height, GLint border, GLenum format, GLenum type,
                                          const void* pixels) {
+  if (!fvgl.up) return;
   FvglTexture* t = texture_bound(target, "glTexImage2D");
   if (!t) return;
   if (width < 0 || height < 0 || width > 4096 || height > 4096 || border != 0 || level < 0) {
@@ -439,6 +443,7 @@ GL_APICALL void GL_APIENTRY glTexImage2D(GLenum target, GLint level, GLint inter
 GL_APICALL void GL_APIENTRY glTexSubImage2D(GLenum target, GLint level, GLint xoffset, GLint yoffset,
                                             GLsizei width, GLsizei height, GLenum format, GLenum type,
                                             const void* pixels) {
+  if (!fvgl.up) return;
   FvglTexture* t = texture_bound(target, "glTexSubImage2D");
   if (!t) return;
   if (level > 0) return;  // as glTexImage2D
@@ -462,6 +467,7 @@ GL_APICALL void GL_APIENTRY glTexSubImage2D(GLenum target, GLint level, GLint xo
 
 GL_APICALL void GL_APIENTRY glCopyTexImage2D(GLenum target, GLint level, GLenum internalformat, GLint x, GLint y,
                                              GLsizei width, GLsizei height, GLint border) {
+  if (!fvgl.up) return;
   FvglTexture* t = texture_bound(target, "glCopyTexImage2D");
   if (!t) return;
   if (level > 0) return;
@@ -479,6 +485,7 @@ GL_APICALL void GL_APIENTRY glCopyTexImage2D(GLenum target, GLint level, GLenum 
 
 GL_APICALL void GL_APIENTRY glCopyTexSubImage2D(GLenum target, GLint level, GLint xoffset, GLint yoffset, GLint x,
                                                 GLint y, GLsizei width, GLsizei height) {
+  if (!fvgl.up) return;
   FvglTexture* t = texture_bound(target, "glCopyTexSubImage2D");
   if (!t) return;
   if (level > 0) return;

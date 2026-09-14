@@ -269,6 +269,12 @@ typedef struct FvglContext {
   FvglDisplayBuffer display[FVGL_MAX_DISPLAY_BUFFERS];
   int back, front;  // indices into display[]
 
+  // A common dialog is up: swap composites it (fvgl_set_common_dialog). The
+  // shell wants a depth surface to draw with; made on the first dialog.
+  bool dialog_open;
+  void* dialog_depth;
+  SceUID dialog_depth_uid;
+
   // A scene is open between the first draw into a target and the moment the
   // target changes or the frame is presented.
   bool scene_open;

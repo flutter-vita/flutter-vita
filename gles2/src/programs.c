@@ -39,6 +39,7 @@ static void shader_destroy(FvglShader* s, GLuint name) {
 // ---- shaders ---------------------------------------------------------------
 
 GL_APICALL GLuint GL_APIENTRY glCreateShader(GLenum type) {
+  if (!fvgl.up) return 0;
   if (type != GL_VERTEX_SHADER && type != GL_FRAGMENT_SHADER) {
     fvgl_set_error(GL_INVALID_ENUM);
     return 0;
@@ -50,6 +51,7 @@ GL_APICALL GLuint GL_APIENTRY glCreateShader(GLenum type) {
 
 GL_APICALL void GL_APIENTRY glShaderSource(GLuint shader, GLsizei count, const GLchar* const* string,
                                            const GLint* length) {
+  if (!fvgl.up) return;
   FvglShader* s = shader_get(shader, "glShaderSource");
   if (!s) return;
   if (count < 0) {
@@ -76,6 +78,7 @@ GL_APICALL void GL_APIENTRY glShaderSource(GLuint shader, GLsizei count, const G
 }
 
 GL_APICALL void GL_APIENTRY glCompileShader(GLuint shader) {
+  if (!fvgl.up) return;
   FvglShader* s = shader_get(shader, "glCompileShader");
   if (!s) return;
   if (!s->source) {
@@ -128,6 +131,7 @@ GL_APICALL void GL_APIENTRY glGetShaderSource(GLuint shader, GLsizei bufSize, GL
 }
 
 GL_APICALL void GL_APIENTRY glDeleteShader(GLuint shader) {
+  if (!fvgl.up) return;
   if (shader == 0) return;
   FvglShader* s = shader_get(shader, "glDeleteShader");
   if (!s) return;
@@ -139,6 +143,7 @@ GL_APICALL void GL_APIENTRY glDeleteShader(GLuint shader) {
 }
 
 GL_APICALL GLboolean GL_APIENTRY glIsShader(GLuint shader) {
+  if (!fvgl.up) return GL_FALSE;
   return fvgl_table_get(&fvgl.shaders, shader) != NULL;
 }
 
@@ -181,11 +186,13 @@ static void program_destroy(FvglProgram* p, GLuint name) {
 }
 
 GL_APICALL GLuint GL_APIENTRY glCreateProgram(void) {
+  if (!fvgl.up) return 0;
   FvglProgram* p = calloc(1, sizeof *p);
   return fvgl_table_add(&fvgl.programs, p);
 }
 
 GL_APICALL void GL_APIENTRY glAttachShader(GLuint program, GLuint shader) {
+  if (!fvgl.up) return;
   FvglProgram* p = program_get(program, "glAttachShader");
   FvglShader* s = shader_get(shader, "glAttachShader");
   if (!p || !s) return;
@@ -201,6 +208,7 @@ GL_APICALL void GL_APIENTRY glAttachShader(GLuint program, GLuint shader) {
 }
 
 GL_APICALL void GL_APIENTRY glDetachShader(GLuint program, GLuint shader) {
+  if (!fvgl.up) return;
   FvglProgram* p = program_get(program, "glDetachShader");
   FvglShader* s = shader_get(shader, "glDetachShader");
   if (!p || !s) return;
@@ -283,6 +291,7 @@ static void add_uniforms(FvglProgram* p, const FvglShaderInfo* info, const SceGx
 unsigned fvgl_us_link, fvgl_us_cache_read;
 
 GL_APICALL void GL_APIENTRY glLinkProgram(GLuint program) {
+  if (!fvgl.up) return;
   FvglProgram* p = program_get(program, "glLinkProgram");
   if (!p) return;
   const uint64_t t0 = fvgl_now_us();
@@ -408,6 +417,7 @@ GL_APICALL void GL_APIENTRY glLinkProgram(GLuint program) {
 }
 
 GL_APICALL void GL_APIENTRY glUseProgram(GLuint program) {
+  if (!fvgl.up) return;
   if (program == 0) {
     fvgl.current_program = NULL;
     return;
@@ -474,6 +484,7 @@ GL_APICALL GLint GL_APIENTRY glGetAttribLocation(GLuint program, const GLchar* n
 }
 
 GL_APICALL void GL_APIENTRY glDeleteProgram(GLuint program) {
+  if (!fvgl.up) return;
   if (program == 0) return;
   FvglProgram* p = program_get(program, "glDeleteProgram");
   if (!p) return;
@@ -485,6 +496,7 @@ GL_APICALL void GL_APIENTRY glDeleteProgram(GLuint program) {
 }
 
 GL_APICALL GLboolean GL_APIENTRY glIsProgram(GLuint program) {
+  if (!fvgl.up) return GL_FALSE;
   return fvgl_table_get(&fvgl.programs, program) != NULL;
 }
 

@@ -66,9 +66,10 @@ GL_APICALL void GL_APIENTRY glLineWidth(GLfloat width) {
   fvgl.line_width = width;
 }
 
-GL_APICALL void GL_APIENTRY glFlush(void) {}
+GL_APICALL void GL_APIENTRY glFlush(void) { if (!fvgl.up) return;}
 
 GL_APICALL void GL_APIENTRY glFinish(void) {
+  if (!fvgl.up) return;
   fvgl_scene_end();
   if (!fvgl.gxm) return;
   sceGxmFinish(fvgl.gxm);

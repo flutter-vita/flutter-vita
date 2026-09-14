@@ -36,6 +36,13 @@ int fvgl_init(const FvglConfig* config);
 // Ends the current scene, queues the back buffer for scan-out, rotates.
 void fvgl_swap(void);
 
+// While `open` is non-zero every swap runs sceCommonDialogUpdate against the
+// back buffer before queueing it: that is how the shell draws a common
+// dialog (the libime keyboard, the message dialogs) over GL content. A
+// per-frame cost, so the app says when. sceCommonDialogSetConfigParam is
+// the app's, after init.
+void fvgl_set_common_dialog(int open);
+
 // The GL entry point of that name, or 0 if it is not one this library has.
 void* fvgl_get_proc_address(const char* name);
 
@@ -64,9 +71,15 @@ typedef struct FvglStats {
   // the GPU is past, mapping and unmapping memblocks.
   unsigned us_queue_wait, us_garbage, us_memblock;
   unsigned us_link, us_cache_read;  // glLinkProgram, and its reads of the on-card program cache
-  // From queueing a frame to the display queue's thread taking it, which is
-  // when the GPU has finished it: the sum, the largest, and how many frames.
+  // From queueing a frame to the display queue's thread taking it: the sum,
+  // the largest, and how many frames. A full pipeline reads a frame period
+  // here whatever the GPU did; see us_gpu_busy for the GPU's own time.
   unsigned us_gpu_latency, us_gpu_latency_max, frames_flipped;
+  // Time the GPU spent on frames, from a frame's first scene (or the previous
+  // frame's completion) to its completion notification, read every
+  // millisecond; and how many frames completed. Busy over wall time is GPU
+  // load.
+  unsigned us_gpu_busy, frames_gpu_done;
   unsigned frame, frame_done;  // the frame being built, the last one the GPU finished
 } FvglStats;
 void fvgl_stats(FvglStats* out);

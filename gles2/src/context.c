@@ -16,9 +16,11 @@
 // A "scene" is sceGxm's unit of rendering into one target. One is opened by
 // the first draw or clear and closed when the target changes, when pixels are
 // read back, or when the frame is presented.
+#include <psp2/common_dialog.h>
 #include <psp2/display.h>
 #include <psp2/io/fcntl.h>
 #include <psp2/kernel/clib.h>
+#include <psp2/kernel/threadmgr.h>
 #include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -260,6 +262,63 @@ static void apply_viewport(int x, int y, int w, int h) {
   }
 }
 
+// ---- GPU meter -------------------------------------------------------------
+//
+// How long the GPU worked, as opposed to how long a frame sat in the display
+// queue. The queue's callback fires when the GPU has finished a frame *and*
+// the previous callback has come back from its vblank wait, so its distance
+// from the queueing (us_gpu_latency) reads a whole frame period whenever the
+// pipeline is full, busy GPU or not: the gallery's strip said 126% over a
+// still panel. The frame_done notification is written by the GPU itself,
+// with no wait in front of it. A thread reads it every millisecond and, for
+// each frame that completed, adds the time from that frame's first scene (or
+// the previous completion, whichever is later) to now. Vertex work of the
+// next frame overlapping fragment work of this one is counted once, which
+// is what "busy" means here.
+static uint64_t g_frame_first_scene_us[64];  // by frame number, mod 64
+static uint32_t g_frame_marked = ~0u;
+unsigned fvgl_us_gpu_busy, fvgl_frames_gpu_done;
+static volatile bool g_meter_stop;
+static SceUID g_meter_thread = -1;
+
+static int gpu_meter(SceSize args, void* argp) {
+  (void)args;
+  (void)argp;
+  uint32_t last = fvgl_gpu_completed_frame();
+  uint64_t last_done = fvgl_now_us();
+  while (!g_meter_stop) {
+    sceKernelDelayThread(1000);
+    const uint32_t done = fvgl_gpu_completed_frame();
+    if (done == last || done < last) {
+      last = done;
+      continue;
+    }
+    const uint64_t now = fvgl_now_us();
+    uint64_t start = g_frame_first_scene_us[(last + 1) % 64];
+    if (start < last_done) start = last_done;
+    if (now > start) fvgl_us_gpu_busy += (unsigned)(now - start);
+    fvgl_frames_gpu_done += done - last;
+    last = done;
+    last_done = now;
+  }
+  return 0;
+}
+
+static void meter_start(void) {
+  g_meter_stop = false;
+  g_meter_thread = sceKernelCreateThread("fvgl-gpu-meter", gpu_meter, 0x10000100, 0x1000, 0, 0, NULL);
+  if (g_meter_thread >= 0) sceKernelStartThread(g_meter_thread, 0, NULL);
+}
+
+static void meter_stop(void) {
+  if (g_meter_thread < 0) return;
+  g_meter_stop = true;
+  SceUInt timeout = 50 * 1000;
+  sceKernelWaitThreadEnd(g_meter_thread, NULL, &timeout);
+  sceKernelDeleteThread(g_meter_thread);
+  g_meter_thread = -1;
+}
+
 // ---- scenes ----------------------------------------------------------------
 
 void fvgl_scene_begin(void) {
@@ -267,6 +326,10 @@ void fvgl_scene_begin(void) {
   if (fvgl.scene_open) {
     if (fvgl.scene_target == target) return;
     fvgl_scene_end();
+  }
+  if (g_frame_marked != fvgl.frame) {
+    g_frame_marked = fvgl.frame;
+    g_frame_first_scene_us[fvgl.frame % 64] = fvgl_now_us();
   }
   int r;
   if (target) {
@@ -477,6 +540,7 @@ int fvgl_init(const FvglConfig* config) {
   fvgl.depth_mask = GL_TRUE;
   fvgl.line_width = 1.0f;
   fvgl.up = true;
+  meter_start();
   fvgl_log("up: %dx%d, %d display buffers, stride %u", fvgl.width, fvgl.height, buffers, fvgl.display_stride);
   return 0;
 
@@ -508,7 +572,17 @@ void fvgl_shutdown(void) {
            fvgl.programs.count, fvgl.textures.count, fvgl.buffers.count, fvgl.framebuffers.count,
            (unsigned)fvgl.frame, (unsigned)fvgl_gpu_completed_frame());
   shutdown_stage(counts);
+  // Down first, then torn down. This runs on whichever thread asked for the
+  // exit while the raster thread goes on calling GL between frames: Skia
+  // frees what it has not used for a while, and on 2026-09-14 (the
+  // gallery's build 29, a 26-minute run) its glDeleteTextures ran into the
+  // texture loop below and freed a struct twice, a data abort in free(). The
+  // object entry points return at once while `up` is false; the pause lets
+  // a call that had already passed that test finish.
+  fvgl.up = false;
+  sceKernelDelayThread(20 * 1000);
   shutdown_stage("finish");
+  meter_stop();
   if (fvgl.gxm) {
     fvgl_scene_end();
     sceGxmFinish(fvgl.gxm);
@@ -544,6 +618,7 @@ void fvgl_shutdown(void) {
   fvgl_mem_free(c->index_uid);
   fvgl_shacc_shutdown();
   shutdown_stage("display and context");
+  if (fvgl.dialog_depth) fvgl_mem_free(fvgl.dialog_depth_uid);
   for (int i = 0; i < FVGL_MAX_DISPLAY_BUFFERS; i++) {
     if (fvgl.display[i].sync) sceGxmSyncObjectDestroy(fvgl.display[i].sync);
     fvgl_mem_free(fvgl.display[i].uid);
@@ -565,6 +640,43 @@ void fvgl_shutdown(void) {
 }
 
 // ---- present ---------------------------------------------------------------
+
+void fvgl_set_common_dialog(int open) { fvgl.dialog_open = open != 0; }
+
+// The shell draws the dialog into the back buffer between our last scene and
+// the queue entry, ordered on the same sync object. It asks for a depth
+// surface the size of the display; nothing of ours uses it, so it is made
+// once, on the first dialog, in whole tiles the way the hardware addresses
+// it. Why here and not in the app: the back buffer and its sync object are
+// this file's, and the raster thread is the one thread that talks to GXM.
+static void dialog_update(FvglDisplayBuffer* back) {
+  if (!fvgl.dialog_depth) {
+    const unsigned dw = ((unsigned)fvgl.width + SCE_GXM_TILE_SIZEX - 1) & ~(SCE_GXM_TILE_SIZEX - 1);
+    const unsigned dh = ((unsigned)fvgl.height + SCE_GXM_TILE_SIZEY - 1) & ~(SCE_GXM_TILE_SIZEY - 1);
+    fvgl.dialog_depth = fvgl_mem_alloc(FVGL_MEM_LPDDR_UNCACHED, (size_t)dw * dh * 4, &fvgl.dialog_depth_uid);
+    if (!fvgl.dialog_depth) {
+      static bool said;
+      if (!said) fvgl_log("common dialog: no memory for a depth surface");
+      said = true;
+      return;
+    }
+  }
+  SceCommonDialogUpdateParam p;
+  memset(&p, 0, sizeof p);
+  p.renderTarget.colorFormat = SCE_GXM_COLOR_FORMAT_A8B8G8R8;
+  p.renderTarget.surfaceType = SCE_GXM_COLOR_SURFACE_LINEAR;
+  p.renderTarget.width = (unsigned)fvgl.width;
+  p.renderTarget.height = (unsigned)fvgl.height;
+  p.renderTarget.strideInPixels = fvgl.display_stride;
+  p.renderTarget.colorSurfaceData = back->data;
+  p.renderTarget.depthSurfaceData = fvgl.dialog_depth;
+  p.displaySyncObject = back->sync;
+  const int r = sceCommonDialogUpdate(&p);
+  if (r < 0) {
+    static unsigned said;
+    if (said++ < 4) fvgl_log("sceCommonDialogUpdate: 0x%08X", (unsigned)r);
+  }
+}
 
 void fvgl_swap(void) {
   if (!fvgl.up) return;
@@ -590,6 +702,7 @@ void fvgl_swap(void) {
   }
   FvglDisplayBuffer* back = &fvgl.display[fvgl.back];
   FvglDisplayBuffer* front = &fvgl.display[fvgl.front];
+  if (fvgl.dialog_open) dialog_update(back);
   sceGxmPadHeartbeat(&back->surface, back->sync);
   const uint64_t t0 = fvgl_now_us();
   DisplayCallbackData data = {.address = back->data, .queued_us = t0};
@@ -667,6 +780,7 @@ GL_APICALL void GL_APIENTRY glDisable(GLenum cap) {
 }
 
 GL_APICALL void GL_APIENTRY glClear(GLbitfield mask) {
+  if (!fvgl.up) return;
   if (mask & ~(GLbitfield)(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT | GL_STENCIL_BUFFER_BIT)) {
     fvgl_set_error(GL_INVALID_VALUE);
     return;
@@ -705,6 +819,7 @@ GL_APICALL void GL_APIENTRY glClear(GLbitfield mask) {
 
 GL_APICALL void GL_APIENTRY glReadPixels(GLint x, GLint y, GLsizei w, GLsizei h, GLenum format,
                                          GLenum type, void* pixels) {
+  if (!fvgl.up) return;
   if (format != GL_RGBA || type != GL_UNSIGNED_BYTE) {
     fvgl_set_error(GL_INVALID_ENUM);
     return;
@@ -753,6 +868,7 @@ GL_APICALL void GL_APIENTRY glReadPixels(GLint x, GLint y, GLsizei w, GLsizei h,
 }
 
 GL_APICALL GLenum GL_APIENTRY glGetError(void) {
+  if (!fvgl.up) return GL_NO_ERROR;
   const GLenum e = fvgl.error;
   fvgl.error = GL_NO_ERROR;
   return e;

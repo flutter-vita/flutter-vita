@@ -30,6 +30,7 @@ static FvglBuffer* buffer_bound(GLenum target) {
 }
 
 GL_APICALL void GL_APIENTRY glGenBuffers(GLsizei n, GLuint* buffers) {
+  if (!fvgl.up) return;
   if (n < 0) {
     fvgl_set_error(GL_INVALID_VALUE);
     return;
@@ -42,6 +43,7 @@ GL_APICALL void GL_APIENTRY glGenBuffers(GLsizei n, GLuint* buffers) {
 }
 
 GL_APICALL void GL_APIENTRY glBindBuffer(GLenum target, GLuint buffer) {
+  if (!fvgl.up) return;
   if (buffer != 0 && !fvgl_table_get(&fvgl.buffers, buffer)) {
     // A name never handed out by glGenBuffers still works in GL: make it.
     while (fvgl.buffers.count < buffer) {
@@ -56,6 +58,7 @@ GL_APICALL void GL_APIENTRY glBindBuffer(GLenum target, GLuint buffer) {
 }
 
 GL_APICALL void GL_APIENTRY glDeleteBuffers(GLsizei n, const GLuint* buffers) {
+  if (!fvgl.up) return;
   if (n < 0) {
     fvgl_set_error(GL_INVALID_VALUE);
     return;
@@ -75,10 +78,12 @@ GL_APICALL void GL_APIENTRY glDeleteBuffers(GLsizei n, const GLuint* buffers) {
 }
 
 GL_APICALL GLboolean GL_APIENTRY glIsBuffer(GLuint buffer) {
+  if (!fvgl.up) return GL_FALSE;
   return fvgl_table_get(&fvgl.buffers, buffer) != NULL;
 }
 
 GL_APICALL void GL_APIENTRY glBufferData(GLenum target, GLsizeiptr size, const void* data, GLenum usage) {
+  if (!fvgl.up) return;
   FvglBuffer* b = buffer_bound(target);
   if (!b) return;
   if (size < 0) {
@@ -109,6 +114,7 @@ GL_APICALL void GL_APIENTRY glBufferData(GLenum target, GLsizeiptr size, const v
 }
 
 GL_APICALL void GL_APIENTRY glBufferSubData(GLenum target, GLintptr offset, GLsizeiptr size, const void* data) {
+  if (!fvgl.up) return;
   FvglBuffer* b = buffer_bound(target);
   if (!b) return;
   if (offset < 0 || size < 0 || (size_t)offset + (size_t)size > b->size) {

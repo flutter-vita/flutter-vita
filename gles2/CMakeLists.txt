@@ -34,7 +34,9 @@ target_compile_options(fvita_gles2 PRIVATE -std=gnu11 -Wall -Wextra -O2 -g)
 
 # What a user of the archive has to link as well. SceShaccCg is weak so an app
 # still loads on a console without the compiler and fvgl_init can say why.
+# SceCommonDialog for fvgl_set_common_dialog: the shell draws its dialogs
+# into our back buffer.
 set(FVITA_GLES2_LIBS
-  SceGxm_stub SceDisplay_stub SceKernelModulemgr_stub SceSysmem_stub
+  SceGxm_stub SceDisplay_stub SceKernelModulemgr_stub SceSysmem_stub SceCommonDialog_stub
   ${VITASDK}/arm-vita-eabi/lib/libSceShaccCg_stub_weak.a
   CACHE INTERNAL "system libraries fvita_gles2 needs")

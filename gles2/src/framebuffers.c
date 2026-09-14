@@ -77,6 +77,7 @@ bool fvgl_texture_make_target(FvglTexture* t) {
 // ---- GL --------------------------------------------------------------------
 
 GL_APICALL void GL_APIENTRY glGenFramebuffers(GLsizei n, GLuint* framebuffers) {
+  if (!fvgl.up) return;
   if (n < 0) {
     fvgl_set_error(GL_INVALID_VALUE);
     return;
@@ -85,6 +86,7 @@ GL_APICALL void GL_APIENTRY glGenFramebuffers(GLsizei n, GLuint* framebuffers) {
 }
 
 GL_APICALL void GL_APIENTRY glBindFramebuffer(GLenum target, GLuint framebuffer) {
+  if (!fvgl.up) return;
   if (target != GL_FRAMEBUFFER) {
     fvgl_set_error(GL_INVALID_ENUM);
     return;
@@ -98,6 +100,7 @@ GL_APICALL void GL_APIENTRY glBindFramebuffer(GLenum target, GLuint framebuffer)
 }
 
 GL_APICALL void GL_APIENTRY glDeleteFramebuffers(GLsizei n, const GLuint* framebuffers) {
+  if (!fvgl.up) return;
   if (n < 0) {
     fvgl_set_error(GL_INVALID_VALUE);
     return;
@@ -111,10 +114,11 @@ GL_APICALL void GL_APIENTRY glDeleteFramebuffers(GLsizei n, const GLuint* frameb
   }
 }
 
-GL_APICALL GLboolean GL_APIENTRY glIsFramebuffer(GLuint framebuffer) { return framebuffer_get(framebuffer) != NULL; }
+GL_APICALL GLboolean GL_APIENTRY glIsFramebuffer(GLuint framebuffer) { if (!fvgl.up) return GL_FALSE; return framebuffer_get(framebuffer) != NULL; }
 
 GL_APICALL void GL_APIENTRY glFramebufferTexture2D(GLenum target, GLenum attachment, GLenum textarget, GLuint texture,
                                                    GLint level) {
+  if (!fvgl.up) return;
   if (target != GL_FRAMEBUFFER) {
     fvgl_set_error(GL_INVALID_ENUM);
     return;

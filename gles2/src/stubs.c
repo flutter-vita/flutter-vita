@@ -89,6 +89,7 @@ GL_APICALL void GL_APIENTRY glFramebufferRenderbuffer(GLenum target, GLenum atta
 }
 
 GL_APICALL void GL_APIENTRY glGenerateMipmap(GLenum target) {
+  if (!fvgl.up) return;
   (void)target;
   FVGL_STUB(glGenerateMipmap);
 }

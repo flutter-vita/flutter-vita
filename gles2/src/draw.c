@@ -502,6 +502,7 @@ static void draw(GLenum mode, GLint first, unsigned count, unsigned vertex_count
 }
 
 GL_APICALL void GL_APIENTRY glDrawArrays(GLenum mode, GLint first, GLsizei count) {
+  if (!fvgl.up) return;
   if (first < 0 || count < 0) {
     fvgl_set_error(GL_INVALID_VALUE);
     return;
@@ -514,6 +515,7 @@ GL_APICALL void GL_APIENTRY glDrawArrays(GLenum mode, GLint first, GLsizei count
 }
 
 GL_APICALL void GL_APIENTRY glDrawElements(GLenum mode, GLsizei count, GLenum type, const void* indices) {
+  if (!fvgl.up) return;
   if (count < 0) {
     fvgl_set_error(GL_INVALID_VALUE);
     return;
