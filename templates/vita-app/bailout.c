@@ -97,6 +97,7 @@ static void record_memory(void) {
 // happened twice on 2026-08-22 through the dev server's handoff. It runs before
 // the launch, not between the launch and the exit.
 extern void flutter_vita_gpu_shutdown(void) __attribute__((weak));
+extern void flutter_vita_log_flush(void) __attribute__((weak));
 
 void vita_bail_to_loader(const char* reason) {
   // Re-entry is a real possibility: the launch below can fail, and anything it
@@ -115,6 +116,11 @@ void vita_bail_to_loader(const char* reason) {
   // console.
   if (flutter_vita_gpu_shutdown != NULL) {
     flutter_vita_gpu_shutdown();
+  }
+  // The engine log's last lines are in a ring until its writer thread gets
+  // to them, and after the exit below nobody does.
+  if (flutter_vita_log_flush != NULL) {
+    flutter_vita_log_flush();
   }
 
   {

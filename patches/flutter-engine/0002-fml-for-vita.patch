@@ -829,58 +829,6 @@ index 00000000..30e873c9
 +
 +}  // namespace paths
 +}  // namespace fml
-diff --git a/engine/src/flutter/fml/synchronization/waitable_event.cc b/engine/src/flutter/fml/synchronization/waitable_event.cc
-index b912bf50..53d91583 100644
---- a/engine/src/flutter/fml/synchronization/waitable_event.cc
-+++ b/engine/src/flutter/fml/synchronization/waitable_event.cc
-@@ -5,8 +5,11 @@
- #include "flutter/fml/synchronization/waitable_event.h"
- 
- #include <cerrno>
-+#include <cstdint>
-+#include <cstdio>
- #include <ctime>
- 
-+#include "flutter/fml/build_config.h"
- #include "flutter/fml/logging.h"
- #include "flutter/fml/time/time_delta.h"
- #include "flutter/fml/time/time_point.h"
-@@ -71,8 +74,35 @@ void AutoResetWaitableEvent::Reset() {
- 
- void AutoResetWaitableEvent::Wait() {
-   std::unique_lock<std::mutex> locker(mutex_);
-+#if defined(FML_OS_VITA)
-+  // Temporary probe for the first-run crash, and it should come out once that
-+  // is closed.
-+  //
-+  // The engine faults in pte_cond_wait_cleanup relocking this very mutex, with
-+  // its handle holding a pointer into .rodata. pthread_mutex_t here is a
-+  // pointer to a heap struct, so the handle is one readable word and printing
-+  // it is cheap. The question the two lines answer is narrow: was the handle
-+  // already wrong when Wait() acquired the lock -- in which case the lock
-+  // succeeding is the real puzzle -- or did it change across cv_.wait(), which
-+  // would make it a stray write from the thread we are waiting on.
-+  const auto handle = [this]() -> unsigned long {
-+    return static_cast<unsigned long>(
-+        reinterpret_cast<uintptr_t>(*mutex_.native_handle()));
-+  };
-+  std::fprintf(stderr, "ARWE %p enter handle=%08lx signaled=%d\n",
-+               static_cast<void*>(this), handle(),
-+               static_cast<int>(signaled_));
-+#endif
-   while (!signaled_) {
-+#if defined(FML_OS_VITA)
-+    std::fprintf(stderr, "ARWE %p pre-wait handle=%08lx\n",
-+                 static_cast<void*>(this), handle());
-+#endif
-     cv_.wait(locker);
-+#if defined(FML_OS_VITA)
-+    std::fprintf(stderr, "ARWE %p post-wait handle=%08lx\n",
-+                 static_cast<void*>(this), handle());
-+#endif
-   }
-   signaled_ = false;
- }
 diff --git a/engine/src/flutter/fml/thread.cc b/engine/src/flutter/fml/thread.cc
 index 8fc43592..c5d1a35c 100644
 --- a/engine/src/flutter/fml/thread.cc

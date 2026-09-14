@@ -87,9 +87,17 @@ extern void flutter_vita_gpu_shutdown(void) __attribute__((weak));
 // for an experiment is a dev server the experiments stop using.
 extern int flutter_vita_diag(char* out, int cap) __attribute__((weak));
 
+// The embedder's log is written by a thread of its own since 2026-09-14; this
+// puts what is queued on the card before the process goes away. Weak for the
+// same reason as the two above.
+extern void flutter_vita_log_flush(void) __attribute__((weak));
+
 static void release_gpu(void) {
   if (flutter_vita_gpu_shutdown != NULL) {
     flutter_vita_gpu_shutdown();
+  }
+  if (flutter_vita_log_flush != NULL) {
+    flutter_vita_log_flush();
   }
 }
 

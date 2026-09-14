@@ -289,10 +289,10 @@ index 00000000..a5e0625d
 +}  // extern "C"
 diff --git a/engine/src/flutter/shell/platform/embedder/vita_embedder.cc b/engine/src/flutter/shell/platform/embedder/vita_embedder.cc
 new file mode 100644
-index 00000000..be9f3cd9
+index 00000000..3af7254e
 --- /dev/null
 +++ b/engine/src/flutter/shell/platform/embedder/vita_embedder.cc
-@@ -0,0 +1,4250 @@
+@@ -0,0 +1,4373 @@
 +// Copyright (c) 2026, the Flutter Authors. All rights reserved.
 +// Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
@@ -549,11 +549,125 @@ index 00000000..be9f3cd9
 +// them: no buffering, no per-thread state, no descriptor mapping.
 +SceUID g_log_fd = -1;
 +
++// The writes go through a ring and one thread, since 2026-09-14. Until then
++// every line was a synchronous sceIoWrite from whichever thread logged it,
++// and bench run 28 of the gallery measured what that cost: a median of 33 ms
++// per second of wall time spent inside the card driver, 72 ms at the 90th
++// percentile, and single writes of up to 187 ms -- on the raster thread,
++// which logs JANK and FRAMES, and on the UI thread, which logs PARAGRAPHS.
++// A 100 ms write on either is a dropped frame that the bench then counted as
++// a stall of ours; a JANK line written by the raster thread could cause the
++// next JANK, which is the burst of three to five slow frames the runs showed.
++//
++// The line still reaches the card within one write of being logged: the
++// writer thread wakes on every line and drains the whole ring. What can be
++// lost is what arrived during the last write before a hardware fault, and
++// nothing on this platform catches those anyway (ADR-0011). Every path this
++// process leaves by on purpose -- handoff, relaunch, bail-out, the watchdog's
++// copy -- flushes first through flutter_vita_log_flush.
++namespace {
++constexpr size_t kLogRingBytes = 256 * 1024;
++char g_log_ring[kLogRingBytes];
++size_t g_log_head = 0;  // next byte to write, producers
++size_t g_log_tail = 0;  // next byte to drain, the writer
++size_t g_log_used = 0;
++SceKernelLwMutexWork g_log_lock;        // the ring
++SceKernelLwMutexWork g_log_write_lock;  // the card: one drain at a time, in order
++SceUID g_log_sema = -1;
++SceUID g_log_thread = -1;
++bool g_log_threaded = false;
++unsigned g_log_dropped = 0;  // lines that found the ring full
++}  // namespace
++
++// What the card writes cost the writer thread, per FRAMES window. The number
++// no longer hurts a frame; it says how slow the card was that second.
++uint64_t g_win_log_us, g_win_log_max_us;
++
++static void LogWriteNow(const char* data, size_t len) {
++  const uint64_t t0 = sceKernelGetSystemTimeWide();
++  sceIoWrite(g_log_fd, data, len);
++  const uint64_t took = sceKernelGetSystemTimeWide() - t0;
++  g_win_log_us += took;
++  if (took > g_win_log_max_us) g_win_log_max_us = took;
++}
++
++// Takes up to `cap` bytes out of the ring under the lock and returns how many.
++static size_t LogTake(char* out, size_t cap) {
++  sceKernelLockLwMutex(&g_log_lock, 1, nullptr);
++  size_t n = g_log_used < cap ? g_log_used : cap;
++  const size_t first = kLogRingBytes - g_log_tail;
++  if (n <= first) {
++    std::memcpy(out, g_log_ring + g_log_tail, n);
++  } else {
++    std::memcpy(out, g_log_ring + g_log_tail, first);
++    std::memcpy(out + first, g_log_ring, n - first);
++  }
++  g_log_tail = (g_log_tail + n) % kLogRingBytes;
++  g_log_used -= n;
++  sceKernelUnlockLwMutex(&g_log_lock, 1);
++  return n;
++}
++
++static void LogDrain() {
++  static char chunk[64 * 1024];
++  sceKernelLockLwMutex(&g_log_write_lock, 1, nullptr);
++  size_t n;
++  while ((n = LogTake(chunk, sizeof chunk)) != 0) LogWriteNow(chunk, n);
++  sceKernelUnlockLwMutex(&g_log_write_lock, 1);
++}
++
++static int LogThread(SceSize, void*) {
++  for (;;) {
++    unsigned timeout = 500 * 1000;  // a wake-up in case a signal is ever lost
++    sceKernelWaitSema(g_log_sema, 1, &timeout);
++    LogDrain();
++  }
++  return 0;
++}
++
 +void VLogRaw(const char* data, size_t len) {
 +  if (g_log_fd < 0) {
 +    return;
 +  }
-+  sceIoWrite(g_log_fd, data, len);
++  if (!g_log_threaded) {
++    LogWriteNow(data, len);
++    return;
++  }
++  sceKernelLockLwMutex(&g_log_lock, 1, nullptr);
++  if (len > kLogRingBytes - g_log_used) {
++    g_log_dropped++;
++    sceKernelUnlockLwMutex(&g_log_lock, 1);
++    return;
++  }
++  const size_t first = kLogRingBytes - g_log_head;
++  if (len <= first) {
++    std::memcpy(g_log_ring + g_log_head, data, len);
++  } else {
++    std::memcpy(g_log_ring + g_log_head, data, first);
++    std::memcpy(g_log_ring, data + first, len - first);
++  }
++  g_log_head = (g_log_head + len) % kLogRingBytes;
++  g_log_used += len;
++  sceKernelUnlockLwMutex(&g_log_lock, 1);
++  sceKernelSignalSema(g_log_sema, 1);
++}
++
++// Everything logged so far is on the card when this returns. Called on the
++// way out of the process, and by the dev server before it hands over.
++extern "C" void flutter_vita_log_flush(void) {
++  if (g_log_fd < 0 || !g_log_threaded) return;
++  LogDrain();
++}
++
++static void StartLogThread() {
++  if (sceKernelCreateLwMutex(&g_log_lock, "fvita-log", SCE_KERNEL_ATTR_THREAD_FIFO, 0, nullptr) < 0) return;
++  if (sceKernelCreateLwMutex(&g_log_write_lock, "fvita-log-w", SCE_KERNEL_ATTR_THREAD_FIFO, 0, nullptr) < 0) return;
++  g_log_sema = sceKernelCreateSema("fvita-log", SCE_KERNEL_ATTR_THREAD_FIFO, 0, 1 << 20, nullptr);
++  if (g_log_sema < 0) return;
++  g_log_thread = sceKernelCreateThread("fvita-log", LogThread, 0x10000100, 0x4000, 0, 0, nullptr);
++  if (g_log_thread < 0) return;
++  g_log_threaded = true;  // before the start: the thread reads the ring only
++  sceKernelStartThread(g_log_thread, 0, nullptr);
 +}
 +
 +void VLog(const char* fmt, ...) __attribute__((format(printf, 1, 2)));
@@ -1838,11 +1952,16 @@ index 00000000..be9f3cd9
 +  const unsigned raster_us =
 +      static_cast<unsigned>(g_win_raster_us / g_win_frames);
 +  // The GL backend's own counters, when it has any (flutter_vita_gl.h).
-+  char gl_stats[192] = "";
++  char gl_stats[256] = "";
 +  if (g_gl_enabled) flutter_vita_gl_stats(gl_stats, sizeof gl_stats);
++  const unsigned log_us = static_cast<unsigned>(g_win_log_us);
++  const unsigned log_max_us = static_cast<unsigned>(g_win_log_max_us);
++  g_win_log_us = 0;
++  g_win_log_max_us = 0;
 +  VLog("flutter-vita: FRAMES active %u @ %u us = %u.%02u fps "
 +       "(raster %u us = %u%%, blit %u us = %u%%, dmg %u%%, hud %u us) "
-+       "| raster max %u us | idle gaps %u | max %u ms | gl wait %u us%s%s\n",
++       "| raster max %u us | idle gaps %u | max %u ms | gl wait %u us "
++       "| log %u us max %u dropped %u%s%s\n",
 +       g_win_active, active_us,
 +       active_us != 0 ? 1000000u / active_us : 0,
 +       active_us != 0 ? (100000000u / active_us) % 100 : 0, raster_us,
@@ -1851,8 +1970,8 @@ index 00000000..be9f3cd9
 +       static_cast<unsigned>(g_win_hud_us / g_win_frames),
 +       static_cast<unsigned>(g_win_raster_max_us), g_win_idle,
 +       static_cast<unsigned>(g_win_max_gap_us / 1000),
-+       static_cast<unsigned>(g_win_gl_idle_us / g_win_frames),
-+       gl_stats[0] ? " | " : "", gl_stats);
++       static_cast<unsigned>(g_win_gl_idle_us / g_win_frames), log_us,
++       log_max_us, g_log_dropped, gl_stats[0] ? " | " : "", gl_stats);
 +  g_win_frames = 0;
 +  g_win_blit_us = 0;
 +  g_win_raster_us = 0;
@@ -3012,7 +3131,7 @@ index 00000000..be9f3cd9
 +// after a crash -- the loader is up by then and serves the file, and since
 +// 2026-08-28 it no longer truncates that path on the way in (see LogPath).
 +//
-+// Unbuffered, not line buffered, and that is a deliberate downgrade.
++// No stdio buffering, and that is a deliberate downgrade.
 +//
 +// The first version asked for _IOLBF with a null buffer and size 0. POSIX
 +// leaves that combination implementation-defined, newlib did not give line
@@ -3021,10 +3140,10 @@ index 00000000..be9f3cd9
 +// exactly when the program misbehaves is worse than no log, because it looks
 +// like evidence.
 +//
-+// _IONBF sends every write straight through to sceIoWrite. It is slow, and on
-+// a memory card it is very slow, but a diagnostic channel that cannot lose its
-+// last line is the entire point of having one. Revisit only once the boot is
-+// quiet enough that logging volume matters.
++// _IONBF sends every stdio write straight through to sceIoWrite; that is the
++// engine's own FML_LOG lines, a handful per run. Everything of ours goes
++// through VLog, which queues for the writer thread above: logging volume
++// came to matter on 2026-09-14, at 33 ms of card time per second.
 +static void OpenLog() {
 +  const char* const kPath = LogPath();
 +  sceIoMkdir("ux0:data/flutter-vita", 0777);
@@ -3039,6 +3158,7 @@ index 00000000..be9f3cd9
 +    sceIoClose(truncate);
 +  }
 +  g_log_fd = sceIoOpen(kPath, SCE_O_WRONLY | SCE_O_APPEND, 0777);
++  StartLogThread();
 +
 +  // FML_LOG writes to std::cerr, and there is no hook to redirect it, so the
 +  // engine's diagnostics still have to come through stdio. Append mode and no
@@ -3443,6 +3563,7 @@ index 00000000..be9f3cd9
 +
 +// app.log as it stands, copied whole: the relaunch truncates it.
 +void CopyLogForStall() {
++  flutter_vita_log_flush();
 +  const SceUID in = sceIoOpen(LogPath(), SCE_O_RDONLY, 0);
 +  if (in < 0) return;
 +  const SceUID out =
@@ -3502,6 +3623,7 @@ index 00000000..be9f3cd9
 +         kStallLogPath);
 +    CopyLogForStall();
 +    flutter_vita_gpu_shutdown();
++    flutter_vita_log_flush();
 +    sceKernelDelayThread(200 * 1000);
 +    sceAppMgrLoadExec("app0:eboot.bin", nullptr, nullptr);
 +    // Only reached if LoadExec refused.
@@ -3998,6 +4120,7 @@ index 00000000..be9f3cd9
 +    if (leaving) {
 +      VLog("flutter-vita: handing off to VitaShell at %s\n", folder);
 +      flutter_vita_gpu_shutdown();
++      flutter_vita_log_flush();
 +      sceKernelDelayThread(200 * 1000);
 +      sceAppMgrLaunchAppByUri(0xFFFFF, "psgm:play?titleid=VITASHELL");
 +      // Nothing may go between the launch and this line.
