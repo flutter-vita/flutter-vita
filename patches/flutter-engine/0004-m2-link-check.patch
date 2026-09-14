@@ -295,10 +295,10 @@ index 00000000..a5e0625d
 +}  // extern "C"
 diff --git a/engine/src/flutter/shell/platform/embedder/vita_embedder.cc b/engine/src/flutter/shell/platform/embedder/vita_embedder.cc
 new file mode 100644
-index 00000000..1f967400
+index 00000000..c7e562f1
 --- /dev/null
 +++ b/engine/src/flutter/shell/platform/embedder/vita_embedder.cc
-@@ -0,0 +1,4549 @@
+@@ -0,0 +1,4621 @@
 +// Copyright (c) 2026, the Flutter Authors. All rights reserved.
 +// Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
@@ -382,6 +382,13 @@ index 00000000..1f967400
 +extern "C" int flutter_vita_hardware_call(const char* method, const char* body,
 +                                          size_t body_len, char* out,
 +                                          size_t cap) __attribute__((weak));
++
++// The budget syscall under the SceAppMgrUser wrapper; the stub exports both.
++extern "C" int _sceAppMgrGetBudgetInfo(SceAppMgrBudgetInfo* info);
++
++// The size of the newlib arena, set by the app (templates/vita-app/heap.c)
++// before main. Weak: an app that leaves it to newlib's default has none.
++extern "C" unsigned int _newlib_heap_size_user __attribute__((weak));
 +
 +// M1's on-device dev server, at spikes/m1-vpk/src/devserver.{c,h}, compiled
 +// into this binary by the m3 spike's CMakeLists.
@@ -4102,27 +4109,92 @@ index 00000000..1f967400
 +    last_us = now;
 +    SceKernelFreeMemorySizeInfo mem;
 +    mem.size = sizeof(mem);
-+    int mem_user_k = -1, mem_cdram_k = -1;
++    int mem_user_k = -1, mem_cdram_k = -1, mem_phycont_k = -1;
 +    if (sceKernelGetFreeMemorySize(&mem) >= 0) {
 +      mem_user_k = mem.size_user / 1024;
 +      mem_cdram_k = mem.size_cdram / 1024;
++      mem_phycont_k = mem.size_phycont / 1024;
 +    }
++    // The totals the free figures are out of: the process's budgets, fixed
++    // at launch, so read once. A free figure without its total says nothing
++    // about how close the app is to the wall; the HUD shows used / total.
++    //
++    // On 3.73 both the SceAppMgrUser wrapper and the syscall under it answer
++    // 0x8080201C to this process (gallery builds 41 and 42, launched from
++    // the receiver and from the home screen alike), so the totals fall back
++    // to the standard application budget: 256 MiB of main memory, 112 MiB
++    // of CDRAM, 26 MiB physically contiguous. The 26 is what
++    // sceKernelGetFreeMemorySize reports before anything is allocated; the
++    // other two agree with the first sample (free + the 160 MiB arena + the
++    // 22 MiB ELF under 256; free + the layer's 23 MiB of CDRAM at 112).
++    // `budget` in the reply names the source, "api" or "standard".
++    static int total_user_k = -2, total_cdram_k = -2, total_phycont_k = -2;
++    static const char* budget_source = "none";
++    if (total_user_k == -2) {
++      SceAppMgrBudgetInfo budget;
++      std::memset(&budget, 0, sizeof budget);
++      budget.size = sizeof budget;
++      // The SceAppMgrUser wrapper answered 0x8080201C on 3.73 (gallery
++      // build 41); the syscall behind it is tried second.
++      int brc = sceAppMgrGetBudgetInfo(&budget);
++      if (brc < 0) {
++        VLog("flutter-vita: sceAppMgrGetBudgetInfo: 0x%08X, trying the "
++             "syscall\n",
++             static_cast<unsigned>(brc));
++        std::memset(&budget, 0, sizeof budget);
++        budget.size = sizeof budget;
++        brc = _sceAppMgrGetBudgetInfo(&budget);
++      }
++      if (brc >= 0) {
++        total_user_k = static_cast<int>(budget.total_user_rw_mem / 1024);
++        total_cdram_k = static_cast<int>(budget.total_cdram_mem / 1024);
++        total_phycont_k = static_cast<int>(budget.total_phycont_mem / 1024);
++        budget_source = "api";
++        VLog("flutter-vita: budget user=%uK cdram=%uK phycont=%uK "
++             "extra=%s %uK (mode %d)\n",
++             budget.total_user_rw_mem / 1024, budget.total_cdram_mem / 1024,
++             budget.total_phycont_mem / 1024,
++             budget.extra_mem_allowed ? "allowed" : "no",
++             budget.total_extra_mem / 1024, budget.app_mode);
++      } else {
++        total_user_k = 256 * 1024;
++        total_cdram_k = 112 * 1024;
++        total_phycont_k = 26 * 1024;
++        budget_source = "standard";
++        VLog("flutter-vita: _sceAppMgrGetBudgetInfo: 0x%08X; the totals "
++             "are the standard budget, 256M/112M/26M\n",
++             static_cast<unsigned>(brc));
++      }
++    }
++    const HeapSample heap = HeapNow();
++    // The arena's cap is the app's, set before main; mallinfo's arena is
++    // only what malloc has taken of it so far.
++    const unsigned heap_cap_mb =
++        &_newlib_heap_size_user != nullptr
++            ? _newlib_heap_size_user / (1024 * 1024)
++            : heap.arena_mb;
 +    // Battery: the only temperature user mode can read on this console. The
 +    // SoC's needs the kernel (PSVshell reads it as a plugin), which this
 +    // project does not do (ADR-0001), so the HUD labels this one "battery".
 +    const int batt_c100 = scePowerGetBatteryTemp();
-+    char reply[512];
++    char reply[640];
 +    const int rn = std::snprintf(
 +        reply, sizeof reply,
 +        "[{\"cpu_idle\":[%u,%u,%u,%u],\"gpu_pct\":%u,\"gpu_us\":%u,"
 +        "\"batt_c\":%d.%02d,\"batt_pct\":%d,\"charging\":%s,"
-+        "\"mem_user_k\":%d,\"mem_cdram_k\":%d,\"heap_mb\":%u,"
-+        "\"arm_mhz\":%d,\"gpu_mhz\":%d,\"window_us\":%u}]",
++        "\"mem_user_k\":%d,\"mem_cdram_k\":%d,\"mem_phycont_k\":%d,"
++        "\"total_user_k\":%d,\"total_cdram_k\":%d,\"total_phycont_k\":%d,"
++        "\"budget\":\"%s\","
++        "\"heap_mb\":%u,\"heap_arena_mb\":%u,\"heap_cap_mb\":%u,"
++        "\"arm_mhz\":%d,\"bus_mhz\":%d,\"gpu_mhz\":%d,\"window_us\":%u}]",
 +        idle_pct[0], idle_pct[1], idle_pct[2], idle_pct[3], gpu_pct,
 +        gpu_us_per_frame, batt_c100 / 100, std::abs(batt_c100 % 100),
 +        scePowerGetBatteryLifePercent(),
 +        scePowerIsBatteryCharging() ? "true" : "false", mem_user_k,
-+        mem_cdram_k, HeapUsedMb(), scePowerGetArmClockFrequency(),
++        mem_cdram_k, mem_phycont_k, total_user_k, total_cdram_k,
++        total_phycont_k, budget_source, heap.used_mb, heap.arena_mb,
++        heap_cap_mb,
++        scePowerGetArmClockFrequency(), scePowerGetBusClockFrequency(),
 +        scePowerGetGpuClockFrequency(), static_cast<unsigned>(window));
 +    if (message->response_handle != nullptr && g_engine != nullptr && rn > 0) {
 +      FlutterEngineSendPlatformMessageResponse(
