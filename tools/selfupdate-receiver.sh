@@ -297,7 +297,9 @@ fi
 # Only now, because a manifest that describes the slot before the update has
 # been confirmed is a manifest that makes the next run skip a file that never
 # landed.
-put "$SHA" "$MANIFEST_PATH"
+# To the receiver that just came up, which listens on WAIT_PORT; PORT was the
+# one that did the staging and may be gone.
+PORT="$WAIT_PORT" put "$SHA" "$MANIFEST_PATH"
 
 if [ "$KEEP_UPDATER" -eq 1 ]; then
   echo
