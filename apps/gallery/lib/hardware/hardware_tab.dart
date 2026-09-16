@@ -29,6 +29,7 @@ import '../bench/runner.dart'
         kHardwareDonePath,
         kHardwareResultPath,
         writeAtomic;
+import 'loopback.dart';
 
 enum CheckState { pending, running, pass, fail, eye, off, skipped }
 
@@ -85,6 +86,10 @@ class _HardwareTabState extends State<HardwareTab> {
   ui.Image? _back;
   var _running = false;
   var _status = '';
+
+  /// The microphone's recording started by the tone check, read by the
+  /// microphone check that follows it: one capture serves both.
+  Future<Map<String, Object?>>? _micDuringTone;
 
   @override
   void initState() {
@@ -292,52 +297,116 @@ class _HardwareTabState extends State<HardwareTab> {
         ),
         HardwareCheck(
           id: 'audio_tone',
-          manual: true,
           title: 'speaker: a tone',
-          hint: 'listen: one second at 440 Hz',
+          hint: 'one second of 1 kHz at 48 kHz through the main port',
           run: () async {
-            final r = await Hardware.call('audioTone');
+            // The microphone records the same two seconds, for the check
+            // after this one; the tone starts half a second in.
+            _micDuringTone = Hardware.call('mic', {'ms': 2000});
+            await Future<void>.delayed(const Duration(milliseconds: 500));
+            final r =
+                await Hardware.call('audioTone', {'hz': 1000, 'ms': 1000});
+            // The port clocks the samples: 50 grains of 20 ms take 1000 ms
+            // when the DAC is pulling them, and a port nobody drives would
+            // return at once or fail. That is this check's verdict; the
+            // microphone check after it says whether the sound came out.
+            final took = (r['took_ms'] as num?)?.toInt() ?? 0;
+            final vol = (r['console_vol'] as num?)?.toInt() ?? -1;
+            final clocked = took >= 900 && took <= 1200;
             return (
-              CheckState.eye,
-              'played ${r['grains']} grains at ${r['rate']} Hz in ${r['took_ms']} ms',
-              r
-            );
-          },
-        ),
-        HardwareCheck(
-          id: 'audio_file',
-          manual: true,
-          title: 'speaker: an mp3 (sceAvPlayer)',
-          hint: 'listen: three notes',
-          run: () async {
-            final r = await Hardware.call('audioFile', {'max_ms': 5000});
-            return (
-              CheckState.eye,
-              'decoded ${r['frames']} frames, ${r['channels']} ch ${r['rate']} Hz, ${r['bytes']} B in ${r['took_ms']} ms',
+              clocked && vol != 0 ? CheckState.pass : CheckState.fail,
+              'port ${r['port']} clocked ${r['grains']} grains in $took ms at console volume $vol/30'
+                  '${r['raised'] == true ? ' (12 for the tone)' : ''}'
+                  '${clocked ? '' : '; the port did not clock the samples'}',
               r
             );
           },
         ),
         HardwareCheck(
           id: 'mic',
-          manual: true,
           title: 'microphone',
-          hint: 'say something',
+          hint: 'two seconds from the RAW port while the tone plays',
           run: () async {
-            final r = await Hardware.call('mic');
-            final peak = (r['peak'] as num?)?.toInt() ?? 0;
-            if (r['muted'] == true) {
-              // The console's own switch, in the quick menu (hold PS):
-              // nothing this app can flip, and the port is open all the same.
+            final m =
+                await (_micDuringTone ?? Hardware.call('mic', {'ms': 2000}));
+            _micDuringTone = null;
+            final wav = File('${m['path']}').readAsBytesSync();
+            final a = analyzeLoopback(wav, hz: 1000);
+            final r = <String, Object?>{
+              ...m,
+              'blocks': a.blocks,
+              'tone_blocks': a.toneBlocks,
+              'snr_db': double.parse(a.snrDb.toStringAsFixed(1)),
+              'tone_share': double.parse(a.toneShare.toStringAsFixed(2)),
+            };
+            if (a.silent) {
               return (
-                CheckState.eye,
-                'muted by the console (PS button menu)',
+                CheckState.fail,
+                'every one of ${a.samples} samples is zero (mute status ${m['status']}): '
+                    'switch the microphone on in the quick menu (hold PS)',
+                r
+              );
+            }
+            // The loopback: the tone check played one second of 1 kHz
+            // while this recording ran, and it is in the recording when the
+            // speaker and the microphone both work (build 56: +70 dB at
+            // 1 kHz over the room). A live microphone that hears the room
+            // and not the tone points at the speaker.
+            if (a.heard) {
+              return (
+                CheckState.pass,
+                'the tone came through at +${_n(a.snrDb)} dB over the room, ${a.toneBlocks * 100} ms, '
+                    'peak ${a.peak}; room noise rms ${m['rms']}',
                 r
               );
             }
             return (
-              peak > 800 ? CheckState.pass : CheckState.eye,
-              'peak $peak rms ${r['rms']} over ${r['samples']} samples${peak > 800 ? '' : ' (quiet)'}',
+              CheckState.fail,
+              'alive (peak ${a.peak}, rms ${m['rms']}) but the tone is not in the recording '
+                  '(+${_n(a.snrDb)} dB at 1 kHz): the speaker is silent, or the console is muted or turned down',
+              r
+            );
+          },
+        ),
+        HardwareCheck(
+          id: 'audio_file',
+          title: 'an AAC file through sceAvPlayer',
+          hint: 'three notes, decoded by the console and recorded',
+          run: () async {
+            // The decoder is the verdict; the microphone says whether the
+            // room heard it, as a level rise in dB, for the record.
+            final mic = Hardware.call('mic', {'ms': 4000});
+            await Future<void>.delayed(const Duration(milliseconds: 400));
+            // AAC in MP4: the container the console's player is for. The
+            // same sound as MP3 got 0x806A0002 from AddSource on every
+            // path (build 48); the player does not open that container.
+            Map<String, Object?> r;
+            try {
+              r = await Hardware.call(
+                  'audioFile', {'max_ms': 5000, 'file': 'tone.m4a'});
+              r['file'] = 'tone.m4a';
+            } on PlatformException catch (e) {
+              // The same sound under a black video track, in case the
+              // player wants one.
+              r = await Hardware.call(
+                  'audioFile', {'max_ms': 5000, 'file': 'tone.mp4'});
+              r['file'] = 'tone.mp4';
+              r['m4a_error'] = e.message;
+            }
+            final m = await mic;
+            var rise = 0.0;
+            try {
+              rise = levelRiseDb(File('${m['path']}').readAsBytesSync());
+            } on Object {
+              // No recording is no verdict on the decoder.
+            }
+            r['mic_rise_db'] = double.parse(rise.toStringAsFixed(1));
+            r['mic_peak'] = m['peak'];
+            final frames = (r['frames'] as num?)?.toInt() ?? 0;
+            return (
+              frames > 0 ? CheckState.pass : CheckState.fail,
+              '${r['file']}: decoded $frames frames, ${r['channels']} ch ${r['rate']} Hz, ${r['bytes']} B in ${r['took_ms']} ms; '
+                  'the microphone heard +${_n(rise)} dB${(m['peak'] as num? ?? 0) == 0 ? ' (mic off)' : ''}',
               r
             );
           },
@@ -473,11 +542,17 @@ class _HardwareTabState extends State<HardwareTab> {
         ],
       };
       Directory(kDataDir).createSync(recursive: true);
-      writeAtomic(kHardwareResultPath,
-          const JsonEncoder.withIndent('  ').convert(payload));
+      // A check's result map may carry what a number cannot be in JSON
+      // (an infinite dB); the file is worth more than that one figure.
+      writeAtomic(
+          kHardwareResultPath,
+          JsonEncoder.withIndent(
+                  '  ', (o) => o is double && !o.isFinite ? null : o.toString())
+              .convert(payload));
       File(kHardwareDonePath).writeAsStringSync('1', flush: true);
-    } on Object {
-      // The screen still has every row.
+    } on Object catch (e) {
+      // The screen still has every row; the log says why the file has not.
+      print('hardware: result file not written: $e');
     }
   }
 
@@ -524,7 +599,7 @@ class _HardwareTabState extends State<HardwareTab> {
                       _CheckRow(c, onRun: _running ? null : () => _runOne(c)),
                     _GroupHead(
                       title: 'NEEDS A PERSON',
-                      hint: 'press, touch, speak, listen, type',
+                      hint: 'press, touch, type',
                       count: person.length,
                       onRun: _running
                           ? null

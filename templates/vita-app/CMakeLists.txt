@@ -87,7 +87,7 @@ set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=gnu++20 -Wall -O2 -g")
 # for one. `overlay off` on the dev server toggles the HUD at runtime.
 if(HARDWARE_CHECKS)
   set(HARDWARE_SOURCES ${CMAKE_CURRENT_SOURCE_DIR}/hardware.c)
-  set(HARDWARE_LIBS SceCamera_stub SceMotion_stub SceAudio_stub SceAudioIn_stub SceAvPlayer_stub)
+  set(HARDWARE_LIBS SceCamera_stub SceMotion_stub SceAudio_stub SceAudioIn_stub SceAvPlayer_stub SceAVConfig_stub)
 endif()
 
 if(RELEASE)

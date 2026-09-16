@@ -34,7 +34,11 @@ vita:
 flutter:
   uses-material-design: true
   assets:
-    # Three seconds of three notes, for the audio-file check: the console's
-    # own player decodes it (sceAvPlayer), which a tone through sceAudioOut
-    # does not prove.
-    - assets/hardware/tone.mp3
+    # Three seconds of three notes, AAC in an MP4 box, for the audio-file
+    # check: the console's own player decodes it (sceAvPlayer), which a tone
+    # through sceAudioOut does not prove. It was an MP3 until 2026-09-16;
+    # sceAvPlayerAddSource answered 0x806A0002 to that from every path.
+    - assets/hardware/tone.m4a
+    # The same three seconds with a black 320x240 video track, in case the
+    # player wants a video track before it plays anything.
+    - assets/hardware/tone.mp4

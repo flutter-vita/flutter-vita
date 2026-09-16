@@ -295,10 +295,10 @@ index 00000000..a5e0625d
 +}  // extern "C"
 diff --git a/engine/src/flutter/shell/platform/embedder/vita_embedder.cc b/engine/src/flutter/shell/platform/embedder/vita_embedder.cc
 new file mode 100644
-index 00000000..c7e562f1
+index 00000000..e80550d7
 --- /dev/null
 +++ b/engine/src/flutter/shell/platform/embedder/vita_embedder.cc
-@@ -0,0 +1,4621 @@
+@@ -0,0 +1,4651 @@
 +// Copyright (c) 2026, the Flutter Authors. All rights reserved.
 +// Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
@@ -382,6 +382,18 @@ index 00000000..c7e562f1
 +extern "C" int flutter_vita_hardware_call(const char* method, const char* body,
 +                                          size_t body_len, char* out,
 +                                          size_t cap) __attribute__((weak));
++
++// The same, without holding the platform thread: the app answers through
++// `respond(ctx, reply, len)`, once, from whichever thread finishes the
++// check. Two checks can then run at the same time, which the microphone
++// recording the speaker needs; through the call above they ran one after
++// the other, the platform thread waiting on each (gallery builds 46 to
++// 55: the tone played after the recording had ended). Returns 0 when the
++// app took the call, else the caller answers with an error.
++extern "C" int flutter_vita_hardware_call_async(
++    const char* method, const char* body, size_t body_len,
++    void (*respond)(void* ctx, const char* reply, size_t len), void* ctx)
++    __attribute__((weak));
 +
 +// The budget syscall under the SceAppMgrUser wrapper; the stub exports both.
 +extern "C" int _sceAppMgrGetBudgetInfo(SceAppMgrBudgetInfo* info);
@@ -4216,6 +4228,24 @@ index 00000000..c7e562f1
 +    const char* m = JsonFindValue(body, len, "method");
 +    char method[48] = {0};
 +    if (m != nullptr) JsonUnescape(m, body + len, method, sizeof method);
++    if (flutter_vita_hardware_call_async != nullptr &&
++        message->response_handle != nullptr && g_engine != nullptr) {
++      // The response handle is the context; the app's thread completes it.
++      // FlutterEngineSendPlatformMessageResponse posts the completion to
++      // the UI task runner, so any thread may call it.
++      auto respond = [](void* ctx, const char* reply, size_t n) {
++        FlutterEngineSendPlatformMessageResponse(
++            g_engine,
++            static_cast<const FlutterPlatformMessageResponseHandle*>(ctx),
++            reinterpret_cast<const uint8_t*>(reply), n);
++      };
++      if (flutter_vita_hardware_call_async(
++              method, body, len, respond,
++              const_cast<FlutterPlatformMessageResponseHandle*>(
++                  message->response_handle)) == 0) {
++        return;
++      }
++    }
 +    static char reply[64 * 1024];
 +    int rn = -1;
 +    if (flutter_vita_hardware_call != nullptr) {

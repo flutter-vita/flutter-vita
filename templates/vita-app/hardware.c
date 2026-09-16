@@ -12,13 +12,14 @@
 // links five stub libraries an ordinary app has no use for. Dev-loop
 // infrastructure: a shipping app never includes it.
 //
-// Everything here runs on the platform thread, the one that drains platform
-// messages. A check that needs time (a second of tone, a camera frame) blocks
-// that thread for that long, which is acceptable for a test tab and would
-// not be for an app.
+// Every check runs on a thread of its own and answers from it (the end of
+// this file); the platform thread, the one that drains platform messages,
+// only starts it. Two checks asked for together run together, which the
+// microphone recording the speaker depends on.
 #include <psp2/appmgr.h>
 #include <psp2/audioin.h>
 #include <psp2/audioout.h>
+#include <psp2/avconfig.h>
 #include <psp2/avplayer.h>
 #include <psp2/camera.h>
 #include <psp2/ctrl.h>
@@ -222,29 +223,55 @@ static int check_motion(char* out, size_t cap) {
 
 // ---- audio out: a tone -----------------------------------------------------
 
-// A second of 440 Hz through the main port at 48 kHz, stereo. Blocks for the
-// second; sceAudioOutOutput waits for the previous grain, which is the clock.
-static int check_audio_tone(char* out, size_t cap) {
-  enum { kRate = 48000, kGrain = 960, kSeconds = 1 };
+// `ms` of a sine at `hz` through the main port at 48 kHz, stereo, at the
+// port's full volume. Blocks for the duration; sceAudioOutOutput waits for
+// the previous grain, which is the clock. The first version played 440 Hz
+// at a third of full scale and half volume, and nobody heard it: the
+// console's speakers are small and roll off below the mid range. 1 kHz is
+// what the loopback check asks for, and what the microphone's 16 kHz
+// sampling resolves cleanly.
+static int check_audio_tone(char* out, size_t cap, int hz, unsigned ms, int amp) {
+  enum { kRate = 48000, kGrain = 960 };
+  if (hz < 50 || hz > 8000) hz = 1000;
+  if (ms < 100 || ms > 10000) ms = 1000;
+  if (amp < 1000 || amp > 32000) amp = 24000;
+  // The console's own volume, 0 to 30: a tone at full port volume through a
+  // console turned down is silent, and the check must say which it was.
+  int sysvol = -1;
+  const int vr0 = sceAVConfigGetSystemVol(&sysvol);
+  if (vr0 < 0) hw_log("tone: sceAVConfigGetSystemVol 0x%08X", (unsigned)vr0);
+  // A console turned down cannot be tested. It is turned up to 12 for the
+  // tone and put back after; the reply says so, and the person's own level
+  // is not touched otherwise. Build 47 found the console at 0/30, which is
+  // why nobody heard builds 30 to 46.
+  int raised = 0;
+  if (vr0 >= 0 && sysvol < 5) {
+    const int sr = sceAVConfigSetSystemVol(12);
+    hw_log("tone: console volume %d/30, set to 12 for the tone -> 0x%08X", sysvol, (unsigned)sr);
+    raised = sr >= 0;
+  }
   const int port = sceAudioOutOpenPort(SCE_AUDIO_OUT_PORT_TYPE_MAIN, kGrain, kRate, SCE_AUDIO_OUT_MODE_STEREO);
+  hw_log("tone: port %d (%d Hz, %u ms, amp %d), console volume %d/30", port, hz, ms, amp, sysvol);
   if (port < 0) return reply_err(out, cap, "sceAudioOutOpenPort", port);
-  int vol[2] = {SCE_AUDIO_OUT_MAX_VOL / 2, SCE_AUDIO_OUT_MAX_VOL / 2};
-  sceAudioOutSetVolume(port, SCE_AUDIO_VOLUME_FLAG_L_CH | SCE_AUDIO_VOLUME_FLAG_R_CH, vol);
+  int vol[2] = {SCE_AUDIO_OUT_MAX_VOL, SCE_AUDIO_OUT_MAX_VOL};
+  const int vr = sceAudioOutSetVolume(port, SCE_AUDIO_VOLUME_FLAG_L_CH | SCE_AUDIO_VOLUME_FLAG_R_CH, vol);
+  if (vr < 0) hw_log("tone: sceAudioOutSetVolume 0x%08X", (unsigned)vr);
   static int16_t buf[kGrain * 2];
   unsigned phase = 0;
-  const unsigned grains = kRate / kGrain * kSeconds;
+  const unsigned grains = (unsigned)kRate * ms / 1000 / kGrain;
+  const unsigned total = grains * kGrain, fade = 480;  // 10 ms
   const uint64_t t0 = sceKernelGetProcessTimeWide();
   int r = 0;
   for (unsigned g = 0; g < grains && r >= 0; g++) {
     for (int i = 0; i < kGrain; i++) {
-      // A gentle fade at both ends so the speaker does not click.
+      // A short fade at both ends so the speaker does not click.
       const unsigned n = g * kGrain + (unsigned)i;
       float env = 1.0f;
-      if (n < 2400) env = n / 2400.0f;
-      if (n > grains * kGrain - 2400) env = (grains * kGrain - n) / 2400.0f;
-      const int16_t s = (int16_t)(sinf(2.0f * 3.14159265f * 440.0f * phase / kRate) * 12000.0f * env);
-      buf[i * 2] = s;
-      buf[i * 2 + 1] = s;
+      if (n < fade) env = n / (float)fade;
+      if (n > total - fade) env = (total - n) / (float)fade;
+      const int16_t v = (int16_t)(sinf(2.0f * 3.14159265f * (float)hz * phase / kRate) * (float)amp * env);
+      buf[i * 2] = v;
+      buf[i * 2 + 1] = v;
       phase++;
     }
     r = sceAudioOutOutput(port, buf);
@@ -252,31 +279,120 @@ static int check_audio_tone(char* out, size_t cap) {
   sceAudioOutOutput(port, NULL);  // drain
   const unsigned took_ms = (unsigned)((sceKernelGetProcessTimeWide() - t0) / 1000);
   sceAudioOutReleasePort(port);
+  if (raised) sceAVConfigSetSystemVol(sysvol);
+  hw_log("tone: %u grains in %u ms, last output 0x%08X", grains, took_ms, (unsigned)r);
   if (r < 0) return reply_err(out, cap, "sceAudioOutOutput", r);
-  return reply_ok(out, cap, "{\"port\":%d,\"rate\":%d,\"grains\":%u,\"took_ms\":%u}", port, kRate, grains, took_ms);
+  return reply_ok(out, cap,
+                  "{\"port\":%d,\"rate\":%d,\"hz\":%d,\"amp\":%d,\"grains\":%u,\"took_ms\":%u,\"console_vol\":%d,"
+                  "\"raised\":%s}",
+                  port, kRate, hz, amp, grains, took_ms, sysvol, raised ? "true" : "false");
 }
 
 // ---- audio out: a file through sceAvPlayer --------------------------------
 
 static void* av_alloc(void* arg, uint32_t alignment, uint32_t size) {
   (void)arg;
-  return memalign(alignment, size);
+  // newlib's memalign refuses an alignment of 0 or one that is not a power
+  // of two; the player asks with 0 for plain allocations.
+  if (alignment < 16) alignment = 16;
+  void* p = memalign(alignment, size);
+  if (p == NULL) hw_log("avplayer: alloc %u align %u failed", size, alignment);
+  return p;
 }
 static void av_free(void* arg, void* ptr) {
   (void)arg;
   free(ptr);
 }
+// Frame buffers: the decoders write them through hardware, so they come
+// from physically contiguous memblocks, like the camera's. Heap memory
+// here is the one thing builds 49 to 51 gave the player that it never
+// complained about in words; it read the file's boxes and stopped.
+enum { kAvFrames = 8 };
+static struct {
+  void* base;
+  SceUID uid;
+} g_av_frames[kAvFrames];
 static void* av_alloc_frame(void* arg, uint32_t alignment, uint32_t size) {
   (void)arg;
-  return memalign(alignment < 0x40 ? 0x40 : alignment, size);
+  for (int i = 0; i < kAvFrames; i++) {
+    if (g_av_frames[i].base != NULL) continue;
+    const SceSize bytes = (size + 0xFFFFF) & ~0xFFFFFu;
+    const SceUID uid = sceKernelAllocMemBlock("fvita-avframe", SCE_KERNEL_MEMBLOCK_TYPE_USER_MAIN_PHYCONT_NC_RW, bytes, NULL);
+    void* base = NULL;
+    if (uid >= 0) sceKernelGetMemBlockBase(uid, &base);
+    hw_log("avplayer: frame alloc %u align %u -> %p (block 0x%08X, %u)", size, alignment, base, (unsigned)uid, bytes);
+    if (base == NULL) return NULL;
+    g_av_frames[i].base = base;
+    g_av_frames[i].uid = uid;
+    return base;
+  }
+  hw_log("avplayer: frame alloc %u: no slot", size);
+  return NULL;
 }
 static void av_free_frame(void* arg, void* ptr) {
   (void)arg;
-  free(ptr);
+  for (int i = 0; i < kAvFrames; i++) {
+    if (g_av_frames[i].base != ptr) continue;
+    sceKernelFreeMemBlock(g_av_frames[i].uid);
+    g_av_frames[i].base = NULL;
+    return;
+  }
+}
+
+// File I/O for the player through sceIo, and every call in the log. With
+// the player's own I/O the m4a was accepted, the player went active and
+// stopped 86 ms later with nothing decoded (build 49); what it could not
+// do is not said anywhere, so this side does the reading.
+static SceUID g_av_fd = -1;
+static int av_open(void* p, const char* filename) {
+  (void)p;
+  g_av_fd = sceIoOpen(filename, SCE_O_RDONLY, 0);
+  hw_log("avplayer: open %s -> 0x%08X", filename, (unsigned)g_av_fd);
+  return g_av_fd >= 0 ? 0 : -1;
+}
+static int av_close(void* p) {
+  (void)p;
+  if (g_av_fd >= 0) sceIoClose(g_av_fd);
+  g_av_fd = -1;
+  return 0;
+}
+static int av_read_offset(void* p, uint8_t* buffer, uint64_t position, uint32_t length) {
+  (void)p;
+  if (g_av_fd < 0) return -1;
+  sceIoLseek(g_av_fd, (SceOff)position, SCE_SEEK_SET);
+  const int got = sceIoRead(g_av_fd, buffer, length);
+  static int logged;
+  if (logged < 4 || got < 0) {
+    logged++;
+    hw_log("avplayer: read %u at %llu -> %d", length, (unsigned long long)position, got);
+  }
+  return got;
+}
+static uint64_t av_size(void* p) {
+  (void)p;
+  if (g_av_fd < 0) return 0;
+  const SceOff end = sceIoLseek(g_av_fd, 0, SCE_SEEK_END);
+  sceIoLseek(g_av_fd, 0, SCE_SEEK_SET);
+  hw_log("avplayer: size -> %llu", (unsigned long long)end);
+  return (uint64_t)end;
+}
+// Event ids, from the player's documentation: 1 stop, 2 ready, 3 play,
+// 4 pause, 5 buffering, 0x10 timed text, 0x20 warning (data: the code).
+static void av_event(void* p, int32_t event, int32_t source, void* data) {
+  (void)p;
+  const char* name = event == 1   ? "stop"
+                     : event == 2 ? "ready"
+                     : event == 3 ? "play"
+                     : event == 4 ? "pause"
+                     : event == 5 ? "buffering"
+                     : event == 0x20 ? "warning"
+                                     : "?";
+  hw_log("avplayer: event %d %s source %d data 0x%08X", (int)event, name, (int)source,
+         data && event == 0x20 ? *(unsigned*)data : 0u);
 }
 
 // Plays the whole file, up to `max_ms`, and reports what the decoder said
-// about it. The system's player decodes MP3 and AAC; the app ships one.
+// about it. The system's player decodes AAC in MP4; the app ships one.
 static int check_audio_file(char* out, size_t cap, const char* path, unsigned max_ms) {
   static bool loaded;
   if (!loaded) {
@@ -290,6 +406,12 @@ static int check_audio_file(char* out, size_t cap, const char* path, unsigned ma
   init.memoryReplacement.deallocate = av_free;
   init.memoryReplacement.allocateTexture = av_alloc_frame;
   init.memoryReplacement.deallocateTexture = av_free_frame;
+  init.fileReplacement.open = av_open;
+  init.fileReplacement.close = av_close;
+  init.fileReplacement.readOffset = av_read_offset;
+  init.fileReplacement.size = av_size;
+  init.eventReplacement.eventCallback = av_event;
+  init.debugLevel = 3;
   init.basePriority = 0xA0;
   init.numOutputVideoFrameBuffers = 2;
   init.autoStart = SCE_TRUE;
@@ -300,16 +422,56 @@ static int check_audio_file(char* out, size_t cap, const char* path, unsigned ma
   // is 0x80xxxxxx. Build 30 tested `h < 0`, took a good handle for an error
   // and left the player open.
   if (h == 0 || ((unsigned)h >> 24) == 0x80u) return reply_err(out, cap, "sceAvPlayerInit", h);
+  // Both spellings of the app0 mount are tried, and then a copy under
+  // ux0:data; build 45 had 0x806A0002 from AddSource on `app0:/...`, a
+  // code the SDK header does not name, with the file present on the card.
   int r = sceAvPlayerAddSource(h, path);
+  hw_log("avplayer: add %s -> 0x%08X", path, (unsigned)r);
+  if (r < 0 && strncmp(path, "app0:/", 6) == 0) {
+    char alt[256];
+    snprintf(alt, sizeof alt, "app0:%s", path + 6);
+    r = sceAvPlayerAddSource(h, alt);
+    hw_log("avplayer: add %s -> 0x%08X", alt, (unsigned)r);
+    if (r < 0) {
+      const char* dot = strrchr(path, '.');
+      char copy[96];
+      snprintf(copy, sizeof copy, "ux0:data/flutter-vita/avplayer-test%s", dot ? dot : "");
+      const SceUID in = sceIoOpen(path, SCE_O_RDONLY, 0);
+      const SceUID outfd = sceIoOpen(copy, SCE_O_WRONLY | SCE_O_CREAT | SCE_O_TRUNC, 0777);
+      if (in >= 0 && outfd >= 0) {
+        static char chunk[16 * 1024];
+        int got;
+        while ((got = sceIoRead(in, chunk, sizeof chunk)) > 0) sceIoWrite(outfd, chunk, (SceSize)got);
+      }
+      if (in >= 0) sceIoClose(in);
+      if (outfd >= 0) sceIoClose(outfd);
+      r = sceAvPlayerAddSource(h, copy);
+      hw_log("avplayer: add %s -> 0x%08X (copied: in %d out %d)", copy, (unsigned)r, in, outfd);
+    }
+  }
   if (r < 0) {
     sceAvPlayerClose(h);
     return reply_err(out, cap, "sceAvPlayerAddSource", r);
   }
   int port = -1;
   unsigned frames = 0, channels = 0, rate = 0, bytes = 0;
+  bool was_active = false;
   const uint64_t t0 = sceKernelGetProcessTimeWide();
-  while (sceAvPlayerIsActive(h)) {
-    if ((sceKernelGetProcessTimeWide() - t0) / 1000 > max_ms) break;
+  // The player opens the stream on its own thread: IsActive is false for a
+  // while after AddSource, and a loop that tests it first leaves at once
+  // with nothing decoded (build 48, the m4a). So the loop runs on the
+  // clock, and ends when the player has been active and is no more.
+  for (;;) {
+    const unsigned ms = (unsigned)((sceKernelGetProcessTimeWide() - t0) / 1000);
+    if (ms > max_ms) break;
+    const bool active = sceAvPlayerIsActive(h);
+    if (active && !was_active) hw_log("avplayer: active after %u ms", ms);
+    if (!active && was_active) break;
+    was_active = was_active || active;
+    if (!active) {
+      sceKernelDelayThread(2000);
+      continue;
+    }
     SceAvPlayerFrameInfo f;
     memset(&f, 0, sizeof f);
     if (!sceAvPlayerGetAudioData(h, &f)) {
@@ -320,14 +482,19 @@ static int check_audio_file(char* out, size_t cap, const char* path, unsigned ma
       channels = f.details.audio.channelCount;
       rate = f.details.audio.sampleRate;
       const int grain = (int)(f.details.audio.size / (2 * (channels ? channels : 1)));
-      port = sceAudioOutOpenPort(SCE_AUDIO_OUT_PORT_TYPE_MAIN, grain, (int)rate,
+      // The BGM port: the main port takes 48 kHz only (0x80260008 for the
+      // 44.1 kHz file, build 52), the BGM port any rate from 8 to 48 kHz,
+      // and music is what it is for.
+      port = sceAudioOutOpenPort(SCE_AUDIO_OUT_PORT_TYPE_BGM, grain, (int)rate,
                                  channels == 1 ? SCE_AUDIO_OUT_MODE_MONO : SCE_AUDIO_OUT_MODE_STEREO);
+      hw_log("avplayer: audio %u ch %u Hz, %u bytes a frame, grain %d -> port %d", channels, rate,
+             f.details.audio.size, grain, port);
       if (port < 0) {
         sceAvPlayerStop(h);
         sceAvPlayerClose(h);
         return reply_err(out, cap, "sceAudioOutOpenPort(file)", port);
       }
-      int vol[2] = {SCE_AUDIO_OUT_MAX_VOL / 2, SCE_AUDIO_OUT_MAX_VOL / 2};
+      int vol[2] = {SCE_AUDIO_OUT_MAX_VOL, SCE_AUDIO_OUT_MAX_VOL};
       sceAudioOutSetVolume(port, SCE_AUDIO_VOLUME_FLAG_L_CH | SCE_AUDIO_VOLUME_FLAG_R_CH, vol);
     }
     sceAudioOutOutput(port, f.pData);
@@ -341,39 +508,102 @@ static int check_audio_file(char* out, size_t cap, const char* path, unsigned ma
   const unsigned took_ms = (unsigned)((sceKernelGetProcessTimeWide() - t0) / 1000);
   sceAvPlayerStop(h);
   sceAvPlayerClose(h);
-  if (frames == 0) return reply_err(out, cap, "no audio frame decoded", 0);
+  hw_log("avplayer: %u frames, %u ch %u Hz, %u bytes in %u ms%s", frames, channels, rate, bytes, took_ms,
+         was_active ? "" : ", never active");
+  if (frames == 0) return reply_err(out, cap, was_active ? "no audio frame decoded" : "player never became active", 0);
   return reply_ok(out, cap, "{\"frames\":%u,\"channels\":%u,\"rate\":%u,\"bytes\":%u,\"took_ms\":%u}", frames,
                   channels, rate, bytes, took_ms);
 }
 
 // ---- microphone ------------------------------------------------------------
 
-// Half a second from the microphone: the peak and the RMS, so the tab can say
-// whether the room was silent or someone spoke.
-static int check_mic(char* out, size_t cap) {
-  enum { kRate = 16000, kGrain = 256, kGrains = 31 };  // ~0.5 s
-  const int port = sceAudioInOpenPort(SCE_AUDIO_IN_PORT_TYPE_VOICE, kGrain, kRate, SCE_AUDIO_IN_PARAM_FORMAT_S16_MONO);
+// `ms` from the microphone, 16 kHz mono, written as a WAV the Dart side
+// analyses, plus the peak and the RMS. The RAW port: the VOICE port (build
+// 45 and before) opened, took 7936 samples and every one was zero, with
+// the status word reading "muted"; the voice port is the one sceVoice
+// feeds, and this app is not a voice chat.
+static int check_mic(char* out, size_t cap, unsigned ms, const char* path) {
+  enum { kRate = 16000 };
+  if (ms < 100 || ms > 10000) ms = 1000;
+  int grain = 256, type = SCE_AUDIO_IN_PORT_TYPE_RAW;
+  int port = sceAudioInOpenPort(type, grain, kRate, SCE_AUDIO_IN_PARAM_FORMAT_S16_MONO);
+  if (port < 0) {
+    hw_log("mic: raw/256 0x%08X", (unsigned)port);
+    grain = 512;
+    port = sceAudioInOpenPort(type, grain, kRate, SCE_AUDIO_IN_PARAM_FORMAT_S16_MONO);
+  }
+  if (port < 0) {
+    hw_log("mic: raw/512 0x%08X", (unsigned)port);
+    grain = 256;
+    type = SCE_AUDIO_IN_PORT_TYPE_VOICE;
+    port = sceAudioInOpenPort(type, grain, kRate, SCE_AUDIO_IN_PARAM_FORMAT_S16_MONO);
+  }
+  hw_log("mic: port %d type %d grain %d, status(mute) %d", port, type, grain,
+         sceAudioInGetStatus(SCE_AUDIO_IN_GETSTATUS_MUTE));
   if (port < 0) return reply_err(out, cap, "sceAudioInOpenPort", port);
-  static int16_t buf[kGrain];
+  const unsigned grains = (unsigned)kRate * ms / 1000 / (unsigned)grain;
+  const size_t bytes = (size_t)grains * (size_t)grain * 2;
+  int16_t* pcm = malloc(bytes);
+  if (pcm == NULL) {
+    sceAudioInReleasePort(port);
+    return reply_err(out, cap, "malloc(mic)", (int)bytes);
+  }
   int peak = 0;
   double sq = 0;
   unsigned n = 0;
   int r = 0;
-  for (int g = 0; g < kGrains && r >= 0; g++) {
+  const uint64_t t0 = sceKernelGetProcessTimeWide();
+  for (unsigned g = 0; g < grains && r >= 0; g++) {
+    int16_t* buf = pcm + (size_t)g * (size_t)grain;
     r = sceAudioInInput(port, buf);
     if (r < 0) break;
-    for (int i = 0; i < kGrain; i++) {
+    for (int i = 0; i < grain; i++) {
       const int v = abs(buf[i]);
       if (v > peak) peak = v;
       sq += (double)buf[i] * buf[i];
       n++;
     }
   }
+  const unsigned took_ms = (unsigned)((sceKernelGetProcessTimeWide() - t0) / 1000);
+  const int status = sceAudioInGetStatus(SCE_AUDIO_IN_GETSTATUS_MUTE);
   sceAudioInReleasePort(port);
-  if (r < 0) return reply_err(out, cap, "sceAudioInInput", r);
+  hw_log("mic: %u samples in %u ms, peak %d, last input 0x%08X", n, took_ms, peak, (unsigned)r);
+  if (r < 0) {
+    free(pcm);
+    return reply_err(out, cap, "sceAudioInInput", r);
+  }
+  // A canonical 44-byte PCM WAV header, little-endian like the console.
+  const uint32_t data_bytes = n * 2;
+  uint8_t hdr[44];
+  memcpy(hdr, "RIFF", 4);
+  const uint32_t riff = 36 + data_bytes;
+  memcpy(hdr + 4, &riff, 4);
+  memcpy(hdr + 8, "WAVEfmt ", 8);
+  const uint32_t fmt_len = 16, rate = kRate, byte_rate = kRate * 2;
+  const uint16_t pcm_tag = 1, channels = 1, block = 2, bits = 16;
+  memcpy(hdr + 16, &fmt_len, 4);
+  memcpy(hdr + 20, &pcm_tag, 2);
+  memcpy(hdr + 22, &channels, 2);
+  memcpy(hdr + 24, &rate, 4);
+  memcpy(hdr + 28, &byte_rate, 4);
+  memcpy(hdr + 32, &block, 2);
+  memcpy(hdr + 34, &bits, 2);
+  memcpy(hdr + 36, "data", 4);
+  memcpy(hdr + 40, &data_bytes, 4);
+  const SceUID fd = sceIoOpen(path, SCE_O_WRONLY | SCE_O_CREAT | SCE_O_TRUNC, 0777);
+  int wrote = -1;
+  if (fd >= 0) {
+    wrote = sceIoWrite(fd, hdr, sizeof hdr);
+    if (wrote == (int)sizeof hdr) wrote = sceIoWrite(fd, pcm, data_bytes);
+    sceIoClose(fd);
+  }
+  free(pcm);
+  if (wrote != (int)data_bytes) return reply_err(out, cap, "write mic wav", wrote < 0 ? wrote : fd);
   const double rms = n ? sqrt(sq / n) : 0;
-  return reply_ok(out, cap, "{\"port\":%d,\"rate\":%d,\"samples\":%u,\"peak\":%d,\"rms\":%.0f,\"muted\":%s}", port, kRate, n,
-                  peak, rms, sceAudioInGetStatus(SCE_AUDIO_IN_GETSTATUS_MUTE) > 0 ? "true" : "false");
+  return reply_ok(out, cap,
+                  "{\"port\":%d,\"type\":%d,\"rate\":%d,\"samples\":%u,\"peak\":%d,\"rms\":%.0f,\"status\":%d,"
+                  "\"took_ms\":%u,\"path\":\"%s\"}",
+                  port, type, kRate, n, peak, rms, status, took_ms, path);
 }
 
 // ---- cameras ---------------------------------------------------------------
@@ -508,47 +738,106 @@ static int dispatch(const char* method, const char* body, size_t body_len, char*
   if (strcmp(method, "controls") == 0) return check_controls(out, cap);
   if (strcmp(method, "touch") == 0) return check_touch(out, cap);
   if (strcmp(method, "motion") == 0) return check_motion(out, cap);
-  if (strcmp(method, "audioTone") == 0) return check_audio_tone(out, cap);
-  if (strcmp(method, "audioFile") == 0) {
-    return check_audio_file(out, cap, "app0:/flutter_assets/assets/hardware/tone.mp3",
-                            (unsigned)body_int(body, body_len, "max_ms", 4000));
+  if (strcmp(method, "audioTone") == 0) {
+    return check_audio_tone(out, cap, body_int(body, body_len, "hz", 1000), (unsigned)body_int(body, body_len, "ms", 1000),
+                            body_int(body, body_len, "amp", 24000));
   }
-  if (strcmp(method, "mic") == 0) return check_mic(out, cap);
+  if (strcmp(method, "audioFile") == 0) {
+    // {"file":"tone.m4a"}: a name under the app's assets/hardware.
+    char name[64] = "tone.mp3";
+    const char* key = "\"file\":\"";
+    for (size_t i = 0; i + strlen(key) < body_len; i++) {
+      if (memcmp(body + i, key, strlen(key)) == 0) {
+        const char* v = body + i + strlen(key);
+        size_t n = 0;
+        while (v + n < body + body_len && v[n] != '"' && n + 1 < sizeof name) n++;
+        memcpy(name, v, n);
+        name[n] = '\0';
+        break;
+      }
+    }
+    char path[160];
+    snprintf(path, sizeof path, "app0:/flutter_assets/assets/hardware/%s", name);
+    return check_audio_file(out, cap, path, (unsigned)body_int(body, body_len, "max_ms", 4000));
+  }
+  if (strcmp(method, "mic") == 0) {
+    return check_mic(out, cap, (unsigned)body_int(body, body_len, "ms", 1000), "ux0:data/flutter-vita/mic.wav");
+  }
   if (strcmp(method, "camera") == 0) return check_camera(out, cap, body_int(body, body_len, "which", 0));
   return snprintf(out, cap, "[\"unknown\",\"no such check: %s\",null]", method);
 }
 
-// Every check runs on a thread of its own, with a deadline. The channel
-// handler that calls this is the platform thread, and a check that blocks
-// in the system -- sceCameraRead waiting for a frame that never comes, on
-// 2026-09-14 -- would block every channel message after it, and the Dart
-// side's own timeout can do nothing about it. On the deadline the caller
-// gets an error and the thread is left where it is: its buffers are its own,
-// so whatever it writes later lands nowhere the caller reads.
+// Every check runs on a thread of its own, with a deadline, and answers
+// from that thread. The channel handler that calls this is the platform
+// thread; until 2026-09-16 it waited for the check's thread, so two checks
+// asked for together ran one after the other, and the microphone had
+// finished recording before the speaker began (builds 46 to 55). Now the
+// call returns at once and the check's thread completes the message. A
+// watchdog thread waits on the check with the deadline; whichever of the
+// two is first answers, the other finds `answered` set and does nothing.
+// A check that blocks in the system is left where it is: its buffers are
+// its own, and whatever it writes later lands nowhere the caller reads.
 typedef struct HardwareJob {
   char method[32];
   char* body;
   size_t body_len;
   char* out;
   size_t cap;
-  int rc;
+  void (*respond)(void* ctx, const char* reply, size_t len);
+  void* ctx;
+  volatile int answered;
+  SceUID thread;
 } HardwareJob;
+
+// Exactly one answer per job. The two threads race for `answered`; the
+// kernel's atomic compare-and-swap decides.
+static void job_answer(HardwareJob* j, const char* reply, size_t len) {
+  if (__sync_val_compare_and_swap(&j->answered, 0, 1) != 0) return;
+  j->respond(j->ctx, reply, len);
+}
 
 static int job_thread(SceSize args, void* argp) {
   (void)args;
   HardwareJob* j = *(HardwareJob**)argp;
-  j->rc = dispatch(j->method, j->body, j->body_len, j->out, j->cap);
+  const int rc = dispatch(j->method, j->body, j->body_len, j->out, j->cap);
+  if (rc < 0) {
+    char err[128];
+    const int n = snprintf(err, sizeof err, "[\"unavailable\",\"%s: the check failed\",null]", j->method);
+    job_answer(j, err, (size_t)n);
+  } else {
+    job_answer(j, j->out, (size_t)rc);
+  }
   return 0;
 }
 
-int flutter_vita_hardware_call(const char* method, const char* body, size_t body_len, char* out, size_t cap) {
-  if (method == NULL || out == NULL || cap < 64) return -1;
+static int watchdog_thread(SceSize args, void* argp) {
+  (void)args;
+  HardwareJob* j = *(HardwareJob**)argp;
+  SceUInt timeout = 15 * 1000 * 1000;
+  if (sceKernelWaitThreadEnd(j->thread, NULL, &timeout) < 0) {
+    char err[128];
+    const int n = snprintf(err, sizeof err, "[\"timeout\",\"%s: no answer in 15 s\",null]", j->method);
+    hw_log("%s: no answer in 15 s, thread abandoned", j->method);
+    job_answer(j, err, (size_t)n);
+    return 0;  // the job's memory stays with the abandoned thread
+  }
+  sceKernelDeleteThread(j->thread);
+  free(j->body);
+  free(j->out);
+  free(j);
+  return 0;
+}
+
+int flutter_vita_hardware_call_async(const char* method, const char* body, size_t body_len,
+                                     void (*respond)(void* ctx, const char* reply, size_t len), void* ctx) {
+  if (method == NULL || respond == NULL) return -1;
   HardwareJob* j = calloc(1, sizeof *j);
   if (j == NULL) return -1;
   snprintf(j->method, sizeof j->method, "%s", method);
   j->body_len = body != NULL ? body_len : 0;
   j->body = malloc(j->body_len + 1);
-  j->out = malloc(cap);
+  j->cap = 64 * 1024;
+  j->out = malloc(j->cap);
   if (j->body == NULL || j->out == NULL) {
     free(j->body);
     free(j->out);
@@ -557,26 +846,48 @@ int flutter_vita_hardware_call(const char* method, const char* body, size_t body
   }
   if (j->body_len) memcpy(j->body, body, j->body_len);
   j->body[j->body_len] = '\0';
-  j->cap = cap;
   j->out[0] = '\0';
-  const SceUID th = sceKernelCreateThread("fvita-hardware", job_thread, 0x10000100, 0x10000, 0, 0, NULL);
-  if (th < 0) {
+  j->respond = respond;
+  j->ctx = ctx;
+  j->thread = sceKernelCreateThread("fvita-hardware", job_thread, 0x10000100, 0x10000, 0, 0, NULL);
+  const SceUID dog = j->thread < 0 ? j->thread
+                                   : sceKernelCreateThread("fvita-hw-watchdog", watchdog_thread, 0x10000100, 0x1000, 0, 0, NULL);
+  if (j->thread < 0 || dog < 0) {
+    hw_log("%s: sceKernelCreateThread 0x%08X", method, (unsigned)(j->thread < 0 ? j->thread : dog));
+    if (j->thread >= 0) sceKernelDeleteThread(j->thread);
     free(j->body);
     free(j->out);
     free(j);
-    return snprintf(out, cap, "[\"thread\",\"%s: sceKernelCreateThread 0x%08X\",null]", method, (unsigned)th);
+    return -1;
   }
-  sceKernelStartThread(th, sizeof j, &j);
-  SceUInt timeout = 15 * 1000 * 1000;
-  if (sceKernelWaitThreadEnd(th, NULL, &timeout) < 0) {
-    // Abandoned, buffers and all; the thread frees nothing.
-    return snprintf(out, cap, "[\"timeout\",\"%s: no answer in 15 s\",null]", method);
-  }
-  sceKernelDeleteThread(th);
-  const int rc = j->rc;
-  snprintf(out, cap, "%s", j->out);
-  free(j->body);
-  free(j->out);
-  free(j);
-  return rc;
+  sceKernelStartThread(j->thread, sizeof j, &j);
+  sceKernelStartThread(dog, sizeof j, &j);
+  return 0;
+}
+
+// The blocking form, kept for an engine that predates the one above: the
+// same thread and deadline, the answer copied out here.
+typedef struct SyncReply {
+  char* out;
+  size_t cap;
+  int len;
+} SyncReply;
+
+static void sync_respond(void* ctx, const char* reply, size_t len) {
+  SyncReply* r = ctx;
+  if (len >= r->cap) len = r->cap - 1;
+  memcpy(r->out, reply, len);
+  r->out[len] = '\0';
+  __sync_synchronize();
+  r->len = (int)len;
+}
+
+int flutter_vita_hardware_call(const char* method, const char* body, size_t body_len, char* out, size_t cap) {
+  if (out == NULL || cap < 64) return -1;
+  SyncReply r = {out, cap, -1};
+  if (flutter_vita_hardware_call_async(method, body, body_len, sync_respond, &r) != 0) return -1;
+  // The watchdog answers at 15 s at the latest; 16 here is for its own
+  // scheduling.
+  for (int i = 0; i < 1600 && r.len < 0; i++) sceKernelDelayThread(10 * 1000);
+  return r.len;
 }
