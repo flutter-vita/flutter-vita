@@ -30,6 +30,7 @@
 #include <string.h>
 
 #include "devserver.h"
+#include "fvita_plugin.h"
 #include "vpk.h"
 
 // Overridable so a receiver under test can be installed beside the working one.
@@ -1155,14 +1156,14 @@ static void delete_run(void) {
   after_delete();
 }
 
-// Ends by deleting itself: an ended thread stays allocated until someone
-// deletes it, and nothing here keeps the id (see plugin.c's watchdog).
+// Ends by deleting itself, the kernel object and newlib's record both: an
+// ended thread stays allocated until someone deletes it, and nothing here
+// keeps the id (see fvita_plugin.h).
 static int delete_thread(SceSize args, void* argp) {
   (void)args;
   (void)argp;
   delete_run();
-  sceKernelExitDeleteThread(0);
-  return 0;
+  fvita_thread_exit_delete();
 }
 
 // Returns 0 if the thread could not be started.
@@ -1366,8 +1367,7 @@ static int install_thread(SceSize args, void* argp) {
   (void)args;
   (void)argp;
   install_run();
-  sceKernelExitDeleteThread(0);
-  return 0;
+  fvita_thread_exit_delete();
 }
 
 // Returns 0 with `why` set when it could not start.

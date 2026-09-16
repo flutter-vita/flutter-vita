@@ -58,6 +58,16 @@ double fvita_json_num(const char* body, size_t len, const char* key, double dflt
 int fvita_json_str(const char* body, size_t len, const char* key, char* out, size_t cap);
 int fvita_json_bool(const char* body, size_t len, const char* key, int dflt);
 
+// Threads. Two things outlive a thread that has ended: the kernel's thread
+// object, until someone deletes it, and newlib's per-thread record (its
+// reent; there are 256, and the C library crashes on the 257th -- see
+// docs/results/receiver-files-2026-09-16.md). sceKernelDeleteThread frees
+// the first only. These free both: the creator calls the first on a thread
+// that has ended, a thread that ends itself calls the second and never
+// returns.
+void fvita_thread_delete(int thread);
+void fvita_thread_exit_delete(void) __attribute__((noreturn));
+
 // A line in the app's log, now: "<tag>: <message>".
 void fvita_log(const char* tag, const char* fmt, ...) __attribute__((format(printf, 2, 3)));
 

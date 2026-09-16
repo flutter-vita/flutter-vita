@@ -987,7 +987,7 @@ static int handle(const char* method, const char* body, size_t len, char* out, s
     command(p, kCmdQuit, 0);
     SceUInt timeout = 2000 * 1000;
     sceKernelWaitThreadEnd(p->thread, NULL, &timeout);
-    sceKernelDeleteThread(p->thread);
+    fvita_thread_delete(p->thread);
     p->id[0] = 0;
     n = fvita_reply_ok(out, cap, "null");
   } else if (strcmp(method, "setSource") == 0) {

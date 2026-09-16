@@ -197,7 +197,7 @@ static int rec_start(Recorder* r, const char* path, int wav, int stream, char* o
   if (r->thread < 0 || r->writer < 0) {
     const int e = r->thread < 0 ? r->thread : r->writer;
     r->state = kIdle;
-    if (r->thread >= 0) sceKernelDeleteThread(r->thread);
+    if (r->thread >= 0) fvita_thread_delete(r->thread);
     if (r->fd >= 0) sceIoClose(r->fd);
     sceAudioInReleasePort(r->port);
     r->port = -1;
@@ -218,10 +218,10 @@ static void rec_end(Recorder* r, int discard) {
   r->state = kStopping;
   SceUInt timeout = 500 * 1000;
   sceKernelWaitThreadEnd(r->thread, NULL, &timeout);
-  sceKernelDeleteThread(r->thread);
+  fvita_thread_delete(r->thread);
   timeout = 500 * 1000;
   sceKernelWaitThreadEnd(r->writer, NULL, &timeout);
-  sceKernelDeleteThread(r->writer);
+  fvita_thread_delete(r->writer);
   if (r->port >= 0) sceAudioInReleasePort(r->port);
   r->port = -1;
   if (r->fd >= 0) {

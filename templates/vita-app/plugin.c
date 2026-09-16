@@ -17,6 +17,7 @@
 #include "fvita_plugin.h"
 
 #include <psp2/kernel/threadmgr.h>
+#include <vitasdk/utils.h>
 
 #include <stdarg.h>
 #include <stdio.h>
@@ -178,6 +179,21 @@ int fvita_base64_decode(const char* in, size_t n, unsigned char* out, size_t cap
   return o <= cap ? (int)o : -1;
 }
 
+// ---- threads ------------------------------------------------------------------
+
+void fvita_thread_delete(int thread) {
+  vitasdk_delete_thread_reent(thread);
+  sceKernelDeleteThread(thread);
+}
+
+void fvita_thread_exit_delete(void) {
+  vitasdk_delete_thread_reent(sceKernelGetThreadId());
+  // Nothing from the C library between here and the exit: the record it
+  // would want is gone.
+  sceKernelExitDeleteThread(0);
+  for (;;) sceKernelDelayThread(1000 * 1000);
+}
+
 // ---- jobs ---------------------------------------------------------------------
 
 typedef struct Job {
@@ -215,12 +231,14 @@ static int job_thread(SceSize args, void* argp) {
   return 0;
 }
 
-// Ends with sceKernelExitDeleteThread, never a return. A thread that has
+// Ends through fvita_thread_exit_delete, never a return. A thread that has
 // ended stays allocated until it is deleted, and nothing else holds this
 // one's id: until 2026-09-16 every call leaked one, the receiver's audio
 // view polls four times a second, and after a few minutes
 // sceKernelCreateThread answered 0x8002450D to everyone -- the Dart VM
-// included, which aborted on "Could not start thread DartWorker".
+// included, which aborted on "Could not start thread DartWorker". The
+// same day, with the kernel object deleted but newlib's record not, the
+// gallery died after two hours in pthread_create (see fvita_plugin.h).
 static int watchdog_thread(SceSize args, void* argp) {
   (void)args;
   Job* j = *(Job**)argp;
@@ -232,13 +250,12 @@ static int watchdog_thread(SceSize args, void* argp) {
     job_answer(j, err, (size_t)n);
     // The job's memory stays with the abandoned thread.
   } else {
-    sceKernelDeleteThread(j->thread);
+    fvita_thread_delete(j->thread);
     free(j->body);
     free(j->out);
     free(j);
   }
-  sceKernelExitDeleteThread(0);
-  return 0;
+  fvita_thread_exit_delete();
 }
 
 int flutter_vita_channel_call(const char* channel, const char* method, const char* body, size_t body_len,
