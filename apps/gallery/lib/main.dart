@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:audioplayers_vita/audioplayers_vita.dart';
 import 'package:battery_plus_vita/battery_plus_vita.dart';
 import 'package:camera_vita/camera_vita.dart';
@@ -8,12 +10,12 @@ import 'package:path_provider_vita/path_provider_vita.dart';
 import 'package:record_vita/record_vita.dart';
 import 'package:sensors_plus_vita/sensors_plus_vita.dart';
 import 'package:shared_preferences_vita/shared_preferences_vita.dart';
+import 'package:vita_debug_strip/vita_debug_strip.dart';
 
 import 'bench/bench_page.dart';
 import 'bench/runner.dart';
 import 'conformance/conformance_tab.dart';
 import 'hardware/hardware_tab.dart';
-import 'hud.dart';
 import 'panel_page.dart';
 import 'results_tab.dart';
 
@@ -24,7 +26,7 @@ import 'results_tab.dart';
 /// ADR-0017. Conformance is the probe suite that was its own app until
 /// 2026-09-14. Hardware asks each piece of the console to answer. Results
 /// reads the three result files back. Above all of them, the whole width,
-/// a strip with what the console is doing this second (hud.dart); it stays
+/// a strip with what the console is doing this second (vita_debug_strip); it stays
 /// while a scene runs.
 ///
 /// Three switches on the card start an unattended run on one tab and the run
@@ -135,6 +137,19 @@ class _ShellState extends State<Shell> with TickerProviderStateMixin {
   /// live one costs. Read once; the switch is the host's.
   static final bool _hudFrozen = switchOn('$kDataDir/hud.off');
 
+  /// L + R + SELECT hides the strip and shows it again, the chord every
+  /// app with vita_debug_strip answers to. Here the strip is part of the
+  /// layout, so the tabs take its 34 px while it is hidden.
+  bool _stripShown = true;
+  StreamSubscription<void>? _chord;
+
+  @override
+  void initState() {
+    super.initState();
+    _chord = VitaPad.chord(VitaButtons.l | VitaButtons.r | VitaButtons.select)
+        .listen((_) => setState(() => _stripShown = !_stripShown));
+  }
+
   /// The benchmark scene being measured, or null. While one is mounted it
   /// takes the content area: the rail goes, the strip stays. The tabs stay
   /// in the tree behind it (Offstage, so they cost no layout and no paint):
@@ -153,6 +168,7 @@ class _ShellState extends State<Shell> with TickerProviderStateMixin {
 
   @override
   void dispose() {
+    _chord?.cancel();
     _stage.dispose();
     _scene.dispose();
     _hardware.dispose();
@@ -165,21 +181,23 @@ class _ShellState extends State<Shell> with TickerProviderStateMixin {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              // Its own layer: the strip repaints once a second and a scene
-              // underneath must not be repainted with it.
-              RepaintBoundary(
-                child: HudStrip(
-                  frozen: _hudFrozen,
-                  leading: ValueListenableBuilder<String?>(
-                    valueListenable: _scene,
-                    builder: (context, scene, _) => _StripTitle(
-                      tab: _tabNames[_tab],
-                      scene: scene,
+              // Its own layer: the strip repaints twice a second and a
+              // scene underneath must not be repainted with it.
+              if (_stripShown) ...[
+                RepaintBoundary(
+                  child: VitaStrip(
+                    frozen: _hudFrozen,
+                    leading: ValueListenableBuilder<String?>(
+                      valueListenable: _scene,
+                      builder: (context, scene, _) => _StripTitle(
+                        tab: _tabNames[_tab],
+                        scene: scene,
+                      ),
                     ),
                   ),
                 ),
-              ),
-              const Divider(height: 1, color: Color(0xFF262B36)),
+                const Divider(height: 1, color: Color(0xFF262B36)),
+              ],
               Expanded(
                 // A Navigator of its own, so a route a scene pushes lands
                 // here, under the strip, rather than over the whole screen.
