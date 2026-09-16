@@ -20,11 +20,19 @@ const danger = Color(0xFFE05A4F);
 const warn = Color(0xFFE0A03A);
 const good = Color(0xFF4CAF7D);
 
-const mono = TextStyle(fontFamily: 'monospace', fontSize: 13, height: 1.35,
-    color: muted);
+const mono = TextStyle(
+  fontFamily: 'monospace',
+  fontSize: 13,
+  height: 1.35,
+  color: muted,
+);
 const label = TextStyle(fontSize: 13, height: 1.2, color: dim);
-const heading = TextStyle(fontSize: 15, height: 1.2, color: fg,
-    fontWeight: FontWeight.w600);
+const heading = TextStyle(
+  fontSize: 15,
+  height: 1.2,
+  color: fg,
+  fontWeight: FontWeight.w600,
+);
 
 /// A rounded box with a visible edge, drawn as two filled rectangles rather
 /// than one bordered one.
@@ -78,8 +86,9 @@ class Outlined extends StatelessWidget {
         child: DecoratedBox(
           decoration: BoxDecoration(
             color: Color.alphaBlend(fill ?? under, under),
-            borderRadius:
-                BorderRadius.circular((radius - width).clamp(0.0, radius)),
+            borderRadius: BorderRadius.circular(
+              (radius - width).clamp(0.0, radius),
+            ),
           ),
           child: Padding(padding: padding, child: child),
         ),
@@ -100,13 +109,13 @@ class Panel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Outlined(
-        expand: true,
-        colour: line,
-        fill: sunken,
-        radius: 6,
-        padding: EdgeInsets.all(padding),
-        child: child,
-      );
+    expand: true,
+    colour: line,
+    fill: sunken,
+    radius: 6,
+    padding: EdgeInsets.all(padding),
+    child: child,
+  );
 }
 
 /// A tap target with a visible edge.
@@ -169,17 +178,17 @@ class ListRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => GestureDetector(
-        behavior: HitTestBehavior.opaque,
-        onTap: onTap,
-        child: Outlined(
-          colour: selected ? accent : line,
-          fill: selected ? accent.withValues(alpha: 0.14) : bg,
-          radius: 5,
-          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-          margin: const EdgeInsets.only(bottom: 4),
-          child: Row(children: children),
-        ),
-      );
+    behavior: HitTestBehavior.opaque,
+    onTap: onTap,
+    child: Outlined(
+      colour: selected ? accent : line,
+      fill: selected ? accent.withValues(alpha: 0.14) : bg,
+      radius: 5,
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+      margin: const EdgeInsets.only(bottom: 4),
+      child: Row(children: children),
+    ),
+  );
 }
 
 /// What a tab shows when there is nothing to show.
@@ -190,22 +199,32 @@ class Empty extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Center(
-        child: Text(text,
-            style: const TextStyle(
-                fontSize: 13, fontFamily: 'monospace', color: faint)),
-      );
+    child: Text(
+      text,
+      style: const TextStyle(
+        fontSize: 13,
+        fontFamily: 'monospace',
+        color: faint,
+      ),
+    ),
+  );
 }
 
-/// The four glyphs the navigation rail draws.
+/// The glyphs the navigation rail draws.
 ///
 /// Painted rather than set in a font. MaterialIcons is 1.6 MB and shipping it
 /// would mean either `uses-material-design: true` for four shapes, or dropping
 /// the file into app0:/fonts -- where the embedder treats every face as a
 /// fallback for every codepoint, and body text starts rendering as icons.
-enum Glyph { deploy, logs, crashes, apps, tests }
+enum Glyph { deploy, logs, crashes, apps, tests, files }
 
 class GlyphIcon extends StatelessWidget {
-  const GlyphIcon(this.glyph, {super.key, required this.colour, this.size = 22});
+  const GlyphIcon(
+    this.glyph, {
+    super.key,
+    required this.colour,
+    this.size = 22,
+  });
 
   final Glyph glyph;
   final Color colour;
@@ -213,10 +232,10 @@ class GlyphIcon extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => SizedBox(
-        width: size,
-        height: size,
-        child: CustomPaint(painter: _GlyphPainter(glyph, colour)),
-      );
+    width: size,
+    height: size,
+    child: CustomPaint(painter: _GlyphPainter(glyph, colour)),
+  );
 }
 
 class _GlyphPainter extends CustomPainter {
@@ -242,18 +261,20 @@ class _GlyphPainter extends CustomPainter {
       case Glyph.deploy:
         canvas.drawLine(p(12, 3), p(12, 14), stroke);
         canvas.drawPath(
-            Path()
-              ..moveTo(7 * u, 10 * u)
-              ..lineTo(12 * u, 15 * u)
-              ..lineTo(17 * u, 10 * u),
-            stroke);
+          Path()
+            ..moveTo(7 * u, 10 * u)
+            ..lineTo(12 * u, 15 * u)
+            ..lineTo(17 * u, 10 * u),
+          stroke,
+        );
         canvas.drawPath(
-            Path()
-              ..moveTo(4 * u, 17 * u)
-              ..lineTo(4 * u, 20 * u)
-              ..lineTo(20 * u, 20 * u)
-              ..lineTo(20 * u, 17 * u),
-            stroke);
+          Path()
+            ..moveTo(4 * u, 17 * u)
+            ..lineTo(4 * u, 20 * u)
+            ..lineTo(20 * u, 20 * u)
+            ..lineTo(20 * u, 17 * u),
+          stroke,
+        );
       // Lines of text, one short, the way a log looks from across the room.
       case Glyph.logs:
         for (var i = 0; i < 4; i++) {
@@ -264,24 +285,32 @@ class _GlyphPainter extends CustomPainter {
       // stays legible at 22 px.
       case Glyph.crashes:
         canvas.drawPath(
-            Path()
-              ..moveTo(12 * u, 3.5 * u)
-              ..lineTo(22 * u, 20.5 * u)
-              ..lineTo(2 * u, 20.5 * u)
-              ..close(),
-            stroke);
+          Path()
+            ..moveTo(12 * u, 3.5 * u)
+            ..lineTo(22 * u, 20.5 * u)
+            ..lineTo(2 * u, 20.5 * u)
+            ..close(),
+          stroke,
+        );
         canvas.drawRRect(
-            RRect.fromLTRBR(11 * u, 9 * u, 13 * u, 15 * u, Radius.circular(u)),
-            fill);
+          RRect.fromLTRBR(11 * u, 9 * u, 13 * u, 15 * u, Radius.circular(u)),
+          fill,
+        );
         canvas.drawCircle(p(12, 17.6), 1.2 * u, fill);
       // Four tiles.
       case Glyph.apps:
         for (final dx in const [0.0, 10.0]) {
           for (final dy in const [0.0, 10.0]) {
             canvas.drawRRect(
-                RRect.fromLTRBR((3 + dx) * u, (3 + dy) * u, (11 + dx) * u,
-                    (11 + dy) * u, Radius.circular(1.5 * u)),
-                fill);
+              RRect.fromLTRBR(
+                (3 + dx) * u,
+                (3 + dy) * u,
+                (11 + dx) * u,
+                (11 + dy) * u,
+                Radius.circular(1.5 * u),
+              ),
+              fill,
+            );
           }
         }
       // A bar chart. Three columns of different heights on a baseline, which
@@ -291,6 +320,19 @@ class _GlyphPainter extends CustomPainter {
         canvas.drawLine(p(7, 20), p(7, 13), stroke);
         canvas.drawLine(p(12, 20), p(12, 6), stroke);
         canvas.drawLine(p(17, 20), p(17, 10), stroke);
+      // A folder.
+      case Glyph.files:
+        canvas.drawPath(
+          Path()
+            ..moveTo(3 * u, 6 * u)
+            ..lineTo(10 * u, 6 * u)
+            ..lineTo(12 * u, 8.5 * u)
+            ..lineTo(21 * u, 8.5 * u)
+            ..lineTo(21 * u, 19 * u)
+            ..lineTo(3 * u, 19 * u)
+            ..close(),
+          stroke,
+        );
     }
   }
 

@@ -30,6 +30,7 @@
 #include <string.h>
 
 #include "devserver.h"
+#include "vpk.h"
 
 // Overridable so a receiver under test can be installed beside the working one.
 // Replacing FVTA00001 in place with something unproven costs the only deploy
@@ -853,8 +854,12 @@ static void cmd_promoter(int sock, const char* arg) {
 // sync=1 is documented to block and is not trusted, so GetState is polled.
 // GetResult is read separately because a call can be accepted and still fail:
 // the return value says accepted, the result says what happened.
-static void promoter_finish(int sock, const char* what, int r,
-                            const char* titleid) {
+//
+// Returns 0 when the call was accepted and its result is 0, else the result
+// (or the call's own error when it was not accepted), for the callers that
+// go on to do something with the outcome rather than just report it.
+static int promoter_finish(int sock, const char* what, int r,
+                           const char* titleid) {
   char m[224];
   int state = -1, res = -1;
   if (r >= 0) {
@@ -874,6 +879,7 @@ static void promoter_finish(int sock, const char* what, int r,
   // reply, not dev_server_send: the panel's delete arrives on the watcher
   // thread with sock = -1 and nothing to answer on.
   reply(sock, m);
+  return ok ? 0 : (r < 0 ? r : res);
 }
 
 // The three ways in, kept as three commands because they want different things
@@ -1220,6 +1226,176 @@ static void cmd_ls(int sock, const char* path) {
   dev_server_send(sock, m);
 }
 
+// ------------------------------------------------------ installing a vpk
+//
+// The FILES tab's INSTALL button, and `installvpk <path>` on the socket.
+// What tools/install-vpk.sh does from the host, done here from a vpk that is
+// already on the card (LocalSend puts them in ux0:downloads): unpack into
+// ux0:data/pkg without the LiveArea art and the supervisor pair, read the
+// title id out of sce_sys/param.sfo, write sce_sys/package/head.bin for it,
+// promote, then copy the art into ux0:app/<id>. vpk.c does the bytes; this
+// does the order, the promoter and the reporting.
+//
+// The header template is this receiver's own app0:sce_sys/package/head.bin:
+// the promoter wrote it, so it has the format the promoter reads, and every
+// receiver has one. Nothing is embedded.
+//
+// On a thread, like delete, for the same reason: the promoter takes its
+// time, and the dev server and the panel stay answerable meanwhile. Progress
+// goes to a file the FILES tab polls -- one line, `<phase> <done> <total>
+// <name>` -- and to the status line, and the outcome to the log.
+#define STAGE_DIR "ux0:data/pkg"
+#define INSTALL_PROGRESS_PATH DATA_DIR "/install-progress.txt"
+
+static char g_install_vpk[256];
+static volatile int g_install_busy;
+
+static void install_progress(const char* phase, const char* name,
+                             uint64_t done, uint64_t total) {
+  char line[320];
+  const int n = snprintf(line, sizeof line, "%s %llu %llu %s\n", phase,
+                         (unsigned long long)done, (unsigned long long)total,
+                         name);
+  const SceUID fd = sceIoOpen(INSTALL_PROGRESS_PATH,
+                              SCE_O_WRONLY | SCE_O_CREAT | SCE_O_TRUNC, 0777);
+  if (fd < 0) return;
+  sceIoWrite(fd, line, n);
+  sceIoClose(fd);
+}
+
+static void on_unpack(void* ctx, const char* name, uint64_t done,
+                      uint64_t total) {
+  install_progress((const char*)ctx, name, done, total);
+}
+
+static void install_failed(const char* fmt, ...) {
+  char why[200];
+  va_list ap;
+  va_start(ap, fmt);
+  vsnprintf(why, sizeof why, fmt, ap);
+  va_end(ap);
+  note("install failed: %s", why);
+  set_status("Waiting", NULL);
+  install_progress("failed", why, 0, 0);
+}
+
+static int install_thread(SceSize args, void* argp) {
+  (void)args;
+  (void)argp;
+  char err[160] = "";
+  char titleid[16] = "";
+  const char* vpk = g_install_vpk;
+  const char* slash = strrchr(vpk, '/');
+  const char* base = slash != NULL ? slash + 1 : vpk;
+
+  note("install %s", vpk);
+  set_status("Installing", "unpacking %s", base);
+  install_progress("unpacking", base, 0, 0);
+  // Cleared first, as install-vpk.sh does: the promoter reads the whole
+  // staging directory, so a file left by a previous install of something
+  // else becomes part of this package.
+  int removed = 0;
+  rmtree(STAGE_DIR, 0, &removed);
+  sceIoMkdir(STAGE_DIR, 0777);
+  if (vpk_extract(vpk, STAGE_DIR, VPK_STAGE, on_unpack, "unpacking", err,
+                  sizeof err) < 0) {
+    install_failed("%s", err);
+    g_install_busy = 0;
+    return 0;
+  }
+  if (vpk_title_id(STAGE_DIR "/sce_sys/param.sfo", titleid, sizeof titleid) < 0) {
+    install_failed("no title id in sce_sys/param.sfo");
+    g_install_busy = 0;
+    return 0;
+  }
+  // A vpk carrying the receiver's own id would replace the process that is
+  // installing it; that route is tools/selfupdate-receiver.sh, from the host,
+  // through the scratch receiver.
+  if (strcmp(titleid, SELF_TITLEID) == 0) {
+    install_failed("%s is this receiver; update it from the host", titleid);
+    g_install_busy = 0;
+    return 0;
+  }
+  set_status("Installing", "promoting %s", titleid);
+  install_progress("header", titleid, 0, 0);
+  if (vpk_write_head("app0:sce_sys/package/head.bin",
+                     STAGE_DIR "/sce_sys/package/head.bin", titleid, err,
+                     sizeof err) < 0) {
+    install_failed("%s", err);
+    g_install_busy = 0;
+    return 0;
+  }
+  install_progress("promoting", titleid, 0, 0);
+  if (!promoter_up(-1)) {
+    install_failed("the promoter would not start");
+    g_install_busy = 0;
+    return 0;
+  }
+  note("promoterif %s %s", STAGE_DIR, titleid);
+  const int res = promoter_finish(
+      -1, "promoterif", scePromoterUtilityPromotePkgWithRif(STAGE_DIR, 1),
+      titleid);
+  if (res != 0) {
+    // 0x8010111C no header, 0x80871004 bad digest, 0x80870005 another
+    // title's header, 0x8010113D art that is not 8-bit indexed.
+    install_failed("promote %s: 0x%08X", titleid, (unsigned)res);
+    g_install_busy = 0;
+    return 0;
+  }
+  // The shell reads the art out of ux0:app/<id>/sce_sys, not out of the
+  // package, so it goes in after. A failure here leaves a working title
+  // with a blank bubble, which is worth a note and not a failure.
+  char appdir[64];
+  snprintf(appdir, sizeof appdir, "ux0:app/%s", titleid);
+  set_status("Installing", "art for %s", titleid);
+  if (vpk_extract(vpk, appdir, VPK_ART, on_unpack, "art", err, sizeof err) < 0) {
+    note("livearea art: %s", err);
+  }
+  note("installed %s from %s", titleid, base);
+  set_status("Waiting", NULL);
+  install_progress("done", titleid, 1, 1);
+  g_install_busy = 0;
+  return 0;
+}
+
+// Returns 0 with `why` set when it could not start.
+static int start_install(const char* vpk, char* why, size_t cap) {
+  if (g_install_busy) {
+    snprintf(why, cap, "an install is already running");
+    return 0;
+  }
+  if (strncmp(vpk, "ux0:", 4) != 0 && strncmp(vpk, "uma0:", 5) != 0 &&
+      strncmp(vpk, "app0:", 5) != 0) {
+    snprintf(why, cap, "not a path on the console: %s", vpk);
+    return 0;
+  }
+  g_install_busy = 1;
+  snprintf(g_install_vpk, sizeof g_install_vpk, "%s", vpk);
+  // 64 KB: zlib keeps its window on the heap and vpk.c its buffers too, but
+  // the thread stacks a few path-sized arrays.
+  const SceUID th = sceKernelCreateThread("fvita_install", install_thread,
+                                          0x10000100, 64 * 1024, 0, 0, NULL);
+  if (th < 0) {
+    g_install_busy = 0;
+    snprintf(why, cap, "install thread failed 0x%08X", (unsigned)th);
+    return 0;
+  }
+  sceKernelStartThread(th, 0, NULL);
+  return 1;
+}
+
+static void cmd_installvpk(int sock, const char* vpk) {
+  char why[200];
+  if (!start_install(vpk, why, sizeof why)) {
+    char m[224];
+    snprintf(m, sizeof m, "ERR %s\n", why);
+    dev_server_send(sock, m);
+    return;
+  }
+  dev_server_send(sock,
+                  "OK install started; it reports to the log and to " INSTALL_PROGRESS_PATH "\n");
+}
+
 // ------------------------------------------------------------- the dispatch
 
 static int handle(int sock, const char* line, int* stop) {
@@ -1306,6 +1482,10 @@ static int handle(int sock, const char* line, int* stop) {
     cmd_promote_rif(sock, (char*)line + 11);
     return 1;
   }
+  if (strncmp(line, "installvpk ", 11) == 0) {
+    cmd_installvpk(sock, line + 11);
+    return 1;
+  }
   if (strncmp(line, "import ", 7) == 0) {
     cmd_import(sock, line + 7);
     return 1;
@@ -1372,14 +1552,15 @@ static int handle(int sock, const char* line, int* stop) {
 // pointed the other way, and a request that arrives while Flutter is dead
 // simply never arrives.
 //
-// One line, `delete <titleid>`, removed before it is acted on so a crash in the
-// middle cannot replay it on the next boot.
+// One line -- `delete <titleid>`, `launch <titleid>`, `install <vpk path>` --
+// removed before it is acted on so a crash in the middle cannot replay it on
+// the next boot.
 #define REQUEST_PATH DATA_DIR "/receiver-request.txt"
 
 static void serve_request(void) {
   const SceUID fd = sceIoOpen(REQUEST_PATH, SCE_O_RDONLY, 0777);
   if (fd < 0) return;
-  char buf[96] = {0};
+  char buf[320] = {0};
   const int n = sceIoRead(fd, buf, sizeof buf - 1);
   sceIoClose(fd);
   sceIoRemove(REQUEST_PATH);
@@ -1412,6 +1593,12 @@ static void serve_request(void) {
     // half a second ago, which reads as a freeze.
     sceKernelDelayThread(600 * 1000);
     hand_over(titleid);
+  } else if (strncmp(buf, "install ", 8) == 0) {
+    char why[200];
+    if (!start_install(buf + 8, why, sizeof why)) {
+      note("install refused: %s", why);
+      install_progress("failed", why, 0, 0);
+    }
   } else {
     note("unknown panel request: %s", buf);
   }

@@ -14,10 +14,12 @@
 import 'dart:async';
 import 'dart:io';
 
+import 'package:audioplayers_vita/audioplayers_vita.dart';
 import 'package:flutter/widgets.dart';
 
 import 'build_info.dart';
 import 'device.dart';
+import 'files.dart';
 import 'psp2dmp.dart';
 import 'tests.dart';
 import 'theme.dart';
@@ -25,9 +27,14 @@ import 'theme.dart';
 /// The name every tool in tools/ resolves, answered by the dev server's mDNS.
 const _hostname = 'flutter-vita.local';
 
-void main() => runApp(const ReceiverApp());
+void main() {
+  // The FILES tab plays through audioplayers; its Vita half is registered
+  // here, the non-endorsed way (ADR-0009).
+  AudioplayersVita.registerWith();
+  runApp(const ReceiverApp());
+}
 
-enum Tab { deploy, logs, crashes, apps, tests }
+enum Tab { deploy, logs, crashes, apps, tests, files }
 
 class ReceiverApp extends StatefulWidget {
   const ReceiverApp({super.key});
@@ -70,8 +77,10 @@ class _ReceiverAppState extends State<ReceiverApp> {
       _cmdSeq = cmd.seq;
       setState(() {
         if (cmd.verb == 'tab') {
-          _tab = Tab.values.firstWhere((t) => t.name == cmd.arg,
-              orElse: () => _tab);
+          _tab = Tab.values.firstWhere(
+            (t) => t.name == cmd.arg,
+            orElse: () => _tab,
+          );
           // A tab switch is handled here and not forwarded: the tab widget
           // being asked for may not be built yet.
           _cmd = null;
@@ -132,19 +141,20 @@ class _ReceiverAppState extends State<ReceiverApp> {
   }
 
   Widget _body(ReceiverState s) => switch (_tab) {
-        Tab.deploy => _DeployTab(
-            state: s,
-            console: _console,
-            onClear: () {
-              clearDeployLog();
-              setState(() => _console = const []);
-            },
-          ),
-        Tab.logs => _LogsTab(command: _cmd),
-        Tab.crashes => _CrashesTab(command: _cmd),
-        Tab.apps => _AppsTab(self: s.self, command: _cmd),
-        Tab.tests => _TestsTab(command: _cmd),
-      };
+    Tab.deploy => _DeployTab(
+      state: s,
+      console: _console,
+      onClear: () {
+        clearDeployLog();
+        setState(() => _console = const []);
+      },
+    ),
+    Tab.logs => _LogsTab(command: _cmd),
+    Tab.crashes => _CrashesTab(command: _cmd),
+    Tab.apps => _AppsTab(self: s.self, command: _cmd),
+    Tab.tests => _TestsTab(command: _cmd),
+    Tab.files => const FilesTab(),
+  };
 }
 
 // ---------------------------------------------------------------- header
@@ -182,8 +192,10 @@ class _Header extends StatelessWidget {
     } else if (mdns.announced == 0) {
       bits.add('name not announced');
     } else {
-      bits.add('name announced ${mdns.announced}x'
-          '${mdns.joined ? "" : ", group not joined"}');
+      bits.add(
+        'name announced ${mdns.announced}x'
+        '${mdns.joined ? "" : ", group not joined"}',
+      );
     }
     bits.add(switch (state.lastCmdAge) {
       < 0 => 'no host yet',
@@ -221,15 +233,19 @@ class _Header extends StatelessWidget {
             _Status(status: badge),
           ],
         ),
-        Text(_line,
+        Text(
+          _line,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: const TextStyle(fontSize: 12, height: 1.6, color: dim),
+        ),
+        if (state.detail.isNotEmpty)
+          Text(
+            state.detail,
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
-            style: const TextStyle(fontSize: 12, height: 1.6, color: dim)),
-        if (state.detail.isNotEmpty)
-          Text(state.detail,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: const TextStyle(fontSize: 13, height: 1.5, color: dim)),
+            style: const TextStyle(fontSize: 13, height: 1.5, color: dim),
+          ),
       ],
     );
   }
@@ -298,6 +314,7 @@ class _Rail extends StatelessWidget {
     Tab.crashes: 'CRASHES',
     Tab.apps: 'APPS',
     Tab.tests: 'TESTS',
+    Tab.files: 'FILES',
   };
 
   static const _glyphs = {
@@ -306,41 +323,46 @@ class _Rail extends StatelessWidget {
     Tab.crashes: Glyph.crashes,
     Tab.apps: Glyph.apps,
     Tab.tests: Glyph.tests,
+    Tab.files: Glyph.files,
   };
 
   @override
   Widget build(BuildContext context) => Container(
-        width: 172,
-        color: sunken,
-        padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 10),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            const Padding(
-              padding: EdgeInsets.only(left: 6, bottom: 16),
-              child: Row(children: [
-                FlutterLogo(size: 26),
-                SizedBox(width: 10),
-                Text('RECEIVER',
-                    style: TextStyle(
-                      fontSize: 15,
-                      height: 1.0,
-                      letterSpacing: 2.0,
-                      fontWeight: FontWeight.w700,
-                      color: fg,
-                    )),
-              ]),
-            ),
-            for (final t in Tab.values)
-              _RailItem(
-                glyph: _glyphs[t]!,
-                label: _names[t]!,
-                selected: t == current,
-                onTap: () => onPick(t),
+    width: 172,
+    color: sunken,
+    padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 10),
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        const Padding(
+          padding: EdgeInsets.only(left: 6, bottom: 16),
+          child: Row(
+            children: [
+              FlutterLogo(size: 26),
+              SizedBox(width: 10),
+              Text(
+                'RECEIVER',
+                style: TextStyle(
+                  fontSize: 15,
+                  height: 1.0,
+                  letterSpacing: 2.0,
+                  fontWeight: FontWeight.w700,
+                  color: fg,
+                ),
               ),
-          ],
+            ],
+          ),
         ),
-      );
+        for (final t in Tab.values)
+          _RailItem(
+            glyph: _glyphs[t]!,
+            label: _names[t]!,
+            selected: t == current,
+            onTap: () => onPick(t),
+          ),
+      ],
+    ),
+  );
 }
 
 class _RailItem extends StatelessWidget {
@@ -411,7 +433,11 @@ class _Footer extends StatelessWidget {
       maxLines: 1,
       overflow: TextOverflow.ellipsis,
       style: const TextStyle(
-          fontSize: 11, height: 1.0, fontFamily: 'monospace', color: faint),
+        fontSize: 11,
+        height: 1.0,
+        fontFamily: 'monospace',
+        color: faint,
+      ),
     );
   }
 }
@@ -431,26 +457,28 @@ class _DeployTab extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
+    crossAxisAlignment: CrossAxisAlignment.stretch,
+    children: [
+      Row(
         children: [
-          Row(children: [
-            Text('${console.length} lines', style: label),
-            const Spacer(),
-            Btn(
-              text: 'CLEAR LOG',
-              colour: danger,
-              enabled: console.isNotEmpty,
-              onTap: onClear,
-            ),
-          ]),
-          const SizedBox(height: 8),
-          if (state.receiving) ...[
-            _Progress(done: state.recvDone, total: state.recvTotal),
-            const SizedBox(height: 8),
-          ],
-          Expanded(child: _Console(lines: console)),
+          Text('${console.length} lines', style: label),
+          const Spacer(),
+          Btn(
+            text: 'CLEAR LOG',
+            colour: danger,
+            enabled: console.isNotEmpty,
+            onTap: onClear,
+          ),
         ],
-      );
+      ),
+      const SizedBox(height: 8),
+      if (state.receiving) ...[
+        _Progress(done: state.recvDone, total: state.recvTotal),
+        const SizedBox(height: 8),
+      ],
+      Expanded(child: _Console(lines: console)),
+    ],
+  );
 }
 
 /// A bar, because the byte counts are already in the status line as prose and
@@ -469,16 +497,24 @@ class _Progress extends StatelessWidget {
       children: [
         Row(
           children: [
-            Text('${humanBytes(done)} of ${humanBytes(total)}',
-                style: const TextStyle(
-                    fontSize: 13, fontFamily: 'monospace', color: dim)),
+            Text(
+              '${humanBytes(done)} of ${humanBytes(total)}',
+              style: const TextStyle(
+                fontSize: 13,
+                fontFamily: 'monospace',
+                color: dim,
+              ),
+            ),
             const Spacer(),
-            Text('${(fraction * 100).toStringAsFixed(0)}%',
-                style: const TextStyle(
-                    fontSize: 13,
-                    fontFamily: 'monospace',
-                    fontWeight: FontWeight.w700,
-                    color: warn)),
+            Text(
+              '${(fraction * 100).toStringAsFixed(0)}%',
+              style: const TextStyle(
+                fontSize: 13,
+                fontFamily: 'monospace',
+                fontWeight: FontWeight.w700,
+                color: warn,
+              ),
+            ),
           ],
         ),
         const SizedBox(height: 5),
@@ -543,24 +579,24 @@ class _Console extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Panel(
-        padding: 12,
-        child: lines.isEmpty
-            ? const Empty('no activity yet')
-            : ListView.builder(
-                reverse: true,
-                itemCount: lines.length,
-                itemExtent: 18,
-                itemBuilder: (_, i) {
-                  final line = lines[lines.length - 1 - i];
-                  return Text(
-                    line,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: mono.copyWith(color: _colourOf(line)),
-                  );
-                },
-              ),
-      );
+    padding: 12,
+    child: lines.isEmpty
+        ? const Empty('no activity yet')
+        : ListView.builder(
+            reverse: true,
+            itemCount: lines.length,
+            itemExtent: 18,
+            itemBuilder: (_, i) {
+              final line = lines[lines.length - 1 - i];
+              return Text(
+                line,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: mono.copyWith(color: _colourOf(line)),
+              );
+            },
+          ),
+  );
 }
 
 // ------------------------------------------------------------------ logs
@@ -595,9 +631,9 @@ class _LogsTabState extends State<_LogsTab> {
   }
 
   void _refresh() => setState(() {
-        _files = listLogs();
-        _open = null;
-      });
+    _files = listLogs();
+    _open = null;
+  });
 
   /// What the listing looked like, cheap enough to compare every two seconds.
   static String _signature(List<LogFile> files) =>
@@ -620,8 +656,10 @@ class _LogsTabState extends State<_LogsTab> {
     // A live log is being written while you read it. An archived one is not,
     // so re-reading it would be pure cost.
     if (open != null && open.live) {
-      final grown = now.firstWhere((f) => f.path == open.path,
-          orElse: () => open);
+      final grown = now.firstWhere(
+        (f) => f.path == open.path,
+        orElse: () => open,
+      );
       if (grown.size != open.size) {
         setState(() {
           _files = now;
@@ -636,9 +674,9 @@ class _LogsTabState extends State<_LogsTab> {
   }
 
   void _openFile(LogFile f) => setState(() {
-        _open = f;
-        _text = f.read();
-      });
+    _open = f;
+    _text = f.read();
+  });
 
   @override
   void didUpdateWidget(_LogsTab old) {
@@ -665,23 +703,25 @@ class _LogsTabState extends State<_LogsTab> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Row(children: [
-          Text(_note ?? '${_files.length} logs', style: label),
-          const Spacer(),
-          Btn(text: 'REFRESH', onTap: _refresh, colour: muted),
-          const SizedBox(width: 8),
-          Btn(
-            text: 'CLEAR ARCHIVE',
-            colour: danger,
-            onTap: () {
-              final n = clearLogs();
-              setState(() {
-                _files = listLogs();
-                _note = 'removed $n';
-              });
-            },
-          ),
-        ]),
+        Row(
+          children: [
+            Text(_note ?? '${_files.length} logs', style: label),
+            const Spacer(),
+            Btn(text: 'REFRESH', onTap: _refresh, colour: muted),
+            const SizedBox(width: 8),
+            Btn(
+              text: 'CLEAR ARCHIVE',
+              colour: danger,
+              onTap: () {
+                final n = clearLogs();
+                setState(() {
+                  _files = listLogs();
+                  _note = 'removed $n';
+                });
+              },
+            ),
+          ],
+        ),
         const SizedBox(height: 8),
         Expanded(
           child: Panel(
@@ -700,10 +740,12 @@ class _LogsTabState extends State<_LogsTab> {
                             const SizedBox(width: 8),
                           ],
                           Expanded(
-                            child: Text(f.label,
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: mono.copyWith(color: fg)),
+                            child: Text(
+                              f.label,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: mono.copyWith(color: fg),
+                            ),
                           ),
                           Text(humanBytes(f.size), style: mono),
                         ],
@@ -755,11 +797,11 @@ class _CrashesTabState extends State<_CrashesTab> {
   }
 
   void _refresh() => setState(() {
-        _files = listCrashes();
-        _open = null;
-        _dump = null;
-        _confirmClear = false;
-      });
+    _files = listCrashes();
+    _open = null;
+    _dump = null;
+    _confirmClear = false;
+  });
 
   static String _signature(List<CrashFile> files) =>
       files.map((f) => '${f.path}:${f.size}').join('|');
@@ -859,47 +901,57 @@ class _CrashesTabState extends State<_CrashesTab> {
           },
         ),
         body: _error.isNotEmpty
-            ? Text('could not read this dump: $_error',
-                style: mono.copyWith(color: danger))
+            ? Text(
+                'could not read this dump: $_error',
+                style: mono.copyWith(color: danger),
+              )
             : _CrashBody(dump: _dump!),
       );
     }
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Row(children: [
-          Expanded(
-            child: Text(_note ?? '${_files.length} dumps in ux0:data',
-                maxLines: 1, overflow: TextOverflow.ellipsis, style: label),
-          ),
-          Btn(text: 'REFRESH', onTap: _refresh, colour: muted),
-          const SizedBox(width: 8),
-          // Two taps, like a title delete. Nothing else on this console
-          // removes dumps, so this button is the only way they ever go -- and
-          // a dump is evidence until someone has read it.
-          if (_clearing)
-            Text('deleting $_cleared of $_toClear',
-                style: mono.copyWith(color: warn))
-          else if (_confirmClear) ...[
-            Btn(
-              text: 'YES, DELETE ${_files.length}',
-              colour: danger,
-              onTap: _clearAll,
+        Row(
+          children: [
+            Expanded(
+              child: Text(
+                _note ?? '${_files.length} dumps in ux0:data',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: label,
+              ),
             ),
+            Btn(text: 'REFRESH', onTap: _refresh, colour: muted),
             const SizedBox(width: 8),
-            Btn(
-              text: 'CANCEL',
-              colour: muted,
-              onTap: () => setState(() => _confirmClear = false),
-            ),
-          ] else
-            Btn(
-              text: 'DELETE ALL',
-              colour: danger,
-              enabled: _files.isNotEmpty,
-              onTap: () => setState(() => _confirmClear = true),
-            ),
-        ]),
+            // Two taps, like a title delete. Nothing else on this console
+            // removes dumps, so this button is the only way they ever go -- and
+            // a dump is evidence until someone has read it.
+            if (_clearing)
+              Text(
+                'deleting $_cleared of $_toClear',
+                style: mono.copyWith(color: warn),
+              )
+            else if (_confirmClear) ...[
+              Btn(
+                text: 'YES, DELETE ${_files.length}',
+                colour: danger,
+                onTap: _clearAll,
+              ),
+              const SizedBox(width: 8),
+              Btn(
+                text: 'CANCEL',
+                colour: muted,
+                onTap: () => setState(() => _confirmClear = false),
+              ),
+            ] else
+              Btn(
+                text: 'DELETE ALL',
+                colour: danger,
+                enabled: _files.isNotEmpty,
+                onTap: () => setState(() => _confirmClear = true),
+              ),
+          ],
+        ),
         const SizedBox(height: 8),
         Expanded(
           child: Panel(
@@ -916,10 +968,12 @@ class _CrashesTabState extends State<_CrashesTab> {
                           const _Dot(danger),
                           const SizedBox(width: 8),
                           Expanded(
-                            child: Text(f.subject,
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: mono.copyWith(color: fg)),
+                            child: Text(
+                              f.subject,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: mono.copyWith(color: fg),
+                            ),
                           ),
                           Text('${f.stamp}', style: mono),
                           const SizedBox(width: 12),
@@ -963,19 +1017,26 @@ class _CrashBody extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(culprit.reasonText.toUpperCase(),
-                    style: const TextStyle(
-                        fontSize: 17,
-                        height: 1.2,
-                        fontWeight: FontWeight.w700,
-                        letterSpacing: 1.2,
-                        color: danger)),
+                Text(
+                  culprit.reasonText.toUpperCase(),
+                  style: const TextStyle(
+                    fontSize: 17,
+                    height: 1.2,
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: 1.2,
+                    color: danger,
+                  ),
+                ),
                 const SizedBox(height: 4),
                 Text('in ${culprit.name}', style: mono.copyWith(color: fg)),
-                Text('pc ${hex8(culprit.pc)}  ${dump.locate(culprit.pc)}',
-                    style: mono),
-                Text('lr ${hex8(culprit.lr)}  ${dump.locate(culprit.lr)}',
-                    style: mono),
+                Text(
+                  'pc ${hex8(culprit.pc)}  ${dump.locate(culprit.pc)}',
+                  style: mono,
+                ),
+                Text(
+                  'lr ${hex8(culprit.lr)}  ${dump.locate(culprit.lr)}',
+                  style: mono,
+                ),
               ],
             ),
           ),
@@ -1015,19 +1076,24 @@ class _ThreadRow extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(children: [
-            Expanded(
-              child: Text(thread.name,
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  thread.name,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: mono.copyWith(
-                      color: thread.faulted ? danger : fg,
-                      fontWeight: FontWeight.w600)),
-            ),
-            Text(thread.statusText, style: mono),
-            const SizedBox(width: 10),
-            Text('0x${thread.uid.toRadixString(16)}', style: mono),
-          ]),
+                    color: thread.faulted ? danger : fg,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+              Text(thread.statusText, style: mono),
+              const SizedBox(width: 10),
+              Text('0x${thread.uid.toRadixString(16)}', style: mono),
+            ],
+          ),
           Text(
             'pc ${hex8(thread.pc)}${where.isEmpty ? '' : '  $where'}'
             '${thread.faulted ? '   ${thread.reasonText}' : ''}',
@@ -1065,9 +1131,9 @@ class _AppsTabState extends State<_AppsTab> {
   }
 
   void _refresh() => setState(() {
-        _apps = listInstalled(widget.self);
-        _confirming = null;
-      });
+    _apps = listInstalled(widget.self);
+    _confirming = null;
+  });
 
   @override
   void didUpdateWidget(_AppsTab old) {
@@ -1095,13 +1161,19 @@ class _AppsTabState extends State<_AppsTab> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Row(children: [
-          Expanded(
-            child: Text(_note ?? 'titles this receiver installed',
-                maxLines: 1, overflow: TextOverflow.ellipsis, style: label),
-          ),
-          Btn(text: 'REFRESH', onTap: _refresh, colour: muted),
-        ]),
+        Row(
+          children: [
+            Expanded(
+              child: Text(
+                _note ?? 'titles this receiver installed',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: label,
+              ),
+            ),
+            Btn(text: 'REFRESH', onTap: _refresh, colour: muted),
+          ],
+        ),
         const SizedBox(height: 8),
         Expanded(
           child: Panel(
@@ -1127,7 +1199,8 @@ class _AppsTabState extends State<_AppsTab> {
                         requestDelete(_apps[i].titleId);
                         setState(() {
                           _confirming = null;
-                          _note = 'asked the receiver to remove '
+                          _note =
+                              'asked the receiver to remove '
                               '${_apps[i].titleId}; watch the DEPLOY log';
                         });
                       },
@@ -1179,57 +1252,55 @@ class _AppRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => ListRow(
-        selected: confirming,
-        children: [
-          // The name leads. The title id is what the machine needs and the
-          // name is what you are looking for, and a column of FVTA0000n does
-          // not tell you which row is the gallery.
-          Expanded(
-            flex: 3,
-            child: Text(
-              app.name,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: mono.copyWith(color: fg, fontWeight: FontWeight.w600),
-            ),
-          ),
-          const SizedBox(width: 12),
-          SizedBox(
-            width: 110,
-            child: Text(app.titleId, style: mono.copyWith(color: muted)),
-          ),
-          Expanded(
-            flex: 2,
-            child: Text(
-              app.present
-                  ? 'data ${humanBytes(app.cacheBytes)}'
-                  : 'not installed',
-              style: app.present ? mono : mono.copyWith(color: warn),
-            ),
-          ),
-          if (confirming) ...[
-            Btn(text: 'REALLY DELETE', colour: danger, onTap: onDelete),
-            const SizedBox(width: 8),
-            Btn(text: 'CANCEL', colour: muted, onTap: onCancel),
-          ] else if (!app.present) ...[
-            // ux0:app/<id> is gone. There is nothing to run and nothing to
-            // delete, and offering either is how this console reached the
-            // LiveArea home screen twice.
-            Btn(text: 'FORGET', colour: muted, onTap: onForget),
-          ] else ...[
-            Btn(text: 'RUN', colour: good, onTap: onRun),
-            const SizedBox(width: 8),
-            Btn(
-              text: 'CLEAR DATA',
-              colour: warn,
-              enabled: app.cacheBytes > 0,
-              onTap: onClear,
-            ),
-            const SizedBox(width: 8),
-            Btn(text: 'DELETE', colour: danger, onTap: onConfirm),
-          ],
-        ],
-      );
+    selected: confirming,
+    children: [
+      // The name leads. The title id is what the machine needs and the
+      // name is what you are looking for, and a column of FVTA0000n does
+      // not tell you which row is the gallery.
+      Expanded(
+        flex: 3,
+        child: Text(
+          app.name,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: mono.copyWith(color: fg, fontWeight: FontWeight.w600),
+        ),
+      ),
+      const SizedBox(width: 12),
+      SizedBox(
+        width: 110,
+        child: Text(app.titleId, style: mono.copyWith(color: muted)),
+      ),
+      Expanded(
+        flex: 2,
+        child: Text(
+          app.present ? 'data ${humanBytes(app.cacheBytes)}' : 'not installed',
+          style: app.present ? mono : mono.copyWith(color: warn),
+        ),
+      ),
+      if (confirming) ...[
+        Btn(text: 'REALLY DELETE', colour: danger, onTap: onDelete),
+        const SizedBox(width: 8),
+        Btn(text: 'CANCEL', colour: muted, onTap: onCancel),
+      ] else if (!app.present) ...[
+        // ux0:app/<id> is gone. There is nothing to run and nothing to
+        // delete, and offering either is how this console reached the
+        // LiveArea home screen twice.
+        Btn(text: 'FORGET', colour: muted, onTap: onForget),
+      ] else ...[
+        Btn(text: 'RUN', colour: good, onTap: onRun),
+        const SizedBox(width: 8),
+        Btn(
+          text: 'CLEAR DATA',
+          colour: warn,
+          enabled: app.cacheBytes > 0,
+          onTap: onClear,
+        ),
+        const SizedBox(width: 8),
+        Btn(text: 'DELETE', colour: danger, onTap: onConfirm),
+      ],
+    ],
+  );
 }
 
 // --------------------------------------------------------------- shared
@@ -1252,38 +1323,44 @@ class _Detail extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
+    crossAxisAlignment: CrossAxisAlignment.stretch,
+    children: [
+      Row(
         children: [
-          Row(children: [
-            Btn(text: '< BACK', onTap: onBack, colour: muted),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(title,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: heading),
-                  Text(subtitle,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: mono.copyWith(fontSize: 11, color: faint)),
-                ],
-              ),
-            ),
-            if (action case final a?) a,
-          ]),
-          const SizedBox(height: 8),
+          Btn(text: '< BACK', onTap: onBack, colour: muted),
+          const SizedBox(width: 12),
           Expanded(
-            child: Panel(
-              child: SingleChildScrollView(
-                child: Align(alignment: Alignment.topLeft, child: body),
-              ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: heading,
+                ),
+                Text(
+                  subtitle,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: mono.copyWith(fontSize: 11, color: faint),
+                ),
+              ],
             ),
           ),
+          if (action case final a?) a,
         ],
-      );
+      ),
+      const SizedBox(height: 8),
+      Expanded(
+        child: Panel(
+          child: SingleChildScrollView(
+            child: Align(alignment: Alignment.topLeft, child: body),
+          ),
+        ),
+      ),
+    ],
+  );
 }
 
 class _Dot extends StatelessWidget {
@@ -1293,12 +1370,11 @@ class _Dot extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Container(
-        width: 8,
-        height: 8,
-        decoration: BoxDecoration(color: colour, shape: BoxShape.circle),
-      );
+    width: 8,
+    height: 8,
+    decoration: BoxDecoration(color: colour, shape: BoxShape.circle),
+  );
 }
-
 
 /// The TESTS tab.
 ///
@@ -1327,9 +1403,9 @@ class _TestsTabState extends State<_TestsTab> {
   }
 
   void _refresh() => setState(() {
-        _entries = readManifest();
-        _results = readResults();
-      });
+    _entries = readManifest();
+    _results = readResults();
+  });
 
   @override
   void didUpdateWidget(_TestsTab old) {
@@ -1343,9 +1419,11 @@ class _TestsTabState extends State<_TestsTab> {
 
   void _start(BenchEntry e) {
     final ok = startRun(e);
-    setState(() => _note = ok
-        ? 'launching ${e.titleId} — it will run ${e.suite} and come back here'
-        : '${e.titleId} is not installed');
+    setState(
+      () => _note = ok
+          ? 'launching ${e.titleId} — it will run ${e.suite} and come back here'
+          : '${e.titleId} is not installed',
+    );
   }
 
   @override
@@ -1356,13 +1434,19 @@ class _TestsTabState extends State<_TestsTab> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Row(children: [
-          Expanded(
-            child: Text(_note ?? 'suites this console can run',
-                maxLines: 1, overflow: TextOverflow.ellipsis, style: label),
-          ),
-          Btn(text: 'REFRESH', onTap: _refresh, colour: muted),
-        ]),
+        Row(
+          children: [
+            Expanded(
+              child: Text(
+                _note ?? 'suites this console can run',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: label,
+              ),
+            ),
+            Btn(text: 'REFRESH', onTap: _refresh, colour: muted),
+          ],
+        ),
         const SizedBox(height: 8),
         Panel(
           child: _entries.isEmpty
@@ -1370,7 +1454,8 @@ class _TestsTabState extends State<_TestsTab> {
               : Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    for (final e in _entries) _SuiteRow(entry: e, onRun: () => _start(e)),
+                    for (final e in _entries)
+                      _SuiteRow(entry: e, onRun: () => _start(e)),
                   ],
                 ),
         ),
@@ -1379,7 +1464,7 @@ class _TestsTabState extends State<_TestsTab> {
           unstamped == 0
               ? 'results on this card'
               : 'results on this card — $unstamped with no engine stamp, '
-                  'not comparable',
+                    'not comparable',
           style: label,
         ),
         const SizedBox(height: 6),
@@ -1407,29 +1492,36 @@ class _SuiteRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Padding(
-        padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 4),
-        child: Row(
-          children: [
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text('${entry.suite}  ·  ${entry.titleId}',
-                      maxLines: 1, overflow: TextOverflow.ellipsis, style: heading),
-                  Text(entry.present ? entry.label : 'not installed',
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                          fontSize: 12,
-                          color: entry.present ? muted : danger)),
-                ],
+    padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 4),
+    child: Row(
+      children: [
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                '${entry.suite}  ·  ${entry.titleId}',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: heading,
               ),
-            ),
-            Btn(text: 'RUN', colour: good, onTap: onRun, enabled: entry.present),
-          ],
+              Text(
+                entry.present ? entry.label : 'not installed',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  fontSize: 12,
+                  color: entry.present ? muted : danger,
+                ),
+              ),
+            ],
+          ),
         ),
-      );
+        Btn(text: 'RUN', colour: good, onTap: onRun, enabled: entry.present),
+      ],
+    ),
+  );
 }
 
 class _ResultRow extends StatelessWidget {
@@ -1443,9 +1535,9 @@ class _ResultRow extends StatelessWidget {
     final when = r.when == null
         ? '—'
         : '${r.when!.month.toString().padLeft(2, '0')}-'
-            '${r.when!.day.toString().padLeft(2, '0')} '
-            '${r.when!.hour.toString().padLeft(2, '0')}:'
-            '${r.when!.minute.toString().padLeft(2, '0')}';
+              '${r.when!.day.toString().padLeft(2, '0')} '
+              '${r.when!.hour.toString().padLeft(2, '0')}:'
+              '${r.when!.minute.toString().padLeft(2, '0')}';
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 5, horizontal: 4),
       child: Row(
@@ -1455,8 +1547,12 @@ class _ResultRow extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               mainAxisSize: MainAxisSize.min,
               children: [
-                Text('${r.suite}  ·  ${r.renderer}  ·  $when',
-                    maxLines: 1, overflow: TextOverflow.ellipsis, style: label),
+                Text(
+                  '${r.suite}  ·  ${r.renderer}  ·  $when',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: label,
+                ),
                 Text(
                   '${r.scenes} scenes, ${r.stalled} stalled, '
                   'worst ${r.worstMs.toStringAsFixed(1)} ms'
@@ -1464,10 +1560,11 @@ class _ResultRow extends StatelessWidget {
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(
-                      fontSize: 12,
-                      color: r.comparable
-                          ? (r.stalled == 0 ? good : warn)
-                          : muted),
+                    fontSize: 12,
+                    color: r.comparable
+                        ? (r.stalled == 0 ? good : warn)
+                        : muted,
+                  ),
                 ),
               ],
             ),

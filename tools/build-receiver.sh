@@ -96,6 +96,7 @@ exec "$HERE/build-vita-app.sh" "$ROOT/receiver/app" \
   --title-id "$TITLE_ID" \
   --name "$NAME" \
   --extra-source "$ROOT/receiver/src/receiver_dev.c" \
+  --extra-source "$ROOT/receiver/src/vpk.c" \
   --no-supervisor \
   --define "RECEIVER_PORT=$PORT" \
   --define "SELF_TITLEID=\"$TITLE_ID\"" \

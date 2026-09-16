@@ -212,6 +212,10 @@ target_link_libraries(${PROJECT_NAME}
   # For the receiver's `promote`, the only route by which it can replace itself.
   # A stub archive costs nothing to an app that never calls into it.
   ScePromoterUtil_stub
+  # For the receiver's installer: a vpk is a zip, and VitaSDK's libz.a
+  # inflates it on the console. Ordinary archive semantics, so an app that
+  # never inflates links none of it.
+  z
   # For the receiver's timestamps. The clock is whatever the console was last
   # set to, so nothing sorts by it, but it still shows two lines an hour apart.
   SceRtc_stub

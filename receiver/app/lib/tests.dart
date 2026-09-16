@@ -93,12 +93,14 @@ List<BenchEntry> readManifest() {
       if (line.isEmpty || line.startsWith('#')) continue;
       final parts = line.split('|');
       if (parts.length < 3) continue;
-      out.add(BenchEntry(
-        titleId: parts[0].trim(),
-        suite: parts[1].trim(),
-        switchPath: parts[2].trim(),
-        label: parts.length > 3 ? parts[3].trim() : parts[1].trim(),
-      ));
+      out.add(
+        BenchEntry(
+          titleId: parts[0].trim(),
+          suite: parts[1].trim(),
+          switchPath: parts[2].trim(),
+          label: parts.length > 3 ? parts[3].trim() : parts[1].trim(),
+        ),
+      );
     }
     return out.isEmpty ? _builtIn : out;
   } on FileSystemException {
@@ -217,16 +219,18 @@ void _read(File f, List<BenchResult> out) {
     when ??= _modified(f);
 
     final sw = doc['software_on_requested'];
-    out.add(BenchResult(
-      source: f.path.split('/').last,
-      suite: doc['suite'] is String ? doc['suite'] as String : 'gallery',
-      scenes: count,
-      stalled: stalled,
-      worstMs: worst,
-      renderer: sw is bool ? (sw ? 'software' : 'gpu') : 'unknown',
-      engine: doc['engine'] is String ? doc['engine'] as String : null,
-      when: when,
-    ));
+    out.add(
+      BenchResult(
+        source: f.path.split('/').last,
+        suite: doc['suite'] is String ? doc['suite'] as String : 'gallery',
+        scenes: count,
+        stalled: stalled,
+        worstMs: worst,
+        renderer: sw is bool ? (sw ? 'software' : 'gpu') : 'unknown',
+        engine: doc['engine'] is String ? doc['engine'] as String : null,
+        when: when,
+      ),
+    );
   } catch (_) {
     // Truncated, half-written, or not JSON at all. A result that cannot be read
     // is not a result, and it is certainly not a reason to take the receiver

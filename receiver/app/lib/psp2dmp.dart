@@ -41,7 +41,11 @@ class CoreSegment {
   bool contains(int addr) => addr >= start && addr < start + size;
 
   /// 5 is RX, 6 is RW; the low nibble is what carries it.
-  String get kind => switch (attr & 0xF) { 5 => 'RX', 6 => 'RW', _ => '' };
+  String get kind => switch (attr & 0xF) {
+    5 => 'RX',
+    6 => 'RW',
+    _ => '',
+  };
 }
 
 class CoreThread {
@@ -174,12 +178,14 @@ CoreDump parseCore(Uint8List raw) {
       off += 0x50;
       final segs = <CoreSegment>[];
       for (var s = 0; s < numSegs && off + 0x14 <= mi.length; s++) {
-        segs.add(CoreSegment(
-          s + 1,
-          m.getUint32(off + 4, Endian.little),
-          m.getUint32(off + 8, Endian.little),
-          m.getUint32(off + 12, Endian.little),
-        ));
+        segs.add(
+          CoreSegment(
+            s + 1,
+            m.getUint32(off + 4, Endian.little),
+            m.getUint32(off + 8, Endian.little),
+            m.getUint32(off + 12, Endian.little),
+          ),
+        );
         off += 0x14;
       }
       off += 0x10; // ARM exception table bounds; nothing here reads them.
@@ -220,7 +226,8 @@ CoreDump parseCore(Uint8List raw) {
       if (size < 8 + 16 * 4) break;
       final tid = r.getUint32(off + 4, Endian.little);
       byUid[tid]?.gpr = [
-        for (var g = 0; g < 16; g++) r.getUint32(off + 8 + 4 * g, Endian.little),
+        for (var g = 0; g < 16; g++)
+          r.getUint32(off + 8 + 4 * g, Endian.little),
       ];
       off += size;
     }

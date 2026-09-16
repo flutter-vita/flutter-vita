@@ -18,6 +18,7 @@ import 'dart:typed_data';
 const dataDir = 'ux0:data/flutter-vita';
 const statePath = '$dataDir/receiver-state.txt';
 const requestPath = '$dataDir/receiver-request.txt';
+const installProgressPath = '$dataDir/install-progress.txt';
 const panelRequestPath = '$dataDir/panel-request.txt';
 const logDir = '$dataDir/logs';
 const appLogPath = '$dataDir/app.log';
@@ -57,8 +58,12 @@ class MdnsStatus {
   /// Seconds since the last query, or -1 if there has never been one.
   final int lastQueryAge;
 
-  static const unknown =
-      MdnsStatus(joined: false, announced: -1, queries: 0, lastQueryAge: -1);
+  static const unknown = MdnsStatus(
+    joined: false,
+    announced: -1,
+    queries: 0,
+    lastQueryAge: -1,
+  );
 
   /// True when the file was there and says the name is being published.
   bool get publishing => announced > 0;
@@ -87,10 +92,11 @@ class MdnsStatus {
         }
       }
       return MdnsStatus(
-          joined: joined,
-          announced: announced,
-          queries: queries,
-          lastQueryAge: last);
+        joined: joined,
+        announced: announced,
+        queries: queries,
+        lastQueryAge: last,
+      );
     } catch (_) {
       return unknown;
     }
@@ -210,8 +216,9 @@ List<String> readDeployLog({int lines = 200, int window = 16 * 1024}) {
     String text;
     try {
       handle.setPositionSync(start);
-      text = const Utf8Decoder(allowMalformed: true)
-          .convert(handle.readSync(length - start));
+      text = const Utf8Decoder(
+        allowMalformed: true,
+      ).convert(handle.readSync(length - start));
     } finally {
       handle.closeSync();
     }
@@ -283,8 +290,9 @@ List<LogFile> listLogs() {
     for (final e in dir.listSync()) {
       if (e is! File || !e.path.endsWith('.log')) continue;
       final name = e.path.split('/').last;
-      archived.add(LogFile(e.path, name.substring(0, name.length - 4),
-          e.lengthSync()));
+      archived.add(
+        LogFile(e.path, name.substring(0, name.length - 4), e.lengthSync()),
+      );
     }
     archived.sort((a, b) => b.label.compareTo(a.label));
     out.addAll(archived);
@@ -392,8 +400,12 @@ Future<int> clearCrashes(void Function(int done, int total) onProgress) async {
 
 /// A title this receiver installed, and how much of ux0:data it is holding.
 class InstalledApp {
-  InstalledApp(this.titleId, this.cacheBytes,
-      {required this.present, required this.name});
+  InstalledApp(
+    this.titleId,
+    this.cacheBytes, {
+    required this.present,
+    required this.name,
+  });
 
   final String titleId;
   final int cacheBytes;
@@ -426,9 +438,14 @@ List<InstalledApp> listInstalled(String self) {
   for (final raw in file.readAsLinesSync()) {
     final id = raw.trim();
     if (id.isEmpty || id == self || !seen.add(id)) continue;
-    out.add(InstalledApp(id, _dirBytes('ux0:data/$id'),
+    out.add(
+      InstalledApp(
+        id,
+        _dirBytes('ux0:data/$id'),
         present: Directory('ux0:app/$id').existsSync(),
-        name: appTitle(id) ?? id));
+        name: appTitle(id) ?? id,
+      ),
+    );
   }
   // By what the row shows. A list ordered by a column that is no longer first
   // looks unordered.
@@ -454,7 +471,7 @@ String? appTitle(String titleId) {
     final b = f.readAsBytesSync();
     if (b.length < 20) return null;
     final d = ByteData.sublistView(b);
-    if (d.getUint32(0, Endian.little) != 0x46535000) return null;  // "\0PSF"
+    if (d.getUint32(0, Endian.little) != 0x46535000) return null; // "\0PSF"
     final keyTable = d.getUint32(8, Endian.little);
     final dataTable = d.getUint32(12, Endian.little);
     final count = d.getUint32(16, Endian.little);
@@ -472,7 +489,8 @@ String? appTitle(String titleId) {
       var stop = dataAt;
       final limit = dataAt + len;
       while (stop < limit && b[stop] != 0) stop++;
-      final title = utf8.decode(b.sublist(dataAt, stop), allowMalformed: true)
+      final title = utf8
+          .decode(b.sublist(dataAt, stop), allowMalformed: true)
           .trim();
       return title.isEmpty ? null : title;
     }
@@ -526,8 +544,10 @@ void forgetInstalled(String titleId) {
       .readAsLinesSync()
       .where((l) => l.trim().isNotEmpty && l.trim() != titleId)
       .toList();
-  file.writeAsStringSync(kept.isEmpty ? '' : '${kept.join('\n')}\n',
-      flush: true);
+  file.writeAsStringSync(
+    kept.isEmpty ? '' : '${kept.join('\n')}\n',
+    flush: true,
+  );
 }
 
 /// One line the C watcher picks up within two seconds and then removes.
@@ -536,6 +556,46 @@ void requestDelete(String titleId) => _request('delete $titleId');
 /// Hand the console to another title. Ends this process, so nothing after it
 /// on the Dart side runs.
 void requestLaunch(String titleId) => _request('launch $titleId');
+
+/// Install a vpk that is on the card. The C side unpacks, signs a header,
+/// promotes, and reports through [installProgressPath]: one line,
+/// `<phase> <done> <total> <name>`, where the phase ends as `done <titleid>`
+/// or `failed <why>`.
+void requestInstall(String vpkPath) {
+  try {
+    File(installProgressPath).deleteSync();
+  } catch (_) {}
+  _request('install $vpkPath');
+}
+
+class InstallProgress {
+  const InstallProgress(this.phase, this.done, this.total, this.name);
+  final String phase;
+  final int done;
+  final int total;
+  final String name;
+
+  bool get finished => phase == 'done' || phase == 'failed';
+
+  /// 0..1 while unpacking, or null when the phase has no size.
+  double? get fraction => total > 0 ? (done / total).clamp(0.0, 1.0) : null;
+
+  static InstallProgress? read() {
+    try {
+      final line = File(installProgressPath).readAsStringSync().trim();
+      final parts = line.split(' ');
+      if (parts.length < 3) return null;
+      return InstallProgress(
+        parts[0],
+        int.tryParse(parts[1]) ?? 0,
+        int.tryParse(parts[2]) ?? 0,
+        parts.skip(3).join(' '),
+      );
+    } catch (_) {
+      return null;
+    }
+  }
+}
 
 void _request(String line) {
   File(requestPath).writeAsStringSync('$line\n', flush: true);
@@ -546,7 +606,6 @@ String humanBytes(int n) {
   if (n < 1024 * 1024) return '${(n / 1024).toStringAsFixed(0)} KB';
   return '${(n / (1024 * 1024)).toStringAsFixed(1)} MB';
 }
-
 
 /// A command for the panel itself, read and consumed on the poll tick.
 ///
@@ -578,7 +637,10 @@ PanelCommand? readPanelRequest(int seq) {
     final space = text.indexOf(' ');
     if (space < 0) return PanelCommand(seq, text, '');
     return PanelCommand(
-        seq, text.substring(0, space), text.substring(space + 1).trim());
+      seq,
+      text.substring(0, space),
+      text.substring(space + 1).trim(),
+    );
   } on FileSystemException {
     return null;
   }
