@@ -256,11 +256,15 @@ put "$MANIFEST" "$STAGE/manifest.txt"
 echo "==> handing over to $UPDATER"
 say "$PORT" "launch $UPDATER" 20 | sed 's/^/    /' || true
 
-echo "==> waiting for $TITLE_ID on $HOST:$PORT"
+# On the port the *new* receiver listens on, which is not $PORT when a scratch
+# receiver did the staging: --port 1342 waited on 1342 for a receiver that was
+# up on 1341 the whole time, and reported it as never having come back.
+WAIT_PORT="${BUILD_PORT:-1341}"
+echo "==> waiting for $TITLE_ID on $HOST:$WAIT_PORT"
 BACK=""
 for _ in $(seq 1 40); do
   sleep 2
-  BACK="$(say "$PORT" ping 5 2>/dev/null || true)"
+  BACK="$(say "$WAIT_PORT" ping 5 2>/dev/null || true)"
   case "$BACK" in pong\ receiver*) break ;; *) BACK="" ;; esac
 done
 [ -n "$BACK" ] || {
