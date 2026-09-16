@@ -1,6 +1,12 @@
+import 'package:audioplayers_vita/audioplayers_vita.dart';
+import 'package:battery_plus_vita/battery_plus_vita.dart';
+import 'package:camera_vita/camera_vita.dart';
+import 'package:connectivity_plus_vita/connectivity_plus_vita.dart';
+import 'package:device_info_plus_vita/device_info_plus_vita.dart';
 import 'package:flutter/material.dart';
-
 import 'package:path_provider_vita/path_provider_vita.dart';
+import 'package:record_vita/record_vita.dart';
+import 'package:sensors_plus_vita/sensors_plus_vita.dart';
 import 'package:shared_preferences_vita/shared_preferences_vita.dart';
 
 import 'bench/bench_page.dart';
@@ -38,6 +44,15 @@ void main() {
   // registers it: the two lines ADR-0009 asks an app author for.
   PathProviderVita.registerWith();
   SharedPreferencesVita.registerWith();
+  // The Hardware tabs check the console through these; the C halves are in
+  // the packages, compiled into this app by build-vita-app.sh.
+  BatteryPlusVita.registerWith();
+  SensorsPlusVita.registerWith();
+  DeviceInfoPlusVita.registerWith();
+  ConnectivityPlusVita.registerWith();
+  RecordVita.registerWith();
+  AudioplayersVita.registerWith();
+  CameraVita.registerWith();
 
   final autoBench = switchOn(kSwitchPath);
   final autoConformance = !autoBench && switchOn(kConformanceSwitchPath);

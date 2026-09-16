@@ -1,10 +1,15 @@
 // The Hardware tab: does each piece of the console answer, and with what.
 //
-// Every check is one method on the `vita/hardware` channel, answered by
-// templates/vita-app/hardware.c, plus two that need no C (an HTTP GET, the
-// keyboard). A check ends in one of four states: pass and fail where the
-// numbers decide, `eye` where a person has to judge (a picture, a sound, a
-// press nobody made), and `off` when this build has no hardware.c.
+// The checks go through the pub packages an app author would use, each
+// with its Vita implementation from packages/ registered in main:
+// device_info_plus, battery_plus, connectivity_plus, sensors_plus,
+// audioplayers, record, camera. What no package covers (storage, the
+// clock, the controls, the touch panels, the console's volume) is a method
+// on the `vita/hardware` channel, answered by templates/vita-app/hardware.c;
+// the HTTP GET and the keyboard need no C at all. A check ends in one of
+// four states: pass and fail where the numbers decide, `eye` where a person
+// has to judge (a picture, a sound, a press nobody made), and `off` when
+// the console has no such part.
 //
 // Three groups on three tabs. The automatic checks ask the console and read
 // the answer; the cameras do the same and show their frames; the checks
@@ -18,10 +23,21 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:math' as math;
 import 'dart:ui' as ui;
 
+import 'package:audioplayers/audioplayers.dart';
+import 'package:battery_plus/battery_plus.dart';
+import 'package:battery_plus_vita/battery_plus_vita.dart';
+import 'package:camera/camera.dart';
+import 'package:connectivity_plus/connectivity_plus.dart';
+import 'package:connectivity_plus_vita/connectivity_plus_vita.dart';
+import 'package:device_info_plus/device_info_plus.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:record/record.dart';
+import 'package:record_vita/record_vita.dart';
+import 'package:sensors_plus/sensors_plus.dart';
 
 import '../bench/runner.dart'
     show
@@ -31,6 +47,7 @@ import '../bench/runner.dart'
         kHardwareResultPath,
         writeAtomic;
 import 'loopback.dart';
+import 'tone.dart';
 
 enum CheckState { pending, running, pass, fail, eye, off, skipped }
 
@@ -100,7 +117,10 @@ class HardwareSuite extends ChangeNotifier {
 
   /// The microphone's recording started by the tone check, read by the
   /// microphone check that follows it: one capture serves both.
-  Future<Map<String, Object?>>? _micDuringTone;
+  Future<String>? _micDuringTone;
+
+  /// The console's volume before the tone check raised it, to put back.
+  int? _volumeWas;
 
   @override
   void dispose() {
@@ -119,32 +139,36 @@ class HardwareSuite extends ChangeNotifier {
   List<HardwareCheck> _build() => [
         HardwareCheck(
           id: 'model',
-          title: 'console',
+          title: 'console (device_info_plus)',
           run: () async {
-            final r = await Hardware.call('model');
-            final model = (r['model'] as num?)?.toInt() ?? 0;
-            final name = model == 0x10000
-                ? 'Vita'
-                : model == 0x20000
-                    ? 'PS TV'
-                    : 'model 0x${model.toRadixString(16)}';
+            final info = await DeviceInfoPlugin().deviceInfo;
+            final r = info.data;
+            final code = (r['model_code'] as num?)?.toInt() ?? 0;
             return (
-              model > 0 ? CheckState.pass : CheckState.fail,
-              '$name, firmware ${r['firmware']}',
+              code > 0 ? CheckState.pass : CheckState.fail,
+              '${r['model']}, firmware ${r['firmware']}, ${r['title_id']}; '
+                  'arm ${r['arm_mhz']} bus ${r['bus_mhz']} gpu ${r['gpu_mhz']} MHz',
               r
             );
           },
         ),
         HardwareCheck(
           id: 'battery',
-          title: 'battery and clocks',
+          title: 'battery (battery_plus)',
           run: () async {
-            final r = await Hardware.call('battery');
+            final battery = Battery();
+            final level = await battery.batteryLevel;
+            final state = await battery.batteryState;
+            final s = await BatteryPlusVita.status();
+            final r = <String, Object?>{
+              ...s,
+              'plugin_level': level,
+              'plugin_state': state.name
+            };
             return (
-              CheckState.pass,
-              '${r['pct']}% ${_n(r['temp_c'])}°C ${_n((r['volt_mv'] as num) / 1000, 2)} V'
-                  '${r['charging'] == true ? ' charging' : ''}, ${r['remaining_min']} min left; '
-                  'arm ${r['arm_mhz']} bus ${r['bus_mhz']} gpu ${r['gpu_mhz']} MHz',
+              level > 0 && level <= 100 ? CheckState.pass : CheckState.fail,
+              '$level% ${state.name}, ${_n(s['temp_c'])}°C ${_n((s['volt_mv'] as num) / 1000, 2)} V, '
+                  '${s['minutes']} min left',
               r
             );
           },
@@ -185,15 +209,20 @@ class HardwareSuite extends ChangeNotifier {
         ),
         HardwareCheck(
           id: 'wifi',
-          title: 'wi-fi',
+          title: 'wi-fi (connectivity_plus)',
           run: () async {
-            final r = await Hardware.call('network');
-            final up = r['connected'] == true;
+            final results = await Connectivity().checkConnectivity();
+            final s = await ConnectivityPlusVita.status();
+            final r = <String, Object?>{
+              ...s,
+              'plugin_results': results.map((e) => e.name).toList()
+            };
+            final up = !results.contains(ConnectivityResult.none);
             return (
               up ? CheckState.pass : CheckState.fail,
               up
-                  ? '${r['ssid']} ${r['ip']} signal ${r['rssi_pct']}%'
-                  : 'not connected (state ${r['state']})',
+                  ? '${results.map((e) => e.name).join('+')}: ${s['ssid']} ${s['ip']} signal ${s['rssi_pct']}%'
+                  : 'none (SceNetCtl state ${s['state']})',
               r
             );
           },
@@ -269,12 +298,13 @@ class HardwareSuite extends ChangeNotifier {
               await Future<void>.delayed(const Duration(milliseconds: 100));
             }
             final r = {...last, 'front_samples': front, 'back_samples': back};
-            if (back > 0)
+            if (back > 0) {
               return (
                 CheckState.pass,
                 'back panel: $back contact samples, front $front',
                 r
               );
+            }
             return (
               CheckState.eye,
               'both panels answer; no back contact in 5 s (front $front)',
@@ -284,60 +314,117 @@ class HardwareSuite extends ChangeNotifier {
         ),
         HardwareCheck(
           id: 'motion',
-          title: 'gyro and accelerometer',
+          title: 'gyro and accelerometer (sensors_plus)',
           run: () async {
-            final r = await Hardware.call('motion');
-            final a = (r['accel'] as List).cast<num>();
-            final g = (r['gyro'] as List).cast<num>();
-            final mag = a.fold<double>(0, (s, v) => s + v * v);
-            final ok =
-                mag > 0.6 && mag < 1.6; // about one g, in any orientation
+            // The first samples come a moment after sampling starts; the
+            // streams are asked for ten and the last one counts.
+            const period = Duration(milliseconds: 50);
+            final accel = await accelerometerEventStream(samplingPeriod: period)
+                .take(10)
+                .last
+                .timeout(const Duration(seconds: 3));
+            final gyro = await gyroscopeEventStream(samplingPeriod: period)
+                .first
+                .timeout(const Duration(seconds: 3));
+            final mag = math.sqrt(
+                accel.x * accel.x + accel.y * accel.y + accel.z * accel.z);
+            final ok = mag > 6 && mag < 16; // about one g, in any orientation
+            final r = <String, Object?>{
+              'accel_ms2': [accel.x, accel.y, accel.z],
+              'gyro': [gyro.x, gyro.y, gyro.z],
+              'magnitude_ms2': mag,
+            };
             return (
               ok ? CheckState.pass : CheckState.fail,
-              'accel ${a.map((v) => _n(v, 2)).join(' ')} (|a| ${_n(mag, 2)} g) gyro ${g.map((v) => _n(v, 2)).join(' ')}',
+              'accel ${_n(accel.x, 2)} ${_n(accel.y, 2)} ${_n(accel.z, 2)} m/s² (|a| ${_n(mag / 9.80665, 2)} g) '
+                  'gyro ${_n(gyro.x, 2)} ${_n(gyro.y, 2)} ${_n(gyro.z, 2)}',
               r
             );
           },
         ),
         HardwareCheck(
           id: 'audio_tone',
-          title: 'speaker: a tone',
-          hint: 'one second of 1 kHz at 48 kHz through the main port',
+          title: 'speaker: a tone (audioplayers)',
+          hint: 'one second of 1 kHz, a WAV made here, through BytesSource',
           run: () async {
-            // The microphone records the same two seconds, for the check
-            // after this one; the tone starts half a second in.
-            _micDuringTone = Hardware.call('mic', {'ms': 2000});
+            // A console turned down cannot be tested: raised to 12 for the
+            // two audio checks and put back by the microphone check.
+            final v = await Hardware.call('volume');
+            final was = (v['vol'] as num?)?.toInt() ?? -1;
+            _volumeWas = null;
+            if (was >= 0 && was < 5) {
+              await Hardware.call('volume', {'set': 12});
+              _volumeWas = was;
+            }
+            // The microphone records the same three seconds, for the check
+            // after this one; the tone starts about a second in.
+            _micDuringTone = _record(const Duration(seconds: 3));
             await Future<void>.delayed(const Duration(milliseconds: 500));
-            final r =
-                await Hardware.call('audioTone', {'hz': 1000, 'ms': 1000});
-            // The port clocks the samples: 50 grains of 20 ms take 1000 ms
-            // when the DAC is pulling them, and a port nobody drives would
-            // return at once or fail. That is this check's verdict; the
+            final player = AudioPlayer();
+            final errors = <Object>[];
+            final sub = player.eventStream.listen((_) {}, onError: errors.add);
+            final done = player.onPlayerComplete.first
+                .timeout(const Duration(seconds: 3));
+            // The source first (192 KB of WAV as base64 through the
+            // channel), then the clock starts with the playback.
+            await player.setSource(
+                BytesSource(makeToneWav(1000, 1000), mimeType: 'audio/wav'));
+            final sw = Stopwatch()..start();
+            await player.resume();
+            var completed = true;
+            try {
+              await done;
+            } on TimeoutException {
+              completed = false;
+            }
+            sw.stop();
+            await sub.cancel();
+            await player.dispose();
+            // The port clocks the samples: a second of them takes a second
+            // when the DAC is pulling them, plus up to 250 ms until the
+            // poll sees the end. That is this check's verdict; the
             // microphone check after it says whether the sound came out.
-            final took = (r['took_ms'] as num?)?.toInt() ?? 0;
-            final vol = (r['console_vol'] as num?)?.toInt() ?? -1;
-            final clocked = took >= 900 && took <= 1200;
+            final took = sw.elapsedMilliseconds;
+            final clocked = completed && took >= 900 && took <= 1400;
+            final r = <String, Object?>{
+              'took_ms': took,
+              'completed': completed,
+              'console_vol': _volumeWas == null ? was : 12,
+              'raised': _volumeWas != null,
+              'errors': errors.map((e) => '$e').toList(),
+            };
             return (
-              clocked && vol != 0 ? CheckState.pass : CheckState.fail,
-              'port ${r['port']} clocked ${r['grains']} grains in $took ms at console volume $vol/30'
-                  '${r['raised'] == true ? ' (12 for the tone)' : ''}'
-                  '${clocked ? '' : '; the port did not clock the samples'}',
+              clocked && was != 0 && errors.isEmpty
+                  ? CheckState.pass
+                  : CheckState.fail,
+              '${completed ? 'complete' : 'no complete event'} after $took ms at console volume '
+                  '${_volumeWas == null ? was : '12 (was $was)'}/30'
+                  '${errors.isEmpty ? '' : '; ${errors.first}'}',
               r
             );
           },
         ),
         HardwareCheck(
           id: 'mic',
-          title: 'microphone',
-          hint: 'two seconds from the RAW port while the tone plays',
+          title: 'microphone (record)',
+          hint: 'three seconds of WAV while the tone plays',
           run: () async {
-            final m =
-                await (_micDuringTone ?? Hardware.call('mic', {'ms': 2000}));
+            final path =
+                await (_micDuringTone ?? _record(const Duration(seconds: 3)));
             _micDuringTone = null;
-            final wav = File('${m['path']}').readAsBytesSync();
+            if (_volumeWas != null) {
+              await Hardware.call('volume', {'set': _volumeWas});
+              _volumeWas = null;
+            }
+            final wav = File(path).readAsBytesSync();
             final a = analyzeLoopback(wav, hz: 1000);
+            final muted = await RecordVita.muted();
             final r = <String, Object?>{
-              ...m,
+              'path': path,
+              'rate': a.sampleRate,
+              'samples': a.samples,
+              'peak': a.peak,
+              'muted': muted,
               'blocks': a.blocks,
               'tone_blocks': a.toneBlocks,
               'snr_db': double.parse(a.snrDb.toStringAsFixed(1)),
@@ -346,7 +433,7 @@ class HardwareSuite extends ChangeNotifier {
             if (a.silent) {
               return (
                 CheckState.fail,
-                'every one of ${a.samples} samples is zero (mute status ${m['status']}): '
+                'every one of ${a.samples} samples is zero (switch ${muted ? 'off' : 'on'}): '
                     'switch the microphone on in the quick menu (hold PS)',
                 r
               );
@@ -360,13 +447,13 @@ class HardwareSuite extends ChangeNotifier {
               return (
                 CheckState.pass,
                 'the tone came through at +${_n(a.snrDb)} dB over the room, ${a.toneBlocks * 100} ms, '
-                    'peak ${a.peak}; room noise rms ${m['rms']}',
+                    'peak ${a.peak} of ${a.samples} samples at ${a.sampleRate} Hz',
                 r
               );
             }
             return (
               CheckState.fail,
-              'alive (peak ${a.peak}, rms ${m['rms']}) but the tone is not in the recording '
+              'alive (peak ${a.peak}) but the tone is not in the recording '
                   '(+${_n(a.snrDb)} dB at 1 kHz): the speaker is silent, or the console is muted or turned down',
               r
             );
@@ -374,43 +461,64 @@ class HardwareSuite extends ChangeNotifier {
         ),
         HardwareCheck(
           id: 'audio_file',
-          title: 'an AAC file through sceAvPlayer',
-          hint: 'three notes, decoded by the console and recorded',
+          title: 'an AAC asset (audioplayers)',
+          hint: 'three notes through AssetSource, decoded by the console',
           run: () async {
             // The decoder is the verdict; the microphone says whether the
             // room heard it, as a level rise in dB, for the record.
-            final mic = Hardware.call('mic', {'ms': 4000});
+            final mic = _record(const Duration(seconds: 4));
             await Future<void>.delayed(const Duration(milliseconds: 400));
             // AAC in MP4: the container the console's player is for. The
             // same sound as MP3 got 0x806A0002 from AddSource on every
             // path (build 48); the player does not open that container.
-            Map<String, Object?> r;
-            try {
-              r = await Hardware.call(
-                  'audioFile', {'max_ms': 5000, 'file': 'tone.m4a'});
-              r['file'] = 'tone.m4a';
-            } on PlatformException catch (e) {
-              // The same sound under a black video track, in case the
-              // player wants one.
-              r = await Hardware.call(
-                  'audioFile', {'max_ms': 5000, 'file': 'tone.mp4'});
-              r['file'] = 'tone.mp4';
-              r['m4a_error'] = e.message;
+            // AssetSource goes through AudioCache: the asset is copied to
+            // the temp directory path_provider_vita names, and the copy
+            // is what the player opens.
+            final r = <String, Object?>{};
+            var completed = false;
+            var took = 0;
+            for (final file in ['tone.m4a', 'tone.mp4']) {
+              final player = AudioPlayer();
+              final errors = <Object>[];
+              final sub =
+                  player.eventStream.listen((_) {}, onError: errors.add);
+              final done = player.onPlayerComplete.first
+                  .timeout(const Duration(seconds: 6));
+              final sw = Stopwatch()..start();
+              try {
+                await player.play(AssetSource('hardware/$file'));
+                await done;
+                completed = true;
+              } on Object catch (e) {
+                errors.add(e);
+              }
+              sw.stop();
+              took = sw.elapsedMilliseconds;
+              r['file'] = file;
+              r['duration_ms'] = (await player.getDuration())?.inMilliseconds;
+              r['errors'] = errors.map((e) => '$e').toList();
+              await sub.cancel();
+              await player.dispose();
+              if (completed) break;
+              r['${file.split('.').last}_error'] =
+                  errors.isEmpty ? 'no complete event' : '${errors.first}';
             }
-            final m = await mic;
+            final path = await mic;
             var rise = 0.0;
             try {
-              rise = levelRiseDb(File('${m['path']}').readAsBytesSync());
+              rise = levelRiseDb(File(path).readAsBytesSync());
             } on Object {
               // No recording is no verdict on the decoder.
             }
+            r['took_ms'] = took;
+            r['completed'] = completed;
             r['mic_rise_db'] = double.parse(rise.toStringAsFixed(1));
-            r['mic_peak'] = m['peak'];
-            final frames = (r['frames'] as num?)?.toInt() ?? 0;
             return (
-              frames > 0 ? CheckState.pass : CheckState.fail,
-              '${r['file']}: decoded $frames frames, ${r['channels']} ch ${r['rate']} Hz, ${r['bytes']} B in ${r['took_ms']} ms; '
-                  'the microphone heard +${_n(rise)} dB${(m['peak'] as num? ?? 0) == 0 ? ' (mic off)' : ''}',
+              completed ? CheckState.pass : CheckState.fail,
+              '${r['file']}: ${completed ? 'played to the end' : 'did not complete'} in $took ms'
+                  '${r['duration_ms'] != null ? ' (duration ${r['duration_ms']} ms)' : ''}; '
+                  'the microphone heard +${_n(rise)} dB'
+                  '${completed ? '' : '; ${(r['errors'] as List).join('; ')}'}',
               r
             );
           },
@@ -418,14 +526,14 @@ class HardwareSuite extends ChangeNotifier {
         HardwareCheck(
           id: 'camera_front',
           group: HardwareGroup.camera,
-          title: 'front camera',
-          run: () => _camera(0),
+          title: 'front camera (camera)',
+          run: () => _camera(CameraLensDirection.front),
         ),
         HardwareCheck(
           id: 'camera_back',
           group: HardwareGroup.camera,
-          title: 'back camera',
-          run: () => _camera(1),
+          title: 'back camera (camera)',
+          run: () => _camera(CameraLensDirection.back),
         ),
         HardwareCheck(
           id: 'keyboard',
@@ -450,27 +558,113 @@ class HardwareSuite extends ChangeNotifier {
         ),
       ];
 
-  Future<(CheckState, String, Map<String, Object?>?)> _camera(int which) async {
-    final r = await Hardware.call('camera', {'which': which});
-    final path = '${r['path']}';
-    final w = (r['width'] as num).toInt();
-    final h = (r['height'] as num).toInt();
-    final bytes = File(path).readAsBytesSync();
-    final image = await _decode(bytes, w, h);
-    if (which == 0) {
-      front = image;
-    } else {
-      back = image;
+  /// [d] of the microphone through `record`, as a WAV under the data
+  /// directory; returns the path.
+  static Future<String> _record(Duration d) async {
+    final rec = AudioRecorder();
+    try {
+      await rec.start(const RecordConfig(encoder: AudioEncoder.wav),
+          path: '$kDataDir/mic.wav');
+      await Future<void>.delayed(d);
+      return (await rec.stop())!;
+    } finally {
+      await rec.dispose();
     }
-    notifyListeners();
-    final sd = (r['stddev'] as num?)?.toDouble() ?? 0;
-    return (
-      sd > 5 ? CheckState.pass : CheckState.eye,
-      'frame ${r['frame']} of ${r['frames'] ?? '?'} ${w}x$h in ${r['took_ms']} ms, '
-          'mean ${_n(r['mean'])} sd ${_n(sd)}'
-          '${sd > 5 ? '' : ' (flat: covered, or dark)'}',
-      r
-    );
+  }
+
+  /// One camera through `camera`: a controller at the low preset, an
+  /// image stream until thirty frames or 1.5 s, the last frame shown.
+  Future<(CheckState, String, Map<String, Object?>?)> _camera(
+      CameraLensDirection lens) async {
+    final cameras = await availableCameras();
+    final desc = cameras.where((c) => c.lensDirection == lens).firstOrNull;
+    if (desc == null) {
+      return (CheckState.off, 'no ${lens.name} camera on this console', null);
+    }
+    final controller =
+        CameraController(desc, ResolutionPreset.low, enableAudio: false);
+    final sw = Stopwatch()..start();
+    try {
+      await controller.initialize();
+      final size = controller.value.previewSize!;
+      // The sensor's exposure takes most of a second to settle from the
+      // black it starts at (build 42 read frame 4 at 78 ms, and it was
+      // black). Frames are taken until thirty have come or 1.5 s passed,
+      // and the brightness along the way goes into the result.
+      final means = <double>[];
+      CameraImage? last;
+      final done = Completer<void>();
+      await controller.startImageStream((img) {
+        last = img;
+        means.add(_mean(img.planes.first.bytes, img.width, img.height));
+        if (means.length >= 30 || sw.elapsedMilliseconds > 1500) {
+          if (!done.isCompleted) done.complete();
+        }
+      });
+      await done.future.timeout(const Duration(seconds: 3), onTimeout: () {});
+      await controller.stopImageStream();
+      sw.stop();
+      final img = last;
+      if (img == null) {
+        return (
+          CheckState.fail,
+          'no frame in ${sw.elapsedMilliseconds} ms',
+          null
+        );
+      }
+      final bytes = img.planes.first.bytes;
+      final image = await _decode(bytes, img.width, img.height);
+      if (lens == CameraLensDirection.front) {
+        front = image;
+      } else {
+        back = image;
+      }
+      notifyListeners();
+      final (mean, sd) = _stats(bytes, img.width, img.height);
+      final r = <String, Object?>{
+        'width': img.width,
+        'height': img.height,
+        'preview': '${size.width.toInt()}x${size.height.toInt()}',
+        'frames': means.length,
+        'took_ms': sw.elapsedMilliseconds,
+        'mean': double.parse(mean.toStringAsFixed(1)),
+        'stddev': double.parse(sd.toStringAsFixed(1)),
+        'mean_by_frame': [
+          for (final m in means) double.parse(m.toStringAsFixed(1))
+        ],
+      };
+      return (
+        sd > 5 ? CheckState.pass : CheckState.eye,
+        '${means.length} frames ${img.width}x${img.height} in ${sw.elapsedMilliseconds} ms, '
+            'mean ${_n(mean)} sd ${_n(sd)}'
+            '${sd > 5 ? '' : ' (flat: covered, or dark)'}',
+        r
+      );
+    } finally {
+      await controller.dispose();
+    }
+  }
+
+  /// Mean of the green channel over a coarse grid.
+  static double _mean(Uint8List rgba, int w, int h) => _stats(rgba, w, h).$1;
+
+  /// Mean and standard deviation of the green channel over a 32x30 grid:
+  /// a covered lens is under 5, a room in the hundreds.
+  static (double, double) _stats(Uint8List rgba, int w, int h) {
+    var sum = 0.0, sq = 0.0;
+    var n = 0;
+    for (var y = 0; y < h; y += 8) {
+      for (var x = 0; x < w; x += 10) {
+        final g = rgba[(y * w + x) * 4 + 1].toDouble();
+        sum += g;
+        sq += g * g;
+        n++;
+      }
+    }
+    if (n == 0) return (0, 0);
+    final mean = sum / n;
+    final v = sq / n - mean * mean;
+    return (mean, math.sqrt(v < 0 ? 0 : v));
   }
 
   static Future<ui.Image> _decode(Uint8List rgba, int w, int h) {

@@ -1,0 +1,2 @@
+list(APPEND PLUGIN_SOURCES ${CMAKE_CURRENT_LIST_DIR}/sensors.c)
+list(APPEND PLUGIN_LIBS SceMotion_stub)

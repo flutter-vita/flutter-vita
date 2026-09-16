@@ -25,31 +25,34 @@
 
 // ---- registry --------------------------------------------------------------
 
-enum { kMaxChannels = 32 };
-static struct {
+enum { kMaxChannels = 32, kDefaultCap = 256 * 1024 };
+typedef struct Channel {
   char name[48];
   FvitaChannelHandler handler;
-} g_channels[kMaxChannels];
+  size_t cap;
+} Channel;
+static Channel g_channels[kMaxChannels];
 static int g_channel_count;
 
-void fvita_channel_register(const char* channel, FvitaChannelHandler handler) {
+static Channel* find_channel(const char* channel, int create) {
   for (int i = 0; i < g_channel_count; i++) {
-    if (strcmp(g_channels[i].name, channel) == 0) {
-      g_channels[i].handler = handler;
-      return;
-    }
+    if (strcmp(g_channels[i].name, channel) == 0) return &g_channels[i];
   }
-  if (g_channel_count == kMaxChannels) return;
-  snprintf(g_channels[g_channel_count].name, sizeof g_channels[0].name, "%s", channel);
-  g_channels[g_channel_count].handler = handler;
-  g_channel_count++;
+  if (!create || g_channel_count == kMaxChannels) return NULL;
+  Channel* c = &g_channels[g_channel_count++];
+  snprintf(c->name, sizeof c->name, "%s", channel);
+  c->cap = kDefaultCap;
+  return c;
 }
 
-static FvitaChannelHandler find_handler(const char* channel) {
-  for (int i = 0; i < g_channel_count; i++) {
-    if (strcmp(g_channels[i].name, channel) == 0) return g_channels[i].handler;
-  }
-  return NULL;
+void fvita_channel_register(const char* channel, FvitaChannelHandler handler) {
+  Channel* c = find_channel(channel, 1);
+  if (c != NULL) c->handler = handler;
+}
+
+void fvita_channel_reply_cap(const char* channel, size_t cap) {
+  Channel* c = find_channel(channel, 1);
+  if (c != NULL && cap >= 1024) c->cap = cap;
 }
 
 // ---- replies and arguments ------------------------------------------------
@@ -233,16 +236,16 @@ static int watchdog_thread(SceSize args, void* argp) {
 int flutter_vita_channel_call(const char* channel, const char* method, const char* body, size_t body_len,
                               void (*respond)(void* ctx, const char* reply, size_t len), void* ctx) {
   if (channel == NULL || method == NULL || respond == NULL) return -1;
-  const FvitaChannelHandler handler = find_handler(channel);
-  if (handler == NULL) return -1;
+  const Channel* c = find_channel(channel, 0);
+  if (c == NULL || c->handler == NULL) return -1;
   Job* j = calloc(1, sizeof *j);
   if (j == NULL) return -1;
   snprintf(j->channel, sizeof j->channel, "%s", channel);
   snprintf(j->method, sizeof j->method, "%s", method);
-  j->handler = handler;
+  j->handler = c->handler;
   j->body_len = body != NULL ? body_len : 0;
   j->body = malloc(j->body_len + 1);
-  j->cap = 256 * 1024;  // a camera frame in base64 is not this; a second of audio is
+  j->cap = c->cap;  // 256 KB unless the plugin asked for more: a second of audio fits, a camera frame does not
   j->out = malloc(j->cap);
   if (j->body == NULL || j->out == NULL) {
     free(j->body);

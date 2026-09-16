@@ -19,6 +19,30 @@ dependencies:
   shared_preferences: ^2.2.0
   shared_preferences_vita:
     path: ../../packages/shared_preferences_vita
+  # The Hardware tabs check the console through the pub packages an app
+  # author would use, each with its Vita implementation beside it: the
+  # package's `vita/` directory holds the C half, compiled into this app.
+  battery_plus: ^6.0.0
+  battery_plus_vita:
+    path: ../../packages/battery_plus_vita
+  sensors_plus: ^6.0.0
+  sensors_plus_vita:
+    path: ../../packages/sensors_plus_vita
+  device_info_plus: ^11.0.0
+  device_info_plus_vita:
+    path: ../../packages/device_info_plus_vita
+  connectivity_plus: ^6.0.0
+  connectivity_plus_vita:
+    path: ../../packages/connectivity_plus_vita
+  record: ^6.0.0
+  record_vita:
+    path: ../../packages/record_vita
+  audioplayers: ^6.0.0
+  audioplayers_vita:
+    path: ../../packages/audioplayers_vita
+  camera: ^0.11.0
+  camera_vita:
+    path: ../../packages/camera_vita
 
 # Its own slot, so it can sit on the LiveArea beside the receiver's slot. The
 # dev loop installs into FVTA00002 whatever this says (tools/deploy.sh).

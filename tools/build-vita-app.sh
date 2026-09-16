@@ -305,7 +305,7 @@ PY
 )"
 if [ -n "$VITA_PLUGINS" ]; then
   echo "==> vita plugins"
-  echo "$VITA_PLUGINS" | tr ';' '\n' | sed 's|^|    |; s|/vita/plugin.cmake$||; s|.*/||'
+  echo "$VITA_PLUGINS" | tr ';' '\n' | sed 's|/vita/plugin.cmake$||; s|.*/||; s|^|    |'
 fi
 
 # The kernel and the bundle must come from the same source tree. The asset

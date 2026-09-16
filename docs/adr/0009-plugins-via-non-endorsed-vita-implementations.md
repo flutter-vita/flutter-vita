@@ -101,6 +101,11 @@ title.
   as the ecosystem does, and the greedy cover should be re-derived before any
   future decision to extend the pinned set.
 
+## Amended 2026-09-16
+
+[ADR-0020](0020-native-halves-inside-vita-packages.md) extends the set to ten
+and lets a package carry its C half, compiled into the app.
+
 ## Revisit trigger
 
 Re-run the survey and extend the set if the knee moves — if some fourth plugin

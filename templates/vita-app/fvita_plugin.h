@@ -38,6 +38,10 @@ typedef int (*FvitaChannelHandler)(const char* method, const char* body, size_t 
 // first, so a plugin can be shadowed by an app for a test.
 void fvita_channel_register(const char* channel, FvitaChannelHandler handler);
 
+// The reply buffer a channel's handlers get: 256 KB unless a plugin asks
+// for more here (a camera frame in base64 needs 410 KB at 320x240).
+void fvita_channel_reply_cap(const char* channel, size_t cap);
+
 // `[` + the formatted result + `]`. Returns the length, or -1 when it does
 // not fit.
 int fvita_reply_ok(char* out, size_t cap, const char* fmt, ...) __attribute__((format(printf, 3, 4)));

@@ -1,0 +1,13 @@
+name: connectivity_plus_vita
+description: PlayStation Vita implementation of connectivity_plus. Non-endorsed.
+version: 0.1.0
+publish_to: none
+
+environment:
+  sdk: ^3.5.0
+  flutter: ">=3.44.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+  connectivity_plus_platform_interface: ^2.0.0

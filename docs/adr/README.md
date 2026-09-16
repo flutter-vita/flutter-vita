@@ -18,7 +18,7 @@ ADR-0001 through ADR-0004 are back-filled from §1 of `Flutter Vita Plan.md`
 | [0006](0006-performance-bar-set-from-measurement.md) | Performance bar set from measurement, not asserted | Accepted |
 | [0007](0007-enable-partial-repaint-in-software-path.md) | Patch the engine to enable partial repaint in the software path | **Accepted** — measurement makes it load-bearing |
 | [0008](0008-app-visible-platform-identity.md) | How an app learns it is running on a Vita | **Option A** — keep the linux identity; B is one line if ever needed |
-| [0009](0009-plugins-via-non-endorsed-vita-implementations.md) | `pubspec.yaml` as opt-in surface: build config + three non-endorsed plugins | Accepted — 19% → 50% of surveyed apps |
+| [0009](0009-plugins-via-non-endorsed-vita-implementations.md) | `pubspec.yaml` as opt-in surface: build config + three non-endorsed plugins | Accepted — 19% → 50% of surveyed apps; the set is ten since 0020 |
 | [0010](0010-input-layering-and-psvita-api.md) | Input in two layers; only the second is a package | Accepted — D-pad navigation needs no dependency |
 | [0011](0011-crash-recovery-without-taihen.md) | A crash returns to the receiver by exiting cleanly | Accepted — **amended 2026-08-21**: no kernel plugins or SceShell modules; in-process user hooks permitted |
 | [0012](0012-test-apps-as-measurement-instrument.md) | The test apps is an instrument, and its output is a diff | Accepted — five axes, one control, patch size is the score |
@@ -29,6 +29,7 @@ ADR-0001 through ADR-0004 are back-filled from §1 of `Flutter Vita Plan.md`
 | [0017](0017-the-gallery-becomes-the-benchmark.md) | The gallery becomes the benchmark, and a scene is the unit | Accepted — scripted scenes, a stall is 2+ frames at or below 30 fps, gated on a committed baseline |
 | [0018](0018-the-lgpl-obligation-in-every-vpk.md) | vitaGL is LGPL, and the obligation lands on every developer who ships | Accepted — our own GLES2 over sceGxm; no LGPL in the vpk, none required on the console. Done 2026-09-14: vitaGL and vitashark are out of the tree |
 | [0019](0019-gles2-over-gxm-written-here.md) | GLES2 over sceGxm, written here | Accepted — 114 names, shaders via SceShaccCg, clean room. The only GL in the tree since 2026-09-14 (M5); progress in `docs/gles2-progress.md` |
+| [0020](0020-native-halves-inside-vita-packages.md) | A Vita package carries its own C, and the set grows to ten | Accepted — `vita/plugin.cmake` compiled into the app, one `vita/<name>` channel each; amends 0009's pinned set |
 
 ## Open questions not yet decided
 
