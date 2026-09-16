@@ -186,6 +186,36 @@ Build 58 puts the suite on three tabs: HARDWARE (the console answers,
 ten checks, all pass), CAMERAS (two frames, shown), MANUAL (buttons and
 sticks, back touch, keyboard).
 
+## The same checks through the pub packages
+
+Builds 59 to 61 of 2026-09-16 move the checks off `vita/hardware` and onto
+the packages an app would use, each with a Vita implementation under
+`packages/` whose C is compiled into the app (ADR-0020): `device_info_plus`,
+`battery_plus`, `connectivity_plus`, `sensors_plus`, `audioplayers`,
+`record`, `camera`. Build 59 was the registry alone, `hardware.c`
+registered like a plugin: the same 11 pass as build 58. Build 60 was the
+first through the packages, 10 pass and two findings:
+
+- `DeviceInfoPlugin().deviceInfo` casts to `LinuxDeviceInfo` on the
+  console, which is Linux to Dart (ADR-0008). `VitaDeviceInfo` is one now.
+- The recorder lost a third of its samples: it wrote every 16 ms grain to
+  the card from the reading thread, and a write that took longer than a
+  grain left the port with nowhere to put the next one. A reader thread
+  at priority 96 fills a four-second ring; a writer thread drains it every
+  100 ms.
+
+Build 61: 11 pass, the back camera by eye, three manual. The speaker plays
+a WAV `makeToneWav` builds in Dart through `BytesSource` (192 KB of base64
+through the channel, so the clock starts at `resume()`, not at `play()`):
+complete 1117 ms after resume, the poll every 250 ms accounting for the
+rest. `record` hears it at +76 dB over the room, 1300 ms of tone blocks in
+a 49664-sample recording. The AAC asset through `AssetSource` goes through
+`AudioCache` to `ux0:data/FVTA00005/tmp/`, the directory `path_provider_vita`
+names, and plays to the end in 4552 ms; the microphone heard +22 dB.
+`camera`'s image stream delivers seven 320x240 frames in 1.6 s: each frame
+is 410 KB of base64 in JSON, and the UI thread spends about 100 ms on it.
+A binary codec on `vita/*` is what a faster preview needs.
+
 ## What the strip costs a scene
 
 The strip reads `vita/stats` and rebuilds two lines of text once a second.
