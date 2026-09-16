@@ -10,6 +10,6 @@ framework_rev    058e0af2c2b57e369d905a03ac9748b0ebf543c6
 engine           058e0af2c2b57e369d905a03ac9748b0ebf543c6
 dart             d684a576a6aa954ae107a03b2b4e1d61c3bebe93
 archive_sha256   42a4fc3ce26006d2dd0133792a73bd4f83db8ffe6dd5e992bcbd4e489e111470
-pinned_at        2026-09-16T10:33:44Z
+pinned_at        2026-09-16T15:41:26Z
 pinned_from      out/artifacts/flutter-engine-vita-3.44.8
-reason           vita/* channels reach the app's plugins (plugin.c registry), for audioplayers behind the FILES tab
+reason           dev server: START no longer closes the port; L+R+START hands off to the receiver

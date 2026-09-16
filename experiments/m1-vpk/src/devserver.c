@@ -1215,12 +1215,25 @@ int dev_server_run(void (*log_line)(const char* msg),
     return -1;
   }
 
-  // Non-blocking accept so the pad stays responsive: START must keep working
-  // even when the network is down, which on this device it regularly is.
+  // Non-blocking accept so the pad stays responsive: the chord below must
+  // keep working even when the network is down, which on this device it
+  // regularly is.
   sceNetSetsockopt(srv, SCE_NET_SOL_SOCKET, SCE_NET_SO_NBIO, &one, sizeof one);
 
   SceCtrlData pad;
   sceCtrlSetSamplingMode(SCE_CTRL_MODE_ANALOG);
+  // L + R + START, held for a second, hands the console to the receiver.
+  //
+  // Until 2026-09-16 a plain START here closed the listening socket and
+  // ended this thread: the m1 experiment's way out, kept by accident in
+  // every app since. START is an ordinary button in a Flutter app, and
+  // pressing it left the app on screen with no port -- unreachable from
+  // the host, and with the supervisor abandoned (ADR-0011) no other door.
+  // So the button that used to take the port away now opens the one door
+  // that is always there. Held, and a chord, so a game's START and L or R
+  // in play cannot trigger it.
+  const unsigned chord = SCE_CTRL_LTRIGGER | SCE_CTRL_RTRIGGER | SCE_CTRL_START;
+  int held_ticks = 0;
 
   // Everything the network needs is up. Anything registered here can now call
   // into SceNet and SceNetCtl, which before this point are unresolved stubs
@@ -1245,10 +1258,26 @@ int dev_server_run(void (*log_line)(const char* msg),
     }
 
     sceCtrlPeekBufferPositive(0, &pad, 1);
-    if (pad.buttons & SCE_CTRL_START) {
-      logf_("  [dev] START pressed, shutting down\n");
-      sceNetSocketClose(srv);
-      return 0;
+    if ((pad.buttons & chord) == chord) {
+      if (++held_ticks >= 33) {  // a second of 30 ms ticks
+        char receiver[16], self[16] = "";
+        if (!read_receiver_titleid(receiver, sizeof receiver)) {
+          snprintf(receiver, sizeof receiver, "%s", DEVSERVER_DEFAULT_LOADER);
+        }
+        // Never to ourselves: the receiver runs this loop too, and a launch
+        // of the title that is still running drops the console to LiveArea.
+        sceAppMgrAppParamGetString(0, 12, self, sizeof self);
+        if (strcmp(self, receiver) == 0) {
+          logf_("  [dev] L+R+START held, but this is the receiver\n");
+          held_ticks = -100;  // three seconds before it can fire again
+        } else {
+          logf_("  [dev] L+R+START held, handing off\n");
+          sceNetSocketClose(srv);
+          hand_over_to(receiver);
+        }
+      }
+    } else {
+      held_ticks = 0;
     }
     sceKernelDelayThread(30 * 1000);
   }
