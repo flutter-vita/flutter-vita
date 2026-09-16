@@ -6,13 +6,14 @@
 // numbers decide, `eye` where a person has to judge (a picture, a sound, a
 // press nobody made), and `off` when this build has no hardware.c.
 //
-// Two groups. The automatic checks ask the console and read the answer. The
-// checks that need a person want a press, a touch, a word, an ear or a
-// typed line, and no script can supply those. Each group has its own Run.
+// Three groups on three tabs. The automatic checks ask the console and read
+// the answer; the cameras do the same and show their frames; the checks
+// that need a person want a press, a touch or a typed line, and no script
+// can supply those. Each tab has its own Run; one suite holds every row.
 //
-// Unattended: the host writes hardware.on and relaunches; the tab runs the
-// automatic group and writes hardware-result.json and hardware-done. The
-// checks that need a person are written as `skipped` in such a run.
+// Unattended: the host writes hardware.on and relaunches; the suite runs the
+// automatic and camera groups and writes hardware-result.json and
+// hardware-done. The checks that need a person are written as `skipped`.
 
 import 'dart:async';
 import 'dart:convert';
@@ -33,20 +34,25 @@ import 'loopback.dart';
 
 enum CheckState { pending, running, pass, fail, eye, off, skipped }
 
+/// Which tab a check lives on. `auto` and `camera` need nobody; `person`
+/// needs something pressed, touched or typed.
+enum HardwareGroup { auto, camera, person }
+
 class HardwareCheck {
   HardwareCheck({
     required this.id,
     required this.title,
     required this.run,
     this.hint,
-    this.manual = false,
+    this.group = HardwareGroup.auto,
   });
 
   final String id;
   final String title;
+  final HardwareGroup group;
 
-  /// Needs a person: something pressed, touched, said, heard or typed.
-  final bool manual;
+  /// Needs a person: something pressed, touched or typed.
+  bool get manual => group == HardwareGroup.person;
 
   /// What a person should do while it runs, if anything.
   final String? hint;
@@ -71,41 +77,39 @@ class Hardware {
   }
 }
 
-class HardwareTab extends StatefulWidget {
-  const HardwareTab({super.key, this.autoRun = false});
-  final bool autoRun;
+/// Every check, its state, and the two things checks leave behind for the
+/// screen (camera frames, the typed text). One per app, made by the Shell
+/// and shown by three tabs, one per group, so the result file has every
+/// check whichever tab ran last.
+class HardwareSuite extends ChangeNotifier {
+  HardwareSuite({bool autoRun = false}) {
+    typed.addListener(notifyListeners);
+    if (autoRun) {
+      // Unattended: the groups that need nobody, then the file.
+      unawaited(runGroups(const [HardwareGroup.auto, HardwareGroup.camera],
+          writeFile: true));
+    }
+  }
 
-  @override
-  State<HardwareTab> createState() => _HardwareTabState();
-}
-
-class _HardwareTabState extends State<HardwareTab> {
-  late final List<HardwareCheck> _checks = _build();
-  final _typed = TextEditingController();
-  ui.Image? _front;
-  ui.Image? _back;
-  var _running = false;
-  var _status = '';
+  late final List<HardwareCheck> checks = _build();
+  final typed = TextEditingController();
+  ui.Image? front;
+  ui.Image? back;
+  var running = false;
+  var status = '';
 
   /// The microphone's recording started by the tone check, read by the
   /// microphone check that follows it: one capture serves both.
   Future<Map<String, Object?>>? _micDuringTone;
 
   @override
-  void initState() {
-    super.initState();
-    _typed.addListener(() => setState(() {}));
-    if (widget.autoRun) {
-      WidgetsBinding.instance.addPostFrameCallback(
-          (_) => unawaited(_runGroup(manual: false, writeFile: true)));
-    }
-  }
-
-  @override
   void dispose() {
-    _typed.dispose();
+    typed.dispose();
     super.dispose();
   }
+
+  Iterable<HardwareCheck> of(HardwareGroup g) =>
+      checks.where((c) => c.group == g);
 
   // ---- the checks ----------------------------------------------------------
 
@@ -221,7 +225,7 @@ class _HardwareTabState extends State<HardwareTab> {
         ),
         HardwareCheck(
           id: 'controls',
-          manual: true,
+          group: HardwareGroup.person,
           title: 'buttons and sticks',
           hint: 'press any button or move a stick (5 s)',
           run: () async {
@@ -251,7 +255,7 @@ class _HardwareTabState extends State<HardwareTab> {
         ),
         HardwareCheck(
           id: 'touch',
-          manual: true,
+          group: HardwareGroup.person,
           title: 'touch panels',
           hint: 'touch the back panel (5 s)',
           run: () async {
@@ -413,25 +417,27 @@ class _HardwareTabState extends State<HardwareTab> {
         ),
         HardwareCheck(
           id: 'camera_front',
+          group: HardwareGroup.camera,
           title: 'front camera',
           run: () => _camera(0),
         ),
         HardwareCheck(
           id: 'camera_back',
+          group: HardwareGroup.camera,
           title: 'back camera',
           run: () => _camera(1),
         ),
         HardwareCheck(
           id: 'keyboard',
-          manual: true,
+          group: HardwareGroup.person,
           title: 'keyboard',
           hint: 'tap the field on the right and type (20 s)',
           run: () async {
             // Whatever is in the field counts, typed before or during.
-            for (var i = 0; i < 80 && _typed.text.isEmpty; i++) {
+            for (var i = 0; i < 80 && typed.text.isEmpty; i++) {
               await Future<void>.delayed(const Duration(milliseconds: 250));
             }
-            final t = _typed.text;
+            final t = typed.text;
             if (t.isNotEmpty) {
               return (
                 CheckState.pass,
@@ -451,15 +457,12 @@ class _HardwareTabState extends State<HardwareTab> {
     final h = (r['height'] as num).toInt();
     final bytes = File(path).readAsBytesSync();
     final image = await _decode(bytes, w, h);
-    if (mounted) {
-      setState(() {
-        if (which == 0) {
-          _front = image;
-        } else {
-          _back = image;
-        }
-      });
+    if (which == 0) {
+      front = image;
+    } else {
+      back = image;
     }
+    notifyListeners();
     final sd = (r['stddev'] as num?)?.toDouble() ?? 0;
     return (
       sd > 5 ? CheckState.pass : CheckState.eye,
@@ -478,12 +481,11 @@ class _HardwareTabState extends State<HardwareTab> {
 
   // ---- running -------------------------------------------------------------
 
-  Future<void> _runOne(HardwareCheck c) async {
-    setState(() {
-      c.state = CheckState.running;
-      c.detail = c.hint ?? '';
-      _status = c.title;
-    });
+  Future<void> runOne(HardwareCheck c) async {
+    c.state = CheckState.running;
+    c.detail = c.hint ?? '';
+    status = c.title;
+    notifyListeners();
     try {
       final (state, detail, result) =
           await c.run().timeout(const Duration(seconds: 30));
@@ -498,29 +500,35 @@ class _HardwareTabState extends State<HardwareTab> {
       c.detail = e.toString().replaceAll('\n', ' ');
       if (c.detail.length > 90) c.detail = '${c.detail.substring(0, 89)}…';
     }
-    if (mounted) setState(() => _status = '');
+    status = '';
+    notifyListeners();
   }
 
-  /// One group. The other group's rows keep whatever state they have; a
-  /// check never run in this session is written as `skipped`.
-  Future<void> _runGroup(
-      {required bool manual, required bool writeFile}) async {
-    if (_running) return;
-    setState(() => _running = true);
-    for (final c in _checks.where((c) => c.manual == manual)) {
-      await _runOne(c);
+  /// One or more groups, in order. The other groups' rows keep whatever
+  /// state they have; a check never run in this session is written as
+  /// `skipped`.
+  Future<void> runGroups(List<HardwareGroup> groups,
+      {required bool writeFile}) async {
+    if (running) return;
+    running = true;
+    notifyListeners();
+    for (final g in groups) {
+      for (final c in of(g)) {
+        await runOne(c);
+      }
     }
-    for (final c in _checks) {
+    for (final c in checks) {
       if (c.state == CheckState.pending) {
         c.state = CheckState.skipped;
         c.detail = c.manual ? 'needs a person; not run' : 'not run';
       }
     }
-    if (writeFile) _writeResult();
-    if (mounted) setState(() => _running = false);
+    if (writeFile) writeResult();
+    running = false;
+    notifyListeners();
   }
 
-  void _writeResult() {
+  void writeResult() {
     try {
       final payload = <String, Object?>{
         'schema': 1,
@@ -528,12 +536,12 @@ class _HardwareTabState extends State<HardwareTab> {
         'taken': DateTime.now().toIso8601String(),
         if (engineStamp() case final String e) 'engine': e,
         for (final s in CheckState.values)
-          s.name: _checks.where((c) => c.state == s).length,
+          s.name: checks.where((c) => c.state == s).length,
         'checks': [
-          for (final c in _checks)
+          for (final c in checks)
             {
               'id': c.id,
-              'group': c.manual ? 'person' : 'auto',
+              'group': c.group.name,
               'title': c.title,
               'state': c.state.name,
               'detail': c.detail,
@@ -556,94 +564,9 @@ class _HardwareTabState extends State<HardwareTab> {
     }
   }
 
-  // ---- the panel -----------------------------------------------------------
-
-  @override
-  Widget build(BuildContext context) {
-    final auto = _checks.where((c) => !c.manual).toList();
-    final person = _checks.where((c) => c.manual).toList();
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Padding(
-                padding: const EdgeInsets.fromLTRB(10, 2, 4, 0),
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: Text(
-                        _running ? 'running: $_status' : _summary(),
-                        style: const TextStyle(
-                            fontSize: 13, color: Color(0xFF9AA4B8)),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              const Divider(height: 1, color: Color(0xFF262B36)),
-              Expanded(
-                child: ListView(
-                  children: [
-                    _GroupHead(
-                      title: 'AUTOMATIC',
-                      hint: 'the console answers; nothing to do',
-                      count: auto.length,
-                      onRun: _running
-                          ? null
-                          : () => _runGroup(manual: false, writeFile: true),
-                    ),
-                    for (final c in auto)
-                      _CheckRow(c, onRun: _running ? null : () => _runOne(c)),
-                    _GroupHead(
-                      title: 'NEEDS A PERSON',
-                      hint: 'press, touch, type',
-                      count: person.length,
-                      onRun: _running
-                          ? null
-                          : () => _runGroup(manual: true, writeFile: true),
-                    ),
-                    for (final c in person)
-                      _CheckRow(c, onRun: _running ? null : () => _runOne(c)),
-                  ],
-                ),
-              ),
-            ],
-          ),
-        ),
-        const VerticalDivider(width: 1),
-        SizedBox(
-          width: 250,
-          child: Padding(
-            padding: const EdgeInsets.all(8),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                _frame('front', _front),
-                const SizedBox(height: 6),
-                _frame('back', _back),
-                const SizedBox(height: 10),
-                TextField(
-                  controller: _typed,
-                  decoration: const InputDecoration(
-                    labelText: 'keyboard check',
-                    hintText: 'type here',
-                    border: OutlineInputBorder(),
-                    isDense: true,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
-      ],
-    );
-  }
-
-  String _summary() {
-    int n(CheckState st) => _checks.where((c) => c.state == st).length;
+  String summary(HardwareGroup g) {
+    final rows = of(g).toList();
+    int n(CheckState st) => rows.where((c) => c.state == st).length;
     final parts = <String>[
       if (n(CheckState.pass) > 0) '${n(CheckState.pass)} pass',
       if (n(CheckState.fail) > 0) '${n(CheckState.fail)} fail',
@@ -651,11 +574,100 @@ class _HardwareTabState extends State<HardwareTab> {
       if (n(CheckState.off) > 0) '${n(CheckState.off)} off',
       if (n(CheckState.skipped) > 0) '${n(CheckState.skipped)} not run',
     ];
-    return parts.isEmpty ? '${_checks.length} checks' : parts.join('  ·  ');
+    return parts.isEmpty ? '${rows.length} checks' : parts.join('  ·  ');
   }
+}
 
-  Widget _frame(String label, ui.Image? image) => Container(
-        height: 120,
+/// One group of the suite on one tab: HARDWARE (the console answers),
+/// CAMERAS (two frames, shown), MANUAL (a person presses, touches, types).
+class HardwareTab extends StatelessWidget {
+  const HardwareTab({super.key, required this.suite, required this.group});
+  final HardwareSuite suite;
+  final HardwareGroup group;
+
+  static const _titles = {
+    HardwareGroup.auto: ('AUTOMATIC', 'the console answers; nothing to do'),
+    HardwareGroup.camera: (
+      'CAMERAS',
+      'a frame from each, after the exposure settles'
+    ),
+    HardwareGroup.person: ('NEEDS A PERSON', 'press, touch, type'),
+  };
+
+  @override
+  Widget build(BuildContext context) => ListenableBuilder(
+        listenable: suite,
+        builder: (context, _) {
+          final rows = suite.of(group).toList();
+          final (title, hint) = _titles[group]!;
+          final busy = suite.running;
+          final list = Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(10, 2, 4, 0),
+                child: Text(
+                  busy ? 'running: ${suite.status}' : suite.summary(group),
+                  style:
+                      const TextStyle(fontSize: 13, color: Color(0xFF9AA4B8)),
+                ),
+              ),
+              const Divider(height: 1, color: Color(0xFF262B36)),
+              Expanded(
+                child: ListView(
+                  children: [
+                    _GroupHead(
+                      title: title,
+                      hint: hint,
+                      count: rows.length,
+                      onRun: busy
+                          ? null
+                          : () => suite.runGroups([group], writeFile: true),
+                    ),
+                    for (final c in rows)
+                      _CheckRow(c, onRun: busy ? null : () => suite.runOne(c)),
+                  ],
+                ),
+              ),
+            ],
+          );
+          final side = switch (group) {
+            HardwareGroup.auto => null,
+            HardwareGroup.camera => Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  _frame('front', suite.front),
+                  const SizedBox(height: 6),
+                  _frame('back', suite.back),
+                ],
+              ),
+            HardwareGroup.person => TextField(
+                controller: suite.typed,
+                decoration: const InputDecoration(
+                  labelText: 'keyboard check',
+                  hintText: 'type here',
+                  border: OutlineInputBorder(),
+                  isDense: true,
+                ),
+              ),
+          };
+          if (side == null) return list;
+          return Row(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Expanded(child: list),
+              const VerticalDivider(width: 1),
+              SizedBox(
+                width: group == HardwareGroup.camera ? 330 : 250,
+                child: Padding(padding: const EdgeInsets.all(8), child: side),
+              ),
+            ],
+          );
+        },
+      );
+
+  static Widget _frame(String label, ui.Image? image) => Container(
+        height: 236,
         color: const Color(0xFF0B0E14),
         child: image == null
             ? Center(

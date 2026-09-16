@@ -154,6 +154,38 @@ The front camera's frame shows the ceiling lamp, the back camera's the
 desk. Nine pass on build 45. The six checks that need a person are not
 run by the deploy.
 
+## The speaker and the microphone, without a person
+
+The person's run of build 45 heard nothing from the speaker and got
+"muted" from the microphone. Three causes, found in this order over builds
+46 to 56 of 2026-09-16:
+
+- The console's volume was 0 of 30 (`sceAVConfigGetSystemVol`). The tone
+  check turns a console under 5 up to 12 for its second and puts it back.
+- The microphone was off in the console's settings; the RAW port replaced
+  the VOICE port on the way (the voice port is `sceVoice`'s, and gave zeros
+  with the status word reading muted).
+- Two checks asked for together ran one after the other. The embedder
+  called `flutter_vita_hardware_call` on the platform thread and waited
+  for the check's thread, so the microphone had finished its two seconds
+  before the tone began, ten builds running. `flutter_vita_hardware_call_async`
+  hands the check a completion; its own thread finishes the platform
+  message, a watchdog thread answers at 15 s.
+
+With the three gone, the recording of the tone reads +53 to +70 dB at
+1 kHz over the room (Goertzel per 100 ms block against the quiet third of
+the blocks, `apps/gallery/lib/hardware/loopback.dart`), and the AAC file
++20 dB. The mp3 the check shipped was `0x806A0002` from `sceAvPlayerAddSource`
+on every path, from the card too; the same three seconds as AAC in an MP4
+box open, play through the BGM port (the main port takes 48 kHz only) and
+decode 131 frames. The player wanted `sceIo` file callbacks and frame
+buffers from PHYCONT memblocks, and an allocator that does not pass
+`memalign` an alignment of 0.
+
+Build 58 puts the suite on three tabs: HARDWARE (the console answers,
+ten checks, all pass), CAMERAS (two frames, shown), MANUAL (buttons and
+sticks, back touch, keyboard).
+
 ## What the strip costs a scene
 
 The strip reads `vita/stats` and rebuilds two lines of text once a second.

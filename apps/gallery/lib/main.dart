@@ -103,7 +103,15 @@ class Shell extends StatefulWidget {
   State<Shell> createState() => _ShellState();
 }
 
-const _tabNames = ['PANEL', 'SCENES', 'CONFORMANCE', 'HARDWARE', 'RESULTS'];
+const _tabNames = [
+  'PANEL',
+  'SCENES',
+  'CONFORMANCE',
+  'HARDWARE',
+  'CAMERAS',
+  'MANUAL',
+  'RESULTS',
+];
 
 class _ShellState extends State<Shell> with TickerProviderStateMixin {
   late int _tab = widget.initialTab;
@@ -124,10 +132,15 @@ class _ShellState extends State<Shell> with TickerProviderStateMixin {
   /// The scene's name while one runs, for the strip.
   final ValueNotifier<String?> _scene = ValueNotifier<String?>(null);
 
+  /// The hardware checks, one suite behind three tabs.
+  late final HardwareSuite _hardware =
+      HardwareSuite(autoRun: widget.autoHardware);
+
   @override
   void dispose() {
     _stage.dispose();
     _scene.dispose();
+    _hardware.dispose();
     super.dispose();
   }
 
@@ -219,7 +232,9 @@ class _ShellState extends State<Shell> with TickerProviderStateMixin {
             autoRun: widget.autoBench,
           ),
         2 => ConformanceTab(autoRun: widget.autoConformance),
-        3 => HardwareTab(autoRun: widget.autoHardware),
+        3 => HardwareTab(suite: _hardware, group: HardwareGroup.auto),
+        4 => HardwareTab(suite: _hardware, group: HardwareGroup.camera),
+        5 => HardwareTab(suite: _hardware, group: HardwareGroup.person),
         _ => const ResultsTab(),
       };
 }

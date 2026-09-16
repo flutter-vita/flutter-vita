@@ -14,13 +14,16 @@ Everything this port is measured with, on one panel, five tabs:
   tells you something: everything above the first missing row passed. The
   journal `ux0:data/flutter-vita/conformance.txt` survives the process; the
   resume file skips the probe that killed the last attempt.
-- **Hardware**: does each piece of the console answer, and with what. Cameras,
-  microphone, speaker (a tone, then an mp3 through the console's own player),
-  motion sensors, both touch panels, buttons and sticks, battery, storage,
-  Wi-Fi, HTTP over TLS, the clock, the keyboard. The C side is
-  `templates/vita-app/hardware.c`, compiled in because this app's pubspec says
-  `hardware_checks: true`. Checks a person has to judge (a picture, a sound)
-  end in the `EYE` state.
+- **Hardware**, **Cameras**, **Manual**: does each piece of the console
+  answer, and with what. One suite of checks on three tabs. Hardware runs by
+  itself: battery, storage, Wi-Fi, HTTP over TLS, the clock, motion sensors,
+  the speaker and the microphone (a 1 kHz tone is played and recorded; the
+  recording decides), an AAC file through the console's own player. Cameras
+  shows a frame from each. Manual needs a person: buttons and sticks, the
+  back touch panel, the keyboard. The C side is
+  `templates/vita-app/hardware.c`, compiled in because this app's pubspec
+  says `hardware_checks: true`; each check answers from a thread of its own.
+  A check a person has to judge ends in the `EYE` state.
 - **Results**: the last run of each suite, read back from the card.
 
 Above every tab a strip shows what the console is doing this second: frames
