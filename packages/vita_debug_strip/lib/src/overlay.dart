@@ -15,10 +15,12 @@ import 'strip.dart';
 ///
 ///     MaterialApp(builder: (context, child) => VitaDebugOverlay(child: child!))
 ///
-/// L + R + SELECT toggles it (the [hotkey]). START is the dev server's
-/// quit, so it is not part of any chord here. The chord is watched by one
-/// thread on the console (`vita/pad`, the package's C half), not by a Dart
-/// timer, so a hidden strip costs the app nothing.
+/// L + R + TRIANGLE toggles it (the [hotkey]). Not L + R + SELECT: that is
+/// the engine's own debug HUD, the box every debug build draws in the
+/// top-right corner, which this package starts hidden (its C half defines
+/// `flutter_vita_debug_overlay = 2`) so the two do not overlap. The chord is
+/// watched by one thread on the console (`vita/pad`, the package's C half),
+/// not by a Dart timer, so a hidden strip costs the app nothing.
 ///
 /// [inset] lays the app out under the strip instead of drawing the strip
 /// over its top 34 px; the app relayouts on each toggle.
@@ -26,7 +28,7 @@ class VitaDebugOverlay extends StatefulWidget {
   const VitaDebugOverlay({
     super.key,
     required this.child,
-    this.hotkey = VitaButtons.l | VitaButtons.r | VitaButtons.select,
+    this.hotkey = VitaButtons.l | VitaButtons.r | VitaButtons.triangle,
     this.visible = false,
     this.inset = false,
   });

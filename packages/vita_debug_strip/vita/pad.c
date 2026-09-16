@@ -18,6 +18,12 @@
 
 #include <string.h>
 
+// An app with this package has a strip of its own, so the engine's debug
+// HUD, on by default in every debug build, starts hidden here (2) rather
+// than over the strip. L + R + SELECT still brings it up; the strip's own
+// chord is L + R + TRIANGLE, so the two never answer one press.
+int flutter_vita_debug_overlay = 2;
+
 static unsigned buttons_now(SceCtrlData* pad) {
   memset(pad, 0, sizeof *pad);
   sceCtrlPeekBufferPositive(0, pad, 1);

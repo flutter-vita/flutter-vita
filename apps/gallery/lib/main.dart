@@ -1,5 +1,3 @@
-import 'dart:async';
-
 import 'package:audioplayers_vita/audioplayers_vita.dart';
 import 'package:battery_plus_vita/battery_plus_vita.dart';
 import 'package:camera_vita/camera_vita.dart';
@@ -137,18 +135,9 @@ class _ShellState extends State<Shell> with TickerProviderStateMixin {
   /// live one costs. Read once; the switch is the host's.
   static final bool _hudFrozen = switchOn('$kDataDir/hud.off');
 
-  /// L + R + SELECT hides the strip and shows it again, the chord every
-  /// app with vita_debug_strip answers to. Here the strip is part of the
-  /// layout, so the tabs take its 34 px while it is hidden.
-  bool _stripShown = true;
-  StreamSubscription<void>? _chord;
-
-  @override
-  void initState() {
-    super.initState();
-    _chord = VitaPad.chord(VitaButtons.l | VitaButtons.r | VitaButtons.select)
-        .listen((_) => setState(() => _stripShown = !_stripShown));
-  }
+  /// The strip stays: it is the gallery's title bar, and the number it has
+  /// that nothing else shows is the UI thread's time. L + R + SELECT brings
+  /// the engine's own HUD up over it, as in every app.
 
   /// The benchmark scene being measured, or null. While one is mounted it
   /// takes the content area: the rail goes, the strip stays. The tabs stay
@@ -168,7 +157,6 @@ class _ShellState extends State<Shell> with TickerProviderStateMixin {
 
   @override
   void dispose() {
-    _chord?.cancel();
     _stage.dispose();
     _scene.dispose();
     _hardware.dispose();
@@ -183,21 +171,19 @@ class _ShellState extends State<Shell> with TickerProviderStateMixin {
             children: [
               // Its own layer: the strip repaints twice a second and a
               // scene underneath must not be repainted with it.
-              if (_stripShown) ...[
-                RepaintBoundary(
-                  child: VitaStrip(
-                    frozen: _hudFrozen,
-                    leading: ValueListenableBuilder<String?>(
-                      valueListenable: _scene,
-                      builder: (context, scene, _) => _StripTitle(
-                        tab: _tabNames[_tab],
-                        scene: scene,
-                      ),
+              RepaintBoundary(
+                child: VitaStrip(
+                  frozen: _hudFrozen,
+                  leading: ValueListenableBuilder<String?>(
+                    valueListenable: _scene,
+                    builder: (context, scene, _) => _StripTitle(
+                      tab: _tabNames[_tab],
+                      scene: scene,
                     ),
                   ),
                 ),
-                const Divider(height: 1, color: Color(0xFF262B36)),
-              ],
+              ),
+              const Divider(height: 1, color: Color(0xFF262B36)),
               Expanded(
                 // A Navigator of its own, so a route a scene pushes lands
                 // here, under the strip, rather than over the whole screen.

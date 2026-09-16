@@ -45,6 +45,7 @@ void dev_server_set_swipe_handler(void (*swipe)(int x0, int y0,
   g_swipe = swipe;
 }
 
+// `on` is 1, 0, or -1 for "the other one" (the pad's chord).
 void dev_server_set_overlay_handler(void (*overlay)(int on)) {
   g_overlay = overlay;
 }
@@ -378,14 +379,18 @@ static int serve(int sock, const char* log_path, const char* eboot_path) {
     //
     // Not in the receiver yet: it links the pinned copy of this file, so
     // minimal mode gains tap at the next pin. ADR-0016 decision 2.
+    //
+    // overlay, since 2026-09-16: the receiver's HUD starts hidden and the
+    // host wants it in a screenshot of the receiver as much as the pad does.
     if (g_minimal && strcmp(line, "ping") != 0 && strcmp(line, "probe") != 0 &&
         strcmp(line, "log") != 0 && strncmp(line, "get ", 4) != 0 &&
         strncmp(line, "put ", 4) != 0 && strcmp(line, "shot") != 0 &&
         strncmp(line, "tap ", 4) != 0 && strncmp(line, "swipe ", 6) != 0 &&
-        strcmp(line, "diag") != 0 && strcmp(line, "shotinfo") != 0) {
+        strcmp(line, "diag") != 0 && strcmp(line, "shotinfo") != 0 &&
+        strncmp(line, "overlay ", 8) != 0) {
       send_str(sock, "ERR not served here (ping|probe|log|get|put|shot"
-                     "|shotinfo|tap|swipe|diag|ls|stage|install|launch"
-                     "|promote)\n");
+                     "|shotinfo|tap|swipe|diag|overlay|ls|stage|install"
+                     "|launch|promote)\n");
       continue;
     }
 
@@ -1234,6 +1239,10 @@ int dev_server_run(void (*log_line)(const char* msg),
   // in play cannot trigger it.
   const unsigned chord = SCE_CTRL_LTRIGGER | SCE_CTRL_RTRIGGER | SCE_CTRL_START;
   int held_ticks = 0;
+  // L + R + SELECT, on the press, shows and hides the debug HUD: the same
+  // thing `overlay on|off` does over the socket, for when there is no host.
+  const unsigned hud_chord = SCE_CTRL_LTRIGGER | SCE_CTRL_RTRIGGER | SCE_CTRL_SELECT;
+  int hud_chord_down = 0;
 
   // Everything the network needs is up. Anything registered here can now call
   // into SceNet and SceNetCtl, which before this point are unresolved stubs
@@ -1278,6 +1287,12 @@ int dev_server_run(void (*log_line)(const char* msg),
       }
     } else {
       held_ticks = 0;
+    }
+    if ((pad.buttons & hud_chord) == hud_chord) {
+      if (!hud_chord_down && g_overlay != NULL) g_overlay(-1);
+      hud_chord_down = 1;
+    } else {
+      hud_chord_down = 0;
     }
     sceKernelDelayThread(30 * 1000);
   }

@@ -43,6 +43,18 @@ void fvgl_swap(void);
 // the app's, after init.
 void fvgl_set_common_dialog(int open);
 
+// A function the display queue's thread runs with each frame the GPU has
+// finished, just before that frame is shown. `pixels` is the frame, A8B8G8R8
+// with `stride` pixels per row, and the CPU may write into it: the GPU is done
+// with it, and nothing draws into it again until it comes round as the back
+// buffer. That is how a HUD gets over GL content without a GXM program and
+// without touching the context's state, which the app's renderer (Skia, say)
+// caches and would not know had changed. Whatever the hook does delays that
+// frame's flip by as long as it takes, on a thread with a small stack. 0
+// removes it.
+typedef void (*FvglFrameHook)(void* ctx, void* pixels, int width, int height, int stride);
+void fvgl_set_frame_hook(FvglFrameHook hook, void* ctx);
+
 // The GL entry point of that name, or 0 if it is not one this library has.
 void* fvgl_get_proc_address(const char* name);
 

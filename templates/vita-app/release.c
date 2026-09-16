@@ -3,7 +3,7 @@
 // The dev server (an unauthenticated socket on 1339 that reads and writes any
 // path on the card) and bailout.c (which launches FVTA00001 on abort, so on a
 // console with no receiver the app just vanishes) are dropped by leaving their
-// files out of the build. The debug HUD lives inside the engine archive, so it
+// files out of the build. The debug strip lives inside the engine archive, so it
 // is switched off by defining a strong symbol against the engine's weak one.
 //
 // The five stubs exist because the embedder calls them unconditionally. Making

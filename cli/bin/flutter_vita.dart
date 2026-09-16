@@ -28,8 +28,9 @@ Options
   --subnet 192.168.1        sweep a different /24
   --name "App Name"         LiveArea name (build)
   --title-id FVTA00002      target slot (build)
+  --debug                   the default: dev server, debug strip, bailout
+  --release                 none of those; the build you ship
 ''';
-
 
 Future<int> main(List<String> argv) async {
   final args = <String>[];
@@ -105,18 +106,23 @@ Future<int> _doctor(Map<String, String> opts) async {
       'export VITASDK=\$HOME/vitasdk — see docs/dev-environment.md');
 
   final engine = _engineDir();
-  check('engine artifact', File('$engine/lib/libflutter_engine_vita.a').existsSync(),
+  check(
+      'engine artifact',
+      File('$engine/lib/libflutter_engine_vita.a').existsSync(),
       'unpack flutter-engine-vita-*.tar.gz, or run tools/package-engine.sh');
 
   final host = '${_hostOs()}-${_arch()}';
-  check('gen_snapshot for $host',
+  check(
+      'gen_snapshot for $host',
       File('$engine/host-$host/gen_snapshot_armv7').existsSync(),
       'the artifact was built on another host; build one here');
 
   final flutter = _flutterDir();
   check('flutter sdk', Directory(flutter).existsSync(), 'looked in $flutter');
-  check('flutter_patched_sdk_product',
-      Directory('$flutter/bin/cache/artifacts/engine/common/flutter_patched_sdk_product')
+  check(
+      'flutter_patched_sdk_product',
+      Directory(
+              '$flutter/bin/cache/artifacts/engine/common/flutter_patched_sdk_product')
           .existsSync(),
       'run: $flutter/bin/flutter precache');
 
@@ -126,13 +132,15 @@ Future<int> _doctor(Map<String, String> opts) async {
   final sdkRev = _sdkRevision(flutter);
   if (engineRev == null) {
     stdout.writeln('  --   engine/sdk lockstep');
-    stdout.writeln('       artifact predates framework_rev; repackage to make it checkable');
+    stdout.writeln(
+        '       artifact predates framework_rev; repackage to make it checkable');
   } else {
     check('engine/sdk lockstep', engineRev == sdkRev);
     if (engineRev != sdkRev) {
       stdout.writeln('       artifact: $engineRev');
       stdout.writeln('       your sdk: ${sdkRev ?? "unknown"}');
-      stdout.writeln('       dart:ui and the engine are one source tree cut in half.');
+      stdout.writeln(
+          '       dart:ui and the engine are one source tree cut in half.');
     }
   }
 
@@ -146,15 +154,20 @@ Future<int> _doctor(Map<String, String> opts) async {
     // not the same problem at all.
     stdout.writeln();
     stdout.writeln('  !!   macOS is blocking local network access for dart');
-    stdout.writeln('       Connections to other hosts on the LAN fail instantly with');
-    stdout.writeln('       "No route to host" while the internet works. That is the');
+    stdout.writeln(
+        '       Connections to other hosts on the LAN fail instantly with');
+    stdout.writeln(
+        '       "No route to host" while the internet works. That is the');
     stdout.writeln('       Local Network privacy control, granted per binary.');
     stdout.writeln();
-    stdout.writeln('       System Settings > Privacy & Security > Local Network,');
+    stdout.writeln(
+        '       System Settings > Privacy & Security > Local Network,');
     stdout.writeln('       and enable the terminal you are running from.');
     stdout.writeln();
-    stdout.writeln('       The shell tools work meanwhile: they use nc, which is');
-    stdout.writeln('       already permitted. tools/install-vpk.sh, experiments/m1-vpk/dev.sh');
+    stdout.writeln(
+        '       The shell tools work meanwhile: they use nc, which is');
+    stdout.writeln(
+        '       already permitted. tools/install-vpk.sh, experiments/m1-vpk/dev.sh');
     ok = false;
   }
 
@@ -162,11 +175,13 @@ Future<int> _doctor(Map<String, String> opts) async {
 }
 
 Future<int> _devices(Map<String, String> opts) async {
-  stdout.writeln('sweeping${opts['subnet'] != null ? " ${opts['subnet']}.0/24" : ""}…');
+  stdout.writeln(
+      'sweeping${opts['subnet'] != null ? " ${opts['subnet']}.0/24" : ""}…');
   final found = await discover(subnet: opts['subnet']);
   if (found.isEmpty) {
     stdout.writeln('no devices found');
-    stdout.writeln('  the Vita must be awake with the receiver or an app running');
+    stdout.writeln(
+        '  the Vita must be awake with the receiver or an app running');
     return 1;
   }
   for (final device in found) {
@@ -190,6 +205,8 @@ Future<String?> _build(List<String> args, Map<String, String> opts) async {
     app,
     if (opts['name'] != null) ...['--name', opts['name']!],
     if (opts['title-id'] != null) ...['--title-id', opts['title-id']!],
+    if (opts['release'] == 'true') '--release',
+    if (opts['debug'] == 'true') '--debug',
   ];
   final result = await Process.start(cmd.first, cmd.skip(1).toList(),
       environment: scriptEnvironment(), mode: ProcessStartMode.inheritStdio);
@@ -232,7 +249,12 @@ Future<int> _install(
 
   final result = await Process.start(
     requireScript('install-vpk.sh'),
-    [vpk, '--host', device.host, if (opts['title-id'] != null) ...['--title-id', opts['title-id']!]],
+    [
+      vpk,
+      '--host',
+      device.host,
+      if (opts['title-id'] != null) ...['--title-id', opts['title-id']!]
+    ],
     environment: scriptEnvironment(),
     mode: ProcessStartMode.inheritStdio,
   );
@@ -316,9 +338,11 @@ Future<VitaDevice?> _findDevice(
     if (found.isEmpty) {
       stderr.writeln('!! no Vita found — is it awake, with the receiver open?');
     } else {
-      stderr.writeln('!! found ${found.first} but this needs the ${role!.label}');
-      stderr.writeln(
-          role == VitaRole.app ? '   launch the app first' : '   hand off to the receiver first');
+      stderr
+          .writeln('!! found ${found.first} but this needs the ${role!.label}');
+      stderr.writeln(role == VitaRole.app
+          ? '   launch the app first'
+          : '   hand off to the receiver first');
     }
   }
   return match;
@@ -335,8 +359,8 @@ Future<bool> _localNetworkBlocked() async {
 
   Future<bool> reachable(String host, int port) async {
     try {
-      final socket = await Socket.connect(host, port,
-          timeout: const Duration(seconds: 5));
+      final socket =
+          await Socket.connect(host, port, timeout: const Duration(seconds: 5));
       socket.destroy();
       return true;
     } on Exception {
@@ -352,7 +376,8 @@ Future<bool> _localNetworkBlocked() async {
   if (subnet == null) return false;
 
   // The router is the one LAN host almost certain to exist and answer.
-  return !await reachable('$subnet.1', 80) && !await reachable('$subnet.1', 443);
+  return !await reachable('$subnet.1', 80) &&
+      !await reachable('$subnet.1', 443);
 }
 
 String _engineDir() => engineDir();
@@ -386,13 +411,11 @@ String? _sdkRevision(String flutterDir) {
   }
 }
 
-
 /// Matches `uname -s | tr '[:upper:]' '[:lower:]'`, which is what
 /// package-engine.sh and build-vita-app.sh use to name the host bundle. Dart
 /// says "macos" where uname says "darwin", and disagreeing here reports a
 /// perfectly good gen_snapshot as missing.
-String _hostOs() =>
-    Platform.isMacOS ? 'darwin' : Platform.operatingSystem;
+String _hostOs() => Platform.isMacOS ? 'darwin' : Platform.operatingSystem;
 
 String _arch() {
   final v = Platform.version;

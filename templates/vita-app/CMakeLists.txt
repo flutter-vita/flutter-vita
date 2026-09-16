@@ -77,7 +77,7 @@ set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=gnu++20 -Wall -O2 -g")
 # with it; it overrides abort() and __assert_func(), which works only because
 # both are undefined in the engine archive.
 #
-# The debug HUD lives inside the archive, so it is switched off by *adding* a
+# The debug strip lives inside the archive, so it is switched off by *adding* a
 # strong definition rather than leaving a file out:
 #
 #   echo 'int flutter_vita_debug_overlay = 0;' > shipping.c
@@ -128,7 +128,7 @@ else()
 endif()
 
 # The GL under Ganesh: fvita_gles2, built from source into every app
-# (ADR-0019). The embedder calls the seven functions of flutter_vita_gl.h and
+# (ADR-0019). The embedder calls the eight functions of flutter_vita_gl.h and
 # nothing else of it; gl_gles2.c answers. vitaGL sat here until 2026-09-14.
 set(GLES2_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../../gles2" CACHE PATH "fvita_gles2 source")
 add_subdirectory("${GLES2_DIR}" fvita_gles2)

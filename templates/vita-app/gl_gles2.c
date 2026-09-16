@@ -58,6 +58,10 @@ void flutter_vita_gl_swap(int dialog_open) {
 
 void* flutter_vita_gl_proc_address(const char* name) { return fvgl_get_proc_address(name); }
 
+void flutter_vita_gl_set_frame_hook(void (*hook)(void*, void*, int, int, int), void* ctx) {
+  fvgl_set_frame_hook(hook, ctx);
+}
+
 // fvgl_shutdown did not return on the gallery's first exit (2026-09-12) and
 // the console sat on the last frame. The stages it reached are in
 // ux0:data/flutter-vita/gles2-shutdown.txt; this thread makes sure the

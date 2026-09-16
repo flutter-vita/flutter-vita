@@ -67,10 +67,12 @@
 #define STATE_TMP DATA_DIR "/receiver-state.tmp"
 
 // The engine's debug HUD is drawn over every frame from a weak symbol, and a
-// strong definition here wins. Off for the receiver: this screen is the product
-// (ADR-0016 decision 1), and a showcase with a diagnostic overlay bolted to its
-// corner is a worse advertisement than no showcase.
-int flutter_vita_debug_overlay = 0;
+// strong definition here wins. Hidden for the receiver: this screen is the
+// product (ADR-0016 decision 1), and a showcase with a diagnostic overlay
+// bolted to its corner is a worse advertisement than no showcase. 2 rather
+// than 0, so L + R + SELECT can still bring it up when the receiver itself
+// is the thing being measured.
+int flutter_vita_debug_overlay = 2;
 
 // The GPU, like every other app.
 // Defined by the embedder only on the GL path, hence weak -- the same

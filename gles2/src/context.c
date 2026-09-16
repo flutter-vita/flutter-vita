@@ -78,12 +78,32 @@ typedef struct DisplayCallbackData {
 // nothing else in the process can see.
 unsigned fvgl_us_gpu_latency, fvgl_us_gpu_latency_max, fvgl_frames_flipped;
 
+// Set from any thread, read on the display queue's. The context goes in
+// before the function and the function goes out before the context, so the
+// callback never pairs a hook with the wrong context.
+static FvglFrameHook volatile g_frame_hook;
+static void* volatile g_frame_hook_ctx;
+
+void fvgl_set_frame_hook(FvglFrameHook hook, void* ctx) {
+  if (hook) {
+    g_frame_hook_ctx = ctx;
+    __sync_synchronize();
+    g_frame_hook = hook;
+  } else {
+    g_frame_hook = 0;
+    __sync_synchronize();
+    g_frame_hook_ctx = 0;
+  }
+}
+
 static void display_callback(const void* data) {
   const DisplayCallbackData* d = data;
   const unsigned latency = (unsigned)(fvgl_now_us() - d->queued_us);
   fvgl_us_gpu_latency += latency;
   if (latency > fvgl_us_gpu_latency_max) fvgl_us_gpu_latency_max = latency;
   fvgl_frames_flipped++;
+  const FvglFrameHook hook = g_frame_hook;
+  if (hook) hook(g_frame_hook_ctx, d->address, fvgl.width, fvgl.height, (int)fvgl.display_stride);
   SceDisplayFrameBuf fb;
   memset(&fb, 0, sizeof fb);
   fb.size = sizeof fb;
@@ -572,6 +592,7 @@ void fvgl_shutdown(void) {
            fvgl.programs.count, fvgl.textures.count, fvgl.buffers.count, fvgl.framebuffers.count,
            (unsigned)fvgl.frame, (unsigned)fvgl_gpu_completed_frame());
   shutdown_stage(counts);
+  fvgl_set_frame_hook(0, 0);  // the frames still queued go out as they are
   // Down first, then torn down. This runs on whichever thread asked for the
   // exit while the raster thread goes on calling GL between frames: Skia
   // frees what it has not used for a while, and on 2026-09-14 (the

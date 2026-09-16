@@ -45,7 +45,9 @@ void dev_server_set_swipe_handler(void (*swipe)(int x0, int y0,
                                                 int x1, int y1, int steps));
 
 // Register a handler for `overlay on|off`. The debug HUD is drawn over the app,
-// so a screenshot taken for anything else has it in the corner.
+// so a screenshot taken for anything else has it in the corner. The same
+// handler gets -1 when L + R + SELECT is pressed on the pad, meaning "the
+// other state".
 void dev_server_set_overlay_handler(void (*overlay)(int on));
 
 // --- Extension points, for a product that embeds this server -------------

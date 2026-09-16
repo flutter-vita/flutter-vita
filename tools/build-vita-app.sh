@@ -14,7 +14,9 @@
 #   --no-supervisor   leave out eboot2.bin (the receiver; ADR-0016)
 #   --define K=V      preprocessor define for the extra sources; repeatable
 #   --link-option F   extra linker flag, for measurement builds; repeatable
-#   --release         no dev server, no debug HUD, no bailout, no supervisor
+#   --debug           the default: dev server on 1339, the debug strip
+#                     (L+R+SELECT), the bailout to the receiver
+#   --release         none of those; what a shipped app is
 #
 # The app configures itself in pubspec.yaml:
 #
@@ -54,8 +56,9 @@ NO_SUPERVISOR="OFF"
 EXTRA_DEFINES=""
 EXTRA_LINK_OPTIONS=
 # Debug and release are the same pipeline with a different final link. Release
-# drops what serves the developer: the dev server's socket, the debug HUD, the
-# bailout, and the crash supervisor. See templates/vita-app/release.c.
+# drops what serves the developer: the dev server's socket, the debug strip,
+# the bailout, and the crash supervisor. See templates/vita-app/release.c.
+# Debug is the default, and --debug says so out loud.
 #
 # Not a Dart-level distinction. Both modes compile the kernel with
 # -Ddart.vm.product=true and the bundle with --release, because nothing here has
@@ -79,6 +82,7 @@ while [ $# -gt 0 ]; do
     # development receiver when the app dies, and a release build is one that has
     # no receiver to relaunch.
     --release)  RELEASE="ON"; NO_SUPERVISOR="ON"; shift ;;
+    --debug)    RELEASE="OFF"; shift ;;
     --define) EXTRA_DEFINES="${EXTRA_DEFINES:+$EXTRA_DEFINES;}$2"; shift 2 ;;
     # For measurement builds. experiments/gl-usage needs
     # -Wl,--wrap=vglGetProcAddress and there is no other way in.
