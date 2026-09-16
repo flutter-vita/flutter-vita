@@ -90,6 +90,21 @@ if(HARDWARE_CHECKS)
   set(HARDWARE_LIBS SceCamera_stub SceMotion_stub SceAudio_stub SceAudioIn_stub SceAvPlayer_stub SceAVConfig_stub)
 endif()
 
+# The native halves of the app's Vita plugins (ADR-0009, fvita_plugin.h). A
+# package with a `vita/plugin.cmake` appends its sources to PLUGIN_SOURCES
+# and its stub libraries to PLUGIN_LIBS; tools/build-vita-app.sh finds those
+# files through the app's package_config.json and lists them here. The
+# registry they register with, plugin.c, is in every build, plugins or not:
+# the embedder's hooks resolve to it, and with nothing registered a channel
+# gets the empty reply that is MissingPluginException.
+set(VITA_PLUGINS "" CACHE STRING "plugin.cmake files of the app's Vita plugins")
+set(PLUGIN_SOURCES)
+set(PLUGIN_LIBS)
+foreach(plugin ${VITA_PLUGINS})
+  include("${plugin}")
+  message(STATUS "plugin: ${plugin}")
+endforeach()
+
 if(RELEASE)
   set(DEV_LOOP_SOURCES ${CMAKE_CURRENT_SOURCE_DIR}/release.c)
 else()
@@ -138,8 +153,14 @@ add_executable(${PROJECT_NAME}
   # embedder's weak vita/hardware hook. Only when the app's pubspec asks
   # (`hardware_checks: true`); see hardware.c.
   ${HARDWARE_SOURCES}
+  # The channel registry every plugin registers with, and the plugins.
+  ${CMAKE_CURRENT_SOURCE_DIR}/plugin.c
+  ${PLUGIN_SOURCES}
 )
-target_include_directories(${PROJECT_NAME} PRIVATE ${ENGINE_DIR}/src ${ENGINE_DIR}/include)
+target_include_directories(${PROJECT_NAME} PRIVATE
+  ${ENGINE_DIR}/src ${ENGINE_DIR}/include
+  # fvita_plugin.h, for the plugins' sources.
+  ${CMAKE_CURRENT_SOURCE_DIR})
 # For EXTRA_SOURCES to be configured from the outside -- the receiver builds
 # twice, once into its real slot and once into a scratch one on a different
 # port, and the difference is two defines rather than two source trees.
@@ -195,6 +216,7 @@ target_link_libraries(${PROJECT_NAME}
   # set to, so nothing sorts by it, but it still shows two lines an hour apart.
   SceRtc_stub
   ${HARDWARE_LIBS}
+  ${PLUGIN_LIBS}
   pthread m
 )
 

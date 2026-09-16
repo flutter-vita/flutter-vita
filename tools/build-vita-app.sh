@@ -283,6 +283,31 @@ done
 [ "$PACKAGES" = "$APP_DIR/.dart_tool/package_config.json" ] ||
   echo "    packages from $(dirname "$(dirname "$PACKAGES")")  (pub workspace)"
 
+# The app's Vita plugins: every resolved package with a vita/plugin.cmake
+# (ADR-0009, templates/vita-app/fvita_plugin.h). Their C is compiled into
+# this app; the list goes to the template as VITA_PLUGINS.
+VITA_PLUGINS="$(python3 - "$PACKAGES" <<'PY'
+import json, os, sys, urllib.parse
+cfg = json.load(open(sys.argv[1]))
+base = os.path.dirname(sys.argv[1])
+found = []
+for pkg in cfg.get("packages", []):
+    uri = pkg.get("rootUri", "")
+    if uri.startswith("file://"):
+        root = urllib.parse.unquote(uri[len("file://"):])
+    else:
+        root = os.path.normpath(os.path.join(base, uri))
+    p = os.path.join(root, "vita", "plugin.cmake")
+    if os.path.isfile(p):
+        found.append(p)
+print(";".join(found))
+PY
+)"
+if [ -n "$VITA_PLUGINS" ]; then
+  echo "==> vita plugins"
+  echo "$VITA_PLUGINS" | tr ';' '\n' | sed 's|^|    |; s|/vita/plugin.cmake$||; s|.*/||'
+fi
+
 # The kernel and the bundle must come from the same source tree. The asset
 # manifest is looked up by keys the compiled code asks for, so a mismatched
 # pair fails at runtime looking like an asset bug rather than a stale build.
@@ -337,6 +362,7 @@ cmake -S "${FLUTTER_VITA_TEMPLATE:-$ROOT/templates/vita-app}" -B "$OUT_DIR/cmake
   -DEXTRA_DEFINES="$EXTRA_DEFINES" \
   -DEXTRA_LINK_OPTIONS="$EXTRA_LINK_OPTIONS" \
   -DHARDWARE_CHECKS="$HARDWARE_CHECKS" \
+  -DVITA_PLUGINS="$VITA_PLUGINS" \
   -DGLES2_DIR="$ROOT/gles2" \
   -DTOOLS_DIR="$ROOT/tools" >/dev/null
 cmake --build "$OUT_DIR/cmake" -j"$(getconf _NPROCESSORS_ONLN 2>/dev/null || echo 4)"

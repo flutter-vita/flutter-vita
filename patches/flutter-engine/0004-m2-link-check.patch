@@ -295,10 +295,10 @@ index 00000000..a5e0625d
 +}  // extern "C"
 diff --git a/engine/src/flutter/shell/platform/embedder/vita_embedder.cc b/engine/src/flutter/shell/platform/embedder/vita_embedder.cc
 new file mode 100644
-index 00000000..e80550d7
+index 00000000..db3ef7cc
 --- /dev/null
 +++ b/engine/src/flutter/shell/platform/embedder/vita_embedder.cc
-@@ -0,0 +1,4651 @@
+@@ -0,0 +1,4709 @@
 +// Copyright (c) 2026, the Flutter Authors. All rights reserved.
 +// Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
@@ -392,6 +392,18 @@ index 00000000..e80550d7
 +// app took the call, else the caller answers with an error.
 +extern "C" int flutter_vita_hardware_call_async(
 +    const char* method, const char* body, size_t body_len,
++    void (*respond)(void* ctx, const char* reply, size_t len), void* ctx)
++    __attribute__((weak));
++
++// Every other `vita/...` channel: the app's plugins. A Vita implementation
++// of a pub package (ADR-0009) talks to a channel of its own, and the C
++// behind it is compiled into the app from the package (templates/vita-app,
++// `vita/plugin.cmake`), never into the engine. Same contract as above: the
++// app answers once through `respond`, from any thread; a return of 0 means
++// it took the message. JSONMethodCodec, the reply an envelope.
++extern "C" int flutter_vita_channel_call(
++    const char* channel, const char* method, const char* body,
++    size_t body_len,
 +    void (*respond)(void* ctx, const char* reply, size_t len), void* ctx)
 +    __attribute__((weak));
 +
@@ -4063,10 +4075,31 @@ index 00000000..e80550d7
 +  }
 +  preview[n] = '\0';
 +  // The stats channel is polled once a second by any app with the HUD strip;
-+  // a log line per poll would be most of the log.
++  // a log line per poll would be most of the log. The plugins' channels
++  // (vita/sensors, vita/camera) poll faster still: their first ten
++  // messages are logged, then one in a hundred.
 +  const bool is_stats = message->channel != nullptr &&
 +                        std::strcmp(message->channel, "vita/stats") == 0;
-+  if (!is_stats) {
++  bool quiet = is_stats;
++  if (!quiet && message->channel != nullptr &&
++      std::strncmp(message->channel, "vita/", 5) == 0 &&
++      std::strcmp(message->channel, "vita/hardware") != 0) {
++    static struct {
++      char name[32];
++      unsigned count;
++    } seen[16];
++    for (auto& e : seen) {
++      if (e.name[0] == '\0') {
++        std::snprintf(e.name, sizeof e.name, "%s", message->channel);
++      }
++      if (std::strcmp(e.name, message->channel) == 0) {
++        e.count++;
++        quiet = e.count > 10 && e.count % 100 != 0;
++        break;
++      }
++    }
++  }
++  if (!quiet) {
 +    VLog("flutter-vita: channel %s [%u] %s%s\n",
 +         message->channel != nullptr ? message->channel : "(null)",
 +         static_cast<unsigned>(message->message_size), preview,
@@ -4472,6 +4505,31 @@ index 00000000..e80550d7
 +        g_ime.client_id = -1;
 +      }
 +    }
++  }
++
++  if (message->channel != nullptr &&
++      std::strncmp(message->channel, "vita/", 5) == 0 &&
++      flutter_vita_channel_call != nullptr &&
++      message->response_handle != nullptr && g_engine != nullptr) {
++    const char* body = reinterpret_cast<const char*>(message->message);
++    const size_t len = message->message_size;
++    const char* m = JsonFindValue(body, len, "method");
++    char method[64] = {0};
++    if (m != nullptr) JsonUnescape(m, body + len, method, sizeof method);
++    auto respond = [](void* ctx, const char* reply, size_t n) {
++      FlutterEngineSendPlatformMessageResponse(
++          g_engine,
++          static_cast<const FlutterPlatformMessageResponseHandle*>(ctx),
++          reinterpret_cast<const uint8_t*>(reply), n);
++    };
++    if (flutter_vita_channel_call(
++            message->channel, method, body, len, respond,
++            const_cast<FlutterPlatformMessageResponseHandle*>(
++                message->response_handle)) == 0) {
++      return;
++    }
++    // Not the app's either: the empty reply below, which the framework
++    // turns into MissingPluginException, the honest answer.
 +  }
 +
 +  if (message->response_handle != nullptr && g_engine != nullptr) {

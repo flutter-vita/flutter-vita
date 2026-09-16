@@ -1,21 +1,22 @@
 // The hardware checks behind the gallery's Hardware tab.
 //
-// One function the embedder calls for every message on the `vita/hardware`
-// channel (JSONMethodCodec): the method name, the raw body, and a buffer for
-// the reply envelope, `[result]` for success or `[code, message, details]`
-// for an error. Each method is one piece of the console: a camera, the
+// One channel, `vita/hardware`, registered with plugin.c like any plugin's
+// (fvita_plugin.h): the method name, the raw body, and a buffer for the
+// reply envelope. Each method is one piece of the console: a camera, the
 // microphone, the motion sensors, a touch panel, the battery. The Dart side
 // decides what a pass is; this side reports what the hardware said.
 //
 // Built only when the app's pubspec says `hardware_checks: true`
 // (build-vita-app.sh passes HARDWARE_CHECKS=ON to the template), because it
-// links five stub libraries an ordinary app has no use for. Dev-loop
+// links six stub libraries an ordinary app has no use for. Dev-loop
 // infrastructure: a shipping app never includes it.
 //
-// Every check runs on a thread of its own and answers from it (the end of
-// this file); the platform thread, the one that drains platform messages,
-// only starts it. Two checks asked for together run together, which the
-// microphone recording the speaker depends on.
+// Every check runs on a thread of its own and answers from it (plugin.c);
+// the platform thread, the one that drains platform messages, only starts
+// it. Two checks asked for together run together, which the microphone
+// recording the speaker depends on.
+#include "fvita_plugin.h"
+
 #include <psp2/appmgr.h>
 #include <psp2/audioin.h>
 #include <psp2/audioout.h>
@@ -45,44 +46,23 @@
 #include <string.h>
 
 // ---- replies ---------------------------------------------------------------
+// plugin.c's helpers under the names this file grew up with.
 
-static int reply_ok(char* out, size_t cap, const char* fmt, ...) {
-  int n = snprintf(out, cap, "[");
-  va_list ap;
-  va_start(ap, fmt);
-  n += vsnprintf(out + n, cap - (size_t)n, fmt, ap);
-  va_end(ap);
-  if ((size_t)n + 2 > cap) return -1;
-  out[n++] = ']';
-  out[n] = '\0';
-  return n;
-}
+#define reply_ok fvita_reply_ok
+#define body_int fvita_json_int
 
 static int reply_err(char* out, size_t cap, const char* what, int code) {
-  return snprintf(out, cap, "[\"failed\",\"%s: 0x%08X\",null]", what, (unsigned)code);
+  return fvita_reply_err(out, cap, "failed", what, code);
 }
 
-// A line in the app log, written now. stderr is the engine's log file,
-// unbuffered, so a check that never comes back still leaves its last step.
+static void hw_log(const char* fmt, ...) __attribute__((format(printf, 1, 2)));
 static void hw_log(const char* fmt, ...) {
   char line[160];
   va_list ap;
   va_start(ap, fmt);
   vsnprintf(line, sizeof line, fmt, ap);
   va_end(ap);
-  fprintf(stderr, "hardware: %s\n", line);
-}
-
-// The first integer after `"key":` in the JSON body, or `dflt`. The bodies
-// here are `{"method":"x","args":{"which":1}}`, which is all this needs.
-static int body_int(const char* body, size_t len, const char* key, int dflt) {
-  char pat[48];
-  snprintf(pat, sizeof pat, "\"%s\":", key);
-  const size_t pl = strlen(pat);
-  for (size_t i = 0; i + pl < len; i++) {
-    if (memcmp(body + i, pat, pl) == 0) return atoi(body + i + pl);
-  }
-  return dflt;
+  fvita_log("hardware", "%s", line);
 }
 
 // ---- battery, storage, clock, network, model --------------------------------
@@ -767,127 +747,6 @@ static int dispatch(const char* method, const char* body, size_t body_len, char*
   return snprintf(out, cap, "[\"unknown\",\"no such check: %s\",null]", method);
 }
 
-// Every check runs on a thread of its own, with a deadline, and answers
-// from that thread. The channel handler that calls this is the platform
-// thread; until 2026-09-16 it waited for the check's thread, so two checks
-// asked for together ran one after the other, and the microphone had
-// finished recording before the speaker began (builds 46 to 55). Now the
-// call returns at once and the check's thread completes the message. A
-// watchdog thread waits on the check with the deadline; whichever of the
-// two is first answers, the other finds `answered` set and does nothing.
-// A check that blocks in the system is left where it is: its buffers are
-// its own, and whatever it writes later lands nowhere the caller reads.
-typedef struct HardwareJob {
-  char method[32];
-  char* body;
-  size_t body_len;
-  char* out;
-  size_t cap;
-  void (*respond)(void* ctx, const char* reply, size_t len);
-  void* ctx;
-  volatile int answered;
-  SceUID thread;
-} HardwareJob;
-
-// Exactly one answer per job. The two threads race for `answered`; the
-// kernel's atomic compare-and-swap decides.
-static void job_answer(HardwareJob* j, const char* reply, size_t len) {
-  if (__sync_val_compare_and_swap(&j->answered, 0, 1) != 0) return;
-  j->respond(j->ctx, reply, len);
-}
-
-static int job_thread(SceSize args, void* argp) {
-  (void)args;
-  HardwareJob* j = *(HardwareJob**)argp;
-  const int rc = dispatch(j->method, j->body, j->body_len, j->out, j->cap);
-  if (rc < 0) {
-    char err[128];
-    const int n = snprintf(err, sizeof err, "[\"unavailable\",\"%s: the check failed\",null]", j->method);
-    job_answer(j, err, (size_t)n);
-  } else {
-    job_answer(j, j->out, (size_t)rc);
-  }
-  return 0;
-}
-
-static int watchdog_thread(SceSize args, void* argp) {
-  (void)args;
-  HardwareJob* j = *(HardwareJob**)argp;
-  SceUInt timeout = 15 * 1000 * 1000;
-  if (sceKernelWaitThreadEnd(j->thread, NULL, &timeout) < 0) {
-    char err[128];
-    const int n = snprintf(err, sizeof err, "[\"timeout\",\"%s: no answer in 15 s\",null]", j->method);
-    hw_log("%s: no answer in 15 s, thread abandoned", j->method);
-    job_answer(j, err, (size_t)n);
-    return 0;  // the job's memory stays with the abandoned thread
-  }
-  sceKernelDeleteThread(j->thread);
-  free(j->body);
-  free(j->out);
-  free(j);
-  return 0;
-}
-
-int flutter_vita_hardware_call_async(const char* method, const char* body, size_t body_len,
-                                     void (*respond)(void* ctx, const char* reply, size_t len), void* ctx) {
-  if (method == NULL || respond == NULL) return -1;
-  HardwareJob* j = calloc(1, sizeof *j);
-  if (j == NULL) return -1;
-  snprintf(j->method, sizeof j->method, "%s", method);
-  j->body_len = body != NULL ? body_len : 0;
-  j->body = malloc(j->body_len + 1);
-  j->cap = 64 * 1024;
-  j->out = malloc(j->cap);
-  if (j->body == NULL || j->out == NULL) {
-    free(j->body);
-    free(j->out);
-    free(j);
-    return -1;
-  }
-  if (j->body_len) memcpy(j->body, body, j->body_len);
-  j->body[j->body_len] = '\0';
-  j->out[0] = '\0';
-  j->respond = respond;
-  j->ctx = ctx;
-  j->thread = sceKernelCreateThread("fvita-hardware", job_thread, 0x10000100, 0x10000, 0, 0, NULL);
-  const SceUID dog = j->thread < 0 ? j->thread
-                                   : sceKernelCreateThread("fvita-hw-watchdog", watchdog_thread, 0x10000100, 0x1000, 0, 0, NULL);
-  if (j->thread < 0 || dog < 0) {
-    hw_log("%s: sceKernelCreateThread 0x%08X", method, (unsigned)(j->thread < 0 ? j->thread : dog));
-    if (j->thread >= 0) sceKernelDeleteThread(j->thread);
-    free(j->body);
-    free(j->out);
-    free(j);
-    return -1;
-  }
-  sceKernelStartThread(j->thread, sizeof j, &j);
-  sceKernelStartThread(dog, sizeof j, &j);
-  return 0;
-}
-
-// The blocking form, kept for an engine that predates the one above: the
-// same thread and deadline, the answer copied out here.
-typedef struct SyncReply {
-  char* out;
-  size_t cap;
-  int len;
-} SyncReply;
-
-static void sync_respond(void* ctx, const char* reply, size_t len) {
-  SyncReply* r = ctx;
-  if (len >= r->cap) len = r->cap - 1;
-  memcpy(r->out, reply, len);
-  r->out[len] = '\0';
-  __sync_synchronize();
-  r->len = (int)len;
-}
-
-int flutter_vita_hardware_call(const char* method, const char* body, size_t body_len, char* out, size_t cap) {
-  if (out == NULL || cap < 64) return -1;
-  SyncReply r = {out, cap, -1};
-  if (flutter_vita_hardware_call_async(method, body, body_len, sync_respond, &r) != 0) return -1;
-  // The watchdog answers at 15 s at the latest; 16 here is for its own
-  // scheduling.
-  for (int i = 0; i < 1600 && r.len < 0; i++) sceKernelDelayThread(10 * 1000);
-  return r.len;
+__attribute__((constructor)) static void register_hardware(void) {
+  fvita_channel_register("vita/hardware", dispatch);
 }
