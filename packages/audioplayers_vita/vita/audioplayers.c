@@ -367,6 +367,67 @@ static void pcm_grain(Player* p) {
   if (p->pos >= p->frames) finished(p);
 }
 
+// The duration out of an MP4's own header: moov/mvhd carries a timescale
+// and a duration in those units. sceAvPlayerGetStreamInfo answers 0 for
+// the duration right after the player goes active (measured 2026-09-16 on
+// a 3 s AAC), so the file itself is asked, at setSource, which is also when
+// audioplayers' getDuration wants an answer. Returns 0 when the file is not
+// an MP4 or the box is not found.
+static uint32_t be32_at(const unsigned char* p) {
+  return (uint32_t)p[0] << 24 | (uint32_t)p[1] << 16 | (uint32_t)p[2] << 8 | p[3];
+}
+
+static uint64_t mp4_duration_ms(const char* path) {
+  const SceUID fd = sceIoOpen(path, SCE_O_RDONLY, 0);
+  if (fd < 0) return 0;
+  uint64_t result = 0;
+  const int64_t size = sceIoLseek(fd, 0, SCE_SEEK_END);
+  int64_t off = 0;
+  // Top-level boxes until moov; inside it, its children until mvhd.
+  int64_t end = size;
+  int in_moov = 0;
+  for (int guard = 0; guard < 64 && off + 8 <= end; guard++) {
+    unsigned char h[16];
+    sceIoLseek(fd, off, SCE_SEEK_SET);
+    if (sceIoRead(fd, h, 8) != 8) break;
+    uint64_t box = be32_at(h);
+    int64_t body = 8;
+    if (box == 1) {  // 64-bit size follows
+      if (sceIoRead(fd, h + 8, 8) != 8) break;
+      box = (uint64_t)be32_at(h + 8) << 32 | be32_at(h + 12);
+      body = 16;
+    } else if (box == 0) {
+      box = (uint64_t)(end - off);  // to the end of the enclosing box
+    }
+    if (box < (uint64_t)body) break;
+    const int is_moov = memcmp(h + 4, "moov", 4) == 0;
+    const int is_mvhd = memcmp(h + 4, "mvhd", 4) == 0;
+    if (!in_moov && is_moov) {
+      in_moov = 1;
+      end = off + (int64_t)box;
+      off += body;
+      continue;
+    }
+    if (in_moov && is_mvhd) {
+      unsigned char v[32];
+      if (sceIoRead(fd, v, sizeof v) == (int)sizeof v) {
+        if (v[0] == 0) {  // version 0: 32-bit times after 4+4+4
+          const uint32_t scale = be32_at(v + 12), dur = be32_at(v + 16);
+          if (scale) result = (uint64_t)dur * 1000ULL / scale;
+        } else {  // version 1: 64-bit times after 4+8+8
+          const uint32_t scale = be32_at(v + 20);
+          const uint64_t dur = (uint64_t)be32_at(v + 24) << 32 | be32_at(v + 28);
+          if (scale) result = dur * 1000ULL / scale;
+        }
+      }
+      break;
+    }
+    off += (int64_t)box;
+  }
+  sceIoClose(fd);
+  return result;
+}
+
 static void av_grain(Player* p) {
   if (p->av == 0) {
     const int r = av_open_player(p);
@@ -388,9 +449,15 @@ static void av_grain(Player* p) {
       p->state = kPrepared;
       return;
     }
-    SceAvPlayerStreamInfo si;
-    memset(&si, 0, sizeof si);
-    if (sceAvPlayerGetStreamInfo(p->av, 0, &si) >= 0) p->av_dur = si.duration;
+    // The duration: the longest of the first few streams. The header names
+    // no stream-count call, so this asks until one answers with an error.
+    for (uint32_t id = 0; id < 4; id++) {
+      SceAvPlayerStreamInfo si;
+      memset(&si, 0, sizeof si);
+      if (sceAvPlayerGetStreamInfo(p->av, id, &si) < 0) break;
+      if (si.duration > p->av_dur) p->av_dur = si.duration;
+    }
+    fvita_log("audioplayers", "%s: %s active, duration %llu ms", p->id, p->path, (unsigned long long)p->av_dur);
     if (p->av_pos_ms) sceAvPlayerJumpToTime(p->av, p->av_pos_ms);
   }
   if (!sceAvPlayerIsActive(p->av)) {
@@ -421,6 +488,9 @@ static void av_grain(Player* p) {
   if (p->gain_dirty) apply_gain(p);
   sceAudioOutOutput(p->port, f.pData);
   p->av_pos_ms = (uint32_t)f.timeStamp;
+  // A file whose stream info gave no duration: the last timestamp seen is
+  // the best answer there is, and it grows as the file plays.
+  if (p->av_dur == 0 || p->av_pos_ms > p->av_dur) p->av_dur = p->av_pos_ms;
 }
 
 static void do_cmd(Player* p) {
@@ -567,11 +637,12 @@ static int set_source(Player* p, const char* path, const uint8_t* bytes, size_t 
     sceIoClose(fd);
   }
   p->kind = kAv;
-  p->av_dur = 0;
+  p->av_dur = mp4_duration_ms(p->path);
   p->av_pos_ms = 0;
   p->state = kPrepared;
   p->ev_prepared++;
-  return fvita_reply_ok(out, cap, "{\"kind\":\"av\",\"duration_ms\":null}");
+  if (p->av_dur == 0) return fvita_reply_ok(out, cap, "{\"kind\":\"av\",\"duration_ms\":null}");
+  return fvita_reply_ok(out, cap, "{\"kind\":\"av\",\"duration_ms\":%llu}", (unsigned long long)p->av_dur);
 }
 
 // ---- the channel -------------------------------------------------------------------
