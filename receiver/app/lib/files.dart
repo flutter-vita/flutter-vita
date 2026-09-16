@@ -5,9 +5,9 @@
 // on the kind of file:
 //
 //   image      drawn with Image.file, the engine's own codecs
-//   audio      played through audioplayers (WAV and AAC through the Vita
-//              implementation; MP3 the console's player refuses, and the
-//              row says so when it does)
+//   audio      played through audioplayers_vita: WAV through a MAIN port,
+//              AAC through sceAvPlayer, MP3 through sceAudiodec, the
+//              console's own decoder
 //   video      not drawn: a video frame needs a texture route the
 //              embedder does not have yet. The sound track plays.
 //   vpk        installed by the receiver's own C: unpacked into

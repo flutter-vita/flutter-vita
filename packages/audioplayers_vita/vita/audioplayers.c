@@ -6,11 +6,15 @@
 //   memory, played through a MAIN port (48 kHz is the one rate that port
 //   takes). Up to eight players at once; a game's sounds.
 //
+//   MP3, from a file: the console's own decoder, sceAudiodec, one frame at
+//   a time from the file into a BGM port at the file's rate. sceAvPlayer
+//   refuses MP3 (0x806A0002 from sceAvPlayerAddSource), the decoder does
+//   not; the frame walk (headers, ID3v2, the Xing count) is done here.
+//
 //   Anything else (AAC in an MP4 or M4A box is what the console's player
-//   decodes; MP3 it refuses, 0x806A0002 from sceAvPlayerAddSource): the
-//   system's sceAvPlayer, decoded frame by frame into a BGM port at the
-//   file's own rate. There is one BGM port, so one such player plays at a
-//   time; music.
+//   decodes): the system's sceAvPlayer, decoded frame by frame into a BGM
+//   port at the file's own rate. There is one BGM port, so one MP3 or AAC
+//   player plays at a time; music.
 //
 // Commands from the Dart side are handed to the player's thread through
 // `cmd` and acknowledged there, so sceAvPlayer is only ever called from
@@ -20,6 +24,7 @@
 #include <fvita_plugin.h>
 
 #include <psp2/appmgr.h>
+#include <psp2/audiodec.h>
 #include <psp2/audioout.h>
 #include <psp2/avplayer.h>
 #include <psp2/io/dirent.h>
@@ -38,7 +43,7 @@
 #include <strings.h>
 
 enum { kPlayers = 8, kRate = 48000, kGrain = 768 };  // 16 ms a grain
-enum { kNone, kPcm, kAv };
+enum { kNone, kPcm, kAv, kMp3 };
 enum { kIdle, kPrepared, kPlaying, kPaused, kCompleted };
 enum { kCmdNone, kCmdPlay, kCmdPause, kCmdStop, kCmdSeek, kCmdRelease, kCmdQuit };
 enum { kRelease, kLoop, kStopMode };
@@ -61,7 +66,23 @@ typedef struct Player {
   SceUID av_fd;
   uint64_t av_dur;
   volatile uint32_t av_pos_ms;
-  // both
+  // mp3
+  SceUID mp3_fd;
+  int64_t mp3_size;     // of the file
+  int64_t mp3_data;     // offset of the first frame
+  int64_t mp3_at;       // offset of the next frame to read
+  uint8_t* mp3_buf;     // a window of the file
+  size_t mp3_buf_len, mp3_buf_at;  // bytes in the window, and how many are consumed
+  int64_t mp3_buf_off;  // file offset of the window's first byte
+  int mp3_ver, mp3_rate, mp3_ch, mp3_spf;  // MPEG version, Hz, channels, samples per frame
+  uint64_t mp3_frames;  // total, counted from Xing or estimated from the size
+  volatile uint64_t mp3_samples;  // decoded so far
+  SceAudiodecCtrl dec;
+  SceAudiodecInfo dec_info;
+  int dec_open;
+  uint8_t* dec_es;
+  int16_t* dec_pcm;
+  // all
   volatile float volume, balance;
   volatile int gain_dirty;
   volatile int release_mode;
@@ -325,12 +346,17 @@ static void close_port(Player* p) {
   p->port = -1;
 }
 
+static void mp3_seek_ms(Player* p, uint32_t ms);
+static void mp3_close(Player* p);
+
 static void finished(Player* p) {
   if (p->release_mode == kLoop) {
     p->pos = 0;
+    if (p->kind == kMp3) mp3_seek_ms(p, 0);
     return;
   }
   p->pos = 0;
+  if (p->kind == kMp3) mp3_seek_ms(p, 0);
   p->state = kCompleted;
   p->ev_complete++;
   if (p->kind == kAv) av_close_player(p);
@@ -340,6 +366,7 @@ static void finished(Player* p) {
     free(p->pcm);
     p->pcm = NULL;
     p->frames = 0;
+    if (p->kind == kMp3) mp3_close(p);
     p->kind = kNone;
   }
 }
@@ -493,6 +520,247 @@ static void av_grain(Player* p) {
   if (p->av_dur == 0 || p->av_pos_ms > p->av_dur) p->av_dur = p->av_pos_ms;
 }
 
+// ---- MP3 ----------------------------------------------------------------------
+//
+// An MP3 is a run of frames, each with a 4-byte header that says its own
+// length; nothing indexes them. ID3v2 tags sit in front, and the first
+// frame may be a Xing/Info frame carrying the frame count (VBR files),
+// which is the only honest duration; a CBR file's duration is the size
+// over the frame length. sceAudiodec takes one frame in and gives 1152
+// (MPEG-1) or 576 (MPEG-2, 2.5) samples out.
+
+enum { kMp3Window = 32 * 1024 };
+
+static const int kMp3Bitrate1[] = {0, 32, 40, 48, 56, 64, 80, 96, 112, 128, 160, 192, 224, 256, 320};
+static const int kMp3Bitrate2[] = {0, 8, 16, 24, 32, 40, 48, 56, 64, 80, 96, 112, 128, 144, 160};
+static const int kMp3Rate[4][3] = {{11025, 12000, 8000}, {0, 0, 0}, {22050, 24000, 16000}, {44100, 48000, 32000}};
+
+// A layer III header at h: fills the frame's facts and returns its length,
+// or 0 when the four bytes are not one.
+static int mp3_header(const uint8_t* h, int* ver, int* rate, int* ch, int* spf) {
+  if (h[0] != 0xFF || (h[1] & 0xE0) != 0xE0) return 0;
+  const int v = (h[1] >> 3) & 3, layer = (h[1] >> 1) & 3;
+  const int br = (h[2] >> 4) & 15, sr = (h[2] >> 2) & 3, pad = (h[2] >> 1) & 1;
+  if (v == 1 || layer != 1 || br == 0 || br == 15 || sr == 3) return 0;
+  const int bitrate = (v == 3 ? kMp3Bitrate1 : kMp3Bitrate2)[br] * 1000;
+  const int hz = kMp3Rate[v][sr];
+  *ver = v;
+  *rate = hz;
+  *ch = ((h[3] >> 6) & 3) == 3 ? 1 : 2;
+  *spf = v == 3 ? 1152 : 576;
+  return (v == 3 ? 144 : 72) * bitrate / hz + pad;
+}
+
+// The window holds at least `need` bytes from p->mp3_at, or what the file
+// has left. Returns the bytes available.
+static size_t mp3_fill(Player* p, size_t need) {
+  const size_t have = p->mp3_buf_len - p->mp3_buf_at;
+  const int64_t at = p->mp3_buf_off + (int64_t)p->mp3_buf_at;
+  if (at == p->mp3_at && have >= need) return have;
+  if (at != p->mp3_at || have == 0) {
+    p->mp3_buf_len = 0;
+  } else {
+    memmove(p->mp3_buf, p->mp3_buf + p->mp3_buf_at, have);
+    p->mp3_buf_len = have;
+  }
+  p->mp3_buf_at = 0;
+  p->mp3_buf_off = p->mp3_at;
+  sceIoLseek(p->mp3_fd, p->mp3_at + (int64_t)p->mp3_buf_len, SCE_SEEK_SET);
+  while (p->mp3_buf_len < kMp3Window) {
+    const int n = sceIoRead(p->mp3_fd, p->mp3_buf + p->mp3_buf_len, kMp3Window - p->mp3_buf_len);
+    if (n <= 0) break;
+    p->mp3_buf_len += (size_t)n;
+  }
+  return p->mp3_buf_len;
+}
+
+// Finds the next frame at or after p->mp3_at: a header whose length lands
+// on another header, so a stray 0xFF in the data is not taken for one.
+// Returns the length, with p->mp3_at on the header, or 0 at the end.
+static int mp3_sync(Player* p) {
+  for (int tries = 0; tries < 4; tries++) {
+    const size_t have = mp3_fill(p, 8);
+    if (have < 4) return 0;
+    const uint8_t* b = p->mp3_buf + p->mp3_buf_at;
+    for (size_t i = 0; i + 4 <= have; i++) {
+      int ver, rate, ch, spf;
+      const int len = mp3_header(b + i, &ver, &rate, &ch, &spf);
+      if (len < 24) continue;
+      int ok = i + (size_t)len + 4 > have;  // no room to check: take it
+      if (!ok) {
+        int v2, r2, c2, s2;
+        ok = mp3_header(b + i + len, &v2, &r2, &c2, &s2) > 0 && r2 == rate;
+      }
+      if (!ok) continue;
+      p->mp3_at += (int64_t)i;
+      p->mp3_buf_at += i;
+      return len;
+    }
+    // No header in the window: step past it, less the bytes a header
+    // could straddle.
+    p->mp3_at += (int64_t)(have - 3);
+    p->mp3_buf_at = p->mp3_buf_len;
+  }
+  return 0;
+}
+
+static int g_audiodec_up;
+
+static void mp3_close(Player* p) {
+  if (p->dec_open) {
+    sceAudiodecDeleteDecoder(&p->dec);
+    p->dec_open = 0;
+  }
+  if (p->mp3_fd >= 0) sceIoClose(p->mp3_fd);
+  p->mp3_fd = -1;
+  free(p->mp3_buf);
+  free(p->dec_es);
+  free(p->dec_pcm);
+  p->mp3_buf = NULL;
+  p->dec_es = NULL;
+  p->dec_pcm = NULL;
+}
+
+// Opens the file, walks to the first frame, reads its facts and the Xing
+// count, and creates the decoder. Returns 0, or a negative code with *why.
+static int mp3_open(Player* p, const char* path, const char** why) {
+  p->mp3_fd = sceIoOpen(path, SCE_O_RDONLY, 0);
+  if (p->mp3_fd < 0) {
+    *why = "cannot open";
+    return p->mp3_fd;
+  }
+  p->mp3_size = sceIoLseek(p->mp3_fd, 0, SCE_SEEK_END);
+  p->mp3_buf = malloc(kMp3Window);
+  p->dec_es = memalign(SCE_AUDIODEC_ALIGNMENT_SIZE, SCE_AUDIODEC_ROUND_UP(SCE_AUDIODEC_MP3_MAX_ES_SIZE));
+  p->dec_pcm = memalign(SCE_AUDIODEC_ALIGNMENT_SIZE, SCE_AUDIODEC_ROUND_UP(SCE_AUDIODEC_MP3_MAX_SAMPLES * 2 * 2));
+  if (p->mp3_buf == NULL || p->dec_es == NULL || p->dec_pcm == NULL) {
+    *why = "out of memory";
+    return -1;
+  }
+  p->mp3_buf_len = p->mp3_buf_at = 0;
+  p->mp3_buf_off = 0;
+  p->mp3_at = 0;
+  // ID3v2: "ID3", two version bytes, flags, then a syncsafe size of what
+  // follows the ten-byte header.
+  if (mp3_fill(p, 10) >= 10 && memcmp(p->mp3_buf, "ID3", 3) == 0) {
+    const uint8_t* z = p->mp3_buf + 6;
+    p->mp3_at = 10 + ((z[0] & 0x7F) << 21 | (z[1] & 0x7F) << 14 | (z[2] & 0x7F) << 7 | (z[3] & 0x7F));
+    if (p->mp3_buf[5] & 0x10) p->mp3_at += 10;  // a footer
+  }
+  const int len = mp3_sync(p);
+  if (len == 0) {
+    *why = "no MPEG frame found";
+    return -1;
+  }
+  const uint8_t* h = p->mp3_buf + p->mp3_buf_at;
+  mp3_header(h, &p->mp3_ver, &p->mp3_rate, &p->mp3_ch, &p->mp3_spf);
+  p->mp3_data = p->mp3_at;
+  // Xing or Info after the side information; frames in the first count
+  // when bit 0 of the flags is set. That frame is not audio and is skipped.
+  const int side = p->mp3_ver == 3 ? (p->mp3_ch == 1 ? 17 : 32) : (p->mp3_ch == 1 ? 9 : 17);
+  p->mp3_frames = 0;
+  if (mp3_fill(p, (size_t)len) >= (size_t)len) {
+    h = p->mp3_buf + p->mp3_buf_at;
+    const uint8_t* x = h + 4 + side;
+    if (4 + side + 12 <= len && (memcmp(x, "Xing", 4) == 0 || memcmp(x, "Info", 4) == 0) && (x[7] & 1)) {
+      p->mp3_frames = (uint64_t)x[8] << 24 | (uint64_t)x[9] << 16 | (uint64_t)x[10] << 8 | x[11];
+      p->mp3_data = p->mp3_at + len;
+      p->mp3_at = p->mp3_data;
+    }
+  }
+  if (p->mp3_frames == 0) p->mp3_frames = (uint64_t)(p->mp3_size - p->mp3_data) / (uint64_t)len;
+  p->mp3_samples = 0;
+
+  if (!g_audiodec_up) {
+    SceAudiodecInitParam ip;
+    memset(&ip, 0, sizeof ip);
+    ip.mp3.size = sizeof ip.mp3;
+    ip.mp3.totalStreams = 4;
+    const int r = sceAudiodecInitLibrary(SCE_AUDIODEC_TYPE_MP3, &ip);
+    if (r < 0) {
+      *why = "sceAudiodecInitLibrary";
+      return r;
+    }
+    g_audiodec_up = 1;
+  }
+  memset(&p->dec, 0, sizeof p->dec);
+  memset(&p->dec_info, 0, sizeof p->dec_info);
+  p->dec_info.mp3.size = sizeof p->dec_info.mp3;
+  p->dec_info.mp3.ch = (SceUInt32)p->mp3_ch;
+  p->dec_info.mp3.version = (SceUInt32)p->mp3_ver;
+  p->dec.size = sizeof p->dec;
+  p->dec.pInfo = &p->dec_info;
+  p->dec.wordLength = SCE_AUDIODEC_WORD_LENGTH_16BITS;
+  p->dec.maxEsSize = SCE_AUDIODEC_MP3_MAX_ES_SIZE;
+  p->dec.maxPcmSize = SCE_AUDIODEC_MP3_MAX_SAMPLES * (SceUInt32)p->mp3_ch * 2;
+  p->dec.pEs = p->dec_es;
+  p->dec.pPcm = p->dec_pcm;
+  const int r = sceAudiodecCreateDecoder(&p->dec, SCE_AUDIODEC_TYPE_MP3);
+  if (r < 0) {
+    *why = "sceAudiodecCreateDecoder";
+    return r;
+  }
+  p->dec_open = 1;
+  fvita_log("audioplayers", "%s: mp3 v%d %d Hz %dch, %llu frames of %d", p->id, p->mp3_ver, p->mp3_rate, p->mp3_ch,
+            (unsigned long long)p->mp3_frames, p->mp3_spf);
+  return 0;
+}
+
+// Back to a position: bytes in proportion to time, then the next header.
+// Exact only for CBR, but a seek bar does not know the difference.
+static void mp3_seek_ms(Player* p, uint32_t ms) {
+  const uint64_t total_ms = p->mp3_rate ? p->mp3_frames * (uint64_t)p->mp3_spf * 1000ULL / (uint64_t)p->mp3_rate : 0;
+  if (total_ms == 0 || ms >= total_ms) {
+    p->mp3_at = p->mp3_data;
+    p->mp3_samples = 0;
+  } else {
+    p->mp3_at = p->mp3_data + (int64_t)((uint64_t)(p->mp3_size - p->mp3_data) * ms / total_ms);
+    p->mp3_samples = (uint64_t)ms * (uint64_t)p->mp3_rate / 1000ULL;
+  }
+  p->mp3_buf_len = p->mp3_buf_at = 0;
+  if (p->dec_open) sceAudiodecClearContext(&p->dec);
+}
+
+static void mp3_grain(Player* p) {
+  if (p->port < 0) {
+    p->port = sceAudioOutOpenPort(SCE_AUDIO_OUT_PORT_TYPE_BGM, p->mp3_spf, p->mp3_rate,
+                                  p->mp3_ch == 1 ? SCE_AUDIO_OUT_MODE_MONO : SCE_AUDIO_OUT_MODE_STEREO);
+    if (p->port < 0) {
+      p->err = p->port;
+      snprintf(p->err_what, sizeof p->err_what, "sceAudioOutOpenPort(BGM)");
+      fvita_log("audioplayers", "%s: %s 0x%08X", p->id, p->err_what, (unsigned)p->port);
+      p->state = kPrepared;
+      return;
+    }
+    p->gain_dirty = 1;
+  }
+  if (p->gain_dirty) apply_gain(p);
+  const int len = mp3_sync(p);
+  if (len == 0 || mp3_fill(p, (size_t)len) < (size_t)len) {
+    finished(p);
+    return;
+  }
+  memcpy(p->dec_es, p->mp3_buf + p->mp3_buf_at, (size_t)len);
+  p->dec.pEs = p->dec_es;
+  p->dec.pPcm = p->dec_pcm;
+  p->dec.inputEsSize = 0;
+  p->dec.outputPcmSize = 0;
+  const int r = sceAudiodecDecode(&p->dec);
+  p->mp3_at += len;
+  p->mp3_buf_at += (size_t)len;
+  const size_t grain_bytes = (size_t)p->mp3_spf * (size_t)p->mp3_ch * 2;
+  if (r < 0) {
+    // One bad frame is silence, not the end: a cut file or a stray tag in
+    // the stream would otherwise stop the music.
+    if (p->err == 0) fvita_log("audioplayers", "%s: sceAudiodecDecode 0x%08X at %lld", p->id, (unsigned)r, (long long)p->mp3_at);
+    memset(p->dec_pcm, 0, grain_bytes);
+  } else if (p->dec.outputPcmSize < grain_bytes) {
+    memset((uint8_t*)p->dec_pcm + p->dec.outputPcmSize, 0, grain_bytes - p->dec.outputPcmSize);
+  }
+  sceAudioOutOutput(p->port, p->dec_pcm);
+  p->mp3_samples += (uint64_t)p->mp3_spf;
+}
+
 static void do_cmd(Player* p) {
   const int cmd = p->cmd;
   const int arg = p->cmd_arg;
@@ -514,6 +782,7 @@ static void do_cmd(Player* p) {
     case kCmdStop:
       if (p->kind == kAv) av_close_player(p);
       else close_port(p);
+      if (p->kind == kMp3) mp3_seek_ms(p, 0);
       p->pos = 0;
       p->av_pos_ms = 0;
       if (p->kind != kNone) p->state = kPrepared;
@@ -525,6 +794,8 @@ static void do_cmd(Player* p) {
       } else if (p->kind == kAv) {
         p->av_pos_ms = (uint32_t)(arg < 0 ? 0 : arg);
         if (p->av) sceAvPlayerJumpToTime(p->av, p->av_pos_ms);
+      } else if (p->kind == kMp3) {
+        mp3_seek_ms(p, (uint32_t)(arg < 0 ? 0 : arg));
       }
       p->ev_seek++;
       break;
@@ -532,6 +803,7 @@ static void do_cmd(Player* p) {
     case kCmdQuit:
       if (p->kind == kAv) av_close_player(p);
       else close_port(p);
+      if (p->kind == kMp3) mp3_close(p);
       free(p->pcm);
       p->pcm = NULL;
       p->frames = 0;
@@ -555,6 +827,7 @@ static int player_thread(SceSize args, void* argp) {
     if (p->state == kPlaying) {
       if (p->kind == kPcm) pcm_grain(p);
       else if (p->kind == kAv) av_grain(p);
+      else if (p->kind == kMp3) mp3_grain(p);
       else p->state = kIdle;
     } else {
       sceKernelDelayThread(4000);
@@ -591,6 +864,19 @@ static void url_to_path(const char* url, char* out, size_t cap) {
   snprintf(out, cap, "%s", url);
 }
 
+// By name or mime, or by the bytes: an ID3v2 tag or a frame sync.
+static int is_mp3(const char* path, const char* mime, const uint8_t* head, size_t n) {
+  if (mime && (strstr(mime, "mpeg") || strstr(mime, "mp3"))) return 1;
+  const size_t l = path ? strlen(path) : 0;
+  if (l > 4 && strcasecmp(path + l - 4, ".mp3") == 0) return 1;
+  if (head != NULL && n >= 4) {
+    if (memcmp(head, "ID3", 3) == 0) return 1;
+    int ver, rate, ch, spf;
+    if (mp3_header(head, &ver, &rate, &ch, &spf) > 0) return 1;
+  }
+  return 0;
+}
+
 static int set_source(Player* p, const char* path, const uint8_t* bytes, size_t n, const char* mime, char* out,
                       size_t cap) {
   command(p, kCmdRelease, 0);
@@ -616,8 +902,9 @@ static int set_source(Player* p, const char* path, const uint8_t* bytes, size_t 
                           (unsigned long long)p->frames * 1000ULL / kRate);
   }
   if (data != NULL) {
-    // Bytes the system's player has to see as a file: written under the
-    // app's own tmp directory, the one path_provider_vita hands out.
+    // Bytes the system's player (or the decoder) has to see as a file:
+    // written under the app's own tmp directory, the one
+    // path_provider_vita hands out.
     char title[16] = "FLUTTER";
     sceAppMgrAppParamGetString(0, 12, title, sizeof title);
     char dir[64];
@@ -635,6 +922,19 @@ static int set_source(Player* p, const char* path, const uint8_t* bytes, size_t 
     const SceUID fd = sceIoOpen(p->path, SCE_O_RDONLY, 0);
     if (fd < 0) return fvita_reply_err(out, cap, "source", p->path, fd);
     sceIoClose(fd);
+  }
+  if (is_mp3(p->path, mime, data, len)) {
+    const char* why = "";
+    const int r = mp3_open(p, p->path, &why);
+    if (r < 0) {
+      mp3_close(p);
+      return fvita_reply_err(out, cap, "source", why, r);
+    }
+    p->kind = kMp3;
+    p->state = kPrepared;
+    p->ev_prepared++;
+    return fvita_reply_ok(out, cap, "{\"kind\":\"mp3\",\"duration_ms\":%llu}",
+                          (unsigned long long)(p->mp3_frames * (uint64_t)p->mp3_spf * 1000ULL / (uint64_t)p->mp3_rate));
   }
   p->kind = kAv;
   p->av_dur = mp4_duration_ms(p->path);
@@ -667,6 +967,7 @@ static int handle(const char* method, const char* body, size_t len, char* out, s
       snprintf(p->id, sizeof p->id, "%s", id);
       p->port = -1;
       p->av_fd = -1;
+      p->mp3_fd = -1;
       p->volume = 1;
       p->alive = 1;
       p->thread = sceKernelCreateThread("fvita-audioplayer", player_thread, 0x10000100, 0x8000, 0, 0, NULL);
@@ -748,8 +1049,12 @@ static int handle(const char* method, const char* body, size_t len, char* out, s
     if (p->av) sceAvPlayerSetLooping(p->av, p->release_mode == kLoop);
     n = fvita_reply_ok(out, cap, "null");
   } else if (strcmp(method, "poll") == 0) {
-    const unsigned long long pos = p->kind == kPcm ? (unsigned long long)p->pos * 1000ULL / kRate : p->av_pos_ms;
-    const unsigned long long dur = p->kind == kPcm ? (unsigned long long)p->frames * 1000ULL / kRate : p->av_dur;
+    unsigned long long pos = p->kind == kPcm ? (unsigned long long)p->pos * 1000ULL / kRate : p->av_pos_ms;
+    unsigned long long dur = p->kind == kPcm ? (unsigned long long)p->frames * 1000ULL / kRate : p->av_dur;
+    if (p->kind == kMp3 && p->mp3_rate) {
+      pos = p->mp3_samples * 1000ULL / (unsigned long long)p->mp3_rate;
+      dur = p->mp3_frames * (unsigned long long)p->mp3_spf * 1000ULL / (unsigned long long)p->mp3_rate;
+    }
     char durs[24];
     if (p->kind == kNone || (p->kind == kAv && dur == 0)) snprintf(durs, sizeof durs, "null");
     else snprintf(durs, sizeof durs, "%llu", dur);
