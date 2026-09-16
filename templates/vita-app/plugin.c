@@ -215,6 +215,12 @@ static int job_thread(SceSize args, void* argp) {
   return 0;
 }
 
+// Ends with sceKernelExitDeleteThread, never a return. A thread that has
+// ended stays allocated until it is deleted, and nothing else holds this
+// one's id: until 2026-09-16 every call leaked one, the receiver's audio
+// view polls four times a second, and after a few minutes
+// sceKernelCreateThread answered 0x8002450D to everyone -- the Dart VM
+// included, which aborted on "Could not start thread DartWorker".
 static int watchdog_thread(SceSize args, void* argp) {
   (void)args;
   Job* j = *(Job**)argp;
@@ -224,12 +230,14 @@ static int watchdog_thread(SceSize args, void* argp) {
     const int n = snprintf(err, sizeof err, "[\"timeout\",\"%s %s: no answer in 15 s\",null]", j->channel, j->method);
     fvita_log("plugin", "%s %s: no answer in 15 s, thread abandoned", j->channel, j->method);
     job_answer(j, err, (size_t)n);
-    return 0;  // the job's memory stays with the abandoned thread
+    // The job's memory stays with the abandoned thread.
+  } else {
+    sceKernelDeleteThread(j->thread);
+    free(j->body);
+    free(j->out);
+    free(j);
   }
-  sceKernelDeleteThread(j->thread);
-  free(j->body);
-  free(j->out);
-  free(j);
+  sceKernelExitDeleteThread(0);
   return 0;
 }
 

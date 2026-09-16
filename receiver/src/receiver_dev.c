@@ -1144,9 +1144,7 @@ static void after_delete(void) {
 // the status line, which the panel shows and `log` returns.
 static char g_deleting[16];
 
-static int delete_thread(SceSize args, void* argp) {
-  (void)args;
-  (void)argp;
+static void delete_run(void) {
   set_status("Deleting", "removing %s", g_deleting);
   note("delete %s", g_deleting);
   // -1: there is no socket to answer on from here. promoter_finish reports
@@ -1155,6 +1153,15 @@ static int delete_thread(SceSize args, void* argp) {
   promoter_finish(-1, "delete", scePromoterUtilityDeletePkg(g_deleting), NULL);
   forget_installed(g_deleting);
   after_delete();
+}
+
+// Ends by deleting itself: an ended thread stays allocated until someone
+// deletes it, and nothing here keeps the id (see plugin.c's watchdog).
+static int delete_thread(SceSize args, void* argp) {
+  (void)args;
+  (void)argp;
+  delete_run();
+  sceKernelExitDeleteThread(0);
   return 0;
 }
 
@@ -1279,9 +1286,7 @@ static void install_failed(const char* fmt, ...) {
   install_progress("failed", why, 0, 0);
 }
 
-static int install_thread(SceSize args, void* argp) {
-  (void)args;
-  (void)argp;
+static void install_run(void) {
   char err[160] = "";
   char titleid[16] = "";
   const char* vpk = g_install_vpk;
@@ -1301,12 +1306,12 @@ static int install_thread(SceSize args, void* argp) {
                   sizeof err) < 0) {
     install_failed("%s", err);
     g_install_busy = 0;
-    return 0;
+    return;
   }
   if (vpk_title_id(STAGE_DIR "/sce_sys/param.sfo", titleid, sizeof titleid) < 0) {
     install_failed("no title id in sce_sys/param.sfo");
     g_install_busy = 0;
-    return 0;
+    return;
   }
   // A vpk carrying the receiver's own id would replace the process that is
   // installing it; that route is tools/selfupdate-receiver.sh, from the host,
@@ -1314,7 +1319,7 @@ static int install_thread(SceSize args, void* argp) {
   if (strcmp(titleid, SELF_TITLEID) == 0) {
     install_failed("%s is this receiver; update it from the host", titleid);
     g_install_busy = 0;
-    return 0;
+    return;
   }
   set_status("Installing", "promoting %s", titleid);
   install_progress("header", titleid, 0, 0);
@@ -1323,13 +1328,13 @@ static int install_thread(SceSize args, void* argp) {
                      sizeof err) < 0) {
     install_failed("%s", err);
     g_install_busy = 0;
-    return 0;
+    return;
   }
   install_progress("promoting", titleid, 0, 0);
   if (!promoter_up(-1)) {
     install_failed("the promoter would not start");
     g_install_busy = 0;
-    return 0;
+    return;
   }
   note("promoterif %s %s", STAGE_DIR, titleid);
   const int res = promoter_finish(
@@ -1340,7 +1345,7 @@ static int install_thread(SceSize args, void* argp) {
     // title's header, 0x8010113D art that is not 8-bit indexed.
     install_failed("promote %s: 0x%08X", titleid, (unsigned)res);
     g_install_busy = 0;
-    return 0;
+    return;
   }
   // The shell reads the art out of ux0:app/<id>/sce_sys, not out of the
   // package, so it goes in after. A failure here leaves a working title
@@ -1355,6 +1360,13 @@ static int install_thread(SceSize args, void* argp) {
   set_status("Waiting", NULL);
   install_progress("done", titleid, 1, 1);
   g_install_busy = 0;
+}
+
+static int install_thread(SceSize args, void* argp) {
+  (void)args;
+  (void)argp;
+  install_run();
+  sceKernelExitDeleteThread(0);
   return 0;
 }
 
