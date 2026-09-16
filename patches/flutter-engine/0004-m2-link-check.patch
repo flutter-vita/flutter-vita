@@ -303,10 +303,10 @@ index 00000000..a5e0625d
 +}  // extern "C"
 diff --git a/engine/src/flutter/shell/platform/embedder/vita_embedder.cc b/engine/src/flutter/shell/platform/embedder/vita_embedder.cc
 new file mode 100644
-index 00000000..3e380f05
+index 00000000..7a9b0be4
 --- /dev/null
 +++ b/engine/src/flutter/shell/platform/embedder/vita_embedder.cc
-@@ -0,0 +1,4915 @@
+@@ -0,0 +1,4925 @@
 +// Copyright (c) 2026, the Flutter Authors. All rights reserved.
 +// Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
@@ -1521,7 +1521,7 @@ index 00000000..3e380f05
 +constexpr int kHudLabelY = 3;   // the label row's cell top; caps start a row in
 +constexpr int kHudValueY = 17;  // the value row's
 +constexpr int kHudPad = 8;      // the strip's side margins
-+constexpr int kHudGap = 20;     // between columns
++constexpr int kHudGap = 16;     // between columns
 +constexpr int kHudLabelAdvance = kHudLabelFontW + 1;  // labels are letter-spaced
 +constexpr int kHudValueAdvance = kHudValueFontW;
 +constexpr uint32_t kHudBack = 0xFF1B120Eu;   // A8B8G8R8: #0E121B, the receiver's panel
@@ -1531,16 +1531,25 @@ index 00000000..3e380f05
 +
 +// The columns. A label and a value each; the value is what HudUpdate
 +// rewrites. Right-aligned under each other, the block right-aligned in the
-+// strip, as the Dart strip lays them out.
++// strip, as the Dart strip lays them out. Each column is as wide as its
++// widest possible value, `chars` of them, so a number that grows a digit
++// moves nothing: the eye finds a column where it was.
 +constexpr int kHudColumns = 9;
 +struct HudColumn {
 +  const char* label;
++  int chars;  // the widest value, in value-font characters
 +  char value[24];
 +};
 +HudColumn g_hud_columns[kHudColumns] = {
-+    {"fps", "--"},         {"raster ms", "--"}, {"swap ms", "--"},
-+    {"gpu busy", "--"},    {"cpu cores %", "--"}, {"ram MB", "--"},
-+    {"cdram MB", "--"},    {"heap MB", "--"},   {"battery", "--"},
++    {"fps", 5, "--"},          // 120.0
++    {"raster ms", 5, "--"},    // 123.4
++    {"swap ms", 5, "--"},      // 123.4
++    {"gpu busy", 11, "--"},    // 100% 12.3ms
++    {"cpu cores %", 15, "--"}, // 100 100 100 100
++    {"ram MB", 9, "--"},       // 218 / 256
++    {"cdram MB", 9, "--"},     // 112 / 112
++    {"heap MB", 9, "--"},      // 160 / 160
++    {"battery", 11, "--"},     // 100% 30.4°C
 +};
 +// The left of the strip: which app this is, and the backend and engine
 +// under it. Filled once, at startup.
@@ -1631,7 +1640,7 @@ index 00000000..3e380f05
 +  int total = kHudGap * (kHudColumns - 1);
 +  for (int c = 0; c < kHudColumns; c++) {
 +    const int lw = HudTextWidth(g_hud_columns[c].label, kHudLabelAdvance);
-+    const int vw = HudTextWidth(g_hud_columns[c].value, kHudValueAdvance);
++    const int vw = g_hud_columns[c].chars * kHudValueAdvance;
 +    widths[c] = lw > vw ? lw : vw;
 +    total += widths[c];
 +  }
@@ -1841,7 +1850,7 @@ index 00000000..3e380f05
 +    col[3].label = "damage";
 +    std::snprintf(col[3].value, sizeof col[3].value, "%u%%", dmg_pct);
 +  }
-+  std::snprintf(col[4].value, sizeof col[4].value, "%u %u %u %u", cpu[0], cpu[1],
++  std::snprintf(col[4].value, sizeof col[4].value, "%3u %3u %3u %3u", cpu[0], cpu[1],
 +                cpu[2], cpu[3]);
 +  std::snprintf(col[5].value, sizeof col[5].value, "%u / %u",
 +                user_mb > free_mb ? user_mb - free_mb : 0, user_mb);
@@ -1889,13 +1898,14 @@ index 00000000..3e380f05
 +  g_hud_composing.store(false, std::memory_order_release);
 +}
 +
-+// The strip's left: the title id, then the backend and the engine's commit.
++// The strip's left: the title id and the engine's commit, then the backend.
++// Under 150 px, which is what the columns leave.
 +void HudTitle(const char* backend) {
 +  char self[16] = "";
 +  sceAppMgrAppParamGetString(0, 12, self, sizeof self);
-+  std::snprintf(g_hud_title, sizeof g_hud_title, "%s", self[0] != '\0' ? self : "flutter-vita");
-+  std::snprintf(g_hud_subtitle, sizeof g_hud_subtitle, "%s  %.8s", backend,
-+                flutter::GetFlutterEngineVersion());
++  std::snprintf(g_hud_title, sizeof g_hud_title, "%s  %.8s",
++                self[0] != '\0' ? self : "flutter-vita", flutter::GetFlutterEngineVersion());
++  std::snprintf(g_hud_subtitle, sizeof g_hud_subtitle, "%s", backend);
 +}
 +
 +// The software path: onto the display buffer, after the blit.

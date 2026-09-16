@@ -9,7 +9,7 @@ flutter          3.44.8
 framework_rev    058e0af2c2b57e369d905a03ac9748b0ebf543c6
 engine           058e0af2c2b57e369d905a03ac9748b0ebf543c6
 dart             d684a576a6aa954ae107a03b2b4e1d61c3bebe93
-archive_sha256   1c69777710f843ce302fd491f2137afc7bd4d61b7dbd2a65f03f4f9877a50fea
-pinned_at        2026-09-16T20:27:12Z
+archive_sha256   9473d9157c7d702b37518f0335552c5661ddad9a052213b1107db923411191f7
+pinned_at        2026-09-16T20:42:33Z
 pinned_from      out/artifacts/flutter-engine-vita-3.44.8
-reason           debug strip in the engine (frame hook), L+R+SELECT toggle, overlay in minimal mode, idle recompose
+reason           debug strip in the engine (frame hook), fixed columns, L+R+SELECT toggle, overlay in minimal mode
