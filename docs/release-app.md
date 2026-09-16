@@ -1,0 +1,92 @@
+# Release an app
+
+A release build is the same pipeline as a debug build with a different
+final link. What you hand your users is one `.vpk`.
+
+## 1. Build
+
+```sh
+flutter-vita build ~/projects/my_app --release
+```
+
+The `.vpk` lands in `~/projects/my_app/build/vita/`. Compared with the
+default build, `--release` leaves out:
+
+- the dev server (the socket on port 1339 that reads and writes the card;
+  nothing a shipped app should carry),
+- the debug strip,
+- the fall-back to the receiver on `abort` and on a fault, and the UI-thread
+  watchdog: a user's console has no receiver to fall back to,
+- the crash supervisor.
+
+The Dart side is the same in both: AOT, `dart.vm.product=true`, the bundle
+built with `--release`. There is no JIT build to choose between.
+
+## 2. The title id and the name
+
+Pick a title id your app keeps. Nine characters, four letters and five
+digits; the letters are yours to choose, and the id must not collide with
+another homebrew title on the user's console. Put it in `pubspec.yaml`:
+
+```yaml
+vita:
+  title_id: MYAP00001
+  name: My App
+```
+
+A user who installs a new version over the old one keeps the app's data
+under `ux0:data/` and its save data, as with any Vita title. Changing the
+id makes a second app.
+
+## 3. LiveArea art
+
+The LiveArea bubble wants three PNGs, each an 8-bit indexed (palette)
+image at a fixed size; the console refuses the install for anything else,
+a 32-bit icon most of all:
+
+| File | Size | Where it shows |
+|---|---|---|
+| `icon0.png` | 128 x 128 | The bubble on the home screen |
+| `bg0.png` | 840 x 500 | The background of the open bubble |
+| `startup.png` | 280 x 158 | The start button's image |
+
+Every app ships the set in `templates/vita-app/livearea/` unless you
+replace it. Put yours in a directory with those three names plus the
+`template.xml` from the template's set, and name it in `pubspec.yaml`:
+
+```yaml
+vita:
+  title_id: MYAP00001
+  name: My App
+  livearea: vita/livearea      # relative to the app
+```
+
+(or `--livearea DIR` on `tools/build-vita-app.sh`). The build checks the
+three files with `tools/check-livearea-art.py` and stops on a wrong size or
+format; `tools/make-livearea.py` is the script that drew the default set
+and a starting point for your own.
+
+## 4. What the user needs
+
+- A console with a homebrew enabler; the `.vpk` installs from VitaShell like
+  any other.
+- `ur0:data/libshacccg.suprx`, the shader compiler. Most consoles that run
+  homebrew 3D already have it; say so on your download page. An app on a
+  console without it starts and shows nothing.
+- Nothing else: no runtime, no plugin, no second title.
+
+## 5. Notices
+
+The `.vpk` contains the Flutter engine, Skia, ICU, the Dart runtime and
+the libraries they bring. Their licenses are BSD, MIT, Apache 2.0 and the
+ICU license; [NOTICE](../NOTICE) lists them with their texts, and a
+released app should carry that file or its contents where the user can
+read it (an About screen, the download page). Nothing in the binary is
+LGPL: the GLES2 layer under Skia is this project's own
+([ADR-0018](adr/0018-the-lgpl-obligation-in-every-vpk.md)), and the shader
+compiler is Sony's module on the console, not in your `.vpk`.
+
+## 6. Where to publish
+
+VitaDB is where homebrew goes. Your entry wants the `.vpk`, the art, and a
+line about the shader compiler.

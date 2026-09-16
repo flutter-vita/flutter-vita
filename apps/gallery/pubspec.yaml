@@ -43,7 +43,8 @@ dependencies:
   camera: ^0.11.0
   camera_vita:
     path: ../../packages/camera_vita
-  # The strip above the tabs, and the L+R+SELECT chord that hides it.
+  # The strip above the tabs. (The engine's own strip, L+R+SELECT, starts
+  # hidden in an app that carries this one.)
   vita_debug_strip:
     path: ../../packages/vita_debug_strip
 

@@ -98,6 +98,27 @@ through `waitChord`, two threads every 14 s; gallery 64 has the fix.
 Rule for every thread in this tree: whoever creates it deletes it, or it
 deletes itself on the way out.
 
+## The engine's debug strip
+
+Later the same day the strip moved into the engine, so every debug build
+has it with no code of its own (`3e68221`, `094abf8`). Under GL the
+embedder could not draw: Skia caches the context's state, and the frame is
+not on the CPU. `gles2/` gained `fvgl_set_frame_hook`, a function its
+display thread runs with each frame the GPU has finished, before the flip;
+the embedder composes the strip into ordinary memory every twenty frames
+(RobotoMono rasterised by `tools/gen-hud-font.py`) and the hook copies 34
+rows into the frame. On the gallery at 60 fps the composition costs 73 to
+78 µs a frame amortised (`hud` on the FRAMES line, log of build 70); the
+copy runs on the display thread and is not in that figure.
+
+Two things the first builds got wrong. An idle screen presents nothing,
+so `overlay on` on the receiver drew nothing until some frame came: the
+main loop now recomposes once a second when no frames flow and asks the
+engine for one, and the receiver shows `fps 0.0` with live memory a second
+after the toggle. And the columns moved as digits came and went; each is
+now as wide as its widest value. The green 5x7 box is gone from both
+paths.
+
 ## The Vita's Music app, measured and not used
 
 Two facts, for the record: `sceMusicExportFromFile` takes our files

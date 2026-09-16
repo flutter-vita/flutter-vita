@@ -6,6 +6,8 @@
 #
 #   --title-id ID     nine characters; see resolution order below
 #   --name "Name"     LiveArea display name
+#   --livearea DIR    icon0.png, bg0.png, startup.png, template.xml; default
+#                     the template's set (docs/release-app.md)
 #   --engine DIR      unpacked flutter-engine-vita-<version>/
 #   --flutter DIR     Flutter SDK, default $HOME/fvm/versions/<pinned>
 #   --out DIR         default <app-dir>/build/vita
@@ -24,6 +26,7 @@
 #     title_id: FVTA00003        # optional; derived from the package name
 #     hardware_checks: true      # optional; the gallery's Hardware tab (hardware.c)
 #     name: My App               # optional; defaults to the package name
+#     livearea: vita/livearea    # optional; the app's own art, relative to the app
 #
 # Title id resolution: --title-id, then pubspec vita.title_id, then a value
 # derived from the package name if a vita: block exists, then FVTA00002 -- the
@@ -69,6 +72,7 @@ while [ $# -gt 0 ]; do
   case "$1" in
     --title-id) TITLE_ID="$2"; shift 2 ;;
     --name)     APP_NAME="$2"; shift 2 ;;
+    --livearea) LIVEAREA_DIR="$(cd "$2" && pwd)"; shift 2 ;;
     --engine)   ENGINE_DIR="$2"; shift 2 ;;
     --flutter)  FLUTTER_DIR="$2"; shift 2 ;;
     --out)      OUT_DIR="$2"; shift 2 ;;
@@ -148,6 +152,10 @@ if grep -q '^vita:[[:space:]]*$' "$APP_DIR/pubspec.yaml"; then HAS_VITA_BLOCK=1;
 # other app does.
 HARDWARE_CHECKS="OFF"
 [ "$(vita_key hardware_checks)" = "true" ] && HARDWARE_CHECKS="ON"
+# The app's own LiveArea art, relative to the app; the template's set otherwise.
+if [ -z "${LIVEAREA_DIR:-}" ] && [ -n "$(vita_key livearea)" ]; then
+  LIVEAREA_DIR="$(cd "$APP_DIR/$(vita_key livearea)" && pwd)"
+fi
 
 # The package name and the display name are different things and only one of
 # them is safe in a path. `vita.name: Counter Demo` is correct as a LiveArea
@@ -368,6 +376,7 @@ cmake -S "${FLUTTER_VITA_TEMPLATE:-$ROOT/templates/vita-app}" -B "$OUT_DIR/cmake
   -DHARDWARE_CHECKS="$HARDWARE_CHECKS" \
   -DVITA_PLUGINS="$VITA_PLUGINS" \
   -DGLES2_DIR="$ROOT/gles2" \
+  ${LIVEAREA_DIR:+-DLIVEAREA_DIR="$LIVEAREA_DIR"} \
   -DTOOLS_DIR="$ROOT/tools" >/dev/null
 cmake --build "$OUT_DIR/cmake" -j"$(getconf _NPROCESSORS_ONLN 2>/dev/null || echo 4)"
 

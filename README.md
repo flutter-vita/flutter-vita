@@ -1,10 +1,8 @@
-# flutter-vita
+# Flutter for the PlayStation Vita
 
-Flutter applications run on the PlayStation Vita.
-
-This is not an emulator, and it is not a new implementation. This is the Flutter
-engine and the Flutter framework. They are compiled for `arm-vita-eabi`. They
-draw with the GPU of the Vita. Your `main.dart` file does not change.
+Flutter apps on the PS Vita. This is the Flutter engine and the Flutter
+framework, compiled for `arm-vita-eabi` and drawing through the console's
+GPU. Your `main.dart` does not change.
 
 ```
 Flutter framework (Dart AOT)
@@ -16,166 +14,118 @@ GLES2 -> fvita_gles2 (gles2/, this repo) -> sceGxm
 PowerVR SGX543MP4+
 ```
 
-## Status
+*PlayStation and PS Vita are trademarks of Sony Interactive Entertainment.
+This project is not affiliated with or endorsed by Sony.*
 
-Flutter applications run on real hardware. Route transitions run at 60 frames
-each second. There is no hot reload, and there will be none. A list that builds
-again in each frame is too slow.
+## Supported devices
 
-| Item | Detail |
-|---|---|
-| Flutter version | 3.44.8. This version is fixed. |
-| Consoles | PS Vita 1000 and PS Vita 2000, with HENkaku |
-| Hot reload | No. This port uses AOT only. See [No hot reload](#no-hot-reload). |
-| Renderer | Skia on GLES2, through `fvita_gles2`, this project's own GLES2 over `sceGxm` ([ADR-0019](docs/adr/0019-gles2-over-gxm-written-here.md)). A software renderer is also available, but it is 6 to 18 times more slow. |
+- PS Vita 1000 and PS Vita 2000 with a homebrew enabler (HENkaku or
+  h-encore²), firmware 3.60 to 3.74.
+- The console needs Sony's shader compiler, `ur0:data/libshacccg.suprx`.
+  [Console setup](docs/configure-console.md) says how to check for it.
+- Flutter 3.44.8, pinned. The engine is prebuilt for this version and the
+  framework must match it ([VERSIONS.md](VERSIONS.md)).
+- The Vita3K emulator is not a supported target
+  ([why](docs/vita3k-as-a-target.md)).
 
-One person made this port. That is the wrong number of people, and this is why
-the repository is now open. There are sharp edges. We write them down. We do not
-hide them.
+## Installation
 
-## What you must have
+- [macOS](docs/install-macos.md)
+- [Linux](docs/install-linux.md)
+- Windows is not supported yet.
 
-- A PS Vita with HENkaku. Connect it to the same network as your computer.
-- [VitaSDK](https://vitasdk.org). Put its location in `$VITASDK`.
-- Flutter 3.44.8. Do not use a different version. The engine is fixed to
-  prebuilt 32-bit ARM binaries, and the framework must agree with them.
-- macOS or Linux. Windows is not available yet.
+## Usage
 
-## How to start
+`flutter-vita` is the command for building, installing and driving apps.
+Point it at any Flutter app directory.
 
-Get the repository and apply the patches:
+```sh
+# Check the toolchain and find the console.
+flutter-vita doctor
 
-```bash
-git clone https://github.com/resashkin/flutter-vita
-cd flutter-vita
-./tools/apply-patches.sh --apply
+# Build, install and run an app; the log follows.
+flutter-vita run apps/gallery
+
+# Build a .vpk without the dev server and the debug strip.
+flutter-vita build my_app --release
+
+# While an app runs.
+flutter-vita logs
+flutter-vita screenshot out.png
+flutter-vita tap 480 272
 ```
 
-Install the receiver on the console one time. This is the only step that needs
-the console's address, and it needs it once: open VitaShell, press SELECT to
-start its FTP server, and give this script the address it shows.
+See [Commands](docs/commands.md) for the full list, and
+[Get started](docs/get-started.md) for the first run.
 
-```bash
-./tools/build-receiver.sh
-./tools/bootstrap-receiver.sh 192.168.1.23
-```
+## Docs
 
-It sends the `.vpk` over, you install it from VitaShell, and after that the
-console is `flutter-vita.local` and the network does everything.
+### Vita basics
 
-Then use these commands:
+- [Console setup](docs/configure-console.md): homebrew, the network, the
+  shader compiler, and the receiver that stays on the console.
+- [Install the toolchain on macOS](docs/install-macos.md) or
+  [on Linux](docs/install-linux.md)
+- [Glossary](docs/glossary.md): the words the Vita side and the Flutter side
+  use for the same things.
 
-```bash
-flutter-vita doctor              # examine the toolchain and find the console
-flutter-vita run apps/gallery    # build, install, start, and show the log
-flutter-vita screenshot out.png  # get an image of the screen
-flutter-vita tap 480 272         # send a touch event
-```
+### App development
 
-The CLI operates from a source checkout. Installation with
-`pub global activate` is the plan, but it is not available yet.
+- [Get started](docs/get-started.md)
+- [Commands](docs/commands.md)
+- [Debug an app](docs/debug-app.md): the debug strip, the log, screenshots,
+  crash dumps.
+- [Writing Flutter that runs on a Vita](docs/writing-flutter-that-runs-on-a-vita.md):
+  what the benchmarks found, and what to do about it in app code.
+- [Limitations](docs/limitations.md): no hot reload, fonts, plugins, memory.
+- [Release an app](docs/release-app.md): the release build, LiveArea art,
+  what to hand your users.
 
-## How the loop operates
+### Platform integration
 
-There is no debug cable and no file server. The **receiver** is a small Flutter
-application. It stays on the console and holds a TCP port. All of these
-operations go through it: installation, start, log collection, screenshots,
-crash dumps, and touch events.
+- [Develop a plugin](docs/develop-plugin.md): a C half beside a Dart package,
+  compiled into the app.
+- [Available plugins](packages/): Vita implementations of `path_provider`,
+  `shared_preferences`, `url_launcher`, `battery_plus`, `sensors_plus`,
+  `device_info_plus`, `connectivity_plus`, `audioplayers`, `record`,
+  `camera`, `file_picker`, `file_selector`.
+- [Architecture decisions](docs/adr/README.md): why each part is the way it
+  is, and what would change it.
 
-To install a title, the receiver calls `ScePromoterUtil`. This is a system
-service, so a new title identifier costs no manual step and does not need
-VitaShell.
+### Miscellaneous
 
-The receiver cannot replace itself. The directory of a title that operates is a
-read-only mount. Thus a second application of 50 KB does that write. It is
-called the **updater**. It writes the new receiver, and then it gives the
-console back.
+- [Measurements](docs/results/): every run that changed a decision, with
+  numbers and screenshots.
+- [The GLES2 layer's progress](docs/gles2-progress.md)
+- [Roadmap](docs/roadmap-capabilities.md)
+- [Development environment](docs/dev-environment.md), for people who rebuild
+  the engine or the patched SDKs.
 
-A full installation of an application of 15 MB takes approximately 35 seconds.
-A change to one line takes approximately 6 seconds.
+## Showcases
 
-## What is quick and what is slow
+- [`apps/gallery`](apps/gallery): the panel this port is measured with. Tabs
+  for widgets, benchmark scenes, conformance probes, hardware checks.
+- [`apps/test-apps`](apps/test-apps): apps we did not write, run as found:
+  Wonderous, LocalSend, a manga reader and a journal, pinned by commit in
+  [`manifest.txt`](apps/test-apps/manifest.txt).
+  [The run](docs/results/test-apps-fvita-gles2-2026-09-13.md).
+- [`receiver/`](receiver): the deploy target on the console is itself a
+  Flutter app.
 
-These are measurements from real hardware. There are 18 scenes. Use
-`tools/bench.sh` to do them again.
+## Issues
 
-| What | Measurement |
-|---|---|
-| Route transitions | 60 frames each second. The median frame is 16.67 ms. |
-| Backdrop blur | 100 ms for each frame. The rasteriser is the limit. |
-| A list that builds again in each frame | 92.5 ms of Dart build, against 8.7 ms of raster |
-| GPU against software | 18 times more quick for blur, 15 times for route transitions. The GPU is never more slow. |
+Open an issue on GitHub. The most useful report is an app we did not write
+that fails: its name, its commit, and the log, screenshot or crash dump.
+[CONTRIBUTING.md](CONTRIBUTING.md) says what to attach for each kind of
+failure.
 
-The pattern is the same in most scenes. The GPU is quick enough, so the Dart
-build is usually what you feel. Examine the build first, not the paint.
+## Contribution
 
-## What is not available
+Read [CONTRIBUTING.md](CONTRIBUTING.md). Decisions live in
+[docs/adr/](docs/adr/README.md); a change that reverses one comes with a new
+record.
 
-- **Hot reload.** This is permanent. See below.
-- **Windows** as a host.
-- **Fonts your app does not ship.** `app0:/fonts` holds Roboto and Roboto Mono.
-  Anything else, emoji included, is declared by your app under `fonts:` in
-  `pubspec.yaml`, the same as on every other Flutter target. Roboto stops at
-  U+FFFD, so an app that shows an emoji and declares no font for it draws an
-  empty box.
-- Most plugins. `path_provider`, `shared_preferences`, `url_launcher` and a file
-  picker have Vita implementations in `packages/`. Other plugins that use native
-  code must be linked statically, because this platform has no `dlopen`. See
-  [ADR-0013](docs/adr/0013-ffi-needs-static-linking.md).
-- Audio.
-- Code that needs 64 bits, or more than 512 MB of RAM.
+## License
 
-### No hot reload
-
-Hot reload needs a JIT. This port uses AOT only.
-
-The usual explanation is not correct: the Vita **can** make pages executable,
-and it does this with no kernel plugin. The true reasons are memory, and the
-size of an engine in JIT mode. The console has 512 MB of RAM, and it shares that
-RAM with the operating system. [ADR-0001](docs/adr/0001-aot-only-no-jit.md) has
-the full argument.
-
-You get a quick installation in its place. A change to code only takes
-approximately 6 seconds, and the console goes back to your application without
-help.
-
-## Structure of the repository
-
-| Directory | What it holds |
-|---|---|
-| `cli/` | The `flutter-vita` command |
-| `receiver/` | The receiver for the console, and the updater that replaces it |
-| `templates/vita-app/` | The C entry point, the crash supervisor, and the CMake files. Each application is built from these. |
-| `packages/` | Vita implementations of federated plugins |
-| `apps/` | `conformance` measures what operates. `gallery` shows how it looks. |
-| `patches/` | The Vita patch series for Dart, Skia, and the engine |
-| `tools/` | Build, install, measure, and examine crashes |
-| `docs/adr/` | Why each decision was made, and what would change it |
-
-## Why the port is like this
-
-Each decision has a record in [docs/adr/](docs/adr/README.md). It gives the
-forces behind the decision, and what must change for it to be examined again.
-
-Start with these three:
-
-- [ADR-0003](docs/adr/0003-software-rendering-first.md),
-  [ADR-0014](docs/adr/0014-gpu-backend-via-vitagl.md) and
-  [ADR-0019](docs/adr/0019-gles2-over-gxm-written-here.md): why the renderer
-  began in software, why it moved to the GPU, and why the GLES2 under it is
-  written here.
-- [ADR-0016](docs/adr/0016-the-receiver-becomes-a-flutter-app.md): why the
-  receiver is a Flutter application and not a small C program.
-- [ADR-0002](docs/adr/0002-skia-not-impeller.md): why Skia and not Impeller.
-
-## How to help
-
-Please help. Read [CONTRIBUTING.md](CONTRIBUTING.md).
-
-The most useful help is this: operate a Flutter application that we did not
-write, and tell us what failed.
-
-## Licence
-
-BSD 3-Clause. Read [LICENSE](LICENSE). Read [NOTICE](NOTICE) for the components
-that come from other projects.
+BSD 3-Clause, see [LICENSE](LICENSE). [NOTICE](NOTICE) lists the components
+that come from other projects and their licenses.

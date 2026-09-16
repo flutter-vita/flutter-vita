@@ -1,5 +1,24 @@
 # Docs
 
+## For app developers
+
+The pages the [README](../README.md) links, in the order a new developer
+meets them.
+
+| Page | What it is |
+|---|---|
+| [install-macos.md](install-macos.md), [install-linux.md](install-linux.md) | The toolchain: VitaSDK, Flutter 3.44.8, the engine artifact |
+| [configure-console.md](configure-console.md) | Homebrew, the shader compiler, the network, the receiver, the two button chords |
+| [get-started.md](get-started.md) | The first run: the gallery, then your own app |
+| [commands.md](commands.md) | `flutter-vita`, the scripts under it, the app's own port |
+| [debug-app.md](debug-app.md) | The debug strip column by column, the log, screenshots, crash dumps, a console that stops answering |
+| [limitations.md](limitations.md) | No hot reload, fonts, plugins, memory, platform identity |
+| [release-app.md](release-app.md) | `--release`, the title id, LiveArea art, notices |
+| [develop-plugin.md](develop-plugin.md) | A Vita half for a plugin: the C file, the CMake fragment, the Dart side |
+| [writing-flutter-that-runs-on-a-vita.md](writing-flutter-that-runs-on-a-vita.md) | What the benchmarks found, and what to do in app code |
+
+## For people working on the port
+
 | Document | What it is |
 |---|---|
 | **[HANDOFF.md](HANDOFF.md)** | The machine setup, the build pipeline, and every gotcha that cost time. **Its status section is from 2026-08-08 and predates Flutter running at all** — read "Where the project stands" below instead. |
@@ -27,7 +46,7 @@
 | [phase-7-tls.md](phase-7-tls.md) | TLS, and what it cost |
 | [the-profiler-we-do-not-have.md](the-profiler-we-do-not-have.md) | Why there is no observatory, and what stands in for one |
 | [HANDOFF-nondeterministic-crash.md](HANDOFF-nondeterministic-crash.md) | The emutls crash that cost two sessions, written up so it is not re-derived |
-| [../README.md](../README.md) | What the public sees. Deliberately links nothing in here |
+| [../README.md](../README.md) | What the public sees; links the developer pages above |
 | [../CONTRIBUTING.md](../CONTRIBUTING.md) | How someone else helps |
 
 ## Where the project stands
