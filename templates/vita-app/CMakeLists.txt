@@ -17,6 +17,8 @@
 #   RELEASE         ON to link release.c instead of the dev loop
 #   GLES2_DIR       the fvita_gles2 source, built into the app (ADR-0019);
 #                   default ../../engine/gles2 from this file
+#   EMBEDDER_DIR    the Vita embedder source (flutter-vita-embedder), built
+#                   into the app; default ../../engine/embedder from this file
 cmake_minimum_required(VERSION 3.16)
 
 if(NOT DEFINED CMAKE_TOOLCHAIN_FILE)
@@ -65,20 +67,33 @@ if(NOT EXISTS "${ENGINE_LIB}")
     "with tools/package-engine.sh.")
 endif()
 
+# The embedder: main(), and everything between the engine and the console.
+# Its own repository, flutter-vita/flutter-vita-embedder, a submodule of this
+# one at engine/embedder; compiled into every app against the archive's
+# include/. An OBJECT library, so main() and the weak hooks reach the link
+# line whether or not anything references them.
+set(EMBEDDER_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../../engine/embedder" CACHE PATH
+    "the Vita embedder source")
+if(NOT EXISTS "${EMBEDDER_DIR}/CMakeLists.txt")
+  message(FATAL_ERROR
+    "No embedder at ${EMBEDDER_DIR}.\n"
+    "It is a git submodule: git submodule update --init")
+endif()
+
 # -g so vita-parse-core can symbolicate the app's own frames. The engine's are
 # already gone: the packaged archive is stripped of debug info, which is what
 # takes it from 1.1 GB to 63 MB.
 set(CMAKE_C_FLAGS   "${CMAKE_C_FLAGS} -std=gnu11 -Wall -O2 -g")
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=gnu++20 -Wall -O2 -g")
 
-# The embedder, with main(), is inside the archive. The dev server it calls into
-# is not: five undefined symbols the app must satisfy, shipped as source so a
+# The dev server the embedder calls into is five symbols the app must satisfy,
+# compiled from the embedder repository's source in a debug build so a
 # shipping app can link a stub instead. bailout.c is the other half and drops
 # with it; it overrides abort() and __assert_func(), which works only because
 # both are undefined in the engine archive.
 #
-# The debug strip lives inside the archive, so it is switched off by *adding* a
-# strong definition rather than leaving a file out:
+# The debug strip is compiled into the embedder, so it is switched off by
+# *adding* a strong definition rather than leaving a file out:
 #
 #   echo 'int flutter_vita_debug_overlay = 0;' > shipping.c
 #
@@ -109,7 +124,7 @@ if(RELEASE)
   set(DEV_LOOP_SOURCES ${CMAKE_CURRENT_SOURCE_DIR}/release.c)
 else()
   set(DEV_LOOP_SOURCES
-    ${ENGINE_DIR}/src/devserver.c
+    ${EMBEDDER_DIR}/src/devserver.c
     ${CMAKE_CURRENT_SOURCE_DIR}/bailout.c
     ${CMAKE_CURRENT_SOURCE_DIR}/waits.c)
   # waits.c only works if the blocking calls go through it. See its header.
@@ -136,6 +151,10 @@ set(GL_PLATFORM_SOURCE ${CMAKE_CURRENT_SOURCE_DIR}/gl_gles2.c)
 set(GL_LIBS fvita_gles2 ${FVITA_GLES2_LIBS})
 message(STATUS "GL: fvita_gles2 from ${GLES2_DIR}")
 
+set(FLUTTER_VITA_ENGINE_INCLUDE "${ENGINE_DIR}/include")
+add_subdirectory("${EMBEDDER_DIR}" flutter_vita_embedder)
+message(STATUS "embedder: ${EMBEDDER_DIR}")
+
 add_executable(${PROJECT_NAME}
   ${SNAPSHOT_S}
   ${DEV_LOOP_SOURCES}
@@ -157,10 +176,9 @@ add_executable(${PROJECT_NAME}
   ${CMAKE_CURRENT_SOURCE_DIR}/plugin.c
   ${PLUGIN_SOURCES}
 )
-target_include_directories(${PROJECT_NAME} PRIVATE
-  ${ENGINE_DIR}/src ${ENGINE_DIR}/include
-  # fvita_plugin.h, for the plugins' sources.
-  ${CMAKE_CURRENT_SOURCE_DIR})
+# fvita_plugin.h, for the plugins' sources. flutter_vita_gl.h and devserver.h
+# arrive with the embedder target below.
+target_include_directories(${PROJECT_NAME} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 # For EXTRA_SOURCES to be configured from the outside -- the receiver builds
 # twice, once into its real slot and once into a scratch one on a different
 # port, and the difference is two defines rather than two source trees.
@@ -195,6 +213,9 @@ target_link_options(${PROJECT_NAME} PRIVATE
 )
 
 target_link_libraries(${PROJECT_NAME}
+  # The embedder's objects, main() among them, and its include/.
+  flutter_vita_embedder
+
   # --whole-archive, and this is load-bearing rather than cautious. The engine
   # relies on static initialisers in translation units nothing references by
   # symbol; ordinary archive semantics pull in only members that resolve an

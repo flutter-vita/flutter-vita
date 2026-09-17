@@ -57,20 +57,23 @@ python3 -m pip install pillow
 ## 4. This repository
 
 ```sh
-git clone https://github.com/resashkin/flutter-vita
+git clone --recurse-submodules https://github.com/resashkin/flutter-vita
 cd flutter-vita
 ```
 
-Building apps needs nothing from the vendored Dart and Flutter trees. Only
-an engine rebuild does; `./tools/apply-patches.sh --apply` puts the Vita
-patch series into them, and `--verify` checks it is in place.
+`--recurse-submodules` brings the embedder, `engine/embedder`, which every
+app build compiles; after a plain clone, `git submodule update --init`
+does the same. Building apps needs nothing from the vendored Dart and
+Flutter trees. Only an engine rebuild does; `./tools/apply-patches.sh
+--apply` puts the Vita patch series into them, and `--verify` checks it is
+in place.
 
 ## 5. The engine artifact
 
 The prebuilt engine is a tarball, `flutter-engine-vita-3.44.8.tar.gz`,
 unpacked to `out/artifacts/flutter-engine-vita-3.44.8/`: the engine
-archive, `gen_snapshot` for this host, the two headers and the dev server's
-source. Take it from the project's releases once one is published; until
+archive, `gen_snapshot` for this host, the headers the embedder includes
+and the data files. Take it from the fork's releases once one is published; until
 then, build it with [dev-environment.md](dev-environment.md) (a 12 GB
 checkout and about thirty minutes). `FLUTTER_VITA_ENGINE` points the tools
 at an artifact somewhere else.
@@ -81,9 +84,9 @@ at an artifact somewhere else.
 ./cli/flutter-vita doctor
 ```
 
-`doctor` checks `VITASDK`, the engine artifact, `gen_snapshot` for this
-host, the Flutter SDK and its patched product SDK, and then looks for a
-console on the network. Every line it prints as `--` comes with the fix.
+`doctor` checks `VITASDK`, the engine artifact, the embedder submodule,
+`gen_snapshot` for this host, the Flutter SDK and its patched product SDK,
+and then looks for a console on the network. Every line it prints as `--` comes with the fix.
 
 Put `cli/` on your `PATH` to call it as `flutter-vita`. Installation with
 `pub global activate` is planned and not there yet.

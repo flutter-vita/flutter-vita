@@ -49,12 +49,17 @@ endif()
 # ADR-0005 option A: the snapshot is assembled and linked in, rather than loaded
 # at runtime. This is what gives .text read-execute and .bss read-write -- the
 # split the VM domain cannot express, and the reason option B failed.
+# The dev server was written here and moved to the embedder's repository
+# (engine/embedder, a submodule) when every app started compiling it from
+# there; this experiment builds it from the same place.
+set(EMBEDDER_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../../engine/embedder")
 add_executable(${PROJECT_NAME}
   src/main.c
-  src/devserver.c
+  ${EMBEDDER_DIR}/src/devserver.c
   ${SNAPSHOT_S}
   ${VITA_SAMPLES_COMMON}/debugScreen.c
 )
+target_include_directories(${PROJECT_NAME} PRIVATE ${EMBEDDER_DIR}/include)
 
 # Link as C++ even though our own sources are C. Dart is built -fno-exceptions,
 # but ICU is not: its objects carry exception tables referencing

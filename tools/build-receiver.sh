@@ -69,7 +69,22 @@ if [ "$WANT" != "$HAVE" ]; then
   echo "   Bumping is deliberate: ./tools/pin-receiver-engine.sh --reason '...'" >&2
   exit 1
 fi
-echo "==> pinned engine $(grep -m1 '^flutter ' "$PIN" | awk '{print $2}') ($(echo "$HAVE" | cut -c1-12))"
+# The embedder pinned beside it, checked the same way (see the pin script).
+WANT_EMBEDDER="$(grep -m1 '^embedder_sha256 ' "$PIN" | awk '{print $2}')"
+[ -d "$ENGINE/embedder" ] || {
+  echo "!! the pinned tree has no embedder/. Re-pin: ./tools/pin-receiver-engine.sh --reason '...'" >&2
+  exit 1
+}
+HAVE_EMBEDDER="$(cd "$ENGINE/embedder" && find CMakeLists.txt src include -type f | LC_ALL=C sort \
+  | xargs shasum -a 256 | shasum -a 256 | cut -d' ' -f1)"
+if [ "$WANT_EMBEDDER" != "$HAVE_EMBEDDER" ]; then
+  echo "!! the pinned embedder does not match the pin." >&2
+  echo "   $PIN says  $WANT_EMBEDDER" >&2
+  echo "   $ENGINE/embedder has $HAVE_EMBEDDER" >&2
+  echo "   Bumping is deliberate: ./tools/pin-receiver-engine.sh --reason '...'" >&2
+  exit 1
+fi
+echo "==> pinned engine $(grep -m1 '^flutter ' "$PIN" | awk '{print $2}') ($(echo "$HAVE" | cut -c1-12)), embedder $(grep -m1 '^embedder ' "$PIN" | awk '{print $2}')"
 
 # --------------------------------------------------------------- build_info
 #
@@ -93,6 +108,7 @@ EOF
 echo "==> $NAME [$TITLE_ID] on port $PORT"
 exec "$HERE/build-vita-app.sh" "$ROOT/receiver/app" \
   --engine "$ENGINE" \
+  --embedder "$ENGINE/embedder" \
   --title-id "$TITLE_ID" \
   --name "$NAME" \
   --extra-source "$ROOT/receiver/src/receiver_dev.c" \

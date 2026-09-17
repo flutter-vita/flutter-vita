@@ -1,0 +1,3 @@
+[submodule "engine/embedder"]
+	path = engine/embedder
+	url = https://github.com/flutter-vita/flutter-vita-embedder.git

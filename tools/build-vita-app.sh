@@ -9,6 +9,8 @@
 #   --livearea DIR    icon0.png, bg0.png, startup.png, template.xml; default
 #                     the template's set (docs/release-app.md)
 #   --engine DIR      unpacked flutter-engine-vita-<version>/
+#   --embedder DIR    the Vita embedder source; default engine/embedder,
+#                     the flutter-vita-embedder submodule
 #   --flutter DIR     Flutter SDK, default $HOME/fvm/versions/<pinned>
 #   --out DIR         default <app-dir>/build/vita
 #   --entry-point F   default lib/main.dart; real apps use flavors
@@ -45,6 +47,8 @@ APP_DIR=""
 TITLE_ID=""
 APP_NAME=""
 ENGINE_DIR="${FLUTTER_VITA_ENGINE:-$ROOT/out/artifacts/flutter-engine-vita-$FLUTTER_PIN}"
+# The embedder, compiled into every app: the flutter-vita-embedder submodule.
+EMBEDDER_DIR="${FLUTTER_VITA_EMBEDDER:-$ROOT/engine/embedder}"
 FLUTTER_DIR="$HOME/fvm/versions/$FLUTTER_PIN"
 OUT_DIR=""
 # Flavors are the norm outside sample apps: the entry point is lib/main_prod.dart
@@ -74,6 +78,7 @@ while [ $# -gt 0 ]; do
     --name)     APP_NAME="$2"; shift 2 ;;
     --livearea) LIVEAREA_DIR="$(cd "$2" && pwd)"; shift 2 ;;
     --engine)   ENGINE_DIR="$2"; shift 2 ;;
+    --embedder) EMBEDDER_DIR="$2"; shift 2 ;;
     --flutter)  FLUTTER_DIR="$2"; shift 2 ;;
     --out)      OUT_DIR="$2"; shift 2 ;;
     --entry-point) ENTRY_POINT="$2"; shift 2 ;;
@@ -376,6 +381,7 @@ cmake -S "${FLUTTER_VITA_TEMPLATE:-$ROOT/templates/vita-app}" -B "$OUT_DIR/cmake
   -DHARDWARE_CHECKS="$HARDWARE_CHECKS" \
   -DVITA_PLUGINS="$VITA_PLUGINS" \
   -DGLES2_DIR="$ROOT/engine/gles2" \
+  -DEMBEDDER_DIR="$EMBEDDER_DIR" \
   ${LIVEAREA_DIR:+-DLIVEAREA_DIR="$LIVEAREA_DIR"} \
   -DTOOLS_DIR="$ROOT/tools" >/dev/null
 cmake --build "$OUT_DIR/cmake" -j"$(getconf _NPROCESSORS_ONLN 2>/dev/null || echo 4)"

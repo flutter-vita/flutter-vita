@@ -111,6 +111,16 @@ Future<int> _doctor(Map<String, String> opts) async {
       File('$engine/lib/libflutter_engine_vita.a').existsSync(),
       'unpack flutter-engine-vita-*.tar.gz, or run tools/package-engine.sh');
 
+  // The embedder is a submodule, and a plain clone leaves it empty; the
+  // build's own error for that is a CMake message three steps in.
+  final root = devRoot;
+  if (root != null) {
+    check(
+        'embedder submodule',
+        File('$root/engine/embedder/CMakeLists.txt').existsSync(),
+        'engine/embedder is empty: git submodule update --init');
+  }
+
   final host = '${_hostOs()}-${_arch()}';
   check(
       'gen_snapshot for $host',

@@ -106,7 +106,7 @@ embedder could not draw: Skia caches the context's state, and the frame is
 not on the CPU. `gles2/` gained `fvgl_set_frame_hook`, a function its
 display thread runs with each frame the GPU has finished, before the flip;
 the embedder composes the strip into ordinary memory every twenty frames
-(RobotoMono rasterised by `tools/gen-hud-font.py`) and the hook copies 34
+(RobotoMono rasterised by the embedder repository's `tools/gen_hud_font.py`) and the hook copies 34
 rows into the frame. On the gallery at 60 fps the composition costs 73 to
 78 µs a frame amortised (`hud` on the FRAMES line, log of build 70); the
 copy runs on the display thread and is not in that figure.

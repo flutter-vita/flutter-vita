@@ -9,7 +9,9 @@ flutter          3.44.8
 framework_rev    058e0af2c2b57e369d905a03ac9748b0ebf543c6
 engine           058e0af2c2b57e369d905a03ac9748b0ebf543c6
 dart             d684a576a6aa954ae107a03b2b4e1d61c3bebe93
-archive_sha256   9473d9157c7d702b37518f0335552c5661ddad9a052213b1107db923411191f7
-pinned_at        2026-09-16T20:42:33Z
+archive_sha256   7594bfab6df1be162c6517f402ece325d16045e50b3983f2f2527f3005b77354
+embedder         02ca911cd39b
+embedder_sha256  101a22785db872fe60b6f5981e0a31bd0c877cdd707e2e2eeb5726cf6e5e82b2
+pinned_at        2026-09-17T07:45:25Z
 pinned_from      out/artifacts/flutter-engine-vita-3.44.8
-reason           debug strip in the engine (frame hook), fixed columns, L+R+SELECT toggle, overlay in minimal mode
+reason           embedder compiled from its own repository; engine archive without it

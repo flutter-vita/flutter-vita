@@ -14,7 +14,7 @@ disposable; these patches are the artifact.
 | 0001 | [gn-vita-toolchain](0001-gn-vita-toolchain.patch) | Teaches the engine's GN about `target_os=vita`, including which renderers it builds |
 | 0002 | [fml-for-vita](0002-fml-for-vita.patch) | Teaches `fml` the platform, and gets it off `mmap`. **Read the message-loop note** |
 | 0003 | [engine-sources-for-vita](0003-engine-sources-for-vita.patch) | Clang-only flags, missing `<cstring>`, two more platform chains, one Skia type |
-| 0004 | [m2-link-check](0004-m2-link-check.patch) | An executable that makes the linker answer the M2 question — and, because it owns those files, the embedder itself: both renderer paths and the C++ runtime's static guards |
+| 0004 | [m2-link-check](0004-m2-link-check.patch) | An executable that makes the linker answer the M2 question, and the C++ runtime's static guards. The embedder itself lived here until 2026-09-17; it is now [flutter-vita-embedder](https://github.com/flutter-vita/flutter-vita-embedder), compiled into every app |
 | 0005 | [skia-target-for-vita](0005-skia-target-for-vita.patch) | `flutter/skia/BUILD.gn` — the log backend, and where `-ldl` was hiding |
 | 0006 | [vita-fonts](0006-vita-fonts.patch) | `txt` gets a real font manager, plus two probes promoted out of `FML_DLOG` |
 | 0008 | [partial-repaint-in-the-software-path](0008-partial-repaint-in-the-software-path.patch) | The software surface claims `supports_partial_repaint`, and reports the damage rect to the embedder |

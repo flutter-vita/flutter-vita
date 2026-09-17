@@ -40,7 +40,7 @@ python3 -m pip install pillow
 ## 4. This repository and the engine
 
 ```sh
-git clone https://github.com/resashkin/flutter-vita
+git clone --recurse-submodules https://github.com/resashkin/flutter-vita
 cd flutter-vita
 ```
 

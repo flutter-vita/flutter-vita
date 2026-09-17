@@ -7,9 +7,11 @@ GPU. Your `main.dart` does not change.
 ```
 Flutter framework (Dart AOT)
         v
-Flutter engine + Skia
+Flutter engine + Skia          flutter-vita/flutter, branch vita-3.44.8
         v
-GLES2 -> fvita_gles2 (engine/gles2/, this repo) -> sceGxm
+Vita embedder                  flutter-vita/flutter-vita-embedder
+        v
+GLES2 -> fvita_gles2 -> sceGxm engine/gles2/, this repo
         v
 PowerVR SGX543MP4+
 ```
@@ -57,6 +59,17 @@ flutter-vita tap 480 272
 
 See [Commands](docs/commands.md) for the full list, and
 [Get started](docs/get-started.md) for the first run.
+
+## Repositories
+
+| Repository | What it is |
+| --- | --- |
+| [flutter-vita](https://github.com/flutter-vita/flutter-vita) (this one) | The `flutter-vita` command, the app template, the receiver, the GLES2 layer, the plugins, the samples and the docs. |
+| [flutter](https://github.com/flutter-vita/flutter) | The fork of Flutter, branch `vita-3.44.8`: the engine's Vita changes as commits on the `3.44.8` tag. Its releases carry the prebuilt engine archive. |
+| [flutter-vita-embedder](https://github.com/flutter-vita/flutter-vita-embedder) | The embedder, the `main()` of every app. A submodule here at `engine/embedder`, compiled from source into each build. |
+
+Clone with `--recurse-submodules`, or run `git submodule update --init`
+after a plain clone.
 
 ## Docs
 
