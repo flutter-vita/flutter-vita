@@ -45,7 +45,10 @@ server and shows its address. Then, from the repository:
 
 The script sends `receiver/app/build/vita/flutter_vita_receiver.vpk` to
 `ux0:/` over that FTP server. Install it from VitaShell (open the file,
-confirm), then start **Flutter Vita Receiver** from the LiveArea.
+confirm), then start **Flutter Vita Receiver** from the LiveArea. The
+[releases](https://github.com/flutter-vita/flutter-vita/releases) carry
+the same file as `flutter-vita-receiver-<version>.vpk`, for a console set
+up before the toolchain.
 
 From now on the console announces itself as `flutter-vita.local` whenever
 the receiver or an app built with this toolchain runs, and no tool asks for
