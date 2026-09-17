@@ -1,0 +1,16 @@
+{
+  "_comment": "What flutter-vita builds against. Read by the CLI (precache, doctor); edited by hand when a release moves.",
+  "flutter": "3.44.8",
+  "framework_rev": "058e0af2c2b57e369d905a03ac9748b0ebf543c6",
+  "engine": {
+    "release": "3.44.8_0.1.0",
+    "url": "https://github.com/flutter-vita/flutter/releases/download/3.44.8_0.1.0/flutter-engine-vita-3.44.8_0.1.0.tar.gz",
+    "sha256": "179cb746dcf4e8f8b925337f710adcb1f938f3d65c0f479f9aeed802aaeac869",
+    "unpacks_to": "flutter-engine-vita-3.44.8",
+    "hosts": ["darwin-arm64"]
+  },
+  "embedder": {
+    "release": "3.44.8_0.1.0",
+    "repository": "https://github.com/flutter-vita/flutter-vita-embedder"
+  }
+}

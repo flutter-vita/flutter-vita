@@ -8,6 +8,7 @@ as `flutter-vita.local`; `--host IP` skips the lookup and `--subnet
 | Command | What it does |
 |---|---|
 | `doctor` | Checks `VITASDK`, the engine artifact, the embedder submodule, `gen_snapshot` for this host, the Flutter SDK, and finds the console. Each failing line prints its fix. |
+| `precache` | Downloads the engine release named in `versions.json` from the fork's releases, checks its sha256 and unpacks it to `out/artifacts/`. `--force` replaces one that is there. `build` runs it on its own when the artifact is missing. |
 | `devices` | Sweeps the subnet for consoles and says what each one is running: the receiver, or an app. |
 | `build <app>` | Builds an app directory into `<app>/build/vita/<name>.vpk`. |
 | `install <app\|vpk>` | Builds if given a directory, hands the console to the receiver if an app is running, installs, launches. |

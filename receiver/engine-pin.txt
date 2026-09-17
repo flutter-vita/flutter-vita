@@ -9,9 +9,9 @@ flutter          3.44.8
 framework_rev    058e0af2c2b57e369d905a03ac9748b0ebf543c6
 engine           058e0af2c2b57e369d905a03ac9748b0ebf543c6
 dart             d684a576a6aa954ae107a03b2b4e1d61c3bebe93
-archive_sha256   7594bfab6df1be162c6517f402ece325d16045e50b3983f2f2527f3005b77354
+archive_sha256   297ea6299e2d81fac4e51579bce5ab97ff3e72c4491c7974e356c05634cac17f
 embedder         02ca911cd39b
 embedder_sha256  101a22785db872fe60b6f5981e0a31bd0c877cdd707e2e2eeb5726cf6e5e82b2
-pinned_at        2026-09-17T07:45:25Z
+pinned_at        2026-09-17T08:07:33Z
 pinned_from      out/artifacts/flutter-engine-vita-3.44.8
-reason           embedder compiled from its own repository; engine archive without it
+reason           release 3.44.8_0.1.0: deterministic archive, same objects as the previous pin

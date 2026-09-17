@@ -57,7 +57,7 @@ python3 -m pip install pillow
 ## 4. This repository
 
 ```sh
-git clone --recurse-submodules https://github.com/resashkin/flutter-vita
+git clone --recurse-submodules https://github.com/flutter-vita/flutter-vita
 cd flutter-vita
 ```
 
@@ -70,11 +70,21 @@ in place.
 
 ## 5. The engine artifact
 
-The prebuilt engine is a tarball, `flutter-engine-vita-3.44.8.tar.gz`,
-unpacked to `out/artifacts/flutter-engine-vita-3.44.8/`: the engine
-archive, `gen_snapshot` for this host, the headers the embedder includes
-and the data files. Take it from the fork's releases once one is published; until
-then, build it with [dev-environment.md](dev-environment.md) (a 12 GB
+```sh
+./cli/flutter-vita precache
+```
+
+The prebuilt engine is a release of the fork,
+[flutter-vita/flutter](https://github.com/flutter-vita/flutter/releases).
+`precache` reads [`versions.json`](../versions.json), downloads the
+tarball it names (25 MB), checks its sha256 and unpacks it to
+`out/artifacts/flutter-engine-vita-3.44.8/`: the engine archive,
+`gen_snapshot` for this host, the headers the embedder includes and the
+data files. The first `flutter-vita build` does the same on its own when
+the artifact is missing.
+
+The release carries `gen_snapshot` for `darwin-arm64`. Another host builds
+the engine once with [dev-environment.md](dev-environment.md) (a 12 GB
 checkout and about thirty minutes). `FLUTTER_VITA_ENGINE` points the tools
 at an artifact somewhere else.
 

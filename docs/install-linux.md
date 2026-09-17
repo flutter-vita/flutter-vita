@@ -40,13 +40,15 @@ python3 -m pip install pillow
 ## 4. This repository and the engine
 
 ```sh
-git clone --recurse-submodules https://github.com/resashkin/flutter-vita
+git clone --recurse-submodules https://github.com/flutter-vita/flutter-vita
 cd flutter-vita
 ```
 
-Unpack `flutter-engine-vita-3.44.8.tar.gz` to
+`./cli/flutter-vita precache` downloads the engine release named in
+[`versions.json`](../versions.json) and unpacks it to
 `out/artifacts/flutter-engine-vita-3.44.8/`. The artifact carries a
-`gen_snapshot` per host under `host-<os>-<arch>/`; `doctor` says whether one
+`gen_snapshot` per host under `host-<os>-<arch>/`, and release
+`3.44.8_0.1.0` has it for `darwin-arm64` only; `doctor` says whether one
 exists for yours. Without one, [dev-environment.md](dev-environment.md)
 describes the engine build, which produces it.
 

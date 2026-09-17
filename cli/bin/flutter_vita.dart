@@ -5,6 +5,7 @@ import 'package:flutter_vita/src/device.dart';
 import 'package:flutter_vita/src/paths.dart';
 import 'package:flutter_vita/src/discovery.dart';
 import 'package:flutter_vita/src/png.dart';
+import 'package:flutter_vita/src/precache.dart';
 
 /// One entry point for building, installing and driving Flutter on a Vita.
 ///
@@ -15,6 +16,7 @@ const usage = '''
 flutter-vita — build and run Flutter apps on a PlayStation Vita
 
   doctor                    check the toolchain and find a device
+  precache                  download the engine named in versions.json
   devices                   sweep the subnet for Vitas
   build <app>               app directory -> .vpk
   install <app|vpk>         build if needed, install, launch
@@ -57,6 +59,9 @@ Future<int> main(List<String> argv) async {
     switch (args.first) {
       case 'doctor':
         return await _doctor(opts);
+      case 'precache':
+        return await precache(
+            force: opts['force'] == 'true', host: '${_hostOs()}-${_arch()}');
       case 'devices':
         return await _devices(opts);
       case 'build':
@@ -109,7 +114,7 @@ Future<int> _doctor(Map<String, String> opts) async {
   check(
       'engine artifact',
       File('$engine/lib/libflutter_engine_vita.a').existsSync(),
-      'unpack flutter-engine-vita-*.tar.gz, or run tools/package-engine.sh');
+      'run: flutter-vita precache  (or build one: tools/package-engine.sh)');
 
   // The embedder is a submodule, and a plain clone leaves it empty; the
   // build's own error for that is a CMake message three steps in.
@@ -209,6 +214,13 @@ Future<String?> _build(List<String> args, Map<String, String> opts) async {
 
   // Already a .vpk: nothing to build.
   if (app.endsWith('.vpk')) return app;
+
+  // The first build on a fresh checkout: fetch the engine rather than fail
+  // three steps in with a cmake message about a path nobody recognises.
+  if (!File('${_engineDir()}/lib/libflutter_engine_vita.a').existsSync()) {
+    stdout.writeln('==> no engine artifact yet; fetching it');
+    if (await precache(host: '${_hostOs()}-${_arch()}') != 0) return null;
+  }
 
   final cmd = [
     requireScript('build-vita-app.sh'),

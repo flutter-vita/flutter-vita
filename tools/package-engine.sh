@@ -5,14 +5,27 @@
 # and ~30 minutes. This turns a finished build into a tarball an app developer
 # can unpack and link against.
 #
-# Usage:  ./tools/package-engine.sh [output-dir]
+# Usage:  ./tools/package-engine.sh [--release X.Y.Z] [output-dir]
+#
+# --release names the tarball for a release of the fork,
+# flutter-engine-vita-<flutter>_<X.Y.Z>.tar.gz, and stamps the same string
+# into MANIFEST.txt as `release`. The unpacked directory keeps its plain name
+# (flutter-engine-vita-<flutter>), which is what the tools look for.
 set -euo pipefail
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
 ROOT="$(cd "$HERE/.." && pwd)"
 ENGINE_SRC="$ROOT/third_party/flutter/engine/src"
 ENGINE_OUT="$ENGINE_SRC/out/vita_release"
-OUT="${1:-$ROOT/out/artifacts}"
+OUT="$ROOT/out/artifacts"
+RELEASE=""
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --release) RELEASE="$2"; shift 2 ;;
+    -h|--help) sed -n '2,13p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    *) OUT="$1"; shift ;;
+  esac
+done
 
 : "${VITASDK:?Define VITASDK. See docs/dev-environment.md}"
 export PATH="$VITASDK/bin:$PATH"
@@ -128,14 +141,18 @@ echo "==> archiving engine objects"
 find "$ENGINE_OUT/obj" -name '*.o' ! -name '*vita_link_check*' > "$OUT/.objs"
 COUNT=$(wc -l < "$OUT/.objs" | tr -d ' ')
 # `xargs -a` is a GNU extension; BSD xargs on macOS needs the redirect.
-xargs arm-vita-eabi-ar rcs "$STAGE/lib/libflutter_engine_vita.a" < "$OUT/.objs"
+# D: deterministic headers (no timestamps, uid, gid), so the same objects give
+# the same archive and the same sha256, and a repackage does not move the
+# receiver's pin.
+xargs arm-vita-eabi-ar rcsD "$STAGE/lib/libflutter_engine_vita.a" < "$OUT/.objs"
 rm -f "$OUT/.objs"
 
 echo "==> stripping debug info"
 # 1.1 GB to 63 MB, because the build carries -g2 and DWARF dwarfs the code.
 # The trade is engine-level symbolication in crash dumps: anyone debugging the
 # engine itself is building it anyway, and anyone building an app is not.
-arm-vita-eabi-strip --strip-debug "$STAGE/lib/libflutter_engine_vita.a"
+# -D: strip rewrites the archive, and without it puts the timestamps back.
+arm-vita-eabi-strip -D --strip-debug "$STAGE/lib/libflutter_engine_vita.a"
 
 # What the embedder (flutter-vita/flutter-vita-embedder, compiled into every
 # app) includes from the archive: the embedder API, this port's partial-repaint
@@ -220,10 +237,13 @@ else
   exit 1
 fi
 
+RELEASE_LINE=""
+[ -n "$RELEASE" ] && RELEASE_LINE="release          ${FLUTTER_VERSION}_${RELEASE}
+"
 cat > "$STAGE/MANIFEST.txt" <<EOF
 flutter-engine-vita
 
-flutter          $FLUTTER_VERSION
+${RELEASE_LINE}flutter          $FLUTTER_VERSION
 framework_rev    $FRAMEWORK_REVISION
 engine           $ENGINE_VERSION
 skia             $SKIA_VERSION
@@ -255,7 +275,7 @@ EOF
 
 echo "==> tarball"
 mkdir -p "$OUT"
-TARBALL="$OUT/flutter-engine-vita-$FLUTTER_VERSION.tar.gz"
+TARBALL="$OUT/flutter-engine-vita-$FLUTTER_VERSION${RELEASE:+_$RELEASE}.tar.gz"
 tar -czf "$TARBALL" -C "$OUT" "$(basename "$STAGE")"
 
 echo
