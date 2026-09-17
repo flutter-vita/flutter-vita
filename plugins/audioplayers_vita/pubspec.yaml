@@ -1,0 +1,15 @@
+name: audioplayers_vita
+description: PlayStation Vita implementation of audioplayers. Non-endorsed.
+version: 0.1.0
+repository: https://github.com/flutter-vita/flutter-vita/tree/master/plugins/audioplayers_vita
+issue_tracker: https://github.com/flutter-vita/flutter-vita/issues
+publish_to: none
+
+environment:
+  sdk: ^3.5.0
+  flutter: ">=3.44.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+  audioplayers_platform_interface: ^7.0.0

@@ -1,0 +1,15 @@
+name: path_provider_vita
+description: PlayStation Vita implementation of path_provider. Non-endorsed.
+version: 0.1.0
+repository: https://github.com/flutter-vita/flutter-vita/tree/master/plugins/path_provider_vita
+issue_tracker: https://github.com/flutter-vita/flutter-vita/issues
+publish_to: none
+
+environment:
+  sdk: ^3.5.0
+  flutter: ">=3.44.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+  path_provider_platform_interface: ^2.1.0

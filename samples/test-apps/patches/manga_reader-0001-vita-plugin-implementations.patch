@@ -34,9 +34,9 @@ index 1fea691..2b3a400 100644
 +  # ADR-0009: non-endorsed vita implementations, listed beside the plugins they
 +  # implement. This is the whole edit an app author makes.
 +  path_provider_vita:
-+    path: ../../../plugins/packages/path_provider_vita
++    path: ../../../plugins/path_provider_vita
 +  shared_preferences_vita:
-+    path: ../../../plugins/packages/shared_preferences_vita
++    path: ../../../plugins/shared_preferences_vita
    sqlite3_flutter_libs: ^0.6.0+eol
    theme_tailor_annotation: ^3.1.3
    url_launcher: ^6.3.2

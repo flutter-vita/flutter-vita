@@ -1,0 +1,17 @@
+name: file_picker_vita
+description: PlayStation Vita implementation of file_picker. Non-endorsed. Draws its own browser.
+version: 0.1.0
+repository: https://github.com/flutter-vita/flutter-vita/tree/master/plugins/file_picker_vita
+issue_tracker: https://github.com/flutter-vita/flutter-vita/issues
+publish_to: none
+
+environment:
+  sdk: ^3.5.0
+  flutter: ">=3.44.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+  file_picker: ^11.0.2
+  vita_file_browser:
+    path: ../../packages/vita_file_browser

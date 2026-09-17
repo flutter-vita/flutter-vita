@@ -13,7 +13,7 @@ building at all.
 answers. If nothing answers, the call throws `MissingPluginException`. We can
 answer it — in the embedder, or in Dart via a non-endorsed implementation. That
 is [ADR-0009](0009-plugins-via-non-endorsed-vita-implementations.md), and
-[`path_provider_vita`](../../plugins/packages/path_provider_vita) is 80 lines.
+[`path_provider_vita`](../../plugins/path_provider_vita) is 80 lines.
 
 **`dart:ffi`** calls a C function directly, in-process and synchronously, at a
 real address:

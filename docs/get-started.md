@@ -49,7 +49,7 @@ under `fonts:` in `pubspec.yaml`, as on every other Flutter target. An app
 that shows an emoji without a font for it draws an empty box.
 
 **Plugins.** A plugin with native code needs a Vita implementation. The
-ones in [flutter-vita/plugins](https://github.com/flutter-vita/plugins) cover `path_provider`,
+ones in [`plugins/`](../plugins) cover `path_provider`,
 `shared_preferences`, `url_launcher`, `battery_plus`, `sensors_plus`,
 `device_info_plus`, `connectivity_plus`, `audioplayers`, `record`, `camera`
 and file pickers; add the `_vita` package beside the plugin and call its

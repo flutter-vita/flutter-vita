@@ -9,13 +9,13 @@ index b444137..483b388 100644
 +  # ADR-0009: non-endorsed vita implementations, listed beside the plugins they
 +  # implement. This is the whole edit an app author makes.
 +  path_provider_vita:
-+    path: ../../../plugins/packages/path_provider_vita
++    path: ../../../plugins/path_provider_vita
 +  shared_preferences_vita:
-+    path: ../../../plugins/packages/shared_preferences_vita
++    path: ../../../plugins/shared_preferences_vita
 +  url_launcher_vita:
-+    path: ../../../plugins/packages/url_launcher_vita
++    path: ../../../plugins/url_launcher_vita
 +  file_picker_vita:
-+    path: ../../../plugins/packages/file_picker_vita
++    path: ../../../plugins/file_picker_vita
    native_liquid_glass: ^0.2.10
  dev_dependencies:
    flutter_lints: ^6.0.0

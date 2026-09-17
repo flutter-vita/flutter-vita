@@ -23,8 +23,8 @@ Everything this port is measured with, on one panel, five tabs:
   decides), an AAC asset through `AssetSource`. Cameras shows a frame from
   each through `camera`'s image stream. Manual needs a person: buttons and
   sticks, the back touch panel, the keyboard. The pub packages are the ones
-  an app would use, each with its Vita implementation from the `plugins/`
-  submodule registered in `main.dart`; the C halves live in the packages and are
+  an app would use, each with its Vita implementation from `plugins/`
+  registered in `main.dart`; the C halves live in the packages and are
   compiled into this app (ADR-0020). What no package covers is a method on
   `vita/hardware`, `templates/vita-app/hardware.c`, compiled in because this
   app's pubspec says `hardware_checks: true`. A check a person has to judge

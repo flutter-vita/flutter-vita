@@ -175,11 +175,11 @@ index 7c956e5..8cd63ec 100644
 +  # ADR-0009: non-endorsed vita implementations, listed beside the plugins they
 +  # implement. This is the whole edit an app author makes.
 +  file_selector_vita:
-+    path: ../../../../plugins/packages/file_selector_vita
++    path: ../../../../plugins/file_selector_vita
 +  path_provider_vita:
-+    path: ../../../../plugins/packages/path_provider_vita
++    path: ../../../../plugins/path_provider_vita
 +  shared_preferences_vita:
-+    path: ../../../../plugins/packages/shared_preferences_vita
++    path: ../../../../plugins/shared_preferences_vita
    shared_preferences_platform_interface: any
    shared_storage: 0.8.1
    slang: 3.31.1

@@ -16,9 +16,9 @@ dependencies:
   # half of audioplayers carries its C into this app (ADR-0020).
   audioplayers: ^6.0.0
   audioplayers_vita:
-    path: ../../plugins/packages/audioplayers_vita
+    path: ../../plugins/audioplayers_vita
   vita_file_browser:
-    path: ../../plugins/packages/vita_file_browser
+    path: ../../packages/vita_file_browser
 
 vita:
   title_id: FVTA00003

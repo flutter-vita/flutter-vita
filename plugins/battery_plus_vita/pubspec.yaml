@@ -1,0 +1,15 @@
+name: battery_plus_vita
+description: PlayStation Vita implementation of battery_plus. Non-endorsed.
+version: 0.1.0
+repository: https://github.com/flutter-vita/flutter-vita/tree/master/plugins/battery_plus_vita
+issue_tracker: https://github.com/flutter-vita/flutter-vita/issues
+publish_to: none
+
+environment:
+  sdk: ^3.5.0
+  flutter: ">=3.44.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+  battery_plus_platform_interface: ^2.0.0

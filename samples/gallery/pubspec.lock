@@ -60,7 +60,7 @@ packages:
   audioplayers_vita:
     dependency: "direct main"
     description:
-      path: "../../plugins/packages/audioplayers_vita"
+      path: "../../plugins/audioplayers_vita"
       relative: true
     source: path
     version: "0.1.0"
@@ -99,7 +99,7 @@ packages:
   battery_plus_vita:
     dependency: "direct main"
     description:
-      path: "../../plugins/packages/battery_plus_vita"
+      path: "../../plugins/battery_plus_vita"
       relative: true
     source: path
     version: "0.1.0"
@@ -138,7 +138,7 @@ packages:
   camera_vita:
     dependency: "direct main"
     description:
-      path: "../../plugins/packages/camera_vita"
+      path: "../../plugins/camera_vita"
       relative: true
     source: path
     version: "0.1.0"
@@ -193,7 +193,7 @@ packages:
   connectivity_plus_vita:
     dependency: "direct main"
     description:
-      path: "../../plugins/packages/connectivity_plus_vita"
+      path: "../../plugins/connectivity_plus_vita"
       relative: true
     source: path
     version: "0.1.0"
@@ -240,7 +240,7 @@ packages:
   device_info_plus_vita:
     dependency: "direct main"
     description:
-      path: "../../plugins/packages/device_info_plus_vita"
+      path: "../../plugins/device_info_plus_vita"
       relative: true
     source: path
     version: "0.1.0"
@@ -433,7 +433,7 @@ packages:
   path_provider_vita:
     dependency: "direct main"
     description:
-      path: "../../plugins/packages/path_provider_vita"
+      path: "../../plugins/path_provider_vita"
       relative: true
     source: path
     version: "0.1.0"
@@ -536,7 +536,7 @@ packages:
   record_vita:
     dependency: "direct main"
     description:
-      path: "../../plugins/packages/record_vita"
+      path: "../../plugins/record_vita"
       relative: true
     source: path
     version: "0.1.0"
@@ -575,7 +575,7 @@ packages:
   sensors_plus_vita:
     dependency: "direct main"
     description:
-      path: "../../plugins/packages/sensors_plus_vita"
+      path: "../../plugins/sensors_plus_vita"
       relative: true
     source: path
     version: "0.1.0"
@@ -622,7 +622,7 @@ packages:
   shared_preferences_vita:
     dependency: "direct main"
     description:
-      path: "../../plugins/packages/shared_preferences_vita"
+      path: "../../plugins/shared_preferences_vita"
       relative: true
     source: path
     version: "0.1.0"
@@ -722,7 +722,7 @@ packages:
   vita_debug_strip:
     dependency: "direct main"
     description:
-      path: "../../plugins/packages/vita_debug_strip"
+      path: "../../packages/vita_debug_strip"
       relative: true
     source: path
     version: "0.1.0"

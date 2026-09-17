@@ -1,6 +1,6 @@
 [submodule "engine/embedder"]
 	path = engine/embedder
 	url = https://github.com/flutter-vita/flutter-vita-embedder.git
-[submodule "plugins"]
-	path = plugins
-	url = https://github.com/flutter-vita/plugins.git
+[submodule "packages"]
+	path = packages
+	url = https://github.com/flutter-vita/packages.git
