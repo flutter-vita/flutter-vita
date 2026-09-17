@@ -151,7 +151,7 @@ two relaunches at about three seconds each.
 ## What the run says
 
 Taken 2026-08-24 on the pinned engine, both renderers, warm shader cache, with
-vitaGL built per [patches/vitagl/README.md](../../patches/vitagl/README.md);
+vitaGL built per [patches/vitagl/README.md](../../engine/patches/vitagl/README.md);
 `apps/gallery/bench/{sw,gl}.json` is this run.
 
 **The GPU wins every scene.** Worst-frame, software over GL: 20.33× on a
@@ -248,7 +248,7 @@ For scale, a `Container` in `route_wrap` costs about 25 us. A `Text` is
 
 ### Where the 950 us goes, measured
 
-[patches/flutter-engine/0010](../../patches/flutter-engine/0010-paragraph-timing.patch)
+[patches/flutter-engine/0010](../../engine/patches/flutter-engine/0010-paragraph-timing.patch)
 times the three phases of a `ui.Paragraph` and the embedder prints them:
 
 ```
@@ -286,7 +286,7 @@ free, so unlike the text cost this one does scale, just very steeply.
 
 `TextPainter` is ordinary Dart calling ordinary `dart:ui`, so the same work can
 be done in the app with a `Stopwatch` around each layer — no framework patch,
-no engine patch. [text_probe.dart](../../apps/gallery/lib/bench/text_probe.dart)
+no engine patch. [text_probe.dart](../../samples/gallery/lib/bench/text_probe.dart)
 does that, 48 single-glyph paragraphs with 8 warm-up passes discarded.
 
 One single-glyph `TextPainter.layout` costs **416 us** with a bare

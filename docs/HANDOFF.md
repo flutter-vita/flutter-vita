@@ -36,7 +36,7 @@ yet. Phase 0.5 (feasibility) is complete and the verdict was go.
 **Never `rsync` into `third_party/sdk`.** gclient records DEPS sub-repos with
 gitlinks that a file copy corrupts; the failures surface later as
 *"not a git repository"* on a different directory each sync. The tree is
-disposable — [`patches/dart-sdk/`](../patches/dart-sdk/README.md) is the real
+disposable — [`patches/dart-sdk/`](../engine/patches/dart-sdk/README.md) is the real
 artifact and restores the whole port with one `git apply`. That has been proven
 twice, once after a careless `reset --hard` destroyed the working tree.
 

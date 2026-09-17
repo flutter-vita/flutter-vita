@@ -8,10 +8,10 @@
 #
 # Three things make this worth automating:
 #
-#   * `git apply patches/dart-sdk/000*.patch` silently skips 0010, which is 29
+#   * `git apply engine/patches/dart-sdk/000*.patch` silently skips 0010, which is 29
 #     files including every socket implementation.
 #   * Several patches apply to a nested DEPS repo rather than the tree they sit
-#     beside. patches/dart-sdk/0005 applies to zlib, and BUILD.gn exists in
+#     beside. engine/patches/dart-sdk/0005 applies to zlib, and BUILD.gn exists in
 #     both, so a careless path intersection matches the wrong file.
 #   * The same series applies to two different Dart checkouts, and 0004 goes in
 #     only half-way on one of them.
@@ -57,19 +57,19 @@ tree_path() {
 # own vita toolchain from flutter-engine/0001.
 targets_for() {
   case "$1" in
-    patches/dart-sdk/0005-*)      echo "sdk_zlib e_zlib" ;;
-    patches/dart-sdk/0004-*)      echo "sdk e_dart:runtime-only" ;;
-    patches/dart-sdk/*)           echo "sdk e_dart" ;;
-    patches/flutter-engine/*)     echo "flutter" ;;
-    patches/skia/*)               echo "e_skia" ;;
-    patches/abseil/*)             echo "e_abseil" ;;
-    patches/boringssl/*)          echo "e_ssl" ;;
-    patches/test-apps/*)             echo "EXTERNAL" ;;
+    engine/patches/dart-sdk/0005-*)      echo "sdk_zlib e_zlib" ;;
+    engine/patches/dart-sdk/0004-*)      echo "sdk e_dart:runtime-only" ;;
+    engine/patches/dart-sdk/*)           echo "sdk e_dart" ;;
+    engine/patches/flutter-engine/*)     echo "flutter" ;;
+    engine/patches/skia/*)               echo "e_skia" ;;
+    engine/patches/abseil/*)             echo "e_abseil" ;;
+    engine/patches/boringssl/*)          echo "e_ssl" ;;
+    samples/test-apps/engine/patches/*)             echo "EXTERNAL" ;;
     *) return 1 ;;
   esac
 }
 
-all_patches() { ls patches/*/*.patch 2>/dev/null | sort; }
+all_patches() { ls engine/patches/*/*.patch 2>/dev/null | sort; }
 
 # Paths a patch writes to, as they appear inside its own target repo.
 owned() { grep '^+++ b/' "$1" | sed 's|+++ b/||' | sort -u; }
@@ -195,8 +195,8 @@ done < <(all_patches)
 # tree's content for that file is pristine-plus-that-patch, so the patch must
 # reverse-apply cleanly.
 head_ "One file, one patch"
-for series in patches/*/; do
-  s="${series%/}"; [ "$s" = "patches/test-apps" ] && continue
+for series in engine/patches/*/; do
+  s="${series%/}"; [ "$s" = "engine/patches/test-apps" ] && continue
   dup="$(for p in "$s"/*.patch; do owned "$p" | sed "s|^|$(basename "$p")\t|"; done \
          | sort -k2 | awk -F'\t' '{if ($2==prev) print prevp" and "$1" both own "$2; prev=$2; prevp=$1}')"
   if [ -n "$dup" ]; then
@@ -261,12 +261,12 @@ if [ ! -e "$A/.git" ] || [ ! -e "$B/.git" ]; then
 else
   drift=0
   while read -r p; do
-    case "$p" in patches/dart-sdk/*) ;; *) continue ;; esac
-    case "$p" in patches/dart-sdk/0005-*) continue ;; esac   # nested zlib repo
+    case "$p" in engine/patches/dart-sdk/*) ;; *) continue ;; esac
+    case "$p" in engine/patches/dart-sdk/0005-*) continue ;; esac   # nested zlib repo
     while read -r f; do
       [ -n "$f" ] || continue
       # 0004's build/ half is intentionally absent from the engine tree.
-      case "$p/$f" in patches/dart-sdk/0004-*/build/*) continue ;; esac
+      case "$p/$f" in engine/patches/dart-sdk/0004-*/build/*) continue ;; esac
       if   [ ! -f "$A/$f" ]; then bad "missing from sdk: $f"; drift=1
       elif [ ! -f "$B/$f" ]; then bad "missing from engine dart: $f"; drift=1
       elif ! cmp -s "$A/$f" "$B/$f"; then bad "differs between trees: $f"; drift=1
@@ -290,7 +290,7 @@ unowned_check() {
   local dir="$1" pin="$2" series="$3" label="$4"
   if [ ! -e "$dir/.git" ]; then skip "$label (not checked out)"; return; fi
   local owned changed extra
-  owned="$(cat patches/$series/*.patch 2>/dev/null | grep '^+++ b/' | sed 's|+++ b/||' | sort -u)"
+  owned="$(cat engine/patches/$series/*.patch 2>/dev/null | grep '^+++ b/' | sed 's|+++ b/||' | sort -u)"
   changed="$( { git -C "$dir" diff --name-only "$pin" 2>/dev/null
                 git -C "$dir" ls-files --others --exclude-standard 2>/dev/null; } | sort -u )"
   if [ -z "$changed" ]; then
@@ -319,9 +319,9 @@ while read -r line; do
   # Take every whitespace-delimited token that names a patch path, and strip
   # the ../.. prefixes the READMEs use to reach the repo root from a tree.
   for tok in $text; do
-    case "$tok" in *patches/*.patch) ;; *) continue ;; esac
+    case "$tok" in *engine/patches/*.patch) ;; *) continue ;; esac
     case "$tok" in *'$'*) continue ;; esac   # a loop variable, not a glob
-    g="patches/${tok#*patches/}"
+    g="engine/patches/${tok#*engine/patches/}"
     series="${g%/*}"
     [ -d "$series" ] || continue
     total=$(ls "$series"/[0-9]*.patch 2>/dev/null | wc -l | tr -d " ")
@@ -336,7 +336,7 @@ while read -r line; do
       partial=1
     fi
   done
-done < <(grep -rn "git apply" patches/*/README.md docs/*.md 2>/dev/null)
+done < <(grep -rn "git apply" engine/patches/*/README.md docs/*.md 2>/dev/null)
 [ "$partial" -eq 0 ] && ok "every glob quoted in the docs covers its whole series"
 
 # --------------------------------------------------------------------- report

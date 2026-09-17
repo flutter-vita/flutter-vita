@@ -63,7 +63,7 @@ them available *by name*, which is a different thing. An application that wants
 a codepoint Roboto lacks must bundle a font that has it and name that family —
 `fontFamilyFallback` in `ThemeData`, or `fontFamily` on the specific style.
 
-[keklist](../patches/test-apps/keklist-0004-emoji-font-fallback.patch) is the
+[keklist](../samples/test-apps/patches/keklist-0004-emoji-font-fallback.patch) is the
 worked example: `NotoColorEmoji.ttf` (4.7 MB, already in the engine checkout
 beside Roboto) declared in `pubspec.yaml` and named in both themes, which takes
 its `.vpk` from 18 MB to 22 MB. Colour survives the trip — the font is
@@ -146,7 +146,7 @@ and `shared_preferences` at 50% cumulative, and both are filesystem.
 
 **Watch for:** newlib's `stat` on `app0:` paths, whether `Directory.list` works
 given `sceIoDopen` semantics, and case sensitivity. The engine needed
-[a whole dirfd shim](../patches/) to read assets; `dart:io` may need its own.
+[a whole dirfd shim](../engine/patches/) to read assets; `dart:io` may need its own.
 
 ## Phase 7 — Networking
 
@@ -169,8 +169,8 @@ given `sceIoDopen` semantics, and case sensitivity. The engine needed
 
 The system keyboard opens on a `TextField`, seeded with the field's current
 value, and what you type arrives back in the framework. Single line, multiline
-and obscured, measured on hardware in [apps/gallery](../apps/gallery) and in
-[apps/keklist](../apps/test-apps/keklist).
+and obscured, measured on hardware in [samples/gallery](../samples/gallery) and in
+[apps/keklist](../samples/test-apps/keklist).
 
 It shipped on `sceImeDialog`, a modal common dialog, and moved to **libime**'s
 inline keyboard on 2026-08-28 because the dialog cannot composite over vitaGL.
@@ -287,7 +287,7 @@ costs two taps; nothing user-mode can catch a data abort.
 ## Ongoing, not phases
 
 - **App test apps** — **active as of 2026-08-18.** Five real apps, one per axis,
-  pinned in [apps/test-apps/manifest.txt](../apps/test-apps/manifest.txt). Phase 6 and
+  pinned in [samples/test-apps/manifest.txt](../samples/test-apps/manifest.txt). Phase 6 and
   Phase 8 both landing is what made it worth doing: apps now get far enough to
   fail interestingly. Run as boot-and-observe against one shared title id, with
   a plugin-free control that must pass; the output is a patch series and a

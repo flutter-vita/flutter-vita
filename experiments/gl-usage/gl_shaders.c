@@ -10,7 +10,7 @@
 // glShaderSource two ways -- by symbol from the engine, and by the pointer
 // fvgl_get_proc_address hands it -- so gl_usage.c returns this function for
 // that name instead of a counting thunk. Since 2026-09-12 the shaders of a
-// run are also what `gles2/corpus/` is grown from.
+// run are also what `engine/gles2/corpus/` is grown from.
 #include <psp2/io/fcntl.h>
 #include <psp2/io/stat.h>
 #include <stdio.h>

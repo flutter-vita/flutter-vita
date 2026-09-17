@@ -186,7 +186,7 @@ for the AOT snapshot.
 | Nine Dart patches reapplied | done, every file byte-compared |
 | `gn gen` for `target_os=vita` | done — 921 targets |
 | zlib, libpng, freetype2, harfbuzz, expat, ICU | build clean |
-| Skia | **builds** — 544 objects, [two files patched](../patches/skia/README.md) |
+| Skia | **builds** — 544 objects, [two files patched](../engine/patches/skia/README.md) |
 | `fml` | **compiles** — but `MessageLoopImpl::Create()` returns nullptr, see below |
 | Everything else in the engine | **compiles** — display_list, lib/ui, lib/gpu, tonic, abseil, shell, flow, txt |
 | Dart runtime under the engine's GN | **compiles** — it came for free, as hoped |
@@ -197,7 +197,7 @@ for the AOT snapshot.
 ## Order of work
 
 1. ~~**Skia**~~ — done. Two files: platform detection, and a heap-copy
-   replacement for `mmap`. See [the patch notes](../patches/skia/README.md);
+   replacement for `mmap`. See [the patch notes](../engine/patches/skia/README.md);
    the `mmap` one is a memory-cost decision, not just a portability fix.
 2. ~~**`fml`**~~ — compiles. Four files, and `mapping_posix` was indeed the
    hard one. **It is not finished**: `MessageLoopImpl::Create()` ends in
@@ -261,8 +261,8 @@ for the AOT snapshot.
   reports in Phase 1 came from `ninja | grep | tail`, a missing exit check, and
   a stale tool binary that ran after its rebuild had failed.
 - **Never edit the vendored tree without producing a patch file.** Two series
-  now: [dart-sdk](../patches/dart-sdk/README.md) and
-  [flutter-engine](../patches/flutter-engine/README.md).
+  now: [dart-sdk](../engine/patches/dart-sdk/README.md) and
+  [flutter-engine](../engine/patches/flutter-engine/README.md).
 - **Diff the patched tree against the last known-good one.** Doing this when
   moving into the engine checkout caught that patch 0008 was stale — the
   `installPlatformScript` that makes `Isolate.spawn` work had never been written

@@ -4,7 +4,7 @@
 // --link-option -Wl,--wrap=fvgl_get_proc_address, so every name Skia resolves
 // comes through here and every call it then makes goes through a thunk:
 //
-//   ./tools/build-vita-app.sh apps/gallery \
+//   ./tools/build-vita-app.sh samples/gallery \
 //       --extra-source experiments/gl-usage/gl_usage.c \
 //       --extra-source experiments/gl-usage/gl_thunks.S \
 //       --link-option -Wl,--wrap=fvgl_get_proc_address
@@ -12,7 +12,7 @@
 // It sized ADR-0019's decision against vitaGL (372 names answered, and nothing
 // static could narrow that, because Skia binds by name). It now measures the
 // layer of our own: fvita_gles2 answers 142 names, 35 of them recording stubs,
-// and `gles2/surface.txt` carries this tool's counts, which is what
+// and `engine/gles2/surface.txt` carries this tool's counts, which is what
 // tools/gles2-progress.py reads for the ledger. A new app is measured the
 // same way: build it with the three options above, drive it, pull
 // ux0:data/flutter-vita/gl-usage.txt, and merge the peaks into surface.txt.

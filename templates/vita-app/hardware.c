@@ -9,7 +9,7 @@
 //
 // The battery, the sensors, the network, the microphone, the speaker and
 // the cameras were here until 2026-09-16; they are the Vita packages under
-// packages/ now (battery_plus_vita, sensors_plus_vita, connectivity_plus_vita,
+// plugins/ now (battery_plus_vita, sensors_plus_vita, connectivity_plus_vita,
 // record_vita, audioplayers_vita, camera_vita, device_info_plus_vita), and
 // the gallery checks them through the pub packages an app would use.
 //

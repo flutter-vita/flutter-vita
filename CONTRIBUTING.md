@@ -9,7 +9,7 @@ We want help. The most useful help is not the help you expect.
 
 **Operate a Flutter application that we did not write. Tell us what failed.**
 
-The application in `apps/conformance` gives a good score. But the persons who
+The application in `samples/gallery` gives a good score. But the persons who
 wrote it also wrote the port, so it tests only what we knew to test. A real
 application finds what we cannot see.
 
@@ -35,7 +35,7 @@ empty after the splash. The log stops at
 
 - **Host tools.** The CLI is Dart only. There is no Windows support at all, and
   you can start that work with no console.
-- **Plugins.** The packages in `packages/*_vita` are usual federated
+- **Plugins.** The packages in `plugins/*_vita` are usual federated
   implementations. To write one, you use the `sce*` API in C, and Dart. Copy the
   shape of one that is there.
 - **Documentation.** If a step in the README did not operate for you, that step
@@ -59,7 +59,7 @@ value. If a measurement is the reason for a change, take that measurement on a
 console.
 
 **Never do `git checkout` in `third_party/`.** Those trees come from other
-projects and we patch them. The real work is in `patches/`. To examine the
+projects and we patch them. The real work is in `engine/patches/`. To examine the
 series and the trees together, use `tools/apply-patches.sh --verify`. A checkout
 in `third_party/` removes the patches, and it has left empty files.
 
@@ -110,7 +110,7 @@ pull request that corrects one plugin is more useful than one that moves the
 tree around.
 
 We accept your contribution under BSD-3-Clause, the licence in
-[LICENSE](LICENSE). A change to a series in [patches/](patches/) is different:
+[LICENSE](LICENSE). A change to a series in [engine/patches/](engine/patches/) is different:
 it is a derivative of the project it patches and it keeps that project's
 licence. [NOTICE](NOTICE) says which is which.
 

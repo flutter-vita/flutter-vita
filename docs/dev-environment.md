@@ -161,7 +161,7 @@ plus `"clangd.arguments": ["--query-driver=$VITASDK/bin/arm-vita-eabi-*"]`.
 Without `--query-driver`, clangd refuses to trust the cross compiler's include
 paths and the whole embedder lights up red.
 
-### 3. `tool/`, `packages/`, `examples/` — the Dart extension
+### 3. `tool/`, `plugins/`, `examples/` — the Dart extension
 
 Nothing special. The official Dart and Flutter extensions handle these.
 

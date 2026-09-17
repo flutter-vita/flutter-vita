@@ -1,0 +1,43 @@
+diff --git a/lib/main.dart b/lib/main.dart
+index 26bc27a..96ecb63 100644
+--- a/lib/main.dart
++++ b/lib/main.dart
+@@ -12,9 +12,16 @@ import 'package:wonders/logic/timeline_logic.dart';
+ import 'package:wonders/logic/unsplash_logic.dart';
+ import 'package:wonders/logic/wonders_logic.dart';
+ import 'package:wonders/ui/common/app_shortcuts.dart';
++import 'package:path_provider_vita/path_provider_vita.dart';
++import 'package:shared_preferences_vita/shared_preferences_vita.dart';
+ 
+ void main() async {
+   WidgetsBinding widgetsBinding = WidgetsFlutterBinding.ensureInitialized();
++  // Before registerSingletons(), which builds the settings logic that reads
++  // shared_preferences -- the getAll() that fails here happens before runApp,
++  // so an unregistered implementation is a blank screen rather than a warning.
++  PathProviderVita.registerWith();
++  SharedPreferencesVita.registerWith();
+   // Keep native splash screen up until app is finished bootstrapping
+   if (!kIsWeb) {
+     FlutterNativeSplash.preserve(widgetsBinding: widgetsBinding);
+diff --git a/pubspec.yaml b/pubspec.yaml
+index 46ef51c..aa54883 100644
+--- a/pubspec.yaml
++++ b/pubspec.yaml
+@@ -49,6 +49,12 @@ dependencies:
+   provider: ^6.0.5
+   rnd: ^0.2.0
+   shared_preferences: ^2.0.17
++  # ADR-0009: non-endorsed vita implementations, listed beside the plugins they
++  # implement. This is the whole edit an app author makes.
++  path_provider_vita:
++    path: ../../../plugins/path_provider_vita
++  shared_preferences_vita:
++    path: ../../../plugins/shared_preferences_vita
+   sized_context: ^1.0.0+1
+   smooth_page_indicator: ^2.0.1
+   unsplash_client: ^3.0.0
+@@ -128,3 +134,4 @@ flutter:
+     - family: B612Mono
+       fonts:
+         - asset: assets/fonts/B612Mono-Regular.ttf
++

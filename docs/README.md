@@ -26,7 +26,7 @@ meets them.
 | [phase-1-workplan.md](phase-1-workplan.md) | What Phase 1 actually requires, derived from the Dart SDK source |
 | [embedder-startup.md](embedder-startup.md) | What `runtime/bin` does at startup, what M1 skips, and the timer/print plan for Phase 2 |
 | [phase-2-gn-notes.md](phase-2-gn-notes.md) | The GN gate: what it is, tooling reality, and why the foreign-toolchain risk is lower than feared |
-| [../patches/dart-sdk/](../patches/dart-sdk/README.md) | The Vita patch series against the pinned Dart SDK |
+| [../engine/patches/dart-sdk/](../engine/patches/dart-sdk/README.md) | The Vita patch series against the pinned Dart SDK |
 | [phase-0.5-feasibility.md](phase-0.5-feasibility.md) | The completed gate. Every measurement taken so far, and the exit criteria still open |
 | [adr/](adr/README.md) | Architecture decision records, with an index and the open questions |
 | [../Flutter Vita Plan.md](../Flutter%20Vita%20Plan.md) | The original plan, reconciled against measurement. Intent and phases 2–5; `docs/` wins on anything measured |
@@ -57,7 +57,7 @@ and the framework, drawing through the Vita's GPU. The receiver in
 monospace log view — and it is what installs everything else.
 
 The renderer is Skia on GLES2 through `fvita_gles2`, this repository's own
-layer in `gles2/`, onto `sceGxm` ([ADR-0019](adr/0019-gles2-over-gxm-written-here.md);
+layer in `engine/gles2/`, onto `sceGxm` ([ADR-0019](adr/0019-gles2-over-gxm-written-here.md);
 vitaGL carried it from 2026-08-22 to 2026-09-14,
 [ADR-0014](adr/0014-gpu-backend-via-vitagl.md)). Route transitions hold 60 fps
 at a median 16.67 ms. Where the GPU wins it wins by 6-18x over the software

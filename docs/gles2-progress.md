@@ -3,7 +3,7 @@
 How far the GLES2-over-sceGxm layer of ADR-0019 is from complete. It has been
 the only GL in the tree since 2026-09-14 (M5). The
 blocks marked as generated are rewritten by `tools/gles2-progress.py` from the
-source and `gles2/surface.txt`; the area table's `done` column is set by hand
+source and `engine/gles2/surface.txt`; the area table's `done` column is set by hand
 and every change to it has to name its evidence in the last column.
 
 <!-- progress:begin -->
@@ -11,7 +11,7 @@ and every change to it has to name its evidence in the last column.
 
 | entry points | count |
 |---|---|
-| bound by Skia (`gles2/surface.txt`) | 108 |
+| bound by Skia (`engine/gles2/surface.txt`) | 108 |
 | called in some run, implemented | 60 of 60 |
 | never called, implemented anyway | 28 of 48 |
 | recording stubs | 20 |
@@ -23,7 +23,7 @@ and every change to it has to name its evidence in the last column.
 <!-- areas:begin -->
 | area | weight | done | evidence |
 |---|---|---|---|
-| Specification: the surface list, the shader corpus, the dialect | 6 | 100% | `gles2/surface.txt`: 108 names Skia binds on the layer itself, 60 called, measured by `experiments/gl-usage` wrapping `fvgl_get_proc_address` over one uninterrupted 36-scene bench on 2026-09-14 (the 14 extension names vitaGL advertised left the list); 47 shaders in the corpus |
+| Specification: the surface list, the shader corpus, the dialect | 6 | 100% | `engine/gles2/surface.txt`: 108 names Skia binds on the layer itself, 60 called, measured by `experiments/gl-usage` wrapping `fvgl_get_proc_address` over one uninterrupted 36-scene bench on 2026-09-14 (the 14 extension names vitaGL advertised left the list); 47 shaders in the corpus |
 | Context: GPU memory, sceGxm init, display chain, scenes, present | 12 | 70% | M0 on hardware 2026-09-12. Frame notifications retire GPU memory (`fvgl_collect_garbage`), per-frame scratch rings, M1. Scenes switch targets (a texture or the display) on demand and the frame always ends on the display, M3 test 2026-09-12. Missing: depth and stencil surfaces, and no Flutter app reaches them: `shell/common/context_options.cc` sets `fAvoidStencilBuffers` for every GL context and Ganesh never binds a depth buffer (read 2026-09-14), so under Flutter the stencil and renderbuffer entry points stay recording stubs with 0 calls |
 | Buffers and vertex input: VBO, IBO, attribute pointers, client arrays, draw calls | 14 | 80% | M1 on hardware 2026-09-12: VBO with `glBufferData(NULL)`+`glBufferSubData`, client arrays and client indices, `glDrawArrays`, `glDrawElements` (u8/u16/u32), line strips expanded, constant attributes via instance streams, vertex-program cache per layout. Gallery scale, 2026-09-14 (`docs/results/log-writes-on-the-frame-threads-2026-09-14.md`): `sub 0` over 9360 frames, Skia never writes into a buffer a draw of the frame has read, so no copy path is needed; `var 33/33/0`, one layout and one blend state per program, no variant table full. Missing: eviction from the 32-entry variant tables, for an app that needs it |
 | Textures: 2D, sub-image, copy, parameters, pixel store, formats | 10 | 80% | M3 test on hardware 2026-09-12: RGBA8, RGB (stored as RGBA8), ALPHA, LUMINANCE, LUMINANCE_ALPHA and RGB565 sample back the GL values; unpack alignment 1; linear filter with clamp; the white fallback for an incomplete sampler; glTexSubImage2D into a texture the previous frame samples (one counted stall); glCopyTexSubImage2D from the display. Lifecycle at gallery scale, bench 2026-09-12: live textures return to 2 after every scene, the garbage list drains to 0, CDRAM the layer owns peaks at 32 MiB (eleven render targets in the fade transitions) and ends the 34 scenes at 10.5 MiB with no refused allocation (`docs/results/snapshot-textures-2026-09-12.md`); a refused CDRAM block falls back to at most 8 MiB of main memory. glCopyTexSubImage2D is a GPU blit (`blit.c`); a texture drawn into becomes tiled, with staging blits for the CPU paths, M3 test 35 of 35 on 2026-09-13. Missing: mipmaps (strided layout has none), BGRA/4444/5551 unverified, cube maps refused, stall cost at gallery scale |
@@ -39,10 +39,10 @@ and every change to it has to name its evidence in the last column.
 
 | | milestone | state |
 |---|---|---|
-| M0 | clear, scissor, present through our own sceGxm context | **done 2026-09-12**, `gles2/test` M0 passes 10 of 10 pixel checks on hardware |
-| M1 | a triangle from run-time-translated GLSL | **done 2026-09-12**, `gles2/test` M1 passes 8 of 8 (mat3 convention, blend, gl_FragCoord, VBO and client paths) |
-| M2 | the gallery's shaders translate and compile | **done 2026-09-13**, 46 of 46 on the console (`gles2/test` M2); 47 of 47 on 2026-09-14 with wonderous' bicubic shader |
-| M3 | the gallery draws under `--gl gles2` | **done 2026-09-12**: `gles2/test` M3 35 of 35; the gallery renders through the layer, 22 programs, no stub called (`docs/results/gallery-fvita-gles2-2026-09-12.md`) |
+| M0 | clear, scissor, present through our own sceGxm context | **done 2026-09-12**, `engine/gles2/test` M0 passes 10 of 10 pixel checks on hardware |
+| M1 | a triangle from run-time-translated GLSL | **done 2026-09-12**, `engine/gles2/test` M1 passes 8 of 8 (mat3 convention, blend, gl_FragCoord, VBO and client paths) |
+| M2 | the gallery's shaders translate and compile | **done 2026-09-13**, 46 of 46 on the console (`engine/gles2/test` M2); 47 of 47 on 2026-09-14 with wonderous' bicubic shader |
+| M3 | the gallery draws under `--gl gles2` | **done 2026-09-12**: `engine/gles2/test` M3 35 of 35; the gallery renders through the layer, 22 programs, no stub called (`docs/results/gallery-fvita-gles2-2026-09-12.md`) |
 | M4 | test apps and bench at parity | **done 2026-09-14**: test apps five of five on gles2; bench, the build 23 pair (`docs/results/parity-2026-09-13.md`). Deferred: Zoom GPU time, screenshots scene by scene |
 | M5 | vitaGL and vitashark gone | **done 2026-09-14**: `patches/vitagl/`, `gl_vitagl.c`, the embedder's vgl shims and `--gl` removed; NOTICE has no LGPL section. Gallery builds 25 and 26 carry no vitaGL symbol and ran 36 of 36 bench scenes; the receiver on the new pin boots on fvita_gles2 and deploys apps (`docs/results/m5-vitagl-out-2026-09-14.md`) |
 

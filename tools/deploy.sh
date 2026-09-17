@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # Build-to-running in one command, without touching the console.
 #
-#   ./tools/deploy.sh apps/gallery               build, then deploy
-#   ./tools/deploy.sh apps/gallery --no-build   deploy what is already built
+#   ./tools/deploy.sh samples/gallery               build, then deploy
+#   ./tools/deploy.sh samples/gallery --no-build   deploy what is already built
 #   ./tools/deploy.sh --vpk path/to/app.vpk
 #   ./tools/deploy.sh --vpk x.vpk --receiver-port 1342
 #
@@ -107,7 +107,7 @@ alive() {
 }
 
 if [ "$BUILD" -eq 1 ]; then
-  [ -n "$APP_DIR" ] || { echo "which app? e.g. ./tools/deploy.sh apps/gallery" >&2; exit 2; }
+  [ -n "$APP_DIR" ] || { echo "which app? e.g. ./tools/deploy.sh samples/gallery" >&2; exit 2; }
   "$HERE/build-vita-app.sh" "$APP_DIR" || exit 1
 fi
 if [ -z "$VPK" ]; then

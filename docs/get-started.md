@@ -8,7 +8,7 @@ prints `ok` on every line and names the console.
 ## 1. Run the gallery
 
 ```sh
-flutter-vita run apps/gallery
+flutter-vita run samples/gallery
 ```
 
 `run` builds the app into a `.vpk`, hands the console to the receiver if an
@@ -49,7 +49,7 @@ under `fonts:` in `pubspec.yaml`, as on every other Flutter target. An app
 that shows an emoji without a font for it draws an empty box.
 
 **Plugins.** A plugin with native code needs a Vita implementation. The
-ones in [`packages/`](../packages) cover `path_provider`,
+ones in [`plugins/`](../plugins) cover `path_provider`,
 `shared_preferences`, `url_launcher`, `battery_plus`, `sensors_plus`,
 `device_info_plus`, `connectivity_plus`, `audioplayers`, `record`, `camera`
 and file pickers; add the `_vita` package beside the plugin and call its

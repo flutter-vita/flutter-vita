@@ -1,7 +1,7 @@
 # The four remaining test apps on fvita_gles2
 
 **Question:** `material_3_demo` already runs through the layer. Do the other
-four apps of [`apps/test-apps/manifest.txt`](../../apps/test-apps/manifest.txt)
+four apps of [`apps/test-apps/manifest.txt`](../../samples/test-apps/manifest.txt)
 reach their screens on `--gl gles2`, and where they look different from the
 August records ([test apps, run end to end](corpus-run-2026-08-19.md)), is
 the layer the reason?

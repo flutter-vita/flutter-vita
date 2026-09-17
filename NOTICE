@@ -34,7 +34,7 @@ Until that date every `eboot.bin` this toolchain produced linked vitaGL and
 vitaShaRK, both LGPL-3.0-or-later, and the paragraph that stood here told
 whoever shipped a `.vpk` what section 4 of the LGPL asked of them. ADR-0018
 found that obligation landing on every developer, ADR-0019 decided to write
-the GLES2 layer here instead, and `gles2/` is that layer: BSD-3, this
+the GLES2 layer here instead, and `engine/gles2/` is that layer: BSD-3, this
 project's own, over `sceGxm` and Sony's `libshacccg` on the console. No
 vitaGL, no vitaShaRK, no taiHEN in the link. The history is in the two ADRs
 and in git; nothing about it applies to a `.vpk` built from this tree.
@@ -73,16 +73,16 @@ deserves a source that ships its own licence.
 ## The patch series is not all BSD-3
 
 A patch is a derivative work of the file it changes, so each series under
-[patches/](patches/) carries the licence of the project it patches, not this
+[engine/patches/](engine/patches/) carries the licence of the project it patches, not this
 project's. The [LICENSE](LICENSE) at the root covers this repository's own code
 and does not reach them.
 
 | Series | Licence it inherits |
 |---|---|
-| `patches/dart-sdk/`, `patches/flutter-engine/`, `patches/skia/` | BSD-3-Clause |
-| `patches/abseil/` | Apache-2.0 |
-| `patches/boringssl/` | see BoringSSL's own `LICENSE` |
-| `patches/test-apps/` | whatever each application uses; they are unrelated projects |
+| `engine/patches/dart-sdk/`, `engine/patches/flutter-engine/`, `engine/patches/skia/` | BSD-3-Clause |
+| `engine/patches/abseil/` | Apache-2.0 |
+| `engine/patches/boringssl/` | see BoringSSL's own `LICENSE` |
+| `samples/test-apps/patches/` | whatever each application uses; they are unrelated projects |
 
 ## Components
 
@@ -93,10 +93,10 @@ and does not reach them.
 | Roboto (`Roboto-Regular.ttf`) | SIL Open Font License 1.1 |
 | Roboto Mono (`RobotoMono-Regular.ttf`) | SIL Open Font License 1.1 |
 | VitaSDK headers and stub libraries | see the VitaSDK distribution; not redistributed here |
-| `gles2/` (fvita_gles2) | BSD-3-Clause, this project's ([LICENSE](LICENSE)) |
+| `engine/gles2/` (fvita_gles2) | BSD-3-Clause, this project's ([LICENSE](LICENSE)) |
 
 This project vendors no third-party source. `third_party/` is checked out by
 tooling and is not committed; the exact revisions are pinned in
-[VERSIONS.md](VERSIONS.md) and the modifications are in [patches/](patches/).
+[VERSIONS.md](VERSIONS.md) and the modifications are in [engine/patches/](engine/patches/).
 The patch files themselves are committed, and the table above says what each
 series is licensed under.

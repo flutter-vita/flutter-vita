@@ -9,7 +9,7 @@ build/
 # Phase 0.5 experiment outputs — regenerate with the scripts, don't commit binaries
 experiments/**/out/
 
-# Vendored third-party trees (Phase 2). Pinned in VERSIONS.md, patched via patches/.
+# Vendored third-party trees (Phase 2). Pinned in VERSIONS.md, patched via engine/patches/.
 # These are large; they are checked out by tooling, not committed.
 third_party/
 

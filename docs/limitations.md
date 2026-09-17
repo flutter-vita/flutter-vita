@@ -25,7 +25,7 @@ at U+FFFD, so an emoji without a font draws an empty box.
 ## Plugins
 
 A plugin with native code needs a Vita implementation. The ones in
-[`packages/`](../packages) cover `path_provider`, `shared_preferences`,
+[`plugins/`](../plugins) cover `path_provider`, `shared_preferences`,
 `url_launcher`, `battery_plus`, `sensors_plus`, `device_info_plus`,
 `connectivity_plus`, `audioplayers`, `record`, `camera`, `file_picker` and
 `file_selector`. Any other plugin with native code fails at link time or

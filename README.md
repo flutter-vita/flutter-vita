@@ -9,7 +9,7 @@ Flutter framework (Dart AOT)
         v
 Flutter engine + Skia
         v
-GLES2 -> fvita_gles2 (gles2/, this repo) -> sceGxm
+GLES2 -> fvita_gles2 (engine/gles2/, this repo) -> sceGxm
         v
 PowerVR SGX543MP4+
 ```
@@ -44,7 +44,7 @@ Point it at any Flutter app directory.
 flutter-vita doctor
 
 # Build, install and run an app; the log follows.
-flutter-vita run apps/gallery
+flutter-vita run samples/gallery
 
 # Build a .vpk without the dev server and the debug strip.
 flutter-vita build my_app --release
@@ -85,7 +85,7 @@ See [Commands](docs/commands.md) for the full list, and
 
 - [Develop a plugin](docs/develop-plugin.md): a C half beside a Dart package,
   compiled into the app.
-- [Available plugins](packages/): Vita implementations of `path_provider`,
+- [Available plugins](plugins/): Vita implementations of `path_provider`,
   `shared_preferences`, `url_launcher`, `battery_plus`, `sensors_plus`,
   `device_info_plus`, `connectivity_plus`, `audioplayers`, `record`,
   `camera`, `file_picker`, `file_selector`.
@@ -103,11 +103,11 @@ See [Commands](docs/commands.md) for the full list, and
 
 ## Showcases
 
-- [`apps/gallery`](apps/gallery): the panel this port is measured with. Tabs
+- [`samples/gallery`](samples/gallery): the panel this port is measured with. Tabs
   for widgets, benchmark scenes, conformance probes, hardware checks.
-- [`apps/test-apps`](apps/test-apps): apps we did not write, run as found:
+- [`samples/test-apps`](samples/test-apps): apps we did not write, run as found:
   Wonderous, LocalSend, a manga reader and a journal, pinned by commit in
-  [`manifest.txt`](apps/test-apps/manifest.txt).
+  [`manifest.txt`](samples/test-apps/manifest.txt).
   [The run](docs/results/test-apps-fvita-gles2-2026-09-13.md).
 - [`receiver/`](receiver): the deploy target on the console is itself a
   Flutter app.

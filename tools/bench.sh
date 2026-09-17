@@ -41,8 +41,8 @@ ROOT="$(cd "$HERE/.." && pwd)"
 HOST="${VITA_HOST:-flutter-vita.local}"
 DEV=1339
 LDR=1341
-APP_VPK="$ROOT/apps/gallery/build/vita/gallery.vpk"
-BASELINE_DIR="$ROOT/apps/gallery/bench"
+APP_VPK="$ROOT/samples/gallery/build/vita/gallery.vpk"
+BASELINE_DIR="$ROOT/samples/gallery/bench"
 OUT_DIR="$ROOT/out/bench"
 # GPU only, unless asked otherwise.
 #
@@ -74,7 +74,7 @@ RELAUNCH=0
 STUCK_AFTER=150
 # Which of the gallery's suites: scenes (the benchmark, the default),
 # conformance, hardware, or all three in that order. Each is started by its
-# own switch on the card and ends with its own done marker (apps/README.md).
+# own switch on the card and ends with its own done marker (samples/README.md).
 SUITE="scenes"
 
 while [ $# -gt 0 ]; do
@@ -130,7 +130,7 @@ mkdir -p "$OUT_DIR" "$BASELINE_DIR"
 
 if [ "$BUILD" -eq 1 ]; then
   echo "==> building gallery"
-  "$HERE/build-vita-app.sh" "$ROOT/apps/gallery" >/dev/null
+  "$HERE/build-vita-app.sh" "$ROOT/samples/gallery" >/dev/null
 fi
 [ -f "$APP_VPK" ] || { echo "!! no $APP_VPK" >&2; exit 1; }
 
@@ -142,8 +142,8 @@ fi
 # that matches, and a mismatched ELF resolves to nonsense, so it is used only
 # when its eboot is the one in the vpk.
 elf_for_vpk() {
-  local elf="$ROOT/apps/gallery/build/vita/cmake/flutter_vita_app"
-  local built="$ROOT/apps/gallery/build/vita/cmake/flutter_vita_app.vpk"
+  local elf="$ROOT/samples/gallery/build/vita/cmake/flutter_vita_app"
+  local built="$ROOT/samples/gallery/build/vita/cmake/flutter_vita_app.vpk"
   [ -f "$elf" ] && [ -f "$built" ] || return 1
   local a b
   a="$(unzip -p "$APP_VPK" eboot.bin 2>/dev/null | md5 -q 2>/dev/null || true)"

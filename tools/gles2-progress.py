@@ -6,8 +6,8 @@
 
 Two numbers, neither typed by hand:
 
-  * the entry-point ledger: every name in gles2/surface.txt is `real` when a
-    GL_APIENTRY definition exists in gles2/src, `stub` when it is declared
+  * the entry-point ledger: every name in engine/gles2/surface.txt is `real` when a
+    GL_APIENTRY definition exists in engine/gles2/src, `stub` when it is declared
     through FVGL_STUB, `missing` otherwise;
   * the headline percentage: the weighted sum of the area table, whose `done`
     column is edited by hand and must cite its evidence.
@@ -18,8 +18,8 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 DOC = ROOT / "docs" / "gles2-progress.md"
-SURFACE = ROOT / "gles2" / "surface.txt"
-SRC = ROOT / "gles2" / "src"
+SURFACE = ROOT / "engine" / "gles2" / "surface.txt"
+SRC = ROOT / "engine" / "gles2" / "src"
 
 DEF = re.compile(r"GL_APIENTRY\s+((?:gl|egl)[A-Za-z0-9_]+)\s*\(")
 STUB = re.compile(r"FVGL_STUB\(\s*((?:gl|egl)[A-Za-z0-9_]+)")
@@ -84,7 +84,7 @@ def main():
         "",
         "| entry points | count |",
         "|---|---|",
-        f"| bound by Skia (`gles2/surface.txt`) | {len(rows)} |",
+        f"| bound by Skia (`engine/gles2/surface.txt`) | {len(rows)} |",
         f"| called in some run, implemented | {len(real_called)} of {len(called)} |",
         f"| never called, implemented anyway | {len(real_never)} of {len(never)} |",
         f"| recording stubs | {len(stubbed)} |",

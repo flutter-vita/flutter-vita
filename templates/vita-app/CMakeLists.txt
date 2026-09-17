@@ -16,7 +16,7 @@
 #   EXTRA_LINK_OPTIONS  ;-list of extra linker flags
 #   RELEASE         ON to link release.c instead of the dev loop
 #   GLES2_DIR       the fvita_gles2 source, built into the app (ADR-0019);
-#                   default ../../gles2 from this file
+#                   default ../../engine/gles2 from this file
 cmake_minimum_required(VERSION 3.16)
 
 if(NOT DEFINED CMAKE_TOOLCHAIN_FILE)
@@ -130,7 +130,7 @@ endif()
 # The GL under Ganesh: fvita_gles2, built from source into every app
 # (ADR-0019). The embedder calls the eight functions of flutter_vita_gl.h and
 # nothing else of it; gl_gles2.c answers. vitaGL sat here until 2026-09-14.
-set(GLES2_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../../gles2" CACHE PATH "fvita_gles2 source")
+set(GLES2_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../../engine/gles2" CACHE PATH "fvita_gles2 source")
 add_subdirectory("${GLES2_DIR}" fvita_gles2)
 set(GL_PLATFORM_SOURCE ${CMAKE_CURRENT_SOURCE_DIR}/gl_gles2.c)
 set(GL_LIBS fvita_gles2 ${FVITA_GLES2_LIBS})

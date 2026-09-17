@@ -5,7 +5,7 @@
 
 ## Context
 
-The [conformance app](../../apps/conformance) reports 45 probes, 45 pass. That
+The [conformance app](../../samples/conformance) reports 45 probes, 45 pass. That
 number is worth exactly as much as the imagination of the people who wrote it,
 and those are the same people who wrote the engine. It cannot find a capability
 nobody thought to probe.
@@ -48,7 +48,7 @@ reintroduced by hand exactly the human step ADR-0011 removed.
 ## Decision
 
 **Five apps, one per axis**, pinned by commit in
-[`apps/test-apps/manifest.txt`](../../apps/test-apps/manifest.txt): a plugin-free
+[`apps/test-apps/manifest.txt`](../../samples/test-apps/manifest.txt): a plugin-free
 control, animation-and-assets, storage-and-dependency-breadth, networking, and
 remote-content-with-codegen. Overlap is rejected on sight — two apps that fail
 the same way cost two deploys and teach one lesson.

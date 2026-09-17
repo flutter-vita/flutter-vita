@@ -11,7 +11,7 @@ makes "the Vita is reachable as an OS from inside the app" an explicit
 requirement rather than a nice-to-have.
 
 Today it is not reachable at all, and deliberately so.
-[The Dart patch](../../patches/dart-sdk/0001-add-vita-host-and-target-os.patch)
+[The Dart patch](../../engine/patches/dart-sdk/0001-add-vita-host-and-target-os.patch)
 sets `kHostOperatingSystemName` to `"linux"`, because `defaultTargetPlatform`
 in `packages/flutter/lib/src/foundation/_platform_io.dart` is an if-chain over
 `Platform.isAndroid` / `isIOS` / `isFuchsia` / `isLinux` / `isMacOS` /

@@ -156,7 +156,7 @@ widespread pattern, which is why it produced an anonymous data abort while
 every other failure in this port produces a readable Dart exception.
 
 **There is no sweep outstanding.** What replaces it is a rule, recorded in
-[the patch notes](../../patches/dart-sdk/README.md): a Vita implementation of a
+[the patch notes](../../engine/patches/dart-sdk/README.md): a Vita implementation of a
 function the compiler emits calls to must exit, not return a failure value.
 That rule is for the next hand-rolled ABI function, not for the current ones.
 

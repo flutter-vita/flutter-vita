@@ -89,7 +89,7 @@ slide in free memory. Full write-up in
 
 **Cause:** vitaGL never checked `sceGxmReserveVertexDefaultUniformBuffer` and
 wrote through the null it leaves on refusal. Fixed in
-[patches/vitagl/0002](../../patches/vitagl/0002-the-reservation-vitagl-never-checked.patch).
+[patches/vitagl/0002](../../engine/patches/vitagl/0002-the-reservation-vitagl-never-checked.patch).
 One tap on an overflow menu reproduced it; twenty cycles now survive.
 
 **This also closes item 2.** The receive stall and this abort were the same
@@ -107,7 +107,7 @@ Scrolling to the receive-history row with a JPEG in it took 29 fps to 5, with
 The cause was in vitaGL, not Skia: `#define s x` in the Cg translation header
 renamed every variable called `s` in every shader, and Skia's colour transfer
 function declares one inside a function taking `x`. Fixed in
-[patches/vitagl/0004](../../patches/vitagl/0004-the-define-that-renamed-every-s.patch).
+[patches/vitagl/0004](../../engine/patches/vitagl/0004-the-define-that-renamed-every-s.patch).
 That row now holds 29.0 fps with the raster thread at 8% and refuses no links.
 Full account in
 [shader-compile-failures-2026-09-01.md](shader-compile-failures-2026-09-01.md).

@@ -97,7 +97,7 @@ uniform buffer GXM had refused to give it; depending on what sat at address
 zero that either faulted or wedged the pipeline, and the wedge is this
 document. That is why nothing was ever wrong with the threads. One tap on an
 overflow menu reproduced both outcomes, and
-[patches/vitagl/0002](../../patches/vitagl/0002-the-reservation-vitagl-never-checked.patch)
+[patches/vitagl/0002](../../engine/patches/vitagl/0002-the-reservation-vitagl-never-checked.patch)
 ends them. **The memory slide across nine transfers below is not explained by
 this and stays open.**
 

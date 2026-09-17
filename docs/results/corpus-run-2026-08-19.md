@@ -1,6 +1,6 @@
 # The test apps, run end to end
 
-All five apps from [`apps/test-apps/manifest.txt`](../../apps/test-apps/manifest.txt)
+All five apps from [`apps/test-apps/manifest.txt`](../../samples/test-apps/manifest.txt)
 built and put on hardware, 2026-08-19. Under
 [ADR-0012](../adr/0012-test-apps-as-measurement-instrument.md) the score is
 lines changed to reach first frame, because ADR-0009's `registerWith()` is

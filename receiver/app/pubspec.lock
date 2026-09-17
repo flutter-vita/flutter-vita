@@ -60,7 +60,7 @@ packages:
   audioplayers_vita:
     dependency: "direct main"
     description:
-      path: "../../packages/audioplayers_vita"
+      path: "../../plugins/audioplayers_vita"
       relative: true
     source: path
     version: "0.1.0"
@@ -386,7 +386,7 @@ packages:
   vita_file_browser:
     dependency: "direct main"
     description:
-      path: "../../packages/vita_file_browser"
+      path: "../../plugins/vita_file_browser"
       relative: true
     source: path
     version: "0.1.0"
