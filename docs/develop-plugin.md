@@ -9,7 +9,7 @@ model is [ADR-0009](adr/0009-plugins-via-non-endorsed-vita-implementations.md)
 C half inside the package). Every package in [`plugins/`](../plugins) is
 an example; `battery_plus_vita` is the smallest. A new implementation of
 an upstream plugin goes there; a package with an API of its own goes to
-[flutter-vita/packages](https://github.com/flutter-vita/packages).
+[flutter-vita/flutter-vita-packages](https://github.com/flutter-vita/flutter-vita-packages).
 
 ## Why not FFI or a shared library
 

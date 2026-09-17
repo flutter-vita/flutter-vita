@@ -15,7 +15,7 @@ before `runApp` ([ADR-0009](../docs/adr/0009-plugins-via-non-endorsed-vita-imple
 | `camera_vita` | `camera` | SceCamera |
 | `connectivity_plus_vita` | `connectivity_plus` | SceNetCtl |
 | `device_info_plus_vita` | `device_info_plus` | ScePower, SceKernel, SceAppMgr |
-| `file_picker_vita` | `file_picker` | A browser drawn in Flutter (`vita_file_browser`, from [flutter-vita/packages](https://github.com/flutter-vita/packages)); the console has no file dialog |
+| `file_picker_vita` | `file_picker` | A browser drawn in Flutter (`vita_file_browser`, from [flutter-vita/flutter-vita-packages](https://github.com/flutter-vita/flutter-vita-packages)); the console has no file dialog |
 | `file_selector_vita` | `file_selector` | The same browser |
 | `path_provider_vita` | `path_provider` | Dart only: `ux0:data/<title id>/` and the app's own directories |
 | `record_vita` | `record` | SceAudioIn, to a WAV file |
@@ -27,5 +27,5 @@ These are path dependencies today, `../../plugins/<name>` from a sample.
 Publishing them to pub.dev is planned; the names stay. The project's own
 packages with an API of their own, `vita_debug_strip` and
 `vita_file_browser`, live in
-[flutter-vita/packages](https://github.com/flutter-vita/packages), the
+[flutter-vita/flutter-vita-packages](https://github.com/flutter-vita/flutter-vita-packages), the
 `packages/` submodule.
