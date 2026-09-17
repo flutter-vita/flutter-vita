@@ -84,7 +84,7 @@ index b444137..9a71b5d 100644
    syncfusion_flutter_charts: ^33.2.13
    url_launcher: ^6.1.9
 +  url_launcher_vita:
-+    path: ../../../plugins/url_launcher_vita
++    path: ../../../plugins/packages/url_launcher_vita
    uuid: ^4.2.1
    video_player: ^2.10.1
    webview_flutter: ^4.1.0
@@ -95,9 +95,9 @@ index b444137..9a71b5d 100644
 +  # ADR-0009: non-endorsed vita implementations, listed beside the plugins they
 +  # implement. This is the whole edit an app author makes.
 +  path_provider_vita:
-+    path: ../../../plugins/path_provider_vita
++    path: ../../../plugins/packages/path_provider_vita
 +  shared_preferences_vita:
-+    path: ../../../plugins/shared_preferences_vita
++    path: ../../../plugins/packages/shared_preferences_vita
    native_liquid_glass: ^0.2.10
  dev_dependencies:
    flutter_lints: ^6.0.0

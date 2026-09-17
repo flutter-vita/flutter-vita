@@ -30,9 +30,9 @@ index 46ef51c..aa54883 100644
 +  # ADR-0009: non-endorsed vita implementations, listed beside the plugins they
 +  # implement. This is the whole edit an app author makes.
 +  path_provider_vita:
-+    path: ../../../plugins/path_provider_vita
++    path: ../../../plugins/packages/path_provider_vita
 +  shared_preferences_vita:
-+    path: ../../../plugins/shared_preferences_vita
++    path: ../../../plugins/packages/shared_preferences_vita
    sized_context: ^1.0.0+1
    smooth_page_indicator: ^2.0.1
    unsplash_client: ^3.0.0

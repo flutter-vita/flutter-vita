@@ -67,9 +67,10 @@ See [Commands](docs/commands.md) for the full list, and
 
 | Repository | What it is |
 | --- | --- |
-| [flutter-vita](https://github.com/flutter-vita/flutter-vita) (this one) | The `flutter-vita` command, the app template, the receiver, the GLES2 layer, the plugins, the samples and the docs. |
+| [flutter-vita](https://github.com/flutter-vita/flutter-vita) (this one) | The `flutter-vita` command, the app template, the receiver, the GLES2 layer, the samples and the docs. |
 | [flutter](https://github.com/flutter-vita/flutter) | The fork of Flutter, branch `vita-3.44.8`: the engine's Vita changes as commits on the `3.44.8` tag. Its releases carry the prebuilt engine archive; [`versions.json`](versions.json) names the one this tool uses. |
 | [flutter-vita-embedder](https://github.com/flutter-vita/flutter-vita-embedder) | The embedder, the `main()` of every app. A submodule here at `engine/embedder`, compiled from source into each build. |
+| [plugins](https://github.com/flutter-vita/plugins) | The Vita implementations of pub packages, `packages/<name>_vita`. A submodule here at `plugins/`, path dependencies for the samples until they reach pub.dev. |
 
 Clone with `--recurse-submodules`, or run `git submodule update --init`
 after a plain clone.
@@ -101,7 +102,7 @@ after a plain clone.
 
 - [Develop a plugin](docs/develop-plugin.md): a C half beside a Dart package,
   compiled into the app.
-- [Available plugins](plugins/): Vita implementations of `path_provider`,
+- [Available plugins](https://github.com/flutter-vita/plugins): Vita implementations of `path_provider`,
   `shared_preferences`, `url_launcher`, `battery_plus`, `sensors_plus`,
   `device_info_plus`, `connectivity_plus`, `audioplayers`, `record`,
   `camera`, `file_picker`, `file_selector`.

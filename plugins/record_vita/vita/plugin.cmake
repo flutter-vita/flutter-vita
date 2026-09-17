@@ -1,2 +1,0 @@
-list(APPEND PLUGIN_SOURCES ${CMAKE_CURRENT_LIST_DIR}/record.c)
-list(APPEND PLUGIN_LIBS SceAudioIn_stub)

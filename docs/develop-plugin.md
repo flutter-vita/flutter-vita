@@ -6,8 +6,10 @@ CMake fragment, compiled into every app that depends on the package. The
 model is [ADR-0009](adr/0009-plugins-via-non-endorsed-vita-implementations.md)
 (a non-endorsed platform implementation, the way `foo_linux` sits beside
 `foo`) and [ADR-0020](adr/0020-native-halves-inside-vita-packages.md) (the
-C half inside the package). Every package in [`plugins/`](../plugins) is
-an example; `battery_plus_vita` is the smallest.
+C half inside the package). Every package in
+[flutter-vita/plugins](https://github.com/flutter-vita/plugins) (the
+`plugins/` submodule, `packages/<name>`) is an example; `battery_plus_vita`
+is the smallest. A new one goes there, in its own pull request.
 
 ## Why not FFI or a shared library
 
@@ -119,7 +121,7 @@ author's other platform packages do.
 flutter-vita run samples/gallery
 ```
 
-The gallery's HARDWARE tab drives the packages in `plugins/` through the
+The gallery's HARDWARE tab drives the packages in `plugins/packages/` through the
 pub API an app author would use, and reports what each answered. Add your
 plugin to its `pubspec.yaml` and a row to the tab, and the console tells
 you whether the C half links, registers and answers. The log shows the

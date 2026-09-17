@@ -1,2 +1,0 @@
-list(APPEND PLUGIN_SOURCES ${CMAKE_CURRENT_LIST_DIR}/device.c)
-list(APPEND PLUGIN_LIBS ScePower_stub SceAppMgr_stub)
