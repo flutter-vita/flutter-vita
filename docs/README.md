@@ -14,6 +14,7 @@ meets them.
 | [debug-app.md](debug-app.md) | The debug strip column by column, the log, screenshots, crash dumps, a console that stops answering |
 | [limitations.md](limitations.md) | No hot reload, fonts, plugins, memory, platform identity |
 | [release-app.md](release-app.md) | `--release`, the title id, LiveArea art, notices |
+| [configure-app.md](configure-app.md) | `FlutterVita.configure`: the pad, the rear panel, the pixel ratio, the strip, fallbacks for phone plugins |
 | [develop-plugin.md](develop-plugin.md) | A Vita half for a plugin: the C file, the CMake fragment, the Dart side |
 | [writing-flutter-that-runs-on-a-vita.md](writing-flutter-that-runs-on-a-vita.md) | What the benchmarks found, and what to do in app code |
 

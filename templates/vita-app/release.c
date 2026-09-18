@@ -3,8 +3,9 @@
 // The dev server (an unauthenticated socket on 1339 that reads and writes any
 // path on the card) and bailout.c (which launches FVTA00001 on abort, so on a
 // console with no receiver the app just vanishes) are dropped by leaving their
-// files out of the build. The debug strip lives inside the engine archive, so it
-// is switched off by defining a strong symbol against the engine's weak one.
+// files out of the build. The debug strip is compiled into the embedder, so it
+// is switched off by a symbol: `flutter_vita_release`, which main() reads
+// before anything else and zeroes the strip's knob from.
 //
 // The five stubs exist because the embedder calls them unconditionally. Making
 // them conditional in the engine would mean building the engine twice.
@@ -15,8 +16,11 @@
 
 #include <stddef.h>
 
-// Strong against the engine's weak `= 1`. See the comment above.
-int flutter_vita_debug_overlay = 0;
+// Strong against the embedder's weak `= 0`. The strip's own knob,
+// flutter_vita_debug_overlay, is deliberately not defined here: a package
+// that sets its default (flutter_vita's C half says 2) would collide with a
+// second strong definition, and this one flag covers the release case.
+int flutter_vita_release = 1;
 
 // Same again for the UI-thread watchdog: a shipping app never relaunches
 // itself on a wedged UI thread, that is a dev-loop convenience.

@@ -12,6 +12,7 @@ import 'package:vita_debug_strip/vita_debug_strip.dart';
 
 import 'bench/bench_page.dart';
 import 'bench/runner.dart';
+import 'configure_tab.dart';
 import 'conformance/conformance_tab.dart';
 import 'hardware/hardware_tab.dart';
 import 'panel_page.dart';
@@ -19,7 +20,7 @@ import 'results_tab.dart';
 
 /// Everything this port is measured with, on one panel.
 ///
-/// Five tabs on a rail down the left, the shape the receiver has. Panel is
+/// Tabs on a rail down the left, the shape the receiver has. Panel is
 /// what the port looks like, judged by eye. Scenes is the benchmark of
 /// ADR-0017. Conformance is the probe suite that was its own app until
 /// 2026-09-14. Hardware asks each piece of the console to answer. Results
@@ -30,7 +31,8 @@ import 'results_tab.dart';
 /// Three switches on the card start an unattended run on one tab and the run
 /// writes a result file and a done marker: bench.on, conformance.on,
 /// hardware.on. tools/bench.sh writes them.
-void main() {
+void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
   // A positive control for the engine's log_message_callback. Dart print had
   // no destination on this port until 2026-08-24; if this line does not appear
   // in the log, nothing else in it about Dart is complete.
@@ -53,6 +55,9 @@ void main() {
   RecordVita.registerWith();
   AudioplayersVita.registerWith();
   CameraVita.registerWith();
+  // flutter_vita: the console-side settings the Configure tab edits live,
+  // applied once here so the tab and the embedder start in agreement.
+  await GalleryConfig.apply();
 
   final autoBench = switchOn(kSwitchPath);
   final autoConformance = !autoBench && switchOn(kConformanceSwitchPath);
@@ -125,6 +130,7 @@ const _tabNames = [
   'HARDWARE',
   'CAMERAS',
   'MANUAL',
+  'CONFIGURE',
   'RESULTS',
 ];
 
@@ -254,6 +260,7 @@ class _ShellState extends State<Shell> with TickerProviderStateMixin {
         3 => HardwareTab(suite: _hardware, group: HardwareGroup.auto),
         4 => HardwareTab(suite: _hardware, group: HardwareGroup.camera),
         5 => HardwareTab(suite: _hardware, group: HardwareGroup.person),
+        6 => const ConfigureTab(),
         _ => const ResultsTab(),
       };
 }

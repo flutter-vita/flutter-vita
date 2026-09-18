@@ -94,6 +94,9 @@ after a plain clone.
   crash dumps.
 - [Writing Flutter that runs on a Vita](docs/writing-flutter-that-runs-on-a-vita.md):
   what the benchmarks found, and what to do about it in app code.
+- [Configure the app for the console](docs/configure-app.md): one call in
+  `main()` for the pad, the rear panel, the pixel ratio and the plugins a
+  console cannot serve.
 - [Limitations](docs/limitations.md): no hot reload, fonts, plugins, memory.
 - [Release an app](docs/release-app.md): the release build, LiveArea art,
   what to hand your users.

@@ -47,6 +47,14 @@ dependencies:
   # hidden in an app that carries this one.)
   vita_debug_strip:
     path: ../../packages/vita_debug_strip
+  # The Configure tab: every setting flutter_vita has, live. The three phone
+  # plugins below have no Vita implementation on purpose; flutter_vita's
+  # fallbacks answer them.
+  flutter_vita:
+    path: ../../packages/flutter_vita
+  share_plus: ^12.0.0
+  url_launcher: ^6.3.0
+  image_picker: ^1.2.0
 
 # Its own slot, so it can sit on the LiveArea beside the receiver's slot. The
 # dev loop installs into FVTA00002 whatever this says (tools/deploy.sh).

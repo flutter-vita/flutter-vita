@@ -95,9 +95,9 @@ set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=gnu++20 -Wall -O2 -g")
 # The debug strip is compiled into the embedder, so it is switched off by
 # *adding* a strong definition rather than leaving a file out:
 #
-#   echo 'int flutter_vita_debug_overlay = 0;' > shipping.c
+#   echo 'int flutter_vita_release = 1;' > shipping.c
 #
-# RELEASE=ON is that build: release.c is the five stubs plus that zero. Nothing
+# RELEASE=ON is that build: release.c is the five stubs plus that flag. Nothing
 # else here changes, so a release app is the same link with two files swapped
 # for one. `overlay off` on the dev server toggles the HUD at runtime.
 if(HARDWARE_CHECKS)
@@ -230,6 +230,8 @@ target_link_libraries(${PROJECT_NAME}
   SceSysmem_stub SceLibKernel_stub SceKernelThreadMgr_stub
   ScePower_stub SceGxm_stub SceCommonDialog_stub
   SceIme_stub SceAppUtil_stub
+  # For flutter_vita's `psButton: locked` (sceShellUtilLock).
+  SceShellSvc_stub
   # For the receiver's `promote`, the only route by which it can replace itself.
   # A stub archive costs nothing to an app that never calls into it.
   ScePromoterUtil_stub
