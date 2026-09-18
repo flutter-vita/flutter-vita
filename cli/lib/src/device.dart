@@ -17,6 +17,10 @@ enum VitaRole {
   final String label;
 }
 
+/// The name the console announces over mDNS (the dev server's responder).
+/// Every command tries it before sweeping the subnet.
+const kVitaHostName = 'fluttervita.local';
+
 class VitaDevice {
   VitaDevice(this.host, this.role);
 
@@ -25,6 +29,28 @@ class VitaDevice {
 
   @override
   String toString() => '$host:${role.port} (${role.label})';
+
+  /// The address to connect to. A `.local` name is resolved for IPv4 only:
+  /// asking for both families makes macOS wait about five seconds for an
+  /// AAAA answer the console never sends, on every connection.
+  static Future<InternetAddress> resolve(
+    String host, {
+    Duration timeout = const Duration(seconds: 3),
+  }) async {
+    final literal = InternetAddress.tryParse(host);
+    if (literal != null) return literal;
+    final found = await InternetAddress.lookup(
+      host,
+      type: InternetAddressType.IPv4,
+    ).timeout(timeout);
+    if (found.isEmpty) throw SocketException('no address for $host');
+    return found.first;
+  }
+
+  Future<Socket> _connect({Duration? timeout}) async {
+    final address = await resolve(host);
+    return Socket.connect(address, role.port, timeout: timeout);
+  }
 
   /// Send one command and read until the far end closes.
   ///
@@ -37,7 +63,7 @@ class VitaDevice {
     List<int>? payload,
     Duration timeout = const Duration(seconds: 30),
   }) async {
-    final socket = await Socket.connect(host, role.port, timeout: timeout);
+    final socket = await _connect(timeout: timeout);
     try {
       socket.add('$command\n'.codeUnits);
       if (payload != null) {
@@ -94,7 +120,7 @@ class VitaDevice {
   }
 
   Future<void> stage(List<int> eboot) async {
-    final socket = await Socket.connect(host, role.port);
+    final socket = await _connect();
     try {
       socket.add('stage ${eboot.length}\n'.codeUnits);
       socket.add(eboot);
@@ -148,7 +174,7 @@ class VitaDevice {
   }) async {
     Socket? socket;
     try {
-      socket = await Socket.connect(host, role.port, timeout: timeout);
+      socket = await VitaDevice(host, role)._connect(timeout: timeout);
       socket.add('ping\n'.codeUnits);
       await socket.flush();
 

@@ -330,7 +330,8 @@ Future<int> _tap(List<String> args, Map<String, String> opts) async {
   return 0;
 }
 
-/// Locate a device: an explicit --host, else a sweep.
+/// Locate a device: an explicit --host, else the console's mDNS name, else a
+/// sweep of the subnet (an app built before the name existed still answers).
 ///
 /// [role] narrows it when the command only makes sense against one — `logs`
 /// needs the app, and finding the receiver instead should say so rather than
@@ -349,6 +350,12 @@ Future<VitaDevice?> _findDevice(
     }
     if (!quiet) stderr.writeln('!! nothing answering on $host');
     return null;
+  }
+
+  for (final candidate in role != null ? [role] : VitaRole.values) {
+    final device = await VitaDevice.probe(kVitaHostName, candidate,
+        timeout: const Duration(seconds: 3));
+    if (device != null) return device;
   }
 
   final found = await discover(subnet: opts['subnet']);
