@@ -1,11 +1,11 @@
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:flutter_vita/src/device.dart';
-import 'package:flutter_vita/src/paths.dart';
-import 'package:flutter_vita/src/discovery.dart';
-import 'package:flutter_vita/src/png.dart';
-import 'package:flutter_vita/src/precache.dart';
+import 'package:flutter_vita_cli/src/device.dart';
+import 'package:flutter_vita_cli/src/paths.dart';
+import 'package:flutter_vita_cli/src/discovery.dart';
+import 'package:flutter_vita_cli/src/png.dart';
+import 'package:flutter_vita_cli/src/precache.dart';
 
 /// One entry point for building, installing and driving Flutter on a Vita.
 ///

@@ -1,4 +1,4 @@
-name: flutter_vita
+name: flutter_vita_cli
 description: Build and run Flutter apps on a PlayStation Vita.
 version: 0.1.0
 publish_to: none
