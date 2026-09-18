@@ -16,30 +16,6 @@ index 6bfb65d..9e9e111 100644
    BorderRadius get borderRadius => _borderRadius;
  }
  
-diff --git a/app/lib/main.dart b/app/lib/main.dart
-index 69c6824..1541add 100644
---- a/app/lib/main.dart
-+++ b/app/lib/main.dart
-@@ -1,6 +1,9 @@
- import 'package:common/isolate.dart';
-+import 'package:file_selector_vita/file_selector_vita.dart';
- import 'package:flutter/material.dart';
- import 'package:flutter_localizations/flutter_localizations.dart';
-+import 'package:path_provider_vita/path_provider_vita.dart';
-+import 'package:shared_preferences_vita/shared_preferences_vita.dart';
- import 'package:localsend_app/config/init.dart';
- import 'package:localsend_app/config/init_error.dart';
- import 'package:localsend_app/config/theme.dart';
-@@ -18,6 +21,9 @@ import 'package:refena_flutter/refena_flutter.dart';
- import 'package:routerino/routerino.dart';
- 
- Future<void> main(List<String> args) async {
-+  PathProviderVita.registerWith();
-+  SharedPreferencesVita.registerWith();
-+  FileSelectorVita.registerWith();
-   final RefenaContainer container;
-   try {
-     container = await preInit(args);
 diff --git a/app/lib/util/native/autostart_helper.dart b/app/lib/util/native/autostart_helper.dart
 index 696e653..4186f54 100644
 --- a/app/lib/util/native/autostart_helper.dart

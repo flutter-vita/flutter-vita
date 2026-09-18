@@ -2,32 +2,17 @@ diff --git a/lib/main.dart b/lib/main.dart
 index af2757f..c007580 100644
 --- a/lib/main.dart
 +++ b/lib/main.dart
-@@ -41,8 +41,13 @@ import 'package:keklist/presentation/screens/preparation/preparation_screen.dart
+@@ -41,8 +41,9 @@ import 'package:keklist/presentation/screens/preparation/preparation_screen.dart
  import 'package:provider/provider.dart';
  import 'package:purchases_flutter/purchases_flutter.dart';
  import 'package:shared_preferences/shared_preferences.dart';
-+import 'package:path_provider_vita/path_provider_vita.dart';
-+import 'package:shared_preferences_vita/shared_preferences_vita.dart';
-+import 'package:file_picker_vita/file_picker_vita.dart';
-+import 'package:url_launcher_vita/url_launcher_vita.dart';
  import 'package:streaming_shared_preferences/streaming_shared_preferences.dart';
  import 'package:flutter/foundation.dart';
 +import 'package:flutter/services.dart';
  import 'package:flutter/material.dart';
  import 'package:flutter_bloc/flutter_bloc.dart';
  import 'package:keklist/presentation/blocs/mind_bloc/mind_bloc.dart';
-@@ -62,6 +67,10 @@ import 'presentation/native/ios/watch/watch_communication_manager.dart';
- 
- Future<void> main() async {
-   WidgetsFlutterBinding.ensureInitialized();
-+  PathProviderVita.registerWith();
-+  SharedPreferencesVita.registerWith();
-+  UrlLauncherVita.registerWith();
-+  FilePickerVita.registerWith();
-   _initNativeWidgets();
-   _setupBlockingLoadingWidget();
-   runApp(const _AppRoot());
-@@ -114,7 +123,17 @@ final class _AppRootState extends State<_AppRoot> {
+@@ -114,7 +115,17 @@ final class _AppRootState extends State<_AppRoot> {
              _ => dotenv.env['REVENUE_CAT_TEST_API_KEY']!,
            }
          : dotenv.env['REVENUE_CAT_TEST_API_KEY']!;

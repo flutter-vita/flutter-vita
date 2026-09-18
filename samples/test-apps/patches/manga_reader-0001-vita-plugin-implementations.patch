@@ -1,38 +1,14 @@
-diff --git a/lib/bootstrap.dart b/lib/bootstrap.dart
-index c5ef427..5fb00de 100644
---- a/lib/bootstrap.dart
-+++ b/lib/bootstrap.dart
-@@ -7,12 +7,20 @@ import 'package:flutter_manga_reader/core/providers/theme_controller.dart';
- import 'package:flutter_manga_reader/core/utils/logger.dart';
- import 'package:flutter_riverpod/flutter_riverpod.dart';
- import 'package:go_router/go_router.dart';
-+import 'package:path_provider_vita/path_provider_vita.dart';
-+import 'package:shared_preferences_vita/shared_preferences_vita.dart';
- 
- import 'core/images/cached_image.dart';
- 
- Future<void> bootstrap(FutureOr<Widget> Function() builder) async {
-   WidgetsFlutterBinding.ensureInitialized();
- 
-+  // In bootstrap rather than in a main_*.dart, because all three flavours go
-+  // through here and DiskCache.init() below asks for the cache directory
-+  // before runApp.
-+  PathProviderVita.registerWith();
-+  SharedPreferencesVita.registerWith();
-+
-   HttpOverrides.global = MyHttpOverrides();
-   GoRouter.optionURLReflectsImperativeAPIs = true;
- 
 diff --git a/pubspec.yaml b/pubspec.yaml
-index 1fea691..2b3a400 100644
+index 1fea691..6baec5d 100644
 --- a/pubspec.yaml
 +++ b/pubspec.yaml
-@@ -52,6 +52,12 @@ dependencies:
+@@ -52,6 +52,13 @@ dependencies:
    protobuf: ^6.0.0
    scrollable_positioned_list: ^0.3.8
    shared_preferences: ^2.5.5
-+  # ADR-0009: non-endorsed vita implementations, listed beside the plugins they
-+  # implement. This is the whole edit an app author makes.
++  # ADR-0009: the Vita implementations, listed beside the plugins they
++  # implement. The build registers them; this is the whole edit an app
++  # author makes.
 +  path_provider_vita:
 +    path: ../../../plugins/path_provider_vita
 +  shared_preferences_vita:
@@ -40,7 +16,7 @@ index 1fea691..2b3a400 100644
    sqlite3_flutter_libs: ^0.6.0+eol
    theme_tailor_annotation: ^3.1.3
    url_launcher: ^6.3.2
-@@ -105,3 +111,8 @@ flutter_native_splash:
+@@ -105,3 +112,8 @@ flutter_native_splash:
    android_12:
      color: "#0075ff"
    web: false

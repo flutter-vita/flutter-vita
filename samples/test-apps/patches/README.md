@@ -6,9 +6,11 @@ repository; a diff against a pinned upstream is a complete and reproducible
 description of what had to change.
 
 **Patch count and lines changed are the score** ([ADR-0012](../../../docs/adr/0012-test-apps-as-measurement-instrument.md)).
-Pass/fail is not available to us: ADR-0009's `registerWith()` is itself an app
-edit, so no app here runs unmodified and the only honest question is *how much*
-had to change.
+Pass/fail is not available to us: the `_vita` dependency lines of ADR-0009
+are themselves an app edit, so no app here runs unmodified and the only
+honest question is *how much* had to change. Since 2026-09-18 the build
+generates the plugin registrant, so the `registerWith()` calls left the
+series; wonderous and manga_reader are one pubspec hunk each.
 
 Apply with `git apply` from inside the app's checkout.
 
