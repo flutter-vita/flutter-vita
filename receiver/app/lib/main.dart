@@ -427,7 +427,9 @@ class _Footer extends StatelessWidget {
     final dart = Platform.version.split(' ').first;
     final where = state.ip.isEmpty ? 'no address' : '${state.ip}:${state.port}';
     return Text(
-      '$where   ·   flutter-vita $kToolBuild   ·   flutter $kFlutterVersion'
+      // The tool build carries the Flutter version (3.44.8_0.1.0-13-g9a66045),
+      // so the line has room for the engine and the Dart runtime.
+      '$where   ·   flutter-vita $kToolBuild'
       '   ·   engine ${kEngineRevision.substring(0, 10)}   ·   dart $dart',
       maxLines: 1,
       overflow: TextOverflow.ellipsis,
