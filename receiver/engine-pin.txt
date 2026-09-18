@@ -10,8 +10,8 @@ framework_rev    058e0af2c2b57e369d905a03ac9748b0ebf543c6
 engine           058e0af2c2b57e369d905a03ac9748b0ebf543c6
 dart             d684a576a6aa954ae107a03b2b4e1d61c3bebe93
 archive_sha256   297ea6299e2d81fac4e51579bce5ab97ff3e72c4491c7974e356c05634cac17f
-embedder         02ca911cd39b
-embedder_sha256  101a22785db872fe60b6f5981e0a31bd0c877cdd707e2e2eeb5726cf6e5e82b2
-pinned_at        2026-09-17T08:07:33Z
+embedder         8952b9f16495
+embedder_sha256  c19e6169900b9427d734bcb1ee52db6b99cc7a82277051cfe7d06c114b4f50f4
+pinned_at        2026-09-18T08:31:47Z
 pinned_from      out/artifacts/flutter-engine-vita-3.44.8
-reason           release 3.44.8_0.1.0: deterministic archive, same objects as the previous pin
+reason           embedder 8952b9f: vita/config, cursor, rear scroll, platform answers; engine unchanged
