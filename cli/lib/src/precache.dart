@@ -13,6 +13,21 @@ import 'dart:io';
 
 import 'paths.dart';
 
+/// versions.json as a map, from the checkout or the flutter-vita home.
+Map<String, dynamic>? loadVersions() {
+  final root = devRoot;
+  for (final c in <String>[
+    if (root != null) '$root/versions.json',
+    '$flutterVitaHome/versions.json',
+  ]) {
+    final file = File(c);
+    if (file.existsSync()) {
+      return jsonDecode(file.readAsStringSync()) as Map<String, dynamic>;
+    }
+  }
+  return null;
+}
+
 /// The `engine` block of versions.json.
 class EngineRelease {
   EngineRelease(

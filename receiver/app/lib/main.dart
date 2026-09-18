@@ -427,7 +427,7 @@ class _Footer extends StatelessWidget {
     final dart = Platform.version.split(' ').first;
     final where = state.ip.isEmpty ? 'no address' : '${state.ip}:${state.port}';
     return Text(
-      '$where   ·   receiver $kReceiverVersion   ·   flutter $kFlutterVersion'
+      '$where   ·   flutter-vita $kToolBuild   ·   flutter $kFlutterVersion'
       '   ·   engine ${kEngineRevision.substring(0, 10)}   ·   dart $dart',
       maxLines: 1,
       overflow: TextOverflow.ellipsis,
