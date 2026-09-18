@@ -14,7 +14,6 @@
 import 'dart:async';
 import 'dart:io';
 
-import 'package:audioplayers_vita/audioplayers_vita.dart';
 import 'package:flutter/widgets.dart';
 
 import 'build_info.dart';
@@ -28,9 +27,9 @@ import 'theme.dart';
 const _hostname = 'fluttervita.local';
 
 void main() {
-  // The FILES tab plays through audioplayers; its Vita half is registered
-  // here, the non-endorsed way (ADR-0009).
-  AudioplayersVita.registerWith();
+  // The FILES tab plays through audioplayers. Its Vita half registers itself:
+  // build-vita-app.sh generates the plugin registrant from the packages'
+  // pubspecs (ADR-0009).
   runApp(const ReceiverApp());
 }
 

@@ -106,6 +106,29 @@ title.
 [ADR-0020](0020-native-halves-inside-vita-packages.md) extends the set to ten
 and lets a package carry its C half, compiled into the app.
 
+## Amended 2026-09-18
+
+The app no longer calls `registerWith()`. Each `_vita` package declares its
+Dart class in its pubspec, in the shape every Dart platform implementation
+uses:
+
+```yaml
+flutter:
+  plugin:
+    implements: battery_plus
+    platforms:
+      vita:
+        dartPluginClass: BatteryPlusVita
+```
+
+`tools/build-vita-app.sh` reads that key from each resolved package and
+generates `dart_plugin_registrant.dart`, the file flutter_tools writes for
+desktop targets. The engine calls `_PluginRegistrant.register()` at isolate
+start. Upstream tooling ignores a platform it does not know, so the
+declaration is safe in `flutter pub get` on any host. The dependency line in
+`pubspec.yaml` stays the only edit an app author makes; the "two lines" are
+one.
+
 ## Revisit trigger
 
 Re-run the survey and extend the set if the knee moves — if some fourth plugin

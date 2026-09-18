@@ -23,7 +23,7 @@ what the packages use: one C function per plugin, no bindings to generate.
 
 ```
 my_plugin_vita/
-  pubspec.yaml
+  pubspec.yaml               declares the Dart class under platforms.vita
   lib/
     my_plugin_vita.dart      the Dart half: a MethodChannel and registerWith()
   vita/
@@ -31,9 +31,10 @@ my_plugin_vita/
     my_plugin.c              the C half: one handler, registered from a constructor
 ```
 
-`tools/build-vita-app.sh` reads the app's `.dart_tool/package_config.json`,
-finds every resolved package with a `vita/plugin.cmake`, and includes it
-into the app's CMake project. The build prints the list.
+`tools/build-vita-app.sh` reads the app's `.dart_tool/package_config.json`.
+For each resolved package it includes `vita/plugin.cmake` into the app's
+CMake project and puts `platforms.vita.dartPluginClass` into a generated
+plugin registrant. The build prints both lists.
 
 ## The C half
 
@@ -109,11 +110,24 @@ class MyPluginVita extends MyPluginPlatform {
 }
 ```
 
-The app depends on both packages and calls `MyPluginVita.registerWith()`
-before `runApp`. The federated plugin's `pubspec.yaml` does not know the
-Vita exists, so there is no `implements:` entry to make and nothing to
-send upstream; the `_vita` package sits beside the plugin the way the app
-author's other platform packages do.
+The package's `pubspec.yaml` names the class:
+
+```yaml
+flutter:
+  plugin:
+    implements: my_plugin
+    platforms:
+      vita:
+        dartPluginClass: MyPluginVita
+```
+
+The app depends on both packages and calls nothing. The build generates
+the plugin registrant from that key and the engine calls
+`MyPluginVita.registerWith()` at isolate start. The federated plugin's own
+`pubspec.yaml` does not know the Vita exists, so there is nothing to send
+upstream; the `_vita` package sits beside the plugin the way the app
+author's other platform packages do. Upstream Flutter tooling ignores the
+`vita` platform key.
 
 ## Trying it
 

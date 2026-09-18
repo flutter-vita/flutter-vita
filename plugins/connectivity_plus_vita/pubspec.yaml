@@ -13,3 +13,15 @@ dependencies:
   flutter:
     sdk: flutter
   connectivity_plus_platform_interface: ^2.0.0
+
+# The Vita implementation, declared the way every Dart platform implementation
+# is. flutter-vita build reads `platforms.vita.dartPluginClass` from each
+# resolved package and generates the plugin registrant, so an app registers
+# nothing by hand. Upstream Flutter tooling ignores a platform it does not
+# know.
+flutter:
+  plugin:
+    implements: connectivity_plus
+    platforms:
+      vita:
+        dartPluginClass: ConnectivityPlusVita

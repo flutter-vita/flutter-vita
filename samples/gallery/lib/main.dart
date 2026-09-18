@@ -1,13 +1,4 @@
-import 'package:audioplayers_vita/audioplayers_vita.dart';
-import 'package:battery_plus_vita/battery_plus_vita.dart';
-import 'package:camera_vita/camera_vita.dart';
-import 'package:connectivity_plus_vita/connectivity_plus_vita.dart';
-import 'package:device_info_plus_vita/device_info_plus_vita.dart';
 import 'package:flutter/material.dart';
-import 'package:path_provider_vita/path_provider_vita.dart';
-import 'package:record_vita/record_vita.dart';
-import 'package:sensors_plus_vita/sensors_plus_vita.dart';
-import 'package:shared_preferences_vita/shared_preferences_vita.dart';
 import 'package:vita_debug_strip/vita_debug_strip.dart';
 
 import 'bench/bench_page.dart';
@@ -41,20 +32,11 @@ void main() async {
     print('gallery: FlutterError ${details.exceptionAsString()}');
     FlutterError.presentError(details);
   };
-  // The two non-endorsed vita implementations the conformance probes use. A
-  // non-endorsed implementation is not found automatically, so the app
-  // registers it: the two lines ADR-0009 asks an app author for.
-  PathProviderVita.registerWith();
-  SharedPreferencesVita.registerWith();
-  // The Hardware tabs check the console through these; the C halves are in
-  // the packages, compiled into this app by build-vita-app.sh.
-  BatteryPlusVita.registerWith();
-  SensorsPlusVita.registerWith();
-  DeviceInfoPlusVita.registerWith();
-  ConnectivityPlusVita.registerWith();
-  RecordVita.registerWith();
-  AudioplayersVita.registerWith();
-  CameraVita.registerWith();
+  // The Vita implementations of the plugins below (path_provider,
+  // shared_preferences, battery_plus, sensors_plus, device_info_plus,
+  // connectivity_plus, record, audioplayers, camera) register themselves:
+  // build-vita-app.sh generates the plugin registrant from their pubspecs
+  // (ADR-0009). Nothing to call here.
   // flutter_vita: the console-side settings the Configure tab edits live,
   // applied once here so the tab and the embedder start in agreement.
   await GalleryConfig.apply();

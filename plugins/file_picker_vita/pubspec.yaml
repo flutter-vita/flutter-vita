@@ -15,3 +15,15 @@ dependencies:
   file_picker: ^11.0.2
   vita_file_browser:
     path: ../../packages/vita_file_browser
+
+# The Vita implementation, declared the way every Dart platform implementation
+# is. flutter-vita build reads `platforms.vita.dartPluginClass` from each
+# resolved package and generates the plugin registrant, so an app registers
+# nothing by hand. Upstream Flutter tooling ignores a platform it does not
+# know.
+flutter:
+  plugin:
+    implements: file_picker
+    platforms:
+      vita:
+        dartPluginClass: FilePickerVita

@@ -4,8 +4,9 @@ Vita implementations of pub packages, one directory each. A package here
 has a Dart half and a C half under `vita/`. `tools/build-vita-app.sh`
 compiles the C half into each app that depends on the package
 ([ADR-0020](../docs/adr/0020-native-halves-inside-vita-packages.md)). An
-app adds the `_vita` package beside the plugin and calls its
-`registerWith()` before `runApp`
+app adds the `_vita` package beside the plugin in `pubspec.yaml`. The build
+generates the plugin registrant from the package's
+`platforms.vita.dartPluginClass`; the app calls nothing
 ([ADR-0009](../docs/adr/0009-plugins-via-non-endorsed-vita-implementations.md)).
 [Develop a plugin](../docs/develop-plugin.md) shows how to write one.
 

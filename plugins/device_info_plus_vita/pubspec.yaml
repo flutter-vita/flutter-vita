@@ -16,3 +16,15 @@ dependencies:
   # For LinuxDeviceInfo: the console reports itself to Dart as Linux, and
   # DeviceInfoPlugin().deviceInfo casts to that on Linux.
   device_info_plus: ^11.0.0
+
+# The Vita implementation, declared the way every Dart platform implementation
+# is. flutter-vita build reads `platforms.vita.dartPluginClass` from each
+# resolved package and generates the plugin registrant, so an app registers
+# nothing by hand. Upstream Flutter tooling ignores a platform it does not
+# know.
+flutter:
+  plugin:
+    implements: device_info_plus
+    platforms:
+      vita:
+        dartPluginClass: DeviceInfoPlusVita

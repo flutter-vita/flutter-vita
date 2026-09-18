@@ -52,8 +52,8 @@ that shows an emoji without a font for it draws an empty box.
 ones in [`plugins/`](../plugins) cover `path_provider`,
 `shared_preferences`, `url_launcher`, `battery_plus`, `sensors_plus`,
 `device_info_plus`, `connectivity_plus`, `audioplayers`, `record`, `camera`
-and file pickers; add the `_vita` package beside the plugin and call its
-`registerWith()` before `runApp`. Pure-Dart packages need nothing.
+and file pickers; add the `_vita` package beside the plugin in
+`pubspec.yaml`. The build registers it. Pure-Dart packages need nothing.
 [Develop a plugin](develop-plugin.md) explains what a missing one costs.
 
 ## 3. Iterate
