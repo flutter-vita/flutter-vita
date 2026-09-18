@@ -70,7 +70,7 @@ See [Commands](docs/commands.md) for the full list, and
 | [flutter-vita](https://github.com/flutter-vita/flutter-vita) (this one) | The `flutter-vita` command, the app template, the receiver, the GLES2 layer, the Vita implementations of upstream plugins (`plugins/`), the samples and the docs. |
 | [flutter](https://github.com/flutter-vita/flutter) | The fork of Flutter, branch `vita-3.44.8`: the engine's Vita changes as commits on the `3.44.8` tag. Its releases carry the prebuilt engine archive; [`versions.json`](versions.json) names the one this tool uses. |
 | [flutter-vita-embedder](https://github.com/flutter-vita/flutter-vita-embedder) | The embedder, the `main()` of every app. A submodule here at `engine/embedder`, compiled from source into each build. |
-| [packages](https://github.com/flutter-vita/flutter-vita-packages) | The project's own pub packages, `vita_debug_strip` and `vita_file_browser`. A submodule here at `packages/`. |
+| [flutter-vita-packages](https://github.com/flutter-vita/flutter-vita-packages) | The project's own pub packages: `flutter_vita`, `vita_debug_strip`, `vita_file_browser`. A submodule here at `packages/`. |
 
 Clone with `--recurse-submodules`, or run `git submodule update --init`
 after a plain clone.
