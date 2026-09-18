@@ -10,7 +10,7 @@ this file is specifically *where we stopped and why*.
 > engine port, the GPU backend and the receiver becoming a Flutter app. Flutter
 > runs on hardware now; see "Where the project stands" in
 > [README.md](README.md). Two details in *The machine* are also stale: the
-> console is reached as `flutter-vita.local` rather than by address, and BGFTP
+> console is reached as `fluttervita.local` rather than by address, and BGFTP
 > was deliberately removed from the loop. The build pipeline and the gotchas
 > below still hold.
 

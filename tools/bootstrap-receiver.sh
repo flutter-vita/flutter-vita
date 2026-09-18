@@ -4,7 +4,7 @@
 #   ./tools/bootstrap-receiver.sh <address>[:port]        VitaShell's FTP, port 1337 by default
 #
 # Everything else in tools/ talks to the receiver by name. A fresh console has
-# no receiver, so nothing answers flutter-vita.local and nothing can promote a
+# no receiver, so nothing answers fluttervita.local and nothing can promote a
 # title. This is the one step that needs an address and it needs it once: the
 # .vpk goes over VitaShell's FTP, you install it from VitaShell, and from then
 # on the name works and this script is never run again.
@@ -16,7 +16,7 @@ set -euo pipefail
 HERE="$(cd "$(dirname "$0")" && pwd)"
 ROOT="$(cd "$HERE/.." && pwd)"
 VPK="$ROOT/receiver/app/build/vita/flutter_vita_receiver.vpk"
-NAME="flutter-vita.local"
+NAME="fluttervita.local"
 
 TARGET="${1:?address VitaShell shows for its FTP server, with or without :1337}"
 case "$TARGET" in *:*) ;; *) TARGET="$TARGET:1337" ;; esac

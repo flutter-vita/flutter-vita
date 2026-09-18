@@ -149,7 +149,7 @@ never published an expansion, the entry says so instead of inventing one.
 | **AOT**, **JIT** | Ahead-Of-Time, Just-In-Time compilation | Dart is AOT here and only AOT ([ADR-0001](adr/0001-aot-only-no-jit.md)); the Vita has no writable executable memory. |
 | **ICU** | International Components for Unicode | Line breaking and word segmentation data, `icudtl.dat`. |
 | **DPR** | Device Pixel Ratio | Flutter's logical-to-physical pixel scale. 1.0 on the Vita, so text is about 31% smaller than on a phone at the same font size. |
-| **mDNS** | multicast Domain Name System | How `flutter-vita.local` resolves. The receiver and every app run a responder; the tools address the console by that name only. |
+| **mDNS** | multicast Domain Name System | How `fluttervita.local` resolves. The receiver and every app run a responder; the tools address the console by that name only. |
 | **FTP** | File Transfer Protocol | VitaShell's server on port 1337. Used once, to put the receiver on a console that has none; never in the deploy loop. |
 | **ADR** | Architecture Decision Record | `docs/adr/`. One decision, its context and its consequences per file. |
 | **LGPL**, **GPL** | GNU Lesser General Public License; GNU General Public License | vitaGL and vitashark are LGPL-3.0-or-later. LGPL §4 obliges whoever ships a statically linked binary to supply what a recipient needs to relink it. That duty is why `engine/gles2/` exists ([ADR-0018](adr/0018-the-lgpl-obligation-in-every-vpk.md)); since 2026-09-14 nothing LGPL is in a vpk. |

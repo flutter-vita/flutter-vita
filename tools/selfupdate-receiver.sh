@@ -10,7 +10,7 @@
 #   --remove-updater  delete it afterwards, at the cost of 45 s of LiveArea
 #   --full            stage every file, not only the ones that changed
 #   --port N          the port to talk to       (default 1341)
-#   --host NAME       the console               (default flutter-vita.local)
+#   --host NAME       the console               (default fluttervita.local)
 #   --build-port N    the port to build for     (default: build-receiver.sh's)
 #   --no-build        require the vpk argument
 #
@@ -33,9 +33,9 @@ set -euo pipefail
 HERE="$(cd "$(dirname "$0")" && pwd)"
 ROOT="$(cd "$HERE/.." && pwd)"
 
-# flutter-vita.local, not an address. The dev server answers mDNS for that name
+# fluttervita.local, not an address. The dev server answers mDNS for that name
 # and this console's address changes whenever its Wi-Fi does.
-HOST="${VITA_HOST:-flutter-vita.local}"
+HOST="${VITA_HOST:-fluttervita.local}"
 PORT="${RECEIVER_PORT:-1341}"
 TITLE_ID="FVTA00001"
 UPDATER="FVTA00009"

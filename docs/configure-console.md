@@ -2,7 +2,7 @@
 
 Everything between your computer and the console goes over Wi-Fi, through
 a small Flutter app that stays on the console: the **receiver**. This page
-takes a console from stock homebrew to one that answers `flutter-vita.local`.
+takes a console from stock homebrew to one that answers `fluttervita.local`.
 You do it once.
 
 ## 1. Homebrew
@@ -50,7 +50,7 @@ confirm), then start **Flutter Vita Receiver** from the LiveArea. The
 the same file as `flutter-vita-receiver-<version>.vpk`, for a console set
 up before the toolchain.
 
-From now on the console announces itself as `flutter-vita.local` whenever
+From now on the console announces itself as `fluttervita.local` whenever
 the receiver or an app built with this toolchain runs, and no tool asks for
 an address again.
 

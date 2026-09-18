@@ -33,7 +33,7 @@
 set -euo pipefail
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
-HOST="${VITA_HOST:-flutter-vita.local}"
+HOST="${VITA_HOST:-fluttervita.local}"
 PORT="${DEV_PORT:-1339}"
 ELF=""
 GAP=5

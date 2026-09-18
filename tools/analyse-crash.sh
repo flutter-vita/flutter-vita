@@ -27,7 +27,7 @@ set -euo pipefail
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
 ROOT="$(cd "$HERE/.." && pwd)"
-HOST="${VITA_HOST:-flutter-vita.local}"
+HOST="${VITA_HOST:-fluttervita.local}"
 PORT="${DEV_PORT:-1339}"
 TOOL="$ROOT/experiments/m1-vpk/out/vita-parse-core"
 # vita-parse-core imports elftools.common.py3compat, which pyelftools dropped.

@@ -15,11 +15,11 @@
 # experiment, not an exception to plan around.
 set -uo pipefail
 HERE="$(cd "$(dirname "$0")" && pwd)"
-# flutter-vita.local, not an address. The dev server answers mDNS for that name
+# fluttervita.local, not an address. The dev server answers mDNS for that name
 # (see the mDNS section of devserver.c), so this survives the console coming
 # back on a different lease -- which it does, often. VITA_HOST still overrides
 # it, and an IP is still the right answer when the name will not resolve.
-HOST="${VITA_HOST:-flutter-vita.local}"
+HOST="${VITA_HOST:-fluttervita.local}"
 # The receiver's port. 1341 is the real one; a scratch receiver (ADR-0016) answers
 # somewhere else, and an experiment deployed through it needs to be told.
 LDR="${RECEIVER_PORT:-1341}"

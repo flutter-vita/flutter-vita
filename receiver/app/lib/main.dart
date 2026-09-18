@@ -6,7 +6,7 @@
 // that knows where it went.
 //
 // The address shown is the mDNS name, not the number. Every tool defaults to
-// flutter-vita.local, so the number is a fallback and lives in the footer.
+// fluttervita.local, so the number is a fallback and lives in the footer.
 //
 // receiver_dev.c owns the port and republishes receiver-state.txt on every
 // change; polling a file is what keeps that half free of a platform channel.
@@ -25,7 +25,7 @@ import 'tests.dart';
 import 'theme.dart';
 
 /// The name every tool in tools/ resolves, answered by the dev server's mDNS.
-const _hostname = 'flutter-vita.local';
+const _hostname = 'fluttervita.local';
 
 void main() {
   // The FILES tab plays through audioplayers; its Vita half is registered
@@ -169,7 +169,7 @@ class _Header extends StatelessWidget {
   ///
   /// C reports what this process is doing, and "Waiting" is correct even when
   /// nothing can reach the console. The gap it cannot see is the name: if
-  /// nothing is announcing flutter-vita.local, the console is unreachable while
+  /// nothing is announcing fluttervita.local, the console is unreachable while
   /// looking healthy from here.
   ///
   /// Only "Waiting" is overridden. A transfer in flight says what it is doing.
@@ -265,7 +265,7 @@ class _Status extends StatelessWidget {
   static const _colours = <String, Color>{
     'No network': danger,
     // Amber, not red: the console is up and the socket is listening, but
-    // nothing is publishing the name, so a host that types flutter-vita.local
+    // nothing is publishing the name, so a host that types fluttervita.local
     // will not find it.
     'Name off': warn,
     'Waiting': accent,

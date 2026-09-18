@@ -11,7 +11,7 @@ VITASDK="${VITASDK:-$HOME/vitasdk}"
 # has to be on PATH or the stub build fails at the first .o.
 export VITASDK PATH="$VITASDK/bin:$PATH"
 # By name. Never an address, not even to get unstuck: see tools/deploy.sh.
-HOST="${VITA_HOST:-flutter-vita.local}"
+HOST="${VITA_HOST:-fluttervita.local}"
 PORT="${RECEIVER_PORT:-1341}"
 
 cmake -S "$HERE" -B "$HERE/build" >/dev/null

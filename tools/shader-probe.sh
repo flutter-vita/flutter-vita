@@ -14,7 +14,7 @@
 # app-specific.
 set -euo pipefail
 
-HOST="${VITA_HOST:-flutter-vita.local}"
+HOST="${VITA_HOST:-fluttervita.local}"
 PORT="${DEV_PORT:-1339}"
 DIR="ux0:data/flutter-vita/shadertest"
 

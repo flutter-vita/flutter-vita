@@ -2,7 +2,7 @@
 
 `flutter-vita` lives in [`cli/`](../cli); put that directory on your `PATH`
 or call `./cli/flutter-vita`. Every command finds the console by itself,
-as `flutter-vita.local`; `--host IP` skips the lookup and `--subnet
+as `fluttervita.local`; `--host IP` skips the lookup and `--subnet
 192.168.1` sweeps another /24.
 
 | Command | What it does |
@@ -54,7 +54,7 @@ port 1339 that the CLI and the scripts speak. It is plain text over TCP,
 one command per connection, so `nc` works too:
 
 ```sh
-printf 'ping\n' | nc -4 -w 5 flutter-vita.local 1339
+printf 'ping\n' | nc -4 -w 5 fluttervita.local 1339
 ```
 
 | Command | Reply |

@@ -34,11 +34,11 @@ set -euo pipefail
 HERE="$(cd "$(dirname "$0")" && pwd)"
 ROOT="$(cd "$HERE/.." && pwd)"
 
-# flutter-vita.local, not an address. The dev server answers mDNS for that name
+# fluttervita.local, not an address. The dev server answers mDNS for that name
 # (see the mDNS section of devserver.c), so this survives the console coming
 # back on a different lease -- which it does, often. VITA_HOST still overrides
 # it, and an IP is still the right answer when the name will not resolve.
-HOST="${VITA_HOST:-flutter-vita.local}"
+HOST="${VITA_HOST:-fluttervita.local}"
 DEV=1339
 LDR=1341
 APP_VPK="$ROOT/samples/gallery/build/vita/gallery.vpk"

@@ -17,7 +17,7 @@ set -euo pipefail
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
 ROOT="$(cd "$HERE/.." && pwd)"
-HOST="${VITA_HOST:-flutter-vita.local}"
+HOST="${VITA_HOST:-fluttervita.local}"
 PORT="${RECEIVER_PORT:-1341}"
 REQ="ux0:data/flutter-vita/panel-request.txt"
 

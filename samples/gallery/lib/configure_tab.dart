@@ -251,7 +251,7 @@ class _ConfigureTabState extends State<ConfigureTab> {
               OutlinedButton(
                 onPressed: () => _send('url_launcher mailto', () async {
                   final ok = await launchUrl(
-                      Uri.parse('mailto:dev@flutter-vita.local?subject=hi'));
+                      Uri.parse('mailto:dev@fluttervita.local?subject=hi'));
                   return 'url_launcher mailto: $ok';
                 }),
                 child: const Text('mailto:'),
