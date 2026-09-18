@@ -10,7 +10,8 @@ ROOT="$(cd "$HERE/.." && pwd)"
 if command -v dart >/dev/null 2>&1; then
   DART=dart
 else
-  PIN="$(grep -m1 -oE '3\.[0-9]+\.[0-9]+' "$ROOT/VERSIONS.md" 2>/dev/null || echo 3.44.8)"
+  PIN="$(sed -n 's/^[[:space:]]*"flutter":[[:space:]]*"\([0-9.]*\)".*/\1/p' "$ROOT/versions.json" 2>/dev/null | head -1)"
+  [ -n "$PIN" ] || PIN=3.44.8
   DART="${FLUTTER_ROOT:-$HOME/fvm/versions/$PIN}/bin/cache/dart-sdk/bin/dart"
   [ -x "$DART" ] || { echo "No dart found. Install Flutter or set FLUTTER_ROOT." >&2; exit 1; }
 fi

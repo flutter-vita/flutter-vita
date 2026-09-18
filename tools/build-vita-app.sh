@@ -42,7 +42,9 @@ ROOT="$(cd "$HERE/.." && pwd)"
 # has no repo to derive them from -- see ADR-0015. The $ROOT fallbacks keep a
 # source checkout working exactly as before, which is also what makes this
 # script still runnable by hand.
-FLUTTER_PIN="${FLUTTER_VITA_PIN:-$(grep -m1 -oE '3\.[0-9]+\.[0-9]+' "$ROOT/VERSIONS.md" || echo 3.44.8)}"
+# The Flutter version, from versions.json (the one machine-read pin).
+FLUTTER_PIN="${FLUTTER_VITA_PIN:-$(sed -n 's/^[[:space:]]*"flutter":[[:space:]]*"\([0-9.]*\)".*/\1/p' "$ROOT/versions.json" 2>/dev/null | head -1)}"
+[ -n "$FLUTTER_PIN" ] || FLUTTER_PIN=3.44.8
 APP_DIR=""
 TITLE_ID=""
 APP_NAME=""

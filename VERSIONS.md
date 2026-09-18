@@ -3,6 +3,10 @@
 Every third-party tree is vendored at an exact commit. Changing anything here is
 an explicit project, never routine maintenance ([ADR-0002](docs/adr/0002-skia-not-impeller.md)).
 
+This page is for people. The tools read [`versions.json`](versions.json): the
+Flutter version, the framework revision, the engine release and its download.
+Change both together.
+
 | Component | Version | Commit |
 |---|---|---|
 | Flutter (framework) | **3.44.8** | `058e0af2c2b57e369d905a03ac9748b0ebf543c6` |

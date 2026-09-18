@@ -25,7 +25,9 @@ set -euo pipefail
 HERE="$(cd "$(dirname "$0")" && pwd)"
 ROOT="$(cd "$HERE/.." && pwd)"
 
-FLUTTER_PIN="${FLUTTER_VITA_PIN:-$(grep -m1 -oE '3\.[0-9]+\.[0-9]+' "$ROOT/VERSIONS.md" || echo 3.44.8)}"
+# The Flutter version, from versions.json (the one machine-read pin).
+FLUTTER_PIN="${FLUTTER_VITA_PIN:-$(sed -n 's/^[[:space:]]*"flutter":[[:space:]]*"\([0-9.]*\)".*/\1/p' "$ROOT/versions.json" 2>/dev/null | head -1)}"
+[ -n "$FLUTTER_PIN" ] || FLUTTER_PIN=3.44.8
 SRC="$ROOT/out/artifacts/flutter-engine-vita-$FLUTTER_PIN"
 EMBEDDER="${FLUTTER_VITA_EMBEDDER:-$ROOT/engine/embedder}"
 DEST="$ROOT/out/artifacts/receiver-engine"

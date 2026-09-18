@@ -74,7 +74,8 @@ String flutterDir() =>
 ///
 /// Read from the developer's SDK first, which is the only correct source for an
 /// installed CLI: they build with the Flutter they have, and the artifact has to
-/// match it. VERSIONS.md is a maintainer's file answering a different question.
+/// match it. versions.json is the project's own pin, for a checkout without
+/// FLUTTER_ROOT.
 late final String Function() flutterPin = () {
   String? cached;
   return () {
@@ -88,10 +89,16 @@ late final String Function() flutterPin = () {
 
     final root = devRoot;
     if (root != null) {
-      final versions = File('$root/VERSIONS.md');
+      final versions = File('$root/versions.json');
       if (versions.existsSync()) {
-        final m = RegExp(r'3\.\d+\.\d+').firstMatch(versions.readAsStringSync());
-        if (m != null) return cached = m.group(0)!;
+        try {
+          final json =
+              jsonDecode(versions.readAsStringSync()) as Map<String, dynamic>;
+          final v = json['flutter'] as String?;
+          if (v != null) return cached = v;
+        } on Object {
+          // A broken versions.json is precache's problem to report.
+        }
       }
     }
 

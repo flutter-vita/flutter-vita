@@ -73,14 +73,15 @@ if [ "${SKIP_FRESHNESS:-0}" != "1" ]; then
   fi
 fi
 
-# Pins come from the build that produced these objects, not from VERSIONS.md.
+# Pins come from the build that produced these objects, not from versions.json.
 # If the two ever disagree, the artifact is what actually shipped and the doc is
 # what someone meant to ship -- so read the args.
 read_arg() { grep -m1 "^$1 = " "$ENGINE_OUT/args.gn" | sed 's/.*= *//; s/"//g'; }
 ENGINE_VERSION="$(read_arg engine_version)"
 SKIA_VERSION="$(read_arg skia_version)"
 DART_VERSION="$(read_arg dart_version)"
-FLUTTER_VERSION="$(grep -m1 -oE '3\.[0-9]+\.[0-9]+' "$ROOT/VERSIONS.md" || echo unknown)"
+FLUTTER_VERSION="$(sed -n 's/^[[:space:]]*"flutter":[[:space:]]*"\([0-9.]*\)".*/\1/p' "$ROOT/versions.json" 2>/dev/null | head -1)"
+[ -n "$FLUTTER_VERSION" ] || FLUTTER_VERSION=unknown
 
 # The revision of the Flutter SDK these objects were built against.
 #
