@@ -132,6 +132,7 @@ typedef struct FvglAttribute {
   int location;
   const SceGxmProgramParameter* param;  // null when the compiler dropped it
   int components;                       // the shader's
+  FvglType type;                        // what glGetActiveAttrib reports
 } FvglAttribute;
 
 #define FVGL_MAX_VARIANTS 32
@@ -294,9 +295,17 @@ typedef struct FvglContext {
   GLint scissor[4];
   GLint viewport[4];
   FvglBlendState blend;
+  // glBlendColor's constant. This GPU has no blend constant, so the factors
+  // that would read it are refused; the value is kept because the getter has
+  // to answer with it.
+  float blend_color[4];
   GLenum front_face;
   GLboolean depth_mask;
   float line_width;
+  float polygon_offset[2];  // factor, units
+  float sample_coverage;
+  GLboolean sample_coverage_invert;
+  GLenum generate_mipmap_hint;
   bool cull_enabled, depth_test_enabled, stencil_test_enabled, dither_enabled;
 
   FvglTable shaders, programs, buffers, textures, framebuffers;
@@ -349,6 +358,9 @@ void fvgl_target_extent(int* width, int* height, bool* flipped);
 
 // programs.c
 void fvgl_programs_shutdown(void);
+// The GL enum for a type a shader declared: GL_FLOAT_VEC4, GL_SAMPLER_2D and
+// so on. What glGetActiveAttrib and glGetActiveUniform report.
+GLenum fvgl_gl_type(FvglType t);
 // textures.c
 int fvgl_textures_init(void);
 void fvgl_textures_shutdown(void);
@@ -376,5 +388,9 @@ GL_APICALL void GL_APIENTRY glDisable(GLenum);
 GL_APICALL void GL_APIENTRY glReadPixels(GLint, GLint, GLsizei, GLsizei, GLenum, GLenum, void*);
 GL_APICALL GLenum GL_APIENTRY glGetError(void);
 GL_APICALL const GLubyte* GL_APIENTRY glGetString(GLenum);
+// Not in the SDK's gl2.h: an ES 3.0 entry point and an EGL one, both in the
+// proc table because Skia looks them up by name.
+GL_APICALL const GLubyte* GL_APIENTRY glGetStringi(GLenum, GLuint);
+GL_APICALL const char* GL_APIENTRY eglQueryString(void*, int);
 
 #endif

@@ -559,6 +559,9 @@ int fvgl_init(const FvglConfig* config) {
   fvgl.front_face = GL_CCW;
   fvgl.depth_mask = GL_TRUE;
   fvgl.line_width = 1.0f;
+  fvgl.sample_coverage = 1.0f;
+  fvgl.sample_coverage_invert = GL_FALSE;
+  fvgl.generate_mipmap_hint = GL_DONT_CARE;
   fvgl.up = true;
   meter_start();
   fvgl_log("up: %dx%d, %d display buffers, stride %u", fvgl.width, fvgl.height, buffers, fvgl.display_stride);
@@ -898,21 +901,54 @@ GL_APICALL GLenum GL_APIENTRY glGetError(void) {
   return e;
 }
 
+// Skia's GrGLCaps takes RGBA8 as a render target format on ES2 only when this
+// is advertised (otherwise the wrapped display FBO is refused and nothing
+// draws). Nothing else is advertised: every extension Skia asks for by name
+// would send it down a path with calls this layer does not have, and its
+// fallbacks for an empty string are all core GLES 2.0.
+static const char* const kExtensions[] = {"GL_OES_rgb8_rgba8"};
+
 GL_APICALL const GLubyte* GL_APIENTRY glGetString(GLenum name) {
   switch (name) {
     case GL_VENDOR: return (const GLubyte*)"flutter-vita";
     case GL_RENDERER: return (const GLubyte*)"fvita_gles2 over sceGxm";
     case GL_VERSION: return (const GLubyte*)"OpenGL ES 2.0 fvita_gles2";
     case GL_SHADING_LANGUAGE_VERSION: return (const GLubyte*)"OpenGL ES GLSL ES 1.00";
-    // Skia's GrGLCaps takes RGBA8 as a render target format on ES2 only when
-    // this is advertised (otherwise the wrapped display FBO is refused and
-    // nothing draws). It names no entry points. Nothing else is advertised:
-    // every extension Skia asks for by name would send it down a path with
-    // calls this layer does not have, and its fallbacks for an empty string
-    // are all core GLES 2.0.
-    case GL_EXTENSIONS: return (const GLubyte*)"GL_OES_rgb8_rgba8";
+    case GL_EXTENSIONS: return (const GLubyte*)kExtensions[0];
     default:
       fvgl_set_error(GL_INVALID_ENUM);
       return NULL;
+  }
+}
+
+// The indexed form. It belongs to GLES 3.0 and Skia only calls it when the
+// version says 3.0, which this never does; it is here so the name in the proc
+// table answers with the same list glGetString gives rather than recording a
+// gap that is not one.
+GL_APICALL const GLubyte* GL_APIENTRY glGetStringi(GLenum name, GLuint index) {
+  if (name != GL_EXTENSIONS) {
+    fvgl_set_error(GL_INVALID_ENUM);
+    return NULL;
+  }
+  if (index >= sizeof kExtensions / sizeof kExtensions[0]) {
+    fvgl_set_error(GL_INVALID_VALUE);
+    return NULL;
+  }
+  return (const GLubyte*)kExtensions[index];
+}
+
+// There is no EGL on this console: the embedder owns the display and the
+// swap, and fvgl_init takes the place of eglInitialize. Skia's GL interface
+// asks for the EGL extension string before it decides anything, and an empty
+// string is the true answer -- no EGL extension is present. The other three
+// names say what is behind the interface, for a log that prints them.
+GL_APICALL const char* GL_APIENTRY eglQueryString(void* display, int name) {
+  (void)display;
+  switch (name) {
+    case 0x3053: return "flutter-vita";       // EGL_VENDOR
+    case 0x3054: return "1.4 fvita_gles2";    // EGL_VERSION
+    case 0x3055: return "";                   // EGL_EXTENSIONS
+    case 0x308D: return "OpenGL_ES";          // EGL_CLIENT_APIS
+    default: return NULL;
   }
 }

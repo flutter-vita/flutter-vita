@@ -379,7 +379,8 @@ GL_APICALL void GL_APIENTRY glLinkProgram(GLuint program) {
     FvglAttribute* a = &p->attributes[p->attribute_count++];
     snprintf(a->name, sizeof a->name, "%s", vinfo.attributes[i].name);
     a->location = -1;
-    a->components = fvgl_type_components(vinfo.attributes[i].type);
+    a->type = vinfo.attributes[i].type;
+    a->components = fvgl_type_components(a->type);
     for (int j = 0; j < p->bound_count; j++) {
       if (strcmp(p->bound_names[j], a->name) == 0) {
         a->location = p->bound_locations[j];
@@ -498,6 +499,133 @@ GL_APICALL void GL_APIENTRY glDeleteProgram(GLuint program) {
 GL_APICALL GLboolean GL_APIENTRY glIsProgram(GLuint program) {
   if (!fvgl.up) return GL_FALSE;
   return fvgl_table_get(&fvgl.programs, program) != NULL;
+}
+
+// ---- reflection ------------------------------------------------------------
+//
+// What the program declared, read back. Skia does not use these; a tool that
+// inspects a program does, and so does anyone debugging a translation.
+
+GLenum fvgl_gl_type(FvglType t) {
+  if (t.rows > 0) {
+    switch (t.cols) {
+      case 2: return GL_FLOAT_MAT2;
+      case 3: return GL_FLOAT_MAT3;
+      default: return GL_FLOAT_MAT4;
+    }
+  }
+  switch (t.base) {
+    case FVGL_T_SAMPLER2D: return GL_SAMPLER_2D;
+    case FVGL_T_SAMPLERCUBE: return GL_SAMPLER_CUBE;
+    case FVGL_T_BOOL:
+      switch (t.cols) {
+        case 2: return GL_BOOL_VEC2;
+        case 3: return GL_BOOL_VEC3;
+        case 4: return GL_BOOL_VEC4;
+        default: return GL_BOOL;
+      }
+    case FVGL_T_INT:
+      switch (t.cols) {
+        case 2: return GL_INT_VEC2;
+        case 3: return GL_INT_VEC3;
+        case 4: return GL_INT_VEC4;
+        default: return GL_INT;
+      }
+    default:
+      switch (t.cols) {
+        case 2: return GL_FLOAT_VEC2;
+        case 3: return GL_FLOAT_VEC3;
+        case 4: return GL_FLOAT_VEC4;
+        default: return GL_FLOAT;
+      }
+  }
+}
+
+// The shared tail of glGetActiveAttrib and glGetActiveUniform. GL's `size` is
+// the array length, 1 when the declaration is not an array.
+static void active_out(const char* from, FvglType type, GLsizei bufSize, GLsizei* length, GLint* size,
+                       GLenum* gl_type, GLchar* name) {
+  if (size) *size = type.array ? type.array : 1;
+  if (gl_type) *gl_type = fvgl_gl_type(type);
+  if (!name || bufSize <= 0) {
+    if (length) *length = 0;
+    return;
+  }
+  snprintf(name, (size_t)bufSize, "%s", from);
+  if (length) *length = (GLsizei)strlen(name);
+}
+
+GL_APICALL void GL_APIENTRY glGetActiveAttrib(GLuint program, GLuint index, GLsizei bufSize, GLsizei* length,
+                                              GLint* size, GLenum* type, GLchar* name) {
+  FvglProgram* p = program_get(program, "glGetActiveAttrib");
+  if (!p) return;
+  if (bufSize < 0 || (int)index >= p->attribute_count) {
+    fvgl_set_error(GL_INVALID_VALUE);
+    return;
+  }
+  const FvglAttribute* a = &p->attributes[index];
+  active_out(a->name, a->type, bufSize, length, size, type, name);
+}
+
+GL_APICALL void GL_APIENTRY glGetActiveUniform(GLuint program, GLuint index, GLsizei bufSize, GLsizei* length,
+                                               GLint* size, GLenum* type, GLchar* name) {
+  FvglProgram* p = program_get(program, "glGetActiveUniform");
+  if (!p) return;
+  if (bufSize < 0 || (int)index >= p->uniform_count) {
+    fvgl_set_error(GL_INVALID_VALUE);
+    return;
+  }
+  const FvglUniform* u = &p->uniforms[index];
+  active_out(u->name, u->type, bufSize, length, size, type, name);
+}
+
+GL_APICALL void GL_APIENTRY glGetAttachedShaders(GLuint program, GLsizei maxCount, GLsizei* count, GLuint* shaders) {
+  FvglProgram* p = program_get(program, "glGetAttachedShaders");
+  if (!p) return;
+  if (maxCount < 0) {
+    fvgl_set_error(GL_INVALID_VALUE);
+    return;
+  }
+  GLsizei n = 0;
+  if (shaders) {
+    if (p->vs && n < maxCount) shaders[n++] = p->vs_name;
+    if (p->fs && n < maxCount) shaders[n++] = p->fs_name;
+  }
+  if (count) *count = n;
+}
+
+// The value of a uniform of a linked program. A sampler answers with the
+// texture unit glUniform1i named, which is where that value is kept.
+static const FvglUniform* uniform_read(GLuint program, GLint location, const char* who) {
+  FvglProgram* p = program_get(program, who);
+  if (!p) return NULL;
+  if (!p->linked || location < 0 || location >= p->uniform_count) {
+    fvgl_set_error(GL_INVALID_OPERATION);
+    return NULL;
+  }
+  return &p->uniforms[location];
+}
+
+GL_APICALL void GL_APIENTRY glGetUniformfv(GLuint program, GLint location, GLfloat* params) {
+  const FvglUniform* u = uniform_read(program, location, "glGetUniformfv");
+  if (!u || !params) return;
+  if (u->is_sampler) {
+    params[0] = (float)u->unit;
+    return;
+  }
+  const int n = u->array * u->components;
+  for (int i = 0; i < n; i++) params[i] = u->values[i];
+}
+
+GL_APICALL void GL_APIENTRY glGetUniformiv(GLuint program, GLint location, GLint* params) {
+  const FvglUniform* u = uniform_read(program, location, "glGetUniformiv");
+  if (!u || !params) return;
+  if (u->is_sampler) {
+    params[0] = u->unit;
+    return;
+  }
+  const int n = u->array * u->components;
+  for (int i = 0; i < n; i++) params[i] = (GLint)u->values[i];
 }
 
 // ---- uniforms --------------------------------------------------------------

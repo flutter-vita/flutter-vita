@@ -15,14 +15,6 @@ GL_APICALL void GL_APIENTRY glBindRenderbuffer(GLenum target, GLuint renderbuffe
   FVGL_STUB(glBindRenderbuffer);
 }
 
-GL_APICALL void GL_APIENTRY glBlendColor(GLfloat red, GLfloat green, GLfloat blue, GLfloat alpha) {
-  (void)red;
-  (void)green;
-  (void)blue;
-  (void)alpha;
-  FVGL_STUB(glBlendColor);
-}
-
 GL_APICALL void GL_APIENTRY glClearDepthf(GLfloat d) {
   (void)d;
   FVGL_STUB(glClearDepthf);
@@ -31,31 +23,6 @@ GL_APICALL void GL_APIENTRY glClearDepthf(GLfloat d) {
 GL_APICALL void GL_APIENTRY glClearStencil(GLint s) {
   (void)s;
   FVGL_STUB(glClearStencil);
-}
-
-GL_APICALL void GL_APIENTRY glCompressedTexImage2D(GLenum target, GLint level, GLenum internalformat, GLsizei width, GLsizei height, GLint border, GLsizei imageSize, const void *data) {
-  (void)target;
-  (void)level;
-  (void)internalformat;
-  (void)width;
-  (void)height;
-  (void)border;
-  (void)imageSize;
-  (void)data;
-  FVGL_STUB(glCompressedTexImage2D);
-}
-
-GL_APICALL void GL_APIENTRY glCompressedTexSubImage2D(GLenum target, GLint level, GLint xoffset, GLint yoffset, GLsizei width, GLsizei height, GLenum format, GLsizei imageSize, const void *data) {
-  (void)target;
-  (void)level;
-  (void)xoffset;
-  (void)yoffset;
-  (void)width;
-  (void)height;
-  (void)format;
-  (void)imageSize;
-  (void)data;
-  FVGL_STUB(glCompressedTexSubImage2D);
 }
 
 GL_APICALL void GL_APIENTRY glCullFace(GLenum mode) {
@@ -89,7 +56,6 @@ GL_APICALL void GL_APIENTRY glFramebufferRenderbuffer(GLenum target, GLenum atta
 }
 
 GL_APICALL void GL_APIENTRY glGenerateMipmap(GLenum target) {
-  if (!fvgl.up) return;
   (void)target;
   FVGL_STUB(glGenerateMipmap);
 }
@@ -100,82 +66,11 @@ GL_APICALL void GL_APIENTRY glGenRenderbuffers(GLsizei n, GLuint *renderbuffers)
   FVGL_STUB(glGenRenderbuffers);
 }
 
-GL_APICALL void GL_APIENTRY glGetActiveAttrib(GLuint program, GLuint index, GLsizei bufSize, GLsizei *length, GLint *size, GLenum *type, GLchar *name) {
-  (void)program;
-  (void)index;
-  (void)bufSize;
-  (void)length;
-  (void)size;
-  (void)type;
-  (void)name;
-  FVGL_STUB(glGetActiveAttrib);
-}
-
-GL_APICALL void GL_APIENTRY glGetActiveUniform(GLuint program, GLuint index, GLsizei bufSize, GLsizei *length, GLint *size, GLenum *type, GLchar *name) {
-  (void)program;
-  (void)index;
-  (void)bufSize;
-  (void)length;
-  (void)size;
-  (void)type;
-  (void)name;
-  FVGL_STUB(glGetActiveUniform);
-}
-
-GL_APICALL void GL_APIENTRY glGetAttachedShaders(GLuint program, GLsizei maxCount, GLsizei *count, GLuint *shaders) {
-  (void)program;
-  (void)maxCount;
-  (void)count;
-  (void)shaders;
-  FVGL_STUB(glGetAttachedShaders);
-}
-
 GL_APICALL void GL_APIENTRY glGetRenderbufferParameteriv(GLenum target, GLenum pname, GLint *params) {
   (void)target;
   (void)pname;
   (void)params;
   FVGL_STUB(glGetRenderbufferParameteriv);
-}
-
-GL_APICALL void GL_APIENTRY glGetUniformfv(GLuint program, GLint location, GLfloat *params) {
-  (void)program;
-  (void)location;
-  (void)params;
-  FVGL_STUB(glGetUniformfv);
-}
-
-GL_APICALL void GL_APIENTRY glGetUniformiv(GLuint program, GLint location, GLint *params) {
-  (void)program;
-  (void)location;
-  (void)params;
-  FVGL_STUB(glGetUniformiv);
-}
-
-GL_APICALL void GL_APIENTRY glGetVertexAttribfv(GLuint index, GLenum pname, GLfloat *params) {
-  (void)index;
-  (void)pname;
-  (void)params;
-  FVGL_STUB(glGetVertexAttribfv);
-}
-
-GL_APICALL void GL_APIENTRY glGetVertexAttribiv(GLuint index, GLenum pname, GLint *params) {
-  (void)index;
-  (void)pname;
-  (void)params;
-  FVGL_STUB(glGetVertexAttribiv);
-}
-
-GL_APICALL void GL_APIENTRY glGetVertexAttribPointerv(GLuint index, GLenum pname, void **pointer) {
-  (void)index;
-  (void)pname;
-  (void)pointer;
-  FVGL_STUB(glGetVertexAttribPointerv);
-}
-
-GL_APICALL void GL_APIENTRY glHint(GLenum target, GLenum mode) {
-  (void)target;
-  (void)mode;
-  FVGL_STUB(glHint);
 }
 
 GL_APICALL GLboolean GL_APIENTRY glIsRenderbuffer(GLuint renderbuffer) {
@@ -184,37 +79,12 @@ GL_APICALL GLboolean GL_APIENTRY glIsRenderbuffer(GLuint renderbuffer) {
   return 0;
 }
 
-GL_APICALL void GL_APIENTRY glPolygonOffset(GLfloat factor, GLfloat units) {
-  (void)factor;
-  (void)units;
-  FVGL_STUB(glPolygonOffset);
-}
-
-GL_APICALL void GL_APIENTRY glReleaseShaderCompiler(void) {
-  FVGL_STUB(glReleaseShaderCompiler);
-}
-
 GL_APICALL void GL_APIENTRY glRenderbufferStorage(GLenum target, GLenum internalformat, GLsizei width, GLsizei height) {
   (void)target;
   (void)internalformat;
   (void)width;
   (void)height;
   FVGL_STUB(glRenderbufferStorage);
-}
-
-GL_APICALL void GL_APIENTRY glSampleCoverage(GLfloat value, GLboolean invert) {
-  (void)value;
-  (void)invert;
-  FVGL_STUB(glSampleCoverage);
-}
-
-GL_APICALL void GL_APIENTRY glShaderBinary(GLsizei count, const GLuint *shaders, GLenum binaryformat, const void *binary, GLsizei length) {
-  (void)count;
-  (void)shaders;
-  (void)binaryformat;
-  (void)binary;
-  (void)length;
-  FVGL_STUB(glShaderBinary);
 }
 
 GL_APICALL void GL_APIENTRY glStencilFunc(GLenum func, GLint ref, GLuint mask) {
@@ -258,7 +128,6 @@ GL_APICALL void GL_APIENTRY glStencilOpSeparate(GLenum face, GLenum sfail, GLenu
   FVGL_STUB(glStencilOpSeparate);
 }
 
-void eglQueryString_stub(void) { FVGL_STUB(eglQueryString); }
 void glBeginQueryEXT_stub(void) { FVGL_STUB(glBeginQueryEXT); }
 void glBindBufferBaseEXT_stub(void) { FVGL_STUB(glBindBufferBaseEXT); }
 void glBindBufferRangeEXT_stub(void) { FVGL_STUB(glBindBufferRangeEXT); }
@@ -297,7 +166,6 @@ void glGetQueryObjectivEXT_stub(void) { FVGL_STUB(glGetQueryObjectivEXT); }
 void glGetQueryObjectui64vEXT_stub(void) { FVGL_STUB(glGetQueryObjectui64vEXT); }
 void glGetQueryObjectuivEXT_stub(void) { FVGL_STUB(glGetQueryObjectuivEXT); }
 void glGetQueryivEXT_stub(void) { FVGL_STUB(glGetQueryivEXT); }
-void glGetStringi_stub(void) { FVGL_STUB(glGetStringi); }
 void glGetTexLevelParameterivANGLE_stub(void) { FVGL_STUB(glGetTexLevelParameterivANGLE); }
 void glGetUniformBlockIndexEXT_stub(void) { FVGL_STUB(glGetUniformBlockIndexEXT); }
 void glGetUniformIndicesEXT_stub(void) { FVGL_STUB(glGetUniformIndicesEXT); }

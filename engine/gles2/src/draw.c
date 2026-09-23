@@ -143,6 +143,66 @@ GL_APICALL void GL_APIENTRY glVertexAttrib2fv(GLuint index, const GLfloat* v) { 
 GL_APICALL void GL_APIENTRY glVertexAttrib3fv(GLuint index, const GLfloat* v) { attrib_constant(index, v[0], v[1], v[2], 1); }
 GL_APICALL void GL_APIENTRY glVertexAttrib4fv(GLuint index, const GLfloat* v) { attrib_constant(index, v[0], v[1], v[2], v[3]); }
 
+// ---- attribute state, read back --------------------------------------------
+
+static int attrib_values(GLuint index, GLenum pname, float* v) {
+  const FvglVertexAttribState* a = &fvgl.attribs[index];
+  switch (pname) {
+    case GL_VERTEX_ATTRIB_ARRAY_ENABLED: v[0] = a->enabled ? 1.f : 0.f; return 1;
+    case GL_VERTEX_ATTRIB_ARRAY_SIZE: v[0] = (float)a->size; return 1;
+    case GL_VERTEX_ATTRIB_ARRAY_STRIDE: v[0] = (float)a->stride; return 1;
+    case GL_VERTEX_ATTRIB_ARRAY_TYPE: v[0] = (float)a->type; return 1;
+    case GL_VERTEX_ATTRIB_ARRAY_NORMALIZED: v[0] = a->normalized ? 1.f : 0.f; return 1;
+    case GL_VERTEX_ATTRIB_ARRAY_BUFFER_BINDING: v[0] = (float)a->buffer; return 1;
+    case GL_CURRENT_VERTEX_ATTRIB:
+      for (int i = 0; i < 4; i++) v[i] = a->constant[i];
+      return 4;
+    default: return 0;
+  }
+}
+
+GL_APICALL void GL_APIENTRY glGetVertexAttribfv(GLuint index, GLenum pname, GLfloat* params) {
+  if (index >= FVGL_MAX_ATTRIBUTES) {
+    fvgl_set_error(GL_INVALID_VALUE);
+    return;
+  }
+  float v[4];
+  const int n = attrib_values(index, pname, v);
+  if (!n) {
+    fvgl_set_error(GL_INVALID_ENUM);
+    return;
+  }
+  if (params) for (int i = 0; i < n; i++) params[i] = v[i];
+}
+
+GL_APICALL void GL_APIENTRY glGetVertexAttribiv(GLuint index, GLenum pname, GLint* params) {
+  if (index >= FVGL_MAX_ATTRIBUTES) {
+    fvgl_set_error(GL_INVALID_VALUE);
+    return;
+  }
+  float v[4];
+  const int n = attrib_values(index, pname, v);
+  if (!n) {
+    fvgl_set_error(GL_INVALID_ENUM);
+    return;
+  }
+  if (params) for (int i = 0; i < n; i++) params[i] = (GLint)v[i];
+}
+
+GL_APICALL void GL_APIENTRY glGetVertexAttribPointerv(GLuint index, GLenum pname, void** pointer) {
+  if (index >= FVGL_MAX_ATTRIBUTES) {
+    fvgl_set_error(GL_INVALID_VALUE);
+    return;
+  }
+  if (pname != GL_VERTEX_ATTRIB_ARRAY_POINTER) {
+    fvgl_set_error(GL_INVALID_ENUM);
+    return;
+  }
+  // The pointer as glVertexAttribPointer was given it: a client address, or
+  // an offset into the buffer that was bound at the time.
+  if (pointer) *pointer = (void*)(uintptr_t)fvgl.attribs[index].pointer;
+}
+
 // ---- layout ----------------------------------------------------------------
 
 typedef struct Stream {

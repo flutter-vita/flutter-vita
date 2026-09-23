@@ -6,7 +6,6 @@
 
 #include "fvgl_internal.h"
 
-void eglQueryString_stub(void);
 void glBeginQueryEXT_stub(void);
 void glBindBufferBaseEXT_stub(void);
 void glBindBufferRangeEXT_stub(void);
@@ -45,7 +44,6 @@ void glGetQueryObjectivEXT_stub(void);
 void glGetQueryObjectui64vEXT_stub(void);
 void glGetQueryObjectuivEXT_stub(void);
 void glGetQueryivEXT_stub(void);
-void glGetStringi_stub(void);
 void glGetTexLevelParameterivANGLE_stub(void);
 void glGetUniformBlockIndexEXT_stub(void);
 void glGetUniformIndicesEXT_stub(void);
@@ -216,7 +214,7 @@ static const struct { const char* name; void* fn; } kProcs[] = {
   {"glVertexAttrib4fv", (void*)glVertexAttrib4fv},
   {"glVertexAttribPointer", (void*)glVertexAttribPointer},
   {"glViewport", (void*)glViewport},
-  {"eglQueryString", (void*)eglQueryString_stub},
+  {"eglQueryString", (void*)eglQueryString},
   {"glBeginQueryEXT", (void*)glBeginQueryEXT_stub},
   {"glBindBufferBaseEXT", (void*)glBindBufferBaseEXT_stub},
   {"glBindBufferRangeEXT", (void*)glBindBufferRangeEXT_stub},
@@ -255,7 +253,7 @@ static const struct { const char* name; void* fn; } kProcs[] = {
   {"glGetQueryObjectui64vEXT", (void*)glGetQueryObjectui64vEXT_stub},
   {"glGetQueryObjectuivEXT", (void*)glGetQueryObjectuivEXT_stub},
   {"glGetQueryivEXT", (void*)glGetQueryivEXT_stub},
-  {"glGetStringi", (void*)glGetStringi_stub},
+  {"glGetStringi", (void*)glGetStringi},
   {"glGetTexLevelParameterivANGLE", (void*)glGetTexLevelParameterivANGLE_stub},
   {"glGetUniformBlockIndexEXT", (void*)glGetUniformBlockIndexEXT_stub},
   {"glGetUniformIndicesEXT", (void*)glGetUniformIndicesEXT_stub},

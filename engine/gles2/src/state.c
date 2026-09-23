@@ -48,6 +48,16 @@ GL_APICALL void GL_APIENTRY glBlendEquationSeparate(GLenum modeRGB, GLenum modeA
 
 GL_APICALL void GL_APIENTRY glBlendEquation(GLenum mode) { glBlendEquationSeparate(mode, mode); }
 
+// GLES 2.0 has a blend constant; this GPU does not. The four factors that
+// would read it are already refused by blend_factor_ok, so no draw can reach
+// a value set here. It is kept because GL_BLEND_COLOR has to read back what
+// was written, and refusing the call would fail a program that sets the
+// constant and then never uses it.
+GL_APICALL void GL_APIENTRY glBlendColor(GLfloat red, GLfloat green, GLfloat blue, GLfloat alpha) {
+  const float in[4] = {red, green, blue, alpha};
+  for (int i = 0; i < 4; i++) fvgl.blend_color[i] = in[i] < 0 ? 0 : in[i] > 1 ? 1 : in[i];
+}
+
 GL_APICALL void GL_APIENTRY glFrontFace(GLenum mode) {
   if (mode != GL_CW && mode != GL_CCW) {
     fvgl_set_error(GL_INVALID_ENUM);
@@ -64,6 +74,54 @@ GL_APICALL void GL_APIENTRY glLineWidth(GLfloat width) {
     return;
   }
   fvgl.line_width = width;
+}
+
+// The only hint GLES 2.0 defines is the mipmap one, and this layer builds
+// mipmaps one way. Stored, so the getter answers, and otherwise ignored:
+// a hint that changes nothing is still a legal hint.
+GL_APICALL void GL_APIENTRY glHint(GLenum target, GLenum mode) {
+  if (target != GL_GENERATE_MIPMAP_HINT) {
+    fvgl_set_error(GL_INVALID_ENUM);
+    return;
+  }
+  if (mode != GL_FASTEST && mode != GL_NICEST && mode != GL_DONT_CARE) {
+    fvgl_set_error(GL_INVALID_ENUM);
+    return;
+  }
+  fvgl.generate_mipmap_hint = mode;
+}
+
+// Depth bias, in the units sceGxmSetFrontDepthBias takes. It reaches the GPU
+// only while GL_POLYGON_OFFSET_FILL is on and a depth surface exists; see
+// fvgl_apply_depth_stencil.
+GL_APICALL void GL_APIENTRY glPolygonOffset(GLfloat factor, GLfloat units) {
+  fvgl.polygon_offset[0] = factor;
+  fvgl.polygon_offset[1] = units;
+}
+
+// Multisampling is off on every surface here (GL_SAMPLES reads 0), so the
+// coverage value changes no fragment. Stored for the getters.
+GL_APICALL void GL_APIENTRY glSampleCoverage(GLfloat value, GLboolean invert) {
+  fvgl.sample_coverage = value < 0 ? 0 : value > 1 ? 1 : value;
+  fvgl.sample_coverage_invert = invert ? GL_TRUE : GL_FALSE;
+}
+
+// A hint that the compiler can go. It cannot: every glLinkProgram runs Cg
+// through libshacccg, so the module stays loaded for the life of the context.
+GL_APICALL void GL_APIENTRY glReleaseShaderCompiler(void) {}
+
+// No binary format is advertised (GL_NUM_SHADER_BINARY_FORMATS reads 0), so
+// every binaryformat is invalid, which is what GL asks for.
+GL_APICALL void GL_APIENTRY glShaderBinary(GLsizei count, const GLuint* shaders, GLenum binaryformat,
+                                           const void* binary, GLsizei length) {
+  (void)shaders;
+  (void)binary;
+  if (count < 0 || length < 0) {
+    fvgl_set_error(GL_INVALID_VALUE);
+    return;
+  }
+  (void)binaryformat;
+  fvgl_set_error(GL_INVALID_ENUM);
 }
 
 GL_APICALL void GL_APIENTRY glFlush(void) { if (!fvgl.up) return;}
@@ -162,6 +220,14 @@ static int get_values(GLenum pname, float* v) {
     case GL_DEPTH_WRITEMASK: v[0] = fvgl.depth_mask; return 1;
     case GL_FRONT_FACE: v[0] = (float)fvgl.front_face; return 1;
     case GL_LINE_WIDTH: v[0] = fvgl.line_width; return 1;
+    case GL_BLEND_COLOR:
+      for (int i = 0; i < 4; i++) v[i] = fvgl.blend_color[i];
+      return 4;
+    case GL_POLYGON_OFFSET_FACTOR: v[0] = fvgl.polygon_offset[0]; return 1;
+    case GL_POLYGON_OFFSET_UNITS: v[0] = fvgl.polygon_offset[1]; return 1;
+    case GL_SAMPLE_COVERAGE_VALUE: v[0] = fvgl.sample_coverage; return 1;
+    case GL_SAMPLE_COVERAGE_INVERT: v[0] = fvgl.sample_coverage_invert; return 1;
+    case GL_GENERATE_MIPMAP_HINT: v[0] = (float)fvgl.generate_mipmap_hint; return 1;
     default: return 0;
   }
 }

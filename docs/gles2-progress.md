@@ -13,8 +13,8 @@ and every change to it has to name its evidence in the last column.
 |---|---|
 | bound by Skia (`engine/gles2/surface.txt`) | 108 |
 | called in some run, implemented | 60 of 60 |
-| never called, implemented anyway | 28 of 48 |
-| recording stubs | 20 |
+| never called, implemented anyway | 33 of 48 |
+| recording stubs | 15 |
 | missing | 0 |
 <!-- progress:end -->
 
@@ -51,7 +51,7 @@ and every change to it has to name its evidence in the last column.
 <!-- ledger:begin -->
 | entry point | measured | peak calls | state |
 |---|---|---|---|
-| `eglQueryString` | never | 0 | stub |
+| `eglQueryString` | never | 0 | real |
 | `glActiveTexture` | called | 1029 | real |
 | `glAttachShader` | called | 66 | real |
 | `glBindAttribLocation` | called | 95 | real |
@@ -59,7 +59,7 @@ and every change to it has to name its evidence in the last column.
 | `glBindFramebuffer` | called | 3153 | real |
 | `glBindRenderbuffer` | never | 0 | stub |
 | `glBindTexture` | called | 8234 | real |
-| `glBlendColor` | never | 0 | stub |
+| `glBlendColor` | never | 0 | real |
 | `glBlendEquation` | called | 1 | real |
 | `glBlendFunc` | called | 383 | real |
 | `glBufferData` | called | 13454 | real |
@@ -70,8 +70,8 @@ and every change to it has to name its evidence in the last column.
 | `glClearStencil` | never | 0 | stub |
 | `glColorMask` | called | 1 | real |
 | `glCompileShader` | called | 66 | real |
-| `glCompressedTexImage2D` | never | 0 | stub |
-| `glCompressedTexSubImage2D` | never | 0 | stub |
+| `glCompressedTexImage2D` | never | 0 | real |
+| `glCompressedTexSubImage2D` | never | 0 | real |
 | `glCopyTexSubImage2D` | called | 76 | real |
 | `glCreateProgram` | called | 33 | real |
 | `glCreateShader` | called | 66 | real |
@@ -111,7 +111,7 @@ and every change to it has to name its evidence in the last column.
 | `glGetShaderPrecisionFormat` | called | 4 | real |
 | `glGetShaderiv` | called | 66 | real |
 | `glGetString` | called | 9 | real |
-| `glGetStringi` | never | 0 | stub |
+| `glGetStringi` | never | 0 | real |
 | `glGetUniformLocation` | called | 148 | real |
 | `glIsTexture` | never | 0 | real |
 | `glLineWidth` | called | 1 | real |

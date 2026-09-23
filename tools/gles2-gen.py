@@ -22,10 +22,11 @@ SRC = ROOT / "engine" / "gles2" / "src"
 GL2 = Path(os.environ.get("VITASDK", os.path.expanduser("~/vitasdk"))) / "arm-vita-eabi/include/GLES2/gl2.h"
 
 PROTO = re.compile(r"GL_APICALL\s+([\w\s\*]+?)\s*GL_APIENTRY\s+(gl\w+)\s*\((.*?)\);", re.S)
-DEF = re.compile(r"GL_APIENTRY\s+(gl\w+)\s*\(")
+DEF = re.compile(r"GL_APIENTRY\s+((?:gl|egl)\w+)\s*\(")
 
-# Extension names Skia binds by name; each maps to the core function that
-# does the job, or to a stub of its own when nothing here does.
+# Extension names Skia binds by name. A name maps to the core function that
+# does the job; None means "the function of this name, if engine/gles2/src
+# defines one, and a stub of its own otherwise".
 ALIASES = {
     "glGenVertexArraysOES": None, "glBindVertexArrayOES": None, "glDeleteVertexArraysOES": None,
     "glMapBufferOES": None, "glUnmapBufferOES": None, "glFlushMappedBufferRangeEXT": None,
@@ -111,9 +112,10 @@ def main():
             lines.append("  return 0;")
         lines.append("}")
         lines.append("")
-    # Extension names Skia may ask for: one shared stub each, void(void) ABI.
+    # Extension names Skia may ask for and nothing here defines: one shared
+    # stub each, void(void) ABI.
     for name, target in sorted(ALIASES.items()):
-        if target is not None:
+        if target is not None or name in have:
             continue
         lines.append(f"void {name}_stub(void) {{ FVGL_STUB({name}); }}")
     (SRC / "stubs.c").write_text("\n".join(lines) + "\n")
@@ -129,7 +131,7 @@ def main():
         "",
     ]
     for name, target in sorted(ALIASES.items()):
-        if target is None:
+        if target is None and name not in have:
             lines.append(f"void {name}_stub(void);")
     lines.append("")
     lines.append("static const struct { const char* name; void* fn; } kProcs[] = {")
@@ -137,7 +139,8 @@ def main():
         lines.append(f"  {{\"{name}\", (void*){name}}},")
     for name, target in sorted(ALIASES.items()):
         if target is None:
-            lines.append(f"  {{\"{name}\", (void*){name}_stub}},")
+            suffix = "" if name in have else "_stub"
+            lines.append(f"  {{\"{name}\", (void*){name}{suffix}}},")
         elif target != name:
             lines.append(f"  {{\"{name}\", (void*){target}}},")
     lines.append("};")

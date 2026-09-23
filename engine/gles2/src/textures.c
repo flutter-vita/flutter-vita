@@ -465,6 +465,44 @@ GL_APICALL void GL_APIENTRY glTexSubImage2D(GLenum target, GLint level, GLint xo
   texture_write(t, xoffset, yoffset, width, height, pixels);
 }
 
+// GLES 2.0 defines the two compressed calls and no compressed format; a
+// format arrives only through an extension. This layer advertises none
+// (GL_NUM_COMPRESSED_TEXTURE_FORMATS reads 0 and GL_COMPRESSED_TEXTURE_FORMATS
+// is empty), so every internalformat is an unknown one and GL_INVALID_ENUM is
+// the answer the spec asks for.
+//
+// The GPU has PVRTC, UBC and ETC1 in hardware. Adding one means advertising
+// its extension, a base format in texture_storage, and a size rule per block
+// in place of the bytes-per-texel this file counts with. Nothing asks: Skia
+// reaches a compressed format only through the caps it reads here, and
+// Flutter hands it raster images it decoded itself.
+GL_APICALL void GL_APIENTRY glCompressedTexImage2D(GLenum target, GLint level, GLenum internalformat, GLsizei width,
+                                                   GLsizei height, GLint border, GLsizei imageSize,
+                                                   const void* data) {
+  (void)target;
+  (void)internalformat;
+  (void)data;
+  if (level < 0 || width < 0 || height < 0 || border != 0 || imageSize < 0) {
+    fvgl_set_error(GL_INVALID_VALUE);
+    return;
+  }
+  fvgl_set_error(GL_INVALID_ENUM);
+}
+
+GL_APICALL void GL_APIENTRY glCompressedTexSubImage2D(GLenum target, GLint level, GLint xoffset, GLint yoffset,
+                                                      GLsizei width, GLsizei height, GLenum format,
+                                                      GLsizei imageSize, const void* data) {
+  (void)target;
+  (void)format;
+  (void)data;
+  if (level < 0 || xoffset < 0 || yoffset < 0 || width < 0 || height < 0 || imageSize < 0) {
+    fvgl_set_error(GL_INVALID_VALUE);
+    return;
+  }
+  // No texture here has compressed storage, so there is nothing to write into.
+  fvgl_set_error(GL_INVALID_OPERATION);
+}
+
 GL_APICALL void GL_APIENTRY glCopyTexImage2D(GLenum target, GLint level, GLenum internalformat, GLint x, GLint y,
                                              GLsizei width, GLsizei height, GLint border) {
   if (!fvgl.up) return;
