@@ -11,6 +11,7 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
+import 'package:flutter_vita/flutter_vita.dart';
 
 import 'frame_recorder.dart';
 import 'scene.dart';
@@ -433,9 +434,22 @@ class BenchRunner {
     await SchedulerBinding.instance.endOfFrame;
   }
 
+  /// The clocks the console ran at, read once before the first scene.
+  ///
+  /// The CONFIGURE tab can raise them, and a relaunch puts them back, so two
+  /// runs of the same binary are not comparable without this. On 2026-09-23 a
+  /// whole run was spent finding that out.
+  String? _clocks;
+
   Future<void> runAll(BuildContext context,
       {void Function(String)? onProgress}) async {
     recorder.attach();
+    try {
+      final i = await FlutterVita.info();
+      if (i != null) _clocks = 'arm ${i.armMhz} MHz, gpu ${i.gpuMhz} MHz';
+    } catch (_) {
+      // An engine that does not answer the channel is still worth measuring.
+    }
     _resume();
     final only = onlyScenes();
     bool wanted(String name) =>
@@ -560,6 +574,7 @@ class BenchRunner {
       // stamp, not comparable" -- it was right to.
       'taken': DateTime.now().toIso8601String(),
       if (engineStamp() case final String e) 'engine': e,
+      if (_clocks case final String c) 'clocks': c,
       'scenes': <Map<String, Object?>>[
         ...carried,
         ...results.map((r) => r.toJson()),
