@@ -28,6 +28,13 @@ FvglTexture* fvgl_current_target(void) {
   return t && t->has_storage ? t : NULL;
 }
 
+// No target carries a depth or stencil surface yet: the display draws through
+// sceGxmDepthStencilSurfaceInitDisabled and a framebuffer object holds one
+// colour attachment. fvgl_apply_raster asks before it writes any depth or
+// stencil state, so the tests stay off until there is something to test
+// against.
+bool fvgl_scene_has_depth(void) { return false; }
+
 void fvgl_target_extent(int* width, int* height, bool* flipped) {
   const FvglTexture* t = fvgl_current_target();
   if (t) {

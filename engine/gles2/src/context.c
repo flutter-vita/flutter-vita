@@ -273,13 +273,135 @@ static void apply_viewport(int x, int y, int w, int h) {
   int tw, th;
   bool flipped;
   fvgl_target_extent(&tw, &th, &flipped);
+  // glDepthRangef(n, f) maps clip z in [-1, 1] onto [n, f], which is the
+  // scale and offset the last two arguments take.
+  const float n = fvgl.depth_range[0], fz = fvgl.depth_range[1];
+  const float z_scale = (fz - n) * 0.5f;
+  const float z_offset = (fz + n) * 0.5f;
   if (flipped) {
     // GL: NDC y = +1 is the top of the viewport, which is row H - (y + h).
     sceGxmSetViewport(fvgl.gxm, (float)x + w * 0.5f, w * 0.5f,
-                      (float)(th - y) - h * 0.5f, -h * 0.5f, 0.5f, 0.5f);
+                      (float)(th - y) - h * 0.5f, -h * 0.5f, z_offset, z_scale);
   } else {
-    sceGxmSetViewport(fvgl.gxm, (float)x + w * 0.5f, w * 0.5f, (float)y + h * 0.5f, h * 0.5f, 0.5f, 0.5f);
+    sceGxmSetViewport(fvgl.gxm, (float)x + w * 0.5f, w * 0.5f, (float)y + h * 0.5f, h * 0.5f, z_offset, z_scale);
   }
+}
+
+// ---- culling, depth and stencil, in the console's terms --------------------
+//
+// GL decides which side of a triangle faces the viewer from the sign of its
+// area in *window* coordinates, and so does the GPU -- but the two do not
+// share a window. The display is drawn bottom-up (fvgl_target_extent calls it
+// flipped, and apply_viewport gives it a negative height), so a triangle GL
+// calls counter-clockwise reaches the rasteriser clockwise, and front and
+// back change places. A texture target is not flipped and they agree.
+//
+// Two things follow, and both are easy to get wrong: the face glCullFace
+// names is culled in the other winding on the display, and GL's front stencil
+// state has to be written to the GPU's *back* there.
+
+static SceGxmDepthFunc depth_func_of(GLenum f) {
+  switch (f) {
+    case GL_NEVER: return SCE_GXM_DEPTH_FUNC_NEVER;
+    case GL_LESS: return SCE_GXM_DEPTH_FUNC_LESS;
+    case GL_EQUAL: return SCE_GXM_DEPTH_FUNC_EQUAL;
+    case GL_LEQUAL: return SCE_GXM_DEPTH_FUNC_LESS_EQUAL;
+    case GL_GREATER: return SCE_GXM_DEPTH_FUNC_GREATER;
+    case GL_NOTEQUAL: return SCE_GXM_DEPTH_FUNC_NOT_EQUAL;
+    case GL_GEQUAL: return SCE_GXM_DEPTH_FUNC_GREATER_EQUAL;
+    default: return SCE_GXM_DEPTH_FUNC_ALWAYS;
+  }
+}
+
+static SceGxmStencilFunc stencil_func_of(GLenum f) {
+  switch (f) {
+    case GL_NEVER: return SCE_GXM_STENCIL_FUNC_NEVER;
+    case GL_LESS: return SCE_GXM_STENCIL_FUNC_LESS;
+    case GL_EQUAL: return SCE_GXM_STENCIL_FUNC_EQUAL;
+    case GL_LEQUAL: return SCE_GXM_STENCIL_FUNC_LESS_EQUAL;
+    case GL_GREATER: return SCE_GXM_STENCIL_FUNC_GREATER;
+    case GL_NOTEQUAL: return SCE_GXM_STENCIL_FUNC_NOT_EQUAL;
+    case GL_GEQUAL: return SCE_GXM_STENCIL_FUNC_GREATER_EQUAL;
+    default: return SCE_GXM_STENCIL_FUNC_ALWAYS;
+  }
+}
+
+static SceGxmStencilOp stencil_op_of(GLenum op) {
+  switch (op) {
+    case GL_ZERO: return SCE_GXM_STENCIL_OP_ZERO;
+    case GL_REPLACE: return SCE_GXM_STENCIL_OP_REPLACE;
+    case GL_INCR: return SCE_GXM_STENCIL_OP_INCR;
+    case GL_DECR: return SCE_GXM_STENCIL_OP_DECR;
+    case GL_INVERT: return SCE_GXM_STENCIL_OP_INVERT;
+    case GL_INCR_WRAP: return SCE_GXM_STENCIL_OP_INCR_WRAP;
+    case GL_DECR_WRAP: return SCE_GXM_STENCIL_OP_DECR_WRAP;
+    default: return SCE_GXM_STENCIL_OP_KEEP;
+  }
+}
+
+static SceGxmCullMode cull_mode_of(bool flipped) {
+  if (!fvgl.cull_enabled || fvgl.cull_face == GL_FRONT_AND_BACK) return SCE_GXM_CULL_NONE;
+  // Which winding GL wants gone, in GL's own window.
+  const bool cull_cw = (fvgl.cull_face == GL_BACK) == (fvgl.front_face == GL_CCW);
+  return (cull_cw != flipped) ? SCE_GXM_CULL_CW : SCE_GXM_CULL_CCW;
+}
+
+// One side's stencil state, or the pass-everything state when the target has
+// no stencil to test against.
+static void apply_stencil_side(bool gxm_front, const FvglStencilFace* f, bool have) {
+  const SceGxmStencilFunc func = have ? stencil_func_of(f->func) : SCE_GXM_STENCIL_FUNC_ALWAYS;
+  const SceGxmStencilOp sfail = have ? stencil_op_of(f->sfail) : SCE_GXM_STENCIL_OP_KEEP;
+  const SceGxmStencilOp dpfail = have ? stencil_op_of(f->dpfail) : SCE_GXM_STENCIL_OP_KEEP;
+  const SceGxmStencilOp dppass = have ? stencil_op_of(f->dppass) : SCE_GXM_STENCIL_OP_KEEP;
+  const unsigned char compare = have ? (unsigned char)f->compare_mask : 0xFF;
+  const unsigned char write = have ? (unsigned char)f->write_mask : 0;
+  // GL clamps the reference to the stencil width, which is eight bits here.
+  unsigned ref = f->ref < 0 ? 0u : (unsigned)f->ref;
+  if (ref > 0xFFu) ref = 0xFFu;
+  if (gxm_front) {
+    sceGxmSetFrontStencilFunc(fvgl.gxm, func, sfail, dpfail, dppass, compare, write);
+    sceGxmSetFrontStencilRef(fvgl.gxm, ref);
+  } else {
+    sceGxmSetBackStencilFunc(fvgl.gxm, func, sfail, dpfail, dppass, compare, write);
+    sceGxmSetBackStencilRef(fvgl.gxm, ref);
+  }
+}
+
+void fvgl_apply_raster(void) {
+  if (!fvgl.scene_open) return;
+  int w, h;
+  bool flipped;
+  fvgl_target_extent(&w, &h, &flipped);
+  const bool have_ds = fvgl_scene_has_depth();
+
+  sceGxmSetCullMode(fvgl.gxm, cull_mode_of(flipped));
+
+  const bool test = have_ds && fvgl.depth_test_enabled;
+  const SceGxmDepthFunc func = test ? depth_func_of(fvgl.depth_func) : SCE_GXM_DEPTH_FUNC_ALWAYS;
+  // GL writes depth whenever the mask allows it and the test passes, whether
+  // or not GL_DEPTH_TEST is on -- except that with the test off nothing is
+  // rejected, so a disabled test still writes. Without a surface there is
+  // nowhere to write.
+  const SceGxmDepthWriteMode write = (have_ds && fvgl.depth_mask) ? SCE_GXM_DEPTH_WRITE_ENABLED
+                                                                  : SCE_GXM_DEPTH_WRITE_DISABLED;
+  sceGxmSetFrontDepthFunc(fvgl.gxm, func);
+  sceGxmSetBackDepthFunc(fvgl.gxm, func);
+  sceGxmSetFrontDepthWriteEnable(fvgl.gxm, write);
+  sceGxmSetBackDepthWriteEnable(fvgl.gxm, write);
+
+  // GL_POLYGON_OFFSET_FILL is remembered by set_capability; the bias reaches
+  // the GPU only with a depth surface behind it.
+  const bool bias = have_ds && fvgl.polygon_offset_fill;
+  const int factor = bias ? (int)fvgl.polygon_offset[0] : 0;
+  const int units = bias ? (int)fvgl.polygon_offset[1] : 0;
+  sceGxmSetFrontDepthBias(fvgl.gxm, factor, units);
+  sceGxmSetBackDepthBias(fvgl.gxm, factor, units);
+
+  const bool stencil = have_ds && fvgl.stencil_test_enabled;
+  apply_stencil_side(!flipped, &fvgl.stencil_front, stencil);
+  apply_stencil_side(flipped, &fvgl.stencil_back, stencil);
+
+  fvgl.raster_dirty = false;
 }
 
 // ---- GPU meter -------------------------------------------------------------
@@ -374,12 +496,10 @@ void fvgl_scene_begin(void) {
   fvgl.scene_target = target;
   if (target) target->last_frame_used = fvgl.frame;
   fvgl.bound_program = NULL;  // a new scene starts with no programs set
-  // The raster state GL never changes for a 2D renderer is set once per scene.
-  sceGxmSetFrontDepthFunc(fvgl.gxm, SCE_GXM_DEPTH_FUNC_ALWAYS);
-  sceGxmSetBackDepthFunc(fvgl.gxm, SCE_GXM_DEPTH_FUNC_ALWAYS);
-  sceGxmSetFrontDepthWriteEnable(fvgl.gxm, SCE_GXM_DEPTH_WRITE_DISABLED);
-  sceGxmSetBackDepthWriteEnable(fvgl.gxm, SCE_GXM_DEPTH_WRITE_DISABLED);
-  sceGxmSetCullMode(fvgl.gxm, SCE_GXM_CULL_NONE);
+  // A new scene starts with none of the raster state set, whatever the last
+  // one had.
+  fvgl.raster_dirty = true;
+  fvgl_apply_raster();
   apply_region_clip();
   apply_viewport(fvgl.viewport[0], fvgl.viewport[1], fvgl.viewport[2], fvgl.viewport[3]);
 }
@@ -562,6 +682,21 @@ int fvgl_init(const FvglConfig* config) {
   fvgl.sample_coverage = 1.0f;
   fvgl.sample_coverage_invert = GL_FALSE;
   fvgl.generate_mipmap_hint = GL_DONT_CARE;
+  fvgl.depth_func = GL_LESS;
+  fvgl.depth_range[0] = 0.0f;
+  fvgl.depth_range[1] = 1.0f;
+  fvgl.clear_depth = 1.0f;
+  fvgl.clear_stencil = 0;
+  fvgl.cull_face = GL_BACK;
+  for (int i = 0; i < 2; i++) {
+    FvglStencilFace* f = i ? &fvgl.stencil_back : &fvgl.stencil_front;
+    f->func = GL_ALWAYS;
+    f->ref = 0;
+    f->compare_mask = 0xFFFFFFFFu;
+    f->write_mask = 0xFFFFFFFFu;
+    f->sfail = f->dpfail = f->dppass = GL_KEEP;
+  }
+  fvgl.raster_dirty = true;
   fvgl.up = true;
   meter_start();
   fvgl_log("up: %dx%d, %d display buffers, stride %u", fvgl.width, fvgl.height, buffers, fvgl.display_stride);
@@ -784,12 +919,14 @@ static bool set_capability(GLenum cap, bool on) {
       if (fvgl.scene_open) apply_region_clip();
       return true;
     case GL_BLEND: fvgl.blend.enabled = on; return true;
-    case GL_CULL_FACE: fvgl.cull_enabled = on; return true;
-    case GL_DEPTH_TEST: fvgl.depth_test_enabled = on; return true;
-    case GL_STENCIL_TEST: fvgl.stencil_test_enabled = on; return true;
+    case GL_CULL_FACE: fvgl.cull_enabled = on; fvgl.raster_dirty = true; return true;
+    case GL_DEPTH_TEST: fvgl.depth_test_enabled = on; fvgl.raster_dirty = true; return true;
+    case GL_STENCIL_TEST: fvgl.stencil_test_enabled = on; fvgl.raster_dirty = true; return true;
+    case GL_POLYGON_OFFSET_FILL: fvgl.polygon_offset_fill = on; fvgl.raster_dirty = true; return true;
+    // Dithering is the GPU's own and cannot be turned off per draw; the value
+    // is remembered so glIsEnabled answers with it.
     case GL_DITHER: fvgl.dither_enabled = on; return true;
-    // Valid, remembered nowhere: no depth surface, no multisampling.
-    case GL_POLYGON_OFFSET_FILL:
+    // Valid, remembered nowhere: no surface here is multisampled.
     case GL_SAMPLE_ALPHA_TO_COVERAGE:
     case GL_SAMPLE_COVERAGE:
       return true;

@@ -532,6 +532,13 @@ static void draw(GLenum mode, GLint first, unsigned count, unsigned vertex_count
     return;
   }
   if (count == 0) return;
+  // Culling touches triangles and nothing else, and GL_FRONT_AND_BACK culls
+  // every one of them. The GPU has two cull modes and no third, so the draw
+  // simply does not happen.
+  if (fvgl.cull_enabled && fvgl.cull_face == GL_FRONT_AND_BACK &&
+      (prim == SCE_GXM_PRIMITIVE_TRIANGLES || prim == SCE_GXM_PRIMITIVE_TRIANGLE_STRIP ||
+       prim == SCE_GXM_PRIMITIVE_TRIANGLE_FAN))
+    return;
   if (mode == GL_LINE_STRIP || mode == GL_LINE_LOOP) {
     if (count < 2) return;
     indices = expand_lines(mode, indices, format, count, &count);
@@ -540,6 +547,7 @@ static void draw(GLenum mode, GLint first, unsigned count, unsigned vertex_count
 
   fvgl_scene_begin();
   if (!fvgl.scene_open) return;
+  if (fvgl.raster_dirty) fvgl_apply_raster();
 
   Layout L;
   if (!build_layout(p, first, vertex_count, &L)) {

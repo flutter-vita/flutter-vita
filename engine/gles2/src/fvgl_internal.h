@@ -223,6 +223,16 @@ typedef struct FvglBlendState {
   GLenum eq_rgb, eq_alpha;
 } FvglBlendState;
 
+// One side of the stencil test. GL keeps front and back apart and so does the
+// GPU, field for field, so this maps straight across.
+typedef struct FvglStencilFace {
+  GLenum func;
+  GLint ref;
+  GLuint compare_mask;  // glStencilFunc's mask
+  GLuint write_mask;    // glStencilMask
+  GLenum sfail, dpfail, dppass;
+} FvglStencilFace;
+
 // ---- the context -----------------------------------------------------------
 
 #define FVGL_MAX_DISPLAY_BUFFERS 3
@@ -301,12 +311,22 @@ typedef struct FvglContext {
   float blend_color[4];
   GLenum front_face;
   GLboolean depth_mask;
+  GLenum depth_func;
+  float depth_range[2];  // near, far
+  float clear_depth;
+  GLenum cull_face;
+  FvglStencilFace stencil_front, stencil_back;
+  GLint clear_stencil;
+  // The GXM context's raster state no longer matches the fields above. Set by
+  // every setter, cleared by fvgl_apply_raster.
+  bool raster_dirty;
   float line_width;
   float polygon_offset[2];  // factor, units
   float sample_coverage;
   GLboolean sample_coverage_invert;
   GLenum generate_mipmap_hint;
   bool cull_enabled, depth_test_enabled, stencil_test_enabled, dither_enabled;
+  bool polygon_offset_fill;
 
   FvglTable shaders, programs, buffers, textures, framebuffers;
   FvglProgram* current_program;
@@ -336,6 +356,15 @@ extern FvglContext fvgl;
 // matches the GL state. Every draw and clear starts here.
 void fvgl_scene_begin(void);
 void fvgl_scene_end(void);
+
+// Writes the culling, depth and stencil state of the moment into the GXM
+// context. Cheap -- six or seven context writes -- and skipped when nothing
+// has changed since the last one. Called at the top of every draw.
+void fvgl_apply_raster(void);
+// True when the open scene draws through a depth and stencil surface. Without
+// one the depth and stencil tests cannot run, so fvgl_apply_raster forces them
+// off whatever the GL state says.
+bool fvgl_scene_has_depth(void);
 
 // The texture the bound framebuffer draws into, NULL for the display.
 FvglTexture* fvgl_current_target(void);

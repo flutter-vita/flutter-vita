@@ -15,36 +15,10 @@ GL_APICALL void GL_APIENTRY glBindRenderbuffer(GLenum target, GLuint renderbuffe
   FVGL_STUB(glBindRenderbuffer);
 }
 
-GL_APICALL void GL_APIENTRY glClearDepthf(GLfloat d) {
-  (void)d;
-  FVGL_STUB(glClearDepthf);
-}
-
-GL_APICALL void GL_APIENTRY glClearStencil(GLint s) {
-  (void)s;
-  FVGL_STUB(glClearStencil);
-}
-
-GL_APICALL void GL_APIENTRY glCullFace(GLenum mode) {
-  (void)mode;
-  FVGL_STUB(glCullFace);
-}
-
 GL_APICALL void GL_APIENTRY glDeleteRenderbuffers(GLsizei n, const GLuint *renderbuffers) {
   (void)n;
   (void)renderbuffers;
   FVGL_STUB(glDeleteRenderbuffers);
-}
-
-GL_APICALL void GL_APIENTRY glDepthFunc(GLenum func) {
-  (void)func;
-  FVGL_STUB(glDepthFunc);
-}
-
-GL_APICALL void GL_APIENTRY glDepthRangef(GLfloat n, GLfloat f) {
-  (void)n;
-  (void)f;
-  FVGL_STUB(glDepthRangef);
 }
 
 GL_APICALL void GL_APIENTRY glFramebufferRenderbuffer(GLenum target, GLenum attachment, GLenum renderbuffertarget, GLuint renderbuffer) {
@@ -85,47 +59,6 @@ GL_APICALL void GL_APIENTRY glRenderbufferStorage(GLenum target, GLenum internal
   (void)width;
   (void)height;
   FVGL_STUB(glRenderbufferStorage);
-}
-
-GL_APICALL void GL_APIENTRY glStencilFunc(GLenum func, GLint ref, GLuint mask) {
-  (void)func;
-  (void)ref;
-  (void)mask;
-  FVGL_STUB(glStencilFunc);
-}
-
-GL_APICALL void GL_APIENTRY glStencilFuncSeparate(GLenum face, GLenum func, GLint ref, GLuint mask) {
-  (void)face;
-  (void)func;
-  (void)ref;
-  (void)mask;
-  FVGL_STUB(glStencilFuncSeparate);
-}
-
-GL_APICALL void GL_APIENTRY glStencilMask(GLuint mask) {
-  (void)mask;
-  FVGL_STUB(glStencilMask);
-}
-
-GL_APICALL void GL_APIENTRY glStencilMaskSeparate(GLenum face, GLuint mask) {
-  (void)face;
-  (void)mask;
-  FVGL_STUB(glStencilMaskSeparate);
-}
-
-GL_APICALL void GL_APIENTRY glStencilOp(GLenum fail, GLenum zfail, GLenum zpass) {
-  (void)fail;
-  (void)zfail;
-  (void)zpass;
-  FVGL_STUB(glStencilOp);
-}
-
-GL_APICALL void GL_APIENTRY glStencilOpSeparate(GLenum face, GLenum sfail, GLenum dpfail, GLenum dppass) {
-  (void)face;
-  (void)sfail;
-  (void)dpfail;
-  (void)dppass;
-  FVGL_STUB(glStencilOpSeparate);
 }
 
 void glBeginQueryEXT_stub(void) { FVGL_STUB(glBeginQueryEXT); }

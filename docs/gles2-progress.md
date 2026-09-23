@@ -13,8 +13,8 @@ and every change to it has to name its evidence in the last column.
 |---|---|
 | bound by Skia (`engine/gles2/surface.txt`) | 108 |
 | called in some run, implemented | 60 of 60 |
-| never called, implemented anyway | 33 of 48 |
-| recording stubs | 15 |
+| never called, implemented anyway | 41 of 48 |
+| recording stubs | 7 |
 | missing | 0 |
 <!-- progress:end -->
 
@@ -67,7 +67,7 @@ and every change to it has to name its evidence in the last column.
 | `glCheckFramebufferStatus` | called | 448 | real |
 | `glClear` | called | 11590 | real |
 | `glClearColor` | called | 2123 | real |
-| `glClearStencil` | never | 0 | stub |
+| `glClearStencil` | never | 0 | real |
 | `glColorMask` | called | 1 | real |
 | `glCompileShader` | called | 66 | real |
 | `glCompressedTexImage2D` | never | 0 | real |
@@ -75,7 +75,7 @@ and every change to it has to name its evidence in the last column.
 | `glCopyTexSubImage2D` | called | 76 | real |
 | `glCreateProgram` | called | 33 | real |
 | `glCreateShader` | called | 66 | real |
-| `glCullFace` | never | 0 | stub |
+| `glCullFace` | never | 0 | real |
 | `glDeleteBuffers` | called | 3 | real |
 | `glDeleteFramebuffers` | called | 447 | real |
 | `glDeleteProgram` | never | 0 | real |
@@ -121,12 +121,12 @@ and every change to it has to name its evidence in the last column.
 | `glRenderbufferStorage` | never | 0 | stub |
 | `glScissor` | called | 801 | real |
 | `glShaderSource` | called | 66 | real |
-| `glStencilFunc` | never | 0 | stub |
-| `glStencilFuncSeparate` | never | 0 | stub |
-| `glStencilMask` | never | 0 | stub |
-| `glStencilMaskSeparate` | never | 0 | stub |
-| `glStencilOp` | never | 0 | stub |
-| `glStencilOpSeparate` | never | 0 | stub |
+| `glStencilFunc` | never | 0 | real |
+| `glStencilFuncSeparate` | never | 0 | real |
+| `glStencilMask` | never | 0 | real |
+| `glStencilMaskSeparate` | never | 0 | real |
+| `glStencilOp` | never | 0 | real |
+| `glStencilOpSeparate` | never | 0 | real |
 | `glTexImage2D` | called | 660 | real |
 | `glTexParameterf` | never | 0 | real |
 | `glTexParameterfv` | never | 0 | real |

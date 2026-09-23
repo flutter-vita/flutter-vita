@@ -66,7 +66,127 @@ GL_APICALL void GL_APIENTRY glFrontFace(GLenum mode) {
   fvgl.front_face = mode;
 }
 
-GL_APICALL void GL_APIENTRY glDepthMask(GLboolean flag) { fvgl.depth_mask = flag ? GL_TRUE : GL_FALSE; }
+GL_APICALL void GL_APIENTRY glCullFace(GLenum mode) {
+  if (mode != GL_FRONT && mode != GL_BACK && mode != GL_FRONT_AND_BACK) {
+    fvgl_set_error(GL_INVALID_ENUM);
+    return;
+  }
+  fvgl.cull_face = mode;
+  fvgl.raster_dirty = true;
+}
+
+// ---- depth -----------------------------------------------------------------
+
+GL_APICALL void GL_APIENTRY glDepthMask(GLboolean flag) {
+  fvgl.depth_mask = flag ? GL_TRUE : GL_FALSE;
+  fvgl.raster_dirty = true;
+}
+
+static bool compare_func_ok(GLenum f) {
+  switch (f) {
+    case GL_NEVER: case GL_LESS: case GL_EQUAL: case GL_LEQUAL:
+    case GL_GREATER: case GL_NOTEQUAL: case GL_GEQUAL: case GL_ALWAYS:
+      return true;
+    default:
+      return false;
+  }
+}
+
+GL_APICALL void GL_APIENTRY glDepthFunc(GLenum func) {
+  if (!compare_func_ok(func)) {
+    fvgl_set_error(GL_INVALID_ENUM);
+    return;
+  }
+  fvgl.depth_func = func;
+  fvgl.raster_dirty = true;
+}
+
+static float clamp01(float v) { return v < 0 ? 0 : v > 1 ? 1 : v; }
+
+// The range reaches the GPU as the viewport's z scale and offset, so it takes
+// effect at the next apply_viewport -- which a scene and every glViewport do.
+GL_APICALL void GL_APIENTRY glDepthRangef(GLfloat n, GLfloat f) {
+  fvgl.depth_range[0] = clamp01(n);
+  fvgl.depth_range[1] = clamp01(f);
+  if (fvgl.scene_open) glViewport(fvgl.viewport[0], fvgl.viewport[1], fvgl.viewport[2], fvgl.viewport[3]);
+}
+
+GL_APICALL void GL_APIENTRY glClearDepthf(GLfloat d) { fvgl.clear_depth = clamp01(d); }
+
+// ---- stencil ---------------------------------------------------------------
+//
+// Front and back are kept apart here exactly as GL keeps them; which of the
+// two the GPU calls front depends on the target, and fvgl_apply_raster is
+// where that is sorted out.
+
+static bool stencil_face_ok(GLenum face) {
+  return face == GL_FRONT || face == GL_BACK || face == GL_FRONT_AND_BACK;
+}
+
+static bool stencil_op_ok(GLenum op) {
+  switch (op) {
+    case GL_KEEP: case GL_ZERO: case GL_REPLACE: case GL_INCR:
+    case GL_DECR: case GL_INVERT: case GL_INCR_WRAP: case GL_DECR_WRAP:
+      return true;
+    default:
+      return false;
+  }
+}
+
+GL_APICALL void GL_APIENTRY glStencilFuncSeparate(GLenum face, GLenum func, GLint ref, GLuint mask) {
+  if (!stencil_face_ok(face) || !compare_func_ok(func)) {
+    fvgl_set_error(GL_INVALID_ENUM);
+    return;
+  }
+  for (int i = 0; i < 2; i++) {
+    FvglStencilFace* f = i ? &fvgl.stencil_back : &fvgl.stencil_front;
+    if (face != GL_FRONT_AND_BACK && (face == GL_BACK) != (i == 1)) continue;
+    f->func = func;
+    f->ref = ref;
+    f->compare_mask = mask;
+  }
+  fvgl.raster_dirty = true;
+}
+
+GL_APICALL void GL_APIENTRY glStencilFunc(GLenum func, GLint ref, GLuint mask) {
+  glStencilFuncSeparate(GL_FRONT_AND_BACK, func, ref, mask);
+}
+
+GL_APICALL void GL_APIENTRY glStencilOpSeparate(GLenum face, GLenum sfail, GLenum dpfail, GLenum dppass) {
+  if (!stencil_face_ok(face) || !stencil_op_ok(sfail) || !stencil_op_ok(dpfail) || !stencil_op_ok(dppass)) {
+    fvgl_set_error(GL_INVALID_ENUM);
+    return;
+  }
+  for (int i = 0; i < 2; i++) {
+    FvglStencilFace* f = i ? &fvgl.stencil_back : &fvgl.stencil_front;
+    if (face != GL_FRONT_AND_BACK && (face == GL_BACK) != (i == 1)) continue;
+    f->sfail = sfail;
+    f->dpfail = dpfail;
+    f->dppass = dppass;
+  }
+  fvgl.raster_dirty = true;
+}
+
+GL_APICALL void GL_APIENTRY glStencilOp(GLenum fail, GLenum zfail, GLenum zpass) {
+  glStencilOpSeparate(GL_FRONT_AND_BACK, fail, zfail, zpass);
+}
+
+GL_APICALL void GL_APIENTRY glStencilMaskSeparate(GLenum face, GLuint mask) {
+  if (!stencil_face_ok(face)) {
+    fvgl_set_error(GL_INVALID_ENUM);
+    return;
+  }
+  for (int i = 0; i < 2; i++) {
+    FvglStencilFace* f = i ? &fvgl.stencil_back : &fvgl.stencil_front;
+    if (face != GL_FRONT_AND_BACK && (face == GL_BACK) != (i == 1)) continue;
+    f->write_mask = mask;
+  }
+  fvgl.raster_dirty = true;
+}
+
+GL_APICALL void GL_APIENTRY glStencilMask(GLuint mask) { glStencilMaskSeparate(GL_FRONT_AND_BACK, mask); }
+
+GL_APICALL void GL_APIENTRY glClearStencil(GLint s) { fvgl.clear_stencil = s; }
 
 GL_APICALL void GL_APIENTRY glLineWidth(GLfloat width) {
   if (width <= 0) {
@@ -142,6 +262,9 @@ GL_APICALL GLboolean GL_APIENTRY glIsEnabled(GLenum cap) {
     case GL_DEPTH_TEST: return fvgl.depth_test_enabled;
     case GL_STENCIL_TEST: return fvgl.stencil_test_enabled;
     case GL_DITHER: return fvgl.dither_enabled;
+    case GL_POLYGON_OFFSET_FILL: return fvgl.polygon_offset_fill;
+    case GL_SAMPLE_ALPHA_TO_COVERAGE:
+    case GL_SAMPLE_COVERAGE: return GL_FALSE;  // no surface here is multisampled
     default: fvgl_set_error(GL_INVALID_ENUM); return GL_FALSE;
   }
 }
@@ -228,6 +351,30 @@ static int get_values(GLenum pname, float* v) {
     case GL_SAMPLE_COVERAGE_VALUE: v[0] = fvgl.sample_coverage; return 1;
     case GL_SAMPLE_COVERAGE_INVERT: v[0] = fvgl.sample_coverage_invert; return 1;
     case GL_GENERATE_MIPMAP_HINT: v[0] = (float)fvgl.generate_mipmap_hint; return 1;
+    case GL_CULL_FACE: v[0] = fvgl.cull_enabled; return 1;
+    case GL_CULL_FACE_MODE: v[0] = (float)fvgl.cull_face; return 1;
+    case GL_DEPTH_TEST: v[0] = fvgl.depth_test_enabled; return 1;
+    case GL_DEPTH_FUNC: v[0] = (float)fvgl.depth_func; return 1;
+    case GL_DEPTH_RANGE: v[0] = fvgl.depth_range[0]; v[1] = fvgl.depth_range[1]; return 2;
+    case GL_DEPTH_CLEAR_VALUE: v[0] = fvgl.clear_depth; return 1;
+    case GL_POLYGON_OFFSET_FILL: v[0] = fvgl.polygon_offset_fill; return 1;
+    case GL_DITHER: v[0] = fvgl.dither_enabled; return 1;
+    case GL_STENCIL_TEST: v[0] = fvgl.stencil_test_enabled; return 1;
+    case GL_STENCIL_CLEAR_VALUE: v[0] = (float)fvgl.clear_stencil; return 1;
+    case GL_STENCIL_FUNC: v[0] = (float)fvgl.stencil_front.func; return 1;
+    case GL_STENCIL_REF: v[0] = (float)fvgl.stencil_front.ref; return 1;
+    case GL_STENCIL_VALUE_MASK: v[0] = (float)fvgl.stencil_front.compare_mask; return 1;
+    case GL_STENCIL_WRITEMASK: v[0] = (float)fvgl.stencil_front.write_mask; return 1;
+    case GL_STENCIL_FAIL: v[0] = (float)fvgl.stencil_front.sfail; return 1;
+    case GL_STENCIL_PASS_DEPTH_FAIL: v[0] = (float)fvgl.stencil_front.dpfail; return 1;
+    case GL_STENCIL_PASS_DEPTH_PASS: v[0] = (float)fvgl.stencil_front.dppass; return 1;
+    case GL_STENCIL_BACK_FUNC: v[0] = (float)fvgl.stencil_back.func; return 1;
+    case GL_STENCIL_BACK_REF: v[0] = (float)fvgl.stencil_back.ref; return 1;
+    case GL_STENCIL_BACK_VALUE_MASK: v[0] = (float)fvgl.stencil_back.compare_mask; return 1;
+    case GL_STENCIL_BACK_WRITEMASK: v[0] = (float)fvgl.stencil_back.write_mask; return 1;
+    case GL_STENCIL_BACK_FAIL: v[0] = (float)fvgl.stencil_back.sfail; return 1;
+    case GL_STENCIL_BACK_PASS_DEPTH_FAIL: v[0] = (float)fvgl.stencil_back.dpfail; return 1;
+    case GL_STENCIL_BACK_PASS_DEPTH_PASS: v[0] = (float)fvgl.stencil_back.dppass; return 1;
     default: return 0;
   }
 }
