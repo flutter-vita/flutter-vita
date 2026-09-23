@@ -80,6 +80,20 @@ read_arg() { grep -m1 "^$1 = " "$ENGINE_OUT/args.gn" | sed 's/.*= *//; s/"//g'; 
 ENGINE_VERSION="$(read_arg engine_version)"
 SKIA_VERSION="$(read_arg skia_version)"
 DART_VERSION="$(read_arg dart_version)"
+
+# args.gn records what GN was told, which is the upstream revision DEPS named
+# when `gn gen` last ran. The port's sources come from six forks now
+# (ADR-0021), so ask git what the build actually compiled. Each answer is a
+# commit in the repository named beside it, and each falls back to the args
+# value if that tree is not a checkout.
+TREE_ROOT="$ENGINE_SRC/../.."
+git_head() { git -C "$TREE_ROOT/$1" rev-parse HEAD 2>/dev/null; }
+ENGINE_VERSION="$(git_head . || echo "$ENGINE_VERSION")"
+SKIA_VERSION="$(git_head engine/src/flutter/third_party/skia || echo "$SKIA_VERSION")"
+DART_VERSION="$(git_head engine/src/flutter/third_party/dart || echo "$DART_VERSION")"
+ABSEIL_VERSION="$(git_head engine/src/third_party/abseil-cpp)"
+BORINGSSL_VERSION="$(git_head engine/src/flutter/third_party/boringssl/src)"
+ZLIB_VERSION="$(git_head engine/src/flutter/third_party/zlib)"
 FLUTTER_VERSION="$(sed -n 's/^[[:space:]]*"flutter":[[:space:]]*"\([0-9.]*\)".*/\1/p' "$ROOT/versions.json" 2>/dev/null | head -1)"
 [ -n "$FLUTTER_VERSION" ] || FLUTTER_VERSION=unknown
 
@@ -246,13 +260,19 @@ flutter-engine-vita
 
 ${RELEASE_LINE}flutter          $FLUTTER_VERSION
 framework_rev    $FRAMEWORK_REVISION
-engine           $ENGINE_VERSION
-skia             $SKIA_VERSION
-dart             $DART_VERSION
+engine           $ENGINE_VERSION  flutter-vita/flutter vita-$FLUTTER_VERSION
+dart             $DART_VERSION  flutter-vita/dart-sdk
+skia             $SKIA_VERSION  flutter-vita/skia
+abseil           $ABSEIL_VERSION  flutter-vita/abseil-cpp
+boringssl        $BORINGSSL_VERSION  flutter-vita/boringssl
+zlib             $ZLIB_VERSION  flutter-vita/zlib
 target           arm-vita-eabi, armv7-a hard-float, neon
 objects archived $COUNT
 built on         $HOST
 built at         $(date -u +%Y-%m-%dT%H:%M:%SZ)
+
+Every revision above is a commit in the repository named beside it. Those six
+repositories are the whole port; there are no patch files. See ADR-0021.
 
 framework_rev is the compatibility key. Build an app with a Flutter SDK at any
 other revision and dart:ui will not match the engine it is calling into: no
