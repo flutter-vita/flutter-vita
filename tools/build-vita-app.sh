@@ -74,8 +74,17 @@ EXTRA_LINK_OPTIONS=
 # ever built a JIT app.
 RELEASE="OFF"
 
+# Build without the Dart plugin registrant, for measuring what it costs.
+#
+# The native halves are unaffected: the plugins' C is still compiled in, and
+# the file is still generated. Only the three frontend_server arguments that
+# make it a root of the program are withheld, so an app built this way must
+# register its plugins by hand or go without them.
+NO_REGISTRANT=0
+
 while [ $# -gt 0 ]; do
   case "$1" in
+    --no-registrant) NO_REGISTRANT=1; shift ;;
     --title-id) TITLE_ID="$2"; shift 2 ;;
     --name)     APP_NAME="$2"; shift 2 ;;
     --livearea) LIVEAREA_DIR="$(cd "$2" && pwd)"; shift 2 ;;
@@ -415,7 +424,9 @@ if [ -n "$VITA_PLUGINS" ]; then
   echo "$VITA_PLUGINS" | tr ';' '\n' | sed 's|/vita/plugin.cmake$||; s|.*/||; s|^|    |'
 fi
 REGISTRANT_ARGS=()
-if [ -f "$REGISTRANT" ]; then
+if [ "$NO_REGISTRANT" -eq 1 ]; then
+  echo "==> dart plugin registrant: withheld (--no-registrant)"
+elif [ -f "$REGISTRANT" ]; then
   REGISTRANT_URI="file://$REGISTRANT"
   REGISTRANT_ARGS=(--source "$REGISTRANT_URI"
                    --source package:flutter/src/dart_plugin_registrant.dart

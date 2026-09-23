@@ -17,11 +17,18 @@ import 'package:url_launcher/url_launcher.dart';
 class GalleryConfig {
   /// What the gallery starts with. Pad and rear touch stay off so the other
   /// tabs behave as before this tab existed.
+  ///
+  /// The clock is high for the same reason, and it has to be said out loud:
+  /// the embedder sets 444/222 at startup for every app on this port, so
+  /// `CpuClock.normal` here does not mean "leave it alone", it means "undo
+  /// that". It did, from 2026-09-18 to 2026-09-23, and every benchmark in
+  /// that window ran a third slow
+  /// ([the record](../../../docs/results/gallery-ui-thread-2026-09-23.md)).
   static const initial = (
     debugStrip: DebugStrip.shortcut,
     pad: PadMode.none,
     rearTouch: RearTouch.none,
-    cpuClock: CpuClock.normal,
+    cpuClock: CpuClock.high,
     pixelRatio: 1.0,
     onExit: ExitBehaviour.auto,
     psButton: PsButton.system,

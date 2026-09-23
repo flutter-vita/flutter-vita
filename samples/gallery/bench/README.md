@@ -6,9 +6,11 @@ frame grows by more than **both** 10% and one vsync — see
 decision 8, and the note there on why a flat percentage alone flags a
 single-vsync step as a regression.
 
-**There is no baseline right now.** `gl.json` and `sw.json` were deleted on
-2026-09-23. Write new ones with `./tools/bench.sh --baseline`, both renderers
-in one sitting.
+**`gl.json` is current: 36 scenes, 2026-09-23, 444/222 MHz, method
+`b34de93c`, engine `ff08f75c`. There is no software baseline.** `sw.json` was
+taken at 333 MHz, before the clock fix of that day, so it is deleted. Take it
+with `./tools/bench.sh --only sw --baseline`, and take a fresh GL run in the
+same sitting if the pair is going to carry the renderer ratio.
 
 ## A baseline belongs to one method
 
@@ -29,9 +31,15 @@ deleted on 2026-09-23 were taken on 2026-08-25 and 2026-08-24, before the
 suite grew from 18 scenes to 36 and before the renderer became our own GLES2,
 and the gate had been reporting against them for a month.
 
-`method` does not cover the recorder or the engine. A change there moves the
-numbers without touching a scene; the `engine` stamp and `clocks` in the same
-header are what cover those.
+The gate checks `clocks` the same way, and for the same reason. The embedder
+runs every app at 444/222. From 2026-09-18 to 2026-09-23 the gallery undid
+that in `main()` and measured itself at 333/111, a third slow, and the gate
+compared the two without a word
+([the record](../../../docs/results/gallery-ui-thread-2026-09-23.md)).
+
+`method` and `clocks` do not cover the recorder or the engine. A change there
+moves the numbers without touching a scene; the `engine` stamp in the same
+header is what covers that.
 
 ## sw.json was frozen on purpose
 

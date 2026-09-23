@@ -295,6 +295,17 @@ def main():
         if was_id != now_id:
             stale_method.append((m, was_id, now_id))
             continue
+        # The clocks belong to the method as much as the repeat counts do.
+        # The embedder runs every app at 444/222, and from 2026-09-18 to
+        # 2026-09-23 the gallery undid that at startup and ran at 333/111.
+        # Every scene read a third slow, the gate compared the two happily,
+        # and it cost an afternoon to find. One line stops it happening again.
+        was_hz = base.get("clocks")
+        now_hz = results[m].get("clocks")
+        if was_hz != now_hz:
+            stale_method.append((m, f"{was_id} at {was_hz or 'unrecorded clocks'}",
+                                 f"{now_id} at {now_hz or 'unrecorded clocks'}"))
+            continue
         b = scenes_of(base)
         # A scene the baseline has never seen used to be skipped in silence,
         # which is the same shape of bug as the cold shader cache: a green
