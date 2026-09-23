@@ -9,56 +9,9 @@
 
 #define FVGL_STUB(name) fvgl_stub_called(#name)
 
-GL_APICALL void GL_APIENTRY glBindRenderbuffer(GLenum target, GLuint renderbuffer) {
-  (void)target;
-  (void)renderbuffer;
-  FVGL_STUB(glBindRenderbuffer);
-}
-
-GL_APICALL void GL_APIENTRY glDeleteRenderbuffers(GLsizei n, const GLuint *renderbuffers) {
-  (void)n;
-  (void)renderbuffers;
-  FVGL_STUB(glDeleteRenderbuffers);
-}
-
-GL_APICALL void GL_APIENTRY glFramebufferRenderbuffer(GLenum target, GLenum attachment, GLenum renderbuffertarget, GLuint renderbuffer) {
-  (void)target;
-  (void)attachment;
-  (void)renderbuffertarget;
-  (void)renderbuffer;
-  FVGL_STUB(glFramebufferRenderbuffer);
-}
-
 GL_APICALL void GL_APIENTRY glGenerateMipmap(GLenum target) {
   (void)target;
   FVGL_STUB(glGenerateMipmap);
-}
-
-GL_APICALL void GL_APIENTRY glGenRenderbuffers(GLsizei n, GLuint *renderbuffers) {
-  (void)n;
-  (void)renderbuffers;
-  FVGL_STUB(glGenRenderbuffers);
-}
-
-GL_APICALL void GL_APIENTRY glGetRenderbufferParameteriv(GLenum target, GLenum pname, GLint *params) {
-  (void)target;
-  (void)pname;
-  (void)params;
-  FVGL_STUB(glGetRenderbufferParameteriv);
-}
-
-GL_APICALL GLboolean GL_APIENTRY glIsRenderbuffer(GLuint renderbuffer) {
-  (void)renderbuffer;
-  FVGL_STUB(glIsRenderbuffer);
-  return 0;
-}
-
-GL_APICALL void GL_APIENTRY glRenderbufferStorage(GLenum target, GLenum internalformat, GLsizei width, GLsizei height) {
-  (void)target;
-  (void)internalformat;
-  (void)width;
-  (void)height;
-  FVGL_STUB(glRenderbufferStorage);
 }
 
 void glBeginQueryEXT_stub(void) { FVGL_STUB(glBeginQueryEXT); }

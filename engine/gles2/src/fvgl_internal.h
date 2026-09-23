@@ -200,8 +200,26 @@ typedef struct FvglTexture {
   SceGxmColorSurface surface;
 } FvglTexture;
 
+// A depth and stencil surface, and the memory under it. The display has one
+// of these and so does every renderbuffer object; the allocation rule is the
+// same, so the struct is.
+typedef struct FvglRenderbuffer {
+  SceUID uid;
+  void* data;
+  size_t bytes;
+  int width, height;          // what glRenderbufferStorage asked for
+  unsigned stride;            // samples per row, whole tiles
+  GLenum format;              // the internalformat, as given
+  unsigned depth_bits, stencil_bits;
+  bool has_storage;           // a colour format allocates none; see renderbuffers.c
+  SceGxmDepthStencilSurface surface;
+} FvglRenderbuffer;
+
 typedef struct FvglFramebuffer {
-  unsigned color;  // texture name at GL_COLOR_ATTACHMENT0, 0 when none
+  unsigned color;             // texture name at GL_COLOR_ATTACHMENT0, 0 when none
+  unsigned color_renderbuffer;  // a renderbuffer there instead; refused, see renderbuffers.c
+  unsigned depth;             // renderbuffer name at GL_DEPTH_ATTACHMENT, 0 when none
+  unsigned stencil;           // renderbuffer name at GL_STENCIL_ATTACHMENT, 0 when none
 } FvglFramebuffer;
 
 #define FVGL_MAX_TEXTURE_UNITS 8
@@ -255,6 +273,7 @@ typedef struct FvglClearPipeline {
   SceGxmFragmentProgram* fragment[16];
   const SceGxmProgramParameter* color_param;
   const SceGxmProgramParameter* scissor_param;
+  const SceGxmProgramParameter* depth_param;  // the clip z the triangle is drawn at
   SceUID vertex_uid;
   float* vertices;   // three, clip space, a triangle that covers the target
   SceUID index_uid;
@@ -275,6 +294,12 @@ typedef struct FvglContext {
 
   SceGxmRenderTarget* display_target;
   SceGxmDepthStencilSurface no_depth;
+  // The default framebuffer's depth and stencil. GL_DEPTH_BITS and
+  // GL_STENCIL_BITS say 24 and 8 from the start, because that is the window's
+  // format; the two megabytes behind them are taken at the first scene that
+  // could read or write them and never for an app that does neither.
+  FvglRenderbuffer display_depth;
+  bool display_depth_wanted;
   int display_buffer_count;
   unsigned display_stride;  // pixels per row of a display buffer
   FvglDisplayBuffer display[FVGL_MAX_DISPLAY_BUFFERS];
@@ -289,6 +314,10 @@ typedef struct FvglContext {
   // A scene is open between the first draw into a target and the moment the
   // target changes or the frame is presented.
   bool scene_open;
+  // The surface that scene was begun with, NULL when it has none. It is fixed
+  // for the length of a scene, so anything that would take it away has to end
+  // the scene first.
+  const SceGxmDepthStencilSurface* scene_ds;
 
   FvglClearPipeline clear;
 
@@ -328,7 +357,8 @@ typedef struct FvglContext {
   bool cull_enabled, depth_test_enabled, stencil_test_enabled, dither_enabled;
   bool polygon_offset_fill;
 
-  FvglTable shaders, programs, buffers, textures, framebuffers;
+  FvglTable shaders, programs, buffers, textures, framebuffers, renderbuffers;
+  unsigned bound_renderbuffer;
   FvglProgram* current_program;
   FvglProgram* bound_program;  // what the GXM context last saw
   unsigned array_buffer, element_buffer;
@@ -401,6 +431,23 @@ void fvgl_framebuffers_shutdown(void);
 bool fvgl_texture_make_target(FvglTexture* t);
 // A texture is being deleted: framebuffers pointing at it lose the attachment.
 void fvgl_framebuffers_forget_texture(unsigned texture);
+// The same, for a renderbuffer.
+void fvgl_framebuffers_forget_renderbuffer(unsigned renderbuffer);
+// An app is about to read or write depth or stencil on the display: the
+// surface is made at the next scene.
+void fvgl_want_display_depth(void);
+// True when the open scene draws through this renderbuffer's surface.
+bool fvgl_scene_uses_renderbuffer(const FvglRenderbuffer* rb);
+// The depth and stencil surface the current target draws through, or NULL.
+const SceGxmDepthStencilSurface* fvgl_target_depth_stencil(void);
+// What GL_DEPTH_BITS and GL_STENCIL_BITS read for the current target.
+void fvgl_target_depth_stencil_bits(int* depth, int* stencil);
+// renderbuffers.c
+void fvgl_renderbuffers_shutdown(void);
+// Packed 24-bit depth and 8-bit stencil for a target of this size, in whole
+// 32x32 tiles. False when the console refused the memory.
+bool fvgl_depth_stencil_make(FvglRenderbuffer* rb, int width, int height);
+void fvgl_depth_stencil_free(FvglRenderbuffer* rb);
 // draw.c
 void fvgl_draw_init(void);
 void fvgl_draw_shutdown(void);

@@ -130,11 +130,15 @@ static void patcher_host_free(void* user, void* mem) {
 // ---- the clear pipeline ----------------------------------------------------
 //
 // sceGxm has no clear. A clear is a triangle that covers the target, drawn
-// with the depth and stencil tests off and the colour mask of the moment.
+// with the depth and stencil tests always passing, the colour mask of the
+// moment, and the write masks of whichever buffers the call names. Its clip z
+// carries the depth value, and the stencil value rides in as the reference
+// with a REPLACE on pass.
 
 static const char kClearVertexCg[] =
+    "uniform float uDepth;\n"
     "void main(float2 aPosition, float4 out vPosition : POSITION) {\n"
-    "  vPosition = float4(aPosition, 1.0f, 1.0f);\n"
+    "  vPosition = float4(aPosition, uDepth, 1.0f);\n"
     "}\n";
 
 static const char kClearFragmentCg[] =
@@ -173,7 +177,8 @@ static int clear_pipeline_init(void) {
       sceGxmProgramFindParameterByName(c->vertex_gxp, "aPosition");
   c->color_param = sceGxmProgramFindParameterByName(c->fragment_gxp, "uColor");
   c->scissor_param = sceGxmProgramFindParameterByName(c->fragment_gxp, "uScissor");
-  if (!position || !c->color_param || !c->scissor_param) {
+  c->depth_param = sceGxmProgramFindParameterByName(c->vertex_gxp, "uDepth");
+  if (!position || !c->color_param || !c->scissor_param || !c->depth_param) {
     fvgl_log("clear shaders compiled without their parameters");
     return -1;
   }
@@ -269,15 +274,10 @@ static void apply_region_clip(void) {
                       (unsigned)(x1 - 1), (unsigned)(y1 - 1));
 }
 
-static void apply_viewport(int x, int y, int w, int h) {
+static void apply_viewport_z(int x, int y, int w, int h, float z_offset, float z_scale) {
   int tw, th;
   bool flipped;
   fvgl_target_extent(&tw, &th, &flipped);
-  // glDepthRangef(n, f) maps clip z in [-1, 1] onto [n, f], which is the
-  // scale and offset the last two arguments take.
-  const float n = fvgl.depth_range[0], fz = fvgl.depth_range[1];
-  const float z_scale = (fz - n) * 0.5f;
-  const float z_offset = (fz + n) * 0.5f;
   if (flipped) {
     // GL: NDC y = +1 is the top of the viewport, which is row H - (y + h).
     sceGxmSetViewport(fvgl.gxm, (float)x + w * 0.5f, w * 0.5f,
@@ -285,6 +285,13 @@ static void apply_viewport(int x, int y, int w, int h) {
   } else {
     sceGxmSetViewport(fvgl.gxm, (float)x + w * 0.5f, w * 0.5f, (float)y + h * 0.5f, h * 0.5f, z_offset, z_scale);
   }
+}
+
+static void apply_viewport(int x, int y, int w, int h) {
+  // glDepthRangef(n, f) maps clip z in [-1, 1] onto [n, f], which is exactly
+  // the offset and scale the viewport takes.
+  const float n = fvgl.depth_range[0], f = fvgl.depth_range[1];
+  apply_viewport_z(x, y, w, h, (f + n) * 0.5f, (f - n) * 0.5f);
 }
 
 // ---- culling, depth and stencil, in the console's terms --------------------
@@ -473,18 +480,24 @@ void fvgl_scene_begin(void) {
     g_frame_marked = fvgl.frame;
     g_frame_first_scene_us[fvgl.frame % 64] = fvgl_now_us();
   }
+  // The depth and stencil surface is fixed for the length of a scene: this is
+  // the one moment it can be chosen, and fvgl_scene_has_depth answers from it
+  // until the scene ends.
+  const SceGxmDepthStencilSurface* ds = fvgl_target_depth_stencil();
+  const bool has_depth = ds != NULL;
+  if (!ds) ds = &fvgl.no_depth;
   int r;
   if (target) {
     if (!fvgl_texture_make_target(target)) {
       fvgl_log("draw into a texture that cannot be a render target");
       return;
     }
-    r = sceGxmBeginScene(fvgl.gxm, 0, target->target, NULL, NULL, NULL, &target->surface, &fvgl.no_depth);
+    r = sceGxmBeginScene(fvgl.gxm, 0, target->target, NULL, NULL, NULL, &target->surface, ds);
     fvgl.fc[0] = 0.0f;  // gl_FragCoord.y is the row
     fvgl.fc[1] = 1.0f;
   } else {
     FvglDisplayBuffer* b = &fvgl.display[fvgl.back];
-    r = sceGxmBeginScene(fvgl.gxm, 0, fvgl.display_target, NULL, NULL, b->sync, &b->surface, &fvgl.no_depth);
+    r = sceGxmBeginScene(fvgl.gxm, 0, fvgl.display_target, NULL, NULL, b->sync, &b->surface, ds);
     fvgl.fc[0] = (float)fvgl.height;  // GL's y is the row counted from the bottom
     fvgl.fc[1] = -1.0f;
   }
@@ -493,6 +506,7 @@ void fvgl_scene_begin(void) {
     return;
   }
   fvgl.scene_open = true;
+  fvgl.scene_ds = has_depth ? ds : NULL;
   fvgl.scene_target = target;
   if (target) target->last_frame_used = fvgl.frame;
   fvgl.bound_program = NULL;  // a new scene starts with no programs set
@@ -509,6 +523,7 @@ void fvgl_scene_end(void) {
   const int r = sceGxmEndScene(fvgl.gxm, NULL, NULL);
   if (r < 0) fvgl_log("sceGxmEndScene: 0x%08X", (unsigned)r);
   fvgl.scene_open = false;
+  fvgl.scene_ds = NULL;
   fvgl.scene_target = NULL;
 }
 
@@ -557,6 +572,7 @@ int fvgl_init(const FvglConfig* config) {
   fvgl.vdm_uid = fvgl.vertex_ring_uid = fvgl.fragment_ring_uid = fvgl.fragment_usse_uid = -1;
   fvgl.patcher_buffer_uid = fvgl.patcher_vertex_usse_uid = fvgl.patcher_fragment_usse_uid = -1;
   fvgl.clear.vertex_uid = fvgl.clear.index_uid = -1;
+  fvgl.display_depth.uid = -1;
   for (int i = 0; i < FVGL_MAX_DISPLAY_BUFFERS; i++) fvgl.display[i].uid = -1;
 
   SceGxmInitializeParams init = {
@@ -754,6 +770,8 @@ void fvgl_shutdown(void) {
   fvgl_buffers_shutdown();
   shutdown_stage("framebuffers and textures");
   fvgl_framebuffers_shutdown();
+  fvgl_renderbuffers_shutdown();
+  fvgl_depth_stencil_free(&fvgl.display_depth);
   fvgl_textures_shutdown();
   fvgl_draw_shutdown();
   fvgl_blit_shutdown();
@@ -860,6 +878,7 @@ void fvgl_swap(void) {
     const int r = sceGxmEndScene(fvgl.gxm, NULL, &done);
     if (r < 0) fvgl_log("sceGxmEndScene: 0x%08X", (unsigned)r);
     fvgl.scene_open = false;
+    fvgl.scene_ds = NULL;
     fvgl.scene_target = NULL;
   }
   FvglDisplayBuffer* back = &fvgl.display[fvgl.back];
@@ -920,8 +939,16 @@ static bool set_capability(GLenum cap, bool on) {
       return true;
     case GL_BLEND: fvgl.blend.enabled = on; return true;
     case GL_CULL_FACE: fvgl.cull_enabled = on; fvgl.raster_dirty = true; return true;
-    case GL_DEPTH_TEST: fvgl.depth_test_enabled = on; fvgl.raster_dirty = true; return true;
-    case GL_STENCIL_TEST: fvgl.stencil_test_enabled = on; fvgl.raster_dirty = true; return true;
+    case GL_DEPTH_TEST:
+      fvgl.depth_test_enabled = on;
+      fvgl.raster_dirty = true;
+      if (on) fvgl_want_display_depth();
+      return true;
+    case GL_STENCIL_TEST:
+      fvgl.stencil_test_enabled = on;
+      fvgl.raster_dirty = true;
+      if (on) fvgl_want_display_depth();
+      return true;
     case GL_POLYGON_OFFSET_FILL: fvgl.polygon_offset_fill = on; fvgl.raster_dirty = true; return true;
     // Dithering is the GPU's own and cannot be turned off per draw; the value
     // is remembered so glIsEnabled answers with it.
@@ -943,29 +970,70 @@ GL_APICALL void GL_APIENTRY glDisable(GLenum cap) {
   if (!set_capability(cap, false)) fvgl_set_error(GL_INVALID_ENUM);
 }
 
+// The raster state the clear triangle needs: nothing culled, every test
+// passing, and a write mask for each buffer the call named. It leaves the GXM
+// context disagreeing with the GL state, so the next draw applies it again.
+static void apply_clear_raster(bool depth, bool stencil) {
+  sceGxmSetCullMode(fvgl.gxm, SCE_GXM_CULL_NONE);
+  sceGxmSetFrontDepthFunc(fvgl.gxm, SCE_GXM_DEPTH_FUNC_ALWAYS);
+  sceGxmSetBackDepthFunc(fvgl.gxm, SCE_GXM_DEPTH_FUNC_ALWAYS);
+  const SceGxmDepthWriteMode w = depth ? SCE_GXM_DEPTH_WRITE_ENABLED : SCE_GXM_DEPTH_WRITE_DISABLED;
+  sceGxmSetFrontDepthWriteEnable(fvgl.gxm, w);
+  sceGxmSetBackDepthWriteEnable(fvgl.gxm, w);
+  sceGxmSetFrontDepthBias(fvgl.gxm, 0, 0);
+  sceGxmSetBackDepthBias(fvgl.gxm, 0, 0);
+  // Both tests pass, so REPLACE runs on every fragment and writes the
+  // reference through the write mask -- which is what clearing a stencil to a
+  // value under a mask means. GL ES 2.0 names one mask for the operation and
+  // this layer takes the front one, as the desktop implementations do.
+  const SceGxmStencilOp pass = stencil ? SCE_GXM_STENCIL_OP_REPLACE : SCE_GXM_STENCIL_OP_KEEP;
+  const unsigned char write = stencil ? (unsigned char)fvgl.stencil_front.write_mask : 0;
+  const unsigned ref = (unsigned)(fvgl.clear_stencil & 0xFF);
+  sceGxmSetFrontStencilFunc(fvgl.gxm, SCE_GXM_STENCIL_FUNC_ALWAYS, SCE_GXM_STENCIL_OP_KEEP,
+                            SCE_GXM_STENCIL_OP_KEEP, pass, 0xFF, write);
+  sceGxmSetBackStencilFunc(fvgl.gxm, SCE_GXM_STENCIL_FUNC_ALWAYS, SCE_GXM_STENCIL_OP_KEEP,
+                           SCE_GXM_STENCIL_OP_KEEP, pass, 0xFF, write);
+  sceGxmSetFrontStencilRef(fvgl.gxm, ref);
+  sceGxmSetBackStencilRef(fvgl.gxm, ref);
+  fvgl.raster_dirty = true;
+}
+
 GL_APICALL void GL_APIENTRY glClear(GLbitfield mask) {
   if (!fvgl.up) return;
   if (mask & ~(GLbitfield)(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT | GL_STENCIL_BUFFER_BIT)) {
     fvgl_set_error(GL_INVALID_VALUE);
     return;
   }
-  // No depth or stencil surface exists yet, so those bits clear nothing.
-  if (!(mask & GL_COLOR_BUFFER_BIT)) return;
+  if (mask == 0) return;
+  // Asking to clear either of them on the display is one of the two things
+  // that make its surface appear; enabling a test is the other.
+  if (mask & (GL_DEPTH_BUFFER_BIT | GL_STENCIL_BUFFER_BIT)) fvgl_want_display_depth();
   const unsigned gl_mask = (fvgl.color_mask[0] ? 1u : 0u) | (fvgl.color_mask[1] ? 2u : 0u) |
                            (fvgl.color_mask[2] ? 4u : 0u) | (fvgl.color_mask[3] ? 8u : 0u);
-  if (gl_mask == 0) return;
   int x0, y0, x1, y1;
-  if (!scissor_rows(&x0, &y0, &x1, &y1)) return;
-  SceGxmFragmentProgram* fp = clear_fragment_for_mask(gl_mask);
-  if (!fp) return;
+  if (!scissor_rows(&x0, &y0, &x1, &y1)) return;  // the scissor is empty
 
   fvgl_scene_begin();
   if (!fvgl.scene_open) return;
-  // A clear ignores the viewport. The region clip already matches the scissor.
+  const bool have_ds = fvgl.scene_ds != NULL;
+  const bool want_color = (mask & GL_COLOR_BUFFER_BIT) && gl_mask != 0;
+  const bool want_depth = (mask & GL_DEPTH_BUFFER_BIT) && have_ds && fvgl.depth_mask;
+  const bool want_stencil =
+      (mask & GL_STENCIL_BUFFER_BIT) && have_ds && (fvgl.stencil_front.write_mask & 0xFFu) != 0;
+  if (!want_color && !want_depth && !want_stencil) return;
+
+  // A clear of depth or stencil alone writes no colour, and a fragment
+  // program with an empty colour mask is how that is said here.
+  SceGxmFragmentProgram* fp = clear_fragment_for_mask(want_color ? gl_mask : 0);
+  if (!fp) return;
+
+  // A clear ignores the viewport, and its depth value goes in as clip z, so
+  // the z map is the identity rather than glDepthRangef's.
   int tw, th;
   bool flipped;
   fvgl_target_extent(&tw, &th, &flipped);
-  apply_viewport(0, 0, tw, th);
+  apply_viewport_z(0, 0, tw, th, 0.5f, 0.5f);
+  apply_clear_raster(want_depth, want_stencil);
   sceGxmSetVertexProgram(fvgl.gxm, fvgl.clear.vertex);
   sceGxmSetFragmentProgram(fvgl.gxm, fp);
   fvgl.bound_program = NULL;
@@ -974,6 +1042,12 @@ GL_APICALL void GL_APIENTRY glClear(GLbitfield mask) {
   sceGxmSetUniformDataF(uniforms, fvgl.clear.color_param, 0, 4, fvgl.clear_color);
   const float scissor[4] = {(float)x0, (float)y0, (float)x1, (float)y1};
   sceGxmSetUniformDataF(uniforms, fvgl.clear.scissor_param, 0, 4, scissor);
+  void* vertex_uniforms = NULL;
+  sceGxmReserveVertexDefaultUniformBuffer(fvgl.gxm, &vertex_uniforms);
+  // GL's clear depth is a window value in [0, 1]; the identity map above
+  // turns clip z into it as z * 0.5 + 0.5.
+  const float clip_z = fvgl.clear_depth * 2.0f - 1.0f;
+  sceGxmSetUniformDataF(vertex_uniforms, fvgl.clear.depth_param, 0, 1, &clip_z);
   sceGxmSetVertexStream(fvgl.gxm, 0, fvgl.clear.vertices);
   const int r = sceGxmDraw(fvgl.gxm, SCE_GXM_PRIMITIVE_TRIANGLES, SCE_GXM_INDEX_FORMAT_U16,
                            fvgl.clear.indices, 3);

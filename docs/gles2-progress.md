@@ -13,8 +13,8 @@ and every change to it has to name its evidence in the last column.
 |---|---|
 | bound by Skia (`engine/gles2/surface.txt`) | 108 |
 | called in some run, implemented | 60 of 60 |
-| never called, implemented anyway | 41 of 48 |
-| recording stubs | 7 |
+| never called, implemented anyway | 47 of 48 |
+| recording stubs | 1 |
 | missing | 0 |
 <!-- progress:end -->
 
@@ -57,7 +57,7 @@ and every change to it has to name its evidence in the last column.
 | `glBindAttribLocation` | called | 95 | real |
 | `glBindBuffer` | called | 28579 | real |
 | `glBindFramebuffer` | called | 3153 | real |
-| `glBindRenderbuffer` | never | 0 | stub |
+| `glBindRenderbuffer` | never | 0 | real |
 | `glBindTexture` | called | 8234 | real |
 | `glBlendColor` | never | 0 | real |
 | `glBlendEquation` | called | 1 | real |
@@ -79,7 +79,7 @@ and every change to it has to name its evidence in the last column.
 | `glDeleteBuffers` | called | 3 | real |
 | `glDeleteFramebuffers` | called | 447 | real |
 | `glDeleteProgram` | never | 0 | real |
-| `glDeleteRenderbuffers` | never | 0 | stub |
+| `glDeleteRenderbuffers` | never | 0 | real |
 | `glDeleteShader` | called | 66 | real |
 | `glDeleteTextures` | called | 658 | real |
 | `glDepthMask` | called | 1 | real |
@@ -91,12 +91,12 @@ and every change to it has to name its evidence in the last column.
 | `glEnableVertexAttribArray` | called | 15223 | real |
 | `glFinish` | never | 0 | real |
 | `glFlush` | never | 0 | real |
-| `glFramebufferRenderbuffer` | never | 0 | stub |
+| `glFramebufferRenderbuffer` | never | 0 | real |
 | `glFramebufferTexture2D` | called | 448 | real |
 | `glFrontFace` | called | 1 | real |
 | `glGenBuffers` | called | 9 | real |
 | `glGenFramebuffers` | called | 448 | real |
-| `glGenRenderbuffers` | never | 0 | stub |
+| `glGenRenderbuffers` | never | 0 | real |
 | `glGenTextures` | called | 660 | real |
 | `glGenerateMipmap` | never | 0 | stub |
 | `glGetBufferParameteriv` | never | 0 | real |
@@ -106,7 +106,7 @@ and every change to it has to name its evidence in the last column.
 | `glGetIntegerv` | called | 7 | real |
 | `glGetProgramInfoLog` | never | 0 | real |
 | `glGetProgramiv` | called | 33 | real |
-| `glGetRenderbufferParameteriv` | never | 0 | stub |
+| `glGetRenderbufferParameteriv` | never | 0 | real |
 | `glGetShaderInfoLog` | never | 0 | real |
 | `glGetShaderPrecisionFormat` | called | 4 | real |
 | `glGetShaderiv` | called | 66 | real |
@@ -118,7 +118,7 @@ and every change to it has to name its evidence in the last column.
 | `glLinkProgram` | called | 33 | real |
 | `glPixelStorei` | called | 434 | real |
 | `glReadPixels` | called | 1 | real |
-| `glRenderbufferStorage` | never | 0 | stub |
+| `glRenderbufferStorage` | never | 0 | real |
 | `glScissor` | called | 801 | real |
 | `glShaderSource` | called | 66 | real |
 | `glStencilFunc` | never | 0 | real |

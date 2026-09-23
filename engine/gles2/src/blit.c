@@ -152,6 +152,12 @@ bool fvgl_blit(FvglTexture* dst, int xoffset, int yoffset, const SceGxmTexture* 
   sceGxmSetFrontDepthWriteEnable(fvgl.gxm, SCE_GXM_DEPTH_WRITE_DISABLED);
   sceGxmSetBackDepthWriteEnable(fvgl.gxm, SCE_GXM_DEPTH_WRITE_DISABLED);
   sceGxmSetCullMode(fvgl.gxm, SCE_GXM_CULL_NONE);
+  // GXM keeps this state on the context, not on the scene, so a blit after a
+  // draw with the stencil test on would inherit it.
+  sceGxmSetFrontStencilFunc(fvgl.gxm, SCE_GXM_STENCIL_FUNC_ALWAYS, SCE_GXM_STENCIL_OP_KEEP,
+                            SCE_GXM_STENCIL_OP_KEEP, SCE_GXM_STENCIL_OP_KEEP, 0xFF, 0);
+  sceGxmSetBackStencilFunc(fvgl.gxm, SCE_GXM_STENCIL_FUNC_ALWAYS, SCE_GXM_STENCIL_OP_KEEP,
+                           SCE_GXM_STENCIL_OP_KEEP, SCE_GXM_STENCIL_OP_KEEP, 0xFF, 0);
   sceGxmSetRegionClip(fvgl.gxm, SCE_GXM_REGION_CLIP_NONE, 0, 0, 0, 0);
   sceGxmSetViewport(fvgl.gxm, tw * 0.5f, tw * 0.5f, th * 0.5f, th * 0.5f, 0.5f, 0.5f);
   sceGxmSetVertexProgram(fvgl.gxm, g_blit.vertex);
@@ -163,6 +169,8 @@ bool fvgl_blit(FvglTexture* dst, int xoffset, int yoffset, const SceGxmTexture* 
   if (r < 0) fvgl_log("blit draw: 0x%08X", (unsigned)r);
   r = sceGxmEndScene(fvgl.gxm, NULL, NULL);
   if (r < 0) fvgl_log("blit end scene: 0x%08X", (unsigned)r);
+  // The GL raster state was left on the context; the next scene puts it back.
+  fvgl.raster_dirty = true;
   // The next GL draw reopens its own scene, with its own state.
   fvgl.bound_program = NULL;
   dst->last_frame_used = fvgl.frame;

@@ -300,8 +300,20 @@ static int get_values(GLenum pname, float* v) {
     case GL_SAMPLE_BUFFERS: v[0] = 0; return 1;
     case GL_SAMPLES: v[0] = 0; return 1;
     case GL_RED_BITS: case GL_GREEN_BITS: case GL_BLUE_BITS: case GL_ALPHA_BITS: v[0] = 8; return 1;
-    case GL_DEPTH_BITS: v[0] = 0; return 1;
-    case GL_STENCIL_BITS: v[0] = 0; return 1;
+    // What the bound framebuffer has: the display's 24 and 8, or whatever
+    // renderbuffers a framebuffer object carries.
+    case GL_DEPTH_BITS: {
+      int d, s;
+      fvgl_target_depth_stencil_bits(&d, &s);
+      v[0] = (float)d;
+      return 1;
+    }
+    case GL_STENCIL_BITS: {
+      int d, s;
+      fvgl_target_depth_stencil_bits(&d, &s);
+      v[0] = (float)s;
+      return 1;
+    }
     case GL_IMPLEMENTATION_COLOR_READ_FORMAT: v[0] = GL_RGBA; return 1;
     case GL_IMPLEMENTATION_COLOR_READ_TYPE: v[0] = GL_UNSIGNED_BYTE; return 1;
     case GL_PACK_ALIGNMENT: v[0] = (float)fvgl.pack_alignment; return 1;
@@ -321,7 +333,7 @@ static int get_values(GLenum pname, float* v) {
     case GL_ARRAY_BUFFER_BINDING: v[0] = (float)fvgl.array_buffer; return 1;
     case GL_ELEMENT_ARRAY_BUFFER_BINDING: v[0] = (float)fvgl.element_buffer; return 1;
     case GL_FRAMEBUFFER_BINDING: v[0] = (float)fvgl.bound_framebuffer; return 1;
-    case GL_RENDERBUFFER_BINDING: v[0] = 0; return 1;
+    case GL_RENDERBUFFER_BINDING: v[0] = (float)fvgl.bound_renderbuffer; return 1;
     case GL_ACTIVE_TEXTURE: v[0] = (float)(GL_TEXTURE0 + (GLenum)fvgl.active_unit); return 1;
     case GL_TEXTURE_BINDING_2D: v[0] = (float)fvgl.unit_2d[fvgl.active_unit]; return 1;
     case GL_TEXTURE_BINDING_CUBE_MAP: v[0] = (float)fvgl.unit_cube[fvgl.active_unit]; return 1;
