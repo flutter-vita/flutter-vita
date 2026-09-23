@@ -63,10 +63,13 @@ them available *by name*, which is a different thing. An application that wants
 a codepoint Roboto lacks must bundle a font that has it and name that family —
 `fontFamilyFallback` in `ThemeData`, or `fontFamily` on the specific style.
 
-[keklist](../samples/test-apps/patches/keklist-0004-emoji-font-fallback.patch) is the
-worked example: `NotoColorEmoji.ttf` (4.7 MB, already in the engine checkout
-beside Roboto) declared in `pubspec.yaml` and named in both themes, which takes
-its `.vpk` from 18 MB to 22 MB. Colour survives the trip — the font is
+keklist was the worked example: `NotoColorEmoji.ttf` (4.7 MB, already in the
+engine checkout beside Roboto) declared in `pubspec.yaml` and named in both
+themes, which takes its `.vpk` from 18 MB to 22 MB. **It is not in
+[flutter-vita/keklist_flutter](https://github.com/flutter-vita/keklist_flutter)**:
+when the app moved from a patch series to a fork on 2026-09-23 that patch no
+longer applied, and the checkout did not have it either. The measurement below
+stands; the app change has to be made again to see it. Colour survives the trip — the font is
 CBDT/CBLC, PNG bitmaps with no outlines, and the engine's FreeType is built with
 `FT_CONFIG_OPTION_USE_PNG`, `TT_CONFIG_OPTION_EMBEDDED_BITMAPS` and
 `TT_CONFIG_OPTION_COLOR_LAYERS`, so the emoji picker renders in full colour with

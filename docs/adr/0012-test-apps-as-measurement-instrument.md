@@ -76,10 +76,19 @@ title and never has to touch the installed-titles database
 ([the registration investigation](../results/title-registration-2026-08-18.md)
 found that door open, and deliberately left it shut).
 
-**The deliverable is a patch series** under `patches/test-apps/`, and
+**The deliverable is the change each app needs**, and
 **lines-changed-to-first-frame is the score.** No third-party source enters this
 repository; the diff against a pinned upstream commit is a complete and
 reproducible description of what had to change.
+
+**Amended 2026-09-23.** It was a patch series under `samples/test-apps/patches/`.
+Each app is our fork of it now, with the change as commits on `vita-3.44.8`,
+the way the port itself works ([ADR-0021](0021-the-port-is-commits-not-patches.md)).
+The score is unchanged — `git diff <upstream revision>..vita-3.44.8 --stat` is
+the same number the patch files gave. What changed is that a reader can see
+the change in the file it changes, and that a checkout can no longer drift
+from the record without saying so. keklist had drifted: one of its six
+patches no longer applied and was not in the checkout either.
 
 ## Consequences
 

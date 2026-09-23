@@ -70,19 +70,22 @@ with each family's own `OFL.txt` beside it. The licence is not in doubt; where
 our particular binaries came from is, and a font shipped in every `.vpk`
 deserves a source that ships its own licence.
 
-## The patch series is not all BSD-3
+## Our changes to other projects are not all BSD-3
 
-A patch is a derivative work of the file it changes, so each series under
-[engine/patches/](engine/patches/) carries the licence of the project it patches, not this
-project's. The [LICENSE](LICENSE) at the root covers this repository's own code
-and does not reach them.
+A change to a file is a derivative work of that file, so it carries the
+licence of the project it changes, not this project's. The [LICENSE](LICENSE)
+at the root covers this repository's own code and does not reach them.
 
-| Series | Licence it inherits |
+There are no patch files here any more. Every such change is a commit in a
+fork of the project it changes, under the licence that fork already carries
+([ADR-0021](docs/adr/0021-the-port-is-commits-not-patches.md)).
+
+| Where the change lives | Licence it inherits |
 |---|---|
-| `engine/patches/dart-sdk/`, `engine/patches/flutter-engine/`, `engine/patches/skia/` | BSD-3-Clause |
-| `engine/patches/abseil/` | Apache-2.0 |
-| `engine/patches/boringssl/` | see BoringSSL's own `LICENSE` |
-| `samples/test-apps/patches/` | whatever each application uses; they are unrelated projects |
+| `flutter-vita/flutter`, `flutter-vita/dart-sdk`, `flutter-vita/skia`, `flutter-vita/zlib` | BSD-3-Clause |
+| `flutter-vita/abseil-cpp` | Apache-2.0 |
+| `flutter-vita/boringssl` | see BoringSSL's own `LICENSE` |
+| The test-app forks (`localsend`, `keklist_flutter`, `flutter-wonderous-app`, `flutter_manga_reader`) | whatever each application uses; they are unrelated projects |
 
 ## Components
 

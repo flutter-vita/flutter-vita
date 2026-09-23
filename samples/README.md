@@ -56,10 +56,15 @@ enters this repository, and lines-changed-to-first-frame is the score rather
 than pass/fail.
 
 Where we carry changes to an app, the app is our fork of it and the changes
-are commits on `vita-<flutter>` there, the way the port itself works
-([ADR-0021](../docs/adr/0021-the-port-is-commits-not-patches.md)). LocalSend
-moved on 2026-09-23. The three apps still under `samples/test-apps/patches/`
-have not moved yet.
+are commits on `vita-3.44.8` there, the way the port itself works
+([ADR-0021](../docs/adr/0021-the-port-is-commits-not-patches.md)). All four
+moved on 2026-09-23 and there are no patch files left:
+[localsend](https://github.com/flutter-vita/localsend),
+[keklist_flutter](https://github.com/flutter-vita/keklist_flutter),
+[flutter-wonderous-app](https://github.com/flutter-vita/flutter-wonderous-app)
+and [flutter_manga_reader](https://github.com/flutter-vita/flutter_manga_reader).
+`manifest.txt` pins each fork by commit, and the control app,
+`flutter/samples`, is still pinned to upstream because it needs no change.
 
 See [ADR-0012](../docs/adr/0012-test-apps-as-measurement-instrument.md) for how
 it is run and what it is allowed to conclude, and
