@@ -58,10 +58,13 @@ but its performance numbers have no value. The numbers from QEMU also have no
 value. If a measurement is the reason for a change, take that measurement on a
 console.
 
-**Never do `git checkout` in `third_party/`.** Those trees come from other
-projects and we patch them. The real work is in `engine/patches/`. To examine the
-series and the trees together, use `tools/apply-patches.sh --verify`. A checkout
-in `third_party/` removes the patches, and it has left empty files.
+**The engine tree is the fork's branch.** `third_party/flutter` is
+[flutter-vita/flutter](https://github.com/flutter-vita/flutter) on branch
+`vita-3.44.8`, so an engine change is a commit there, and `git log` and
+`git blame` answer for it. Use `tools/apply-patches.sh --verify` to check
+the tree. Do not do `git checkout` of another revision in `third_party/`:
+the other trees there come from other projects, and a checkout removes
+work that is not committed.
 
 **A version change is a project, not maintenance.** Flutter 3.44.8 is not an
 arbitrary choice. It is the version that has prebuilt 32-bit ARM engine
@@ -110,9 +113,10 @@ pull request that corrects one plugin is more useful than one that moves the
 tree around.
 
 We accept your contribution under BSD-3-Clause, the licence in
-[LICENSE](LICENSE). A change to a series in [engine/patches/](engine/patches/) is different:
-it is a derivative of the project it patches and it keeps that project's
-licence. [NOTICE](NOTICE) says which is which.
+[LICENSE](LICENSE). A change to the engine or to one of its dependencies is
+different: it is a derivative of that project and it keeps that project's
+licence. It belongs in the fork, not here. [NOTICE](NOTICE) says which is
+which.
 
 ## Security
 

@@ -63,10 +63,9 @@ cd flutter-vita
 
 `--recurse-submodules` brings the embedder, `engine/embedder`, which every
 app build compiles; after a plain clone, `git submodule update --init`
-does the same. Building apps needs nothing from the vendored Dart and
-Flutter trees. Only an engine rebuild does; `./tools/apply-patches.sh
---apply` puts the Vita patch series into them, and `--verify` checks it is
-in place.
+does the same. Building apps needs no engine checkout. Only an engine
+rebuild does; `./tools/apply-patches.sh --apply` puts the fork's branch
+into `third_party/flutter`, and `--verify` checks the port is in place.
 
 ## 5. The engine artifact
 

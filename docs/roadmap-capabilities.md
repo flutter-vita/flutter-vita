@@ -146,7 +146,7 @@ and `shared_preferences` at 50% cumulative, and both are filesystem.
 
 **Watch for:** newlib's `stat` on `app0:` paths, whether `Directory.list` works
 given `sceIoDopen` semantics, and case sensitivity. The engine needed
-[a whole dirfd shim](../engine/patches/) to read assets; `dart:io` may need its own.
+[a whole dirfd shim](https://github.com/flutter-vita/flutter/blob/vita-3.44.8/engine/src/flutter/fml/platform/vita/dir_fd_vita.cc) to read assets; `dart:io` may need its own.
 
 ## Phase 7 — Networking
 

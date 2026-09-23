@@ -36,7 +36,8 @@ That is enough to diff two trees even though neither has history.
 noise. The number that matters is how many of *our* files upstream moved:
 
 ```bash
-cat engine/patches/dart-sdk/*.patch | grep '^+++ b/' | sed 's|+++ b/||' | sort -u
+cat third_party/flutter/engine/src/flutter/tools/vita/patches/dart/*.patch |
+  grep '^+++ b/' | sed 's|+++ b/||' | sort -u
 ```
 
 Intersect that with `git diff --name-only <old> <new>`. Per patch, not in
@@ -170,7 +171,7 @@ Two smaller notes from the same area, both benign:
 ### The other vendored pins
 
 Only **Skia moves** (`e9ed4fc9` → `8df24be6`), so
-`engine/patches/skia/0001-vita-platform-detection-and-no-mmap.patch` needs
+the Skia patch in the fork (`tools/vita/patches/skia/`) needs
 re-validating against a tree we have not diffed. **BoringSSL, abseil and zlib
 do not move at all** in this window, so those three patches are free —
 including Dart patch 0005, which despite its number applies to zlib.
@@ -182,7 +183,7 @@ including Dart patch 0005, which despite its number applies to zlib.
 | Change | Value to this port |
 |---|---|
 | `DrawDiffRoundRect` → `DrawRoundRect` optimization (#186203) in `display_list` | The only plausible software-raster win in the whole range. **Unmeasured**, and it fires only where that primitive is actually drawn |
-| Text layout work in `painting`/`paragraph.dart` | Possible latent fixes. This port supplies its own font manager ([patch 0006](../engine/patches/flutter-engine/0006-vita-fonts.patch)), so it could go either way |
+| Text layout work in `painting`/`paragraph.dart` | Possible latent fixes. This port supplies its own font manager ([the commit `txt: a font manager for the Vita`](https://github.com/flutter-vita/flutter/commits/vita-3.44.8)), so it could go either way |
 | Inverted-stylus and stylus-button input | **Nothing.** The Vita has no stylus |
 | `widget_inspector` improvements | **Nothing.** Needs a debug VM service this port does not run |
 | 336 files, +13,110 lines of Impeller | **Nothing.** [ADR-0002](adr/0002-skia-not-impeller.md) — we are Skia software raster |

@@ -27,7 +27,7 @@ meets them.
 | [phase-1-workplan.md](phase-1-workplan.md) | What Phase 1 actually requires, derived from the Dart SDK source |
 | [embedder-startup.md](embedder-startup.md) | What `runtime/bin` does at startup, what M1 skips, and the timer/print plan for Phase 2 |
 | [phase-2-gn-notes.md](phase-2-gn-notes.md) | The GN gate: what it is, tooling reality, and why the foreign-toolchain risk is lower than feared |
-| [../engine/patches/dart-sdk/](../engine/patches/dart-sdk/README.md) | The Vita patch series against the pinned Dart SDK |
+| [../engine/README.md](../engine/README.md) | Where the port lives: the fork's commits, and the dependency patches inside the fork |
 | [phase-0.5-feasibility.md](phase-0.5-feasibility.md) | The completed gate. Every measurement taken so far, and the exit criteria still open |
 | [adr/](adr/README.md) | Architecture decision records, with an index and the open questions |
 | [../Flutter Vita Plan.md](../Flutter%20Vita%20Plan.md) | The original plan, reconciled against measurement. Intent and phases 2–5; `docs/` wins on anything measured |
@@ -36,7 +36,7 @@ meets them.
 | [dev-environment.md](dev-environment.md) | Toolchain and IDE setup, including the three-index clangd arrangement |
 | [vita3k-as-a-target.md](vita3k-as-a-target.md) | What the emulator can and cannot be trusted for |
 | [../VERSIONS.md](../VERSIONS.md) | Pinned commits and why 3.44.8 |
-| [../tools/apply-patches.sh](../tools/apply-patches.sh) | `--apply` puts the 26 patches into their six repos; `--verify` checks the series and the trees still agree |
+| [../tools/apply-patches.sh](../tools/apply-patches.sh) | `--apply` puts the fork's branch into the engine tree; `--verify` checks the port is in place, in the tree and in the five dependencies |
 | [platform-identity-options.md](platform-identity-options.md) | Which OS the Vita should claim to be: all six candidates priced, linux vs android measured, and why a real `vita` platform stays rejected |
 | [flutter-upgrade-cost.md](flutter-upgrade-cost.md) | How to price a Flutter/Dart upgrade before committing to it, and the priced answer for 3.47.0 |
 | [writing-flutter-that-runs-on-a-vita.md](writing-flutter-that-runs-on-a-vita.md) | What to do and avoid in app code, from what the benchmarks found |

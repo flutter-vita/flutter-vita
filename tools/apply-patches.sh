@@ -1,27 +1,39 @@
 #!/usr/bin/env bash
-# Apply and verify the vendored patch series. The patch series is the port.
+# Check that the vendored engine tree carries the port.
 #
-#   ./tools/apply-patches.sh --verify     check the series against the trees
-#   ./tools/apply-patches.sh --apply      apply every series to a pristine checkout
-#   ./tools/apply-patches.sh --dry-run    say what --apply would do, touching nothing
-#   ./tools/apply-patches.sh --list       print the patch -> repo manifest
+#   ./tools/apply-patches.sh --verify     the tree is the fork's branch, and the
+#                                         dependency patches are in (default)
+#   ./tools/apply-patches.sh --list       the commits, and the dependency patches
+#   ./tools/apply-patches.sh --apply      put the branch into a fresh checkout
 #
-# Three things make this worth automating:
+# ## Where the port lives
 #
-#   * `git apply engine/patches/dart-sdk/000*.patch` silently skips 0010, which is 29
-#     files including every socket implementation.
-#   * Several patches apply to a nested DEPS repo rather than the tree they sit
-#     beside. engine/patches/dart-sdk/0005 applies to zlib, and BUILD.gn exists in
-#     both, so a careless path intersection matches the wrong file.
-#   * The same series applies to two different Dart checkouts, and 0004 goes in
-#     only half-way on one of them.
+# The engine's own changes are **commits** on the fork's branch
+# `vita-<flutter>` (flutter-vita/flutter). `third_party/flutter` is that
+# branch, so `git log` and `git blame` answer for every line of the port.
+# There is no patch series for the engine any more, and nothing to regenerate
+# after an edit: commit it.
 #
-# --verify mutates nothing and needs no network.
-
+# Five dependencies change too: the Dart SDK, zlib, Skia, abseil and
+# BoringSSL. `DEPS` names their revisions and gclient checks them out, so a
+# commit on the fork cannot reach them. Their changes are patch files **inside
+# the fork**, under `engine/src/flutter/tools/vita/patches/`, applied by the
+# `vita_patches` hook after every `gclient sync`. This script asks that hook
+# whether they are in; it does not own them.
+#
+# The plan is to fork those five as well, so each change becomes a commit in
+# the repository it belongs to and the patch files go away. Until then the
+# hook is the one place they live.
+#
+# `--verify` mutates nothing and needs no network.
 set -uo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
+
+TREE="third_party/flutter"
+HOOK="engine/src/flutter/tools/vita/apply_patches.py"
+BRANCH="vita-$(sed -n 's/^[[:space:]]*"flutter":[[:space:]]*"\([0-9.]*\)".*/\1/p' versions.json | head -1)"
 
 pass=0; fail=0; skipped=0
 ok()   { printf '  \033[32mok\033[0m    %s\n' "$*"; pass=$((pass+1)); }
@@ -29,317 +41,111 @@ bad()  { printf '  \033[31mFAIL\033[0m  %s\n' "$*"; fail=$((fail+1)); }
 skip() { printf '  \033[33mskip\033[0m  %s\n' "$*"; skipped=$((skipped+1)); }
 head_() { printf '\n\033[1m%s\033[0m\n' "$*"; }
 
-# ---------------------------------------------------------------- the manifest
-#
-# Where each vendored repo lives. The standalone Dart checkout (third_party/sdk,
-# Phase 1, still used by experiments/m1-vpk) and the engine's DEPS-managed copy are
-# separate repos carrying the same series -- that duplication is why checks 5
-# and 6 below exist. They replace tools/check-dart-trees.sh, which asked the
-# same question but could not tell a deliberate difference from drift.
-
-tree_path() {
-  case "$1" in
-    sdk)      echo "third_party/sdk" ;;
-    sdk_zlib) echo "third_party/sdk/third_party/zlib" ;;
-    flutter)  echo "third_party/flutter" ;;
-    e_dart)   echo "third_party/flutter/engine/src/flutter/third_party/dart" ;;
-    e_zlib)   echo "third_party/flutter/engine/src/flutter/third_party/zlib" ;;
-    e_skia)   echo "third_party/flutter/engine/src/flutter/third_party/skia" ;;
-    e_abseil) echo "third_party/flutter/engine/src/third_party/abseil-cpp" ;;
-    e_ssl)    echo "third_party/flutter/engine/src/flutter/third_party/boringssl/src" ;;
-    *) return 1 ;;
-  esac
-}
-
-# Which trees each patch belongs in. "e_dart:runtime-only" means apply just the
-# runtime/ hunks: 0004's build/ half is dead weight in the engine checkout,
-# because the engine resolves //build/... to engine/src/build and carries its
-# own vita toolchain from flutter-engine/0001.
-targets_for() {
-  case "$1" in
-    engine/patches/dart-sdk/0005-*)      echo "sdk_zlib e_zlib" ;;
-    engine/patches/dart-sdk/0004-*)      echo "sdk e_dart:runtime-only" ;;
-    engine/patches/dart-sdk/*)           echo "sdk e_dart" ;;
-    engine/patches/flutter-engine/*)     echo "flutter" ;;
-    engine/patches/skia/*)               echo "e_skia" ;;
-    engine/patches/abseil/*)             echo "e_abseil" ;;
-    engine/patches/boringssl/*)          echo "e_ssl" ;;
-    samples/test-apps/engine/patches/*)             echo "EXTERNAL" ;;
-    *) return 1 ;;
-  esac
-}
-
-all_patches() { ls engine/patches/*/*.patch 2>/dev/null | sort; }
-
-# Paths a patch writes to, as they appear inside its own target repo.
-owned() { grep '^+++ b/' "$1" | sed 's|+++ b/||' | sort -u; }
-
-# The runtime/ half of a patch, per the recipe in flutter-engine/README.md.
-runtime_half() {
-  awk '/^diff --git a\/runtime\//{p=1} /^diff --git a\/build\//{p=0} p' "$1"
-}
-
 # --------------------------------------------------------------------- --list
 if [ "${1:---verify}" = "--list" ]; then
-  printf '%-58s %s\n' "PATCH" "APPLIES TO"
-  while read -r p; do
-    t="$(targets_for "$p" || echo '??')"
-    printf '%-58s %s\n' "$p" "$t"
-  done < <(all_patches)
+  echo "engine: commits on $BRANCH in $TREE"
+  git -C "$TREE" log --oneline --no-decorate "3.44.8..$BRANCH" 2>/dev/null |
+    sed 's/^/  /'
+  echo
+  echo "dependencies: patch files in the fork, applied by the DEPS hook"
+  (cd "$TREE" && ls engine/src/flutter/tools/vita/patches/*/*.patch 2>/dev/null) |
+    sed 's|engine/src/flutter/tools/vita/patches/|  |'
   exit 0
 fi
 
-# ------------------------------------------------------------ --apply/--dry-run
+# -------------------------------------------------------------------- --apply
 #
-# The whole reason to have this: applying the series is six `cd`s and a glob
-# that lies. Order is numeric within a series; the series are independent of
-# each other because no two of them share a repo.
-if [ "${1:---verify}" = "--apply" ] || [ "${1:-}" = "--dry-run" ]; then
-  dry=0; [ "$1" = "--dry-run" ] && dry=1
-
-  # Refuse a tree that is already carrying changes. Each patch is a diff
-  # against the *pristine* tree, so applying onto a patched one does not
-  # reliably fail -- on 2026-08-14 it found matching context elsewhere and
-  # inserted a second copy of the vita gen_snapshot targets, with no error.
-  {
-    dirty=0
-    seen=""
-    while read -r p; do
-      ts="$(targets_for "$p")" || continue
-      [ "$ts" = "EXTERNAL" ] && continue
-      for spec in $ts; do
-        dir="$(tree_path "${spec%%:*}")"
-        case " $seen " in *" $dir "*) continue ;; esac
-        seen="$seen $dir"
-        [ -e "$dir/.git" ] || continue
-        if ! git -C "$dir" diff --quiet || ! git -C "$dir" diff --cached --quiet; then
-          echo "  dirty: $dir" >&2; dirty=1
-        fi
-      done
-    done < <(all_patches)
-    if [ "$dirty" -ne 0 ] && [ "$dry" -eq 1 ]; then
-      cat >&2 <<'EOF'
-
-Those trees already carry changes, so every patch below will report a failure
-that means "already applied" rather than "will not apply". --dry-run is only
-informative against a pristine checkout. To get one:
-
-    git -C <tree> reset && git -C <tree> checkout -- . && git -C <tree> clean -fd
-
-EOF
-    elif [ "$dirty" -ne 0 ]; then
-      cat >&2 <<'EOF'
-
-Refusing to apply onto a tree that already has changes. To start from pristine:
-
-    git -C <tree> reset && git -C <tree> checkout -- . && git -C <tree> clean -fd
-
-`git clean -fd` alone is not enough once files have been `git add -N`'d --
-intent-to-add makes them tracked and clean skips them. Reset first.
-EOF
-      exit 1
-    fi
-  }
-
-  rc=0
-  while read -r p; do
-    ts="$(targets_for "$p")" || continue
-    if [ "$ts" = "EXTERNAL" ]; then continue; fi
-    for spec in $ts; do
-      key="${spec%%:*}"; mode="${spec#*:}"; [ "$mode" = "$key" ] && mode=full
-      dir="$(tree_path "$key")"
-      if [ ! -e "$dir/.git" ]; then skip "$(basename "$p") -> $key (not checked out)"; continue; fi
-      args=(apply); [ "$dry" -eq 1 ] && args+=(--check)
-      if [ "$mode" = runtime-only ]; then
-        if runtime_half "$p" | git -C "$dir" "${args[@]}" - 2>&1 | sed 's/^/        /'; then
-          ok "$(basename "$p") (runtime/ half) -> $key"
-        else bad "$(basename "$p") (runtime/ half) -> $key"; rc=1; fi
-      else
-        if git -C "$dir" "${args[@]}" "$ROOT/$p" 2>&1 | sed 's/^/        /'; then
-          ok "$(basename "$p") -> $key"
-        else bad "$(basename "$p") -> $key"; rc=1; fi
-      fi
-    done
-  done < <(all_patches)
-
-  head_ "Summary"
-  printf '  %d applied, %d failed, %d skipped\n' "$pass" "$fail" "$skipped"
-  [ "$dry" -eq 1 ] && printf '  (dry run -- nothing was written)\n'
-  echo
-  exit "$rc"
+# For a checkout that is still plain upstream. The branch carries the engine
+# changes; `gclient sync` then runs the hook, which carries the rest.
+if [ "${1:-}" = "--apply" ]; then
+  [ -d "$TREE/.git" ] || { echo "No checkout at $TREE." >&2; exit 1; }
+  if [ -n "$(git -C "$TREE" status --porcelain)" ]; then
+    echo "$TREE has local changes. Commit them or put them somewhere safe first." >&2
+    exit 1
+  fi
+  git -C "$TREE" remote get-url fork >/dev/null 2>&1 ||
+    git -C "$TREE" remote add fork git@github.com:flutter-vita/flutter.git
+  git -C "$TREE" fetch fork "$BRANCH" || exit 1
+  git -C "$TREE" switch -c "$BRANCH" --track "fork/$BRANCH" 2>/dev/null ||
+    git -C "$TREE" switch "$BRANCH" || exit 1
+  echo "==> $TREE is on $BRANCH"
+  echo "    now run: cd $TREE && gclient sync -D"
+  echo "    the sync applies the dependency patches through the DEPS hook"
+  exit 0
 fi
 
 if [ "${1:---verify}" != "--verify" ]; then
-  echo "usage: $0 [--verify|--apply|--dry-run|--list]" >&2; exit 2
+  sed -n '2,9p' "$0" | sed 's/^# \{0,1\}//'
+  exit 2
 fi
 
-# ------------------------------------------------- 1. every patch is accounted
-head_ "Manifest covers the series"
-n_patches=0; unmapped=0
-while read -r p; do
-  n_patches=$((n_patches+1))
-  if ! targets_for "$p" >/dev/null; then
-    bad "$p is not in the manifest -- add a rule to targets_for()"; unmapped=1
-  fi
-done < <(all_patches)
-[ "$unmapped" -eq 0 ] && ok "$n_patches patch files, all mapped to a repo"
-
-# --------------------------------------------- 2. one file, one patch, per repo
-#
-# The invariant the whole scheme rests on. Each patch is a `git diff` against
-# the pristine tree, so two patches touching one file overlap: the later
-# contains the earlier's hunks. Applying both need not fail -- `git apply` can
-# find matching context elsewhere and insert a second copy, silently.
-#
-# It is also what makes check 4 sound: if each file has exactly one owner, the
-# tree's content for that file is pristine-plus-that-patch, so the patch must
-# reverse-apply cleanly.
-head_ "One file, one patch"
-for series in engine/patches/*/; do
-  s="${series%/}"; [ "$s" = "engine/patches/test-apps" ] && continue
-  dup="$(for p in "$s"/*.patch; do owned "$p" | sed "s|^|$(basename "$p")\t|"; done \
-         | sort -k2 | awk -F'\t' '{if ($2==prev) print prevp" and "$1" both own "$2; prev=$2; prevp=$1}')"
-  if [ -n "$dup" ]; then
-    while read -r line; do bad "$s: $line"; done <<< "$dup"
+# ----------------------------------------------------- 1. the engine's changes
+head_ "The engine tree is the fork's branch"
+if [ ! -d "$TREE/.git" ]; then
+  skip "$TREE is not a checkout (run ./tools/apply-patches.sh --apply)"
+else
+  on="$(git -C "$TREE" rev-parse --abbrev-ref HEAD 2>/dev/null)"
+  if [ "$on" = "$BRANCH" ]; then
+    ok "$TREE is on $BRANCH"
   else
-    ok "$s: no file owned twice"
+    bad "$TREE is on '$on', not $BRANCH"
+  fi
+
+  dirty="$(git -C "$TREE" status --porcelain | grep -v '^?? engine/src/out/' | head -5)"
+  if [ -z "$dirty" ]; then
+    ok "no uncommitted change in the engine tree"
+  else
+    bad "the engine tree has uncommitted changes; commit them, they are the port:"
+    printf '        %s\n' $dirty
+  fi
+
+  n="$(git -C "$TREE" log --oneline "3.44.8..HEAD" 2>/dev/null | wc -l | tr -d ' ')"
+  if [ "$n" -gt 0 ]; then
+    ok "$n commits above the tag 3.44.8"
+  else
+    bad "no commits above the tag; this tree carries no port"
+  fi
+
+  if git -C "$TREE" rev-parse --verify --quiet "fork/$BRANCH" >/dev/null; then
+    ahead="$(git -C "$TREE" rev-list --count "fork/$BRANCH..HEAD" 2>/dev/null)"
+    if [ "$ahead" = "0" ]; then
+      ok "the fork has every commit in this tree"
+    else
+      bad "$ahead commit(s) are not pushed: git -C $TREE push fork $BRANCH"
+    fi
+  else
+    skip "no fork/$BRANCH here yet (git -C $TREE fetch fork)"
+  fi
+fi
+
+# ------------------------------------------------ 2. the dependencies' changes
+head_ "The dependency patches are in the DEPS trees"
+if [ ! -f "$TREE/$HOOK" ]; then
+  skip "no $HOOK in the tree"
+else
+  out="$(cd "$TREE" && python3 "$HOOK" --check 2>&1)"
+  missing="$(printf '%s\n' "$out" | grep -v 'already applied' | grep -v '^$')"
+  n="$(printf '%s\n' "$out" | grep -c 'already applied')"
+  if [ -z "$missing" ]; then
+    ok "$n dependency patches are applied (dart, zlib, skia, abseil, boringssl)"
+  else
+    bad "the hook reports work to do; run: cd $TREE && gclient sync -D"
+    printf '        %s\n' "$missing" | head -8
+  fi
+fi
+
+# ------------------------------------------------------------------- 3. docs
+head_ "The documents point at the right place"
+for f in engine/README.md docs/dev-environment.md; do
+  if [ ! -f "$f" ]; then
+    skip "$f is missing"
+  elif grep -q 'engine/patches' "$f"; then
+    bad "$f still names engine/patches, which no longer exists"
+  else
+    ok "$f"
   fi
 done
 
-# ------------------------------------------------------ 3. every patch parses
-head_ "Patch files are well-formed"
-malformed=0
-while read -r p; do
-  git apply --numstat "$p" >/dev/null 2>&1 || { bad "$p does not parse"; malformed=1; }
-done < <(all_patches)
-[ "$malformed" -eq 0 ] && ok "all patches parse as git diffs"
-
-# ---------------------------------------- 4. the trees agree with the patches
-#
-# Reverse-apply is the question worth asking. "Does this patch still apply?"
-# only proves the patch is applicable; "does this patch reverse out of the
-# tree?" proves the file on disk and the patch in git are the *same change*.
-# That is the check that catches a patch regenerated from the wrong tree --
-# the failure that silently dropped virtual_memory_vita.cc once.
-head_ "Vendored trees carry exactly what the patches say"
-while read -r p; do
-  ts="$(targets_for "$p")" || continue
-  [ "$ts" = "EXTERNAL" ] && continue
-  for spec in $ts; do
-    key="${spec%%:*}"; mode="${spec#*:}"; [ "$mode" = "$key" ] && mode=full
-    dir="$(tree_path "$key")"
-    if [ ! -e "$dir/.git" ]; then
-      skip "$(basename "$p") -> $key (tree not checked out)"
-      continue
-    fi
-    if [ "$mode" = runtime-only ]; then
-      if runtime_half "$p" | git -C "$dir" apply --check --reverse - 2>/dev/null; then
-        ok "$(basename "$p") (runtime/ half) is present in $key"
-      else
-        bad "$(basename "$p") (runtime/ half) does not reverse out of $key"
-      fi
-    else
-      if git -C "$dir" apply --check --reverse "$ROOT/$p" 2>/dev/null; then
-        ok "$(basename "$p") is present in $key"
-      else
-        bad "$(basename "$p") does not reverse out of $key"
-      fi
-    fi
-  done
-done < <(all_patches)
-
-# ------------------------------------------------ 5. the two Dart trees match
-#
-# Every file the series owns
-# must be byte-identical in both checkouts, because a patch regenerated from
-# either one has to describe both. 0004's build/ half is the deliberate
-# exception -- it is not applied to the engine tree at all.
-head_ "The two Dart checkouts agree on every owned file"
-A="$(tree_path sdk)"; B="$(tree_path e_dart)"
-if [ ! -e "$A/.git" ] || [ ! -e "$B/.git" ]; then
-  skip "one of the Dart trees is not checked out"
-else
-  drift=0
-  while read -r p; do
-    case "$p" in engine/patches/dart-sdk/*) ;; *) continue ;; esac
-    case "$p" in engine/patches/dart-sdk/0005-*) continue ;; esac   # nested zlib repo
-    while read -r f; do
-      [ -n "$f" ] || continue
-      # 0004's build/ half is intentionally absent from the engine tree.
-      case "$p/$f" in engine/patches/dart-sdk/0004-*/build/*) continue ;; esac
-      if   [ ! -f "$A/$f" ]; then bad "missing from sdk: $f"; drift=1
-      elif [ ! -f "$B/$f" ]; then bad "missing from engine dart: $f"; drift=1
-      elif ! cmp -s "$A/$f" "$B/$f"; then bad "differs between trees: $f"; drift=1
-      fi
-    done < <(owned "$p")
-  done < <(all_patches)
-  [ "$drift" -eq 0 ] && ok "every file the Dart series owns is identical in both trees"
-fi
-
-# ------------------------------- 6. nothing in a tree that no patch accounts for
-#
-# The other half of check 4. Reverse-apply proves every patch is in the tree;
-# this proves every change in the tree is in a patch. A file edited in a
-# vendored tree but owned by nothing is a change a fresh checkout loses.
-#
-# Diff against the pin, not HEAD: the engine's Dart tree carries a local commit
-# above the pin, so `git diff` with no revision reports nothing for files
-# changed inside it.
-head_ "Every change in a vendored tree belongs to a patch"
-unowned_check() {
-  local dir="$1" pin="$2" series="$3" label="$4"
-  if [ ! -e "$dir/.git" ]; then skip "$label (not checked out)"; return; fi
-  local owned changed extra
-  owned="$(cat engine/patches/$series/*.patch 2>/dev/null | grep '^+++ b/' | sed 's|+++ b/||' | sort -u)"
-  changed="$( { git -C "$dir" diff --name-only "$pin" 2>/dev/null
-                git -C "$dir" ls-files --others --exclude-standard 2>/dev/null; } | sort -u )"
-  if [ -z "$changed" ]; then
-    bad "$label differs from $pin in nothing at all -- are the patches applied?"
-    return
-  fi
-  extra="$(comm -13 <(echo "$owned") <(echo "$changed"))"
-  if [ -n "$extra" ]; then
-    while read -r f; do [ -n "$f" ] && bad "$label: $f is changed but no patch owns it"; done <<< "$extra"
-  else
-    ok "$label: all $(echo "$changed" | grep -c .) changed files are owned"
-  fi
-}
-unowned_check "$(tree_path sdk)"     d684a576 dart-sdk       "third_party/sdk"
-unowned_check "$(tree_path e_dart)"  d684a576 dart-sdk       "engine's Dart tree"
-unowned_check "$(tree_path flutter)" 058e0af2 flutter-engine "third_party/flutter"
-
-# ------------------------------------------- 6. the globs in the docs are safe
-#
-# The bug this script was written for. `000*.patch` reads as "the whole series"
-# and is not.
-head_ "Globs quoted in the READMEs match the whole series"
-partial=0
-while read -r line; do
-  file="${line%%:*}"; rest="${line#*:}"; lineno="${rest%%:*}"; text="${rest#*:}"
-  # Take every whitespace-delimited token that names a patch path, and strip
-  # the ../.. prefixes the READMEs use to reach the repo root from a tree.
-  for tok in $text; do
-    case "$tok" in *engine/patches/*.patch) ;; *) continue ;; esac
-    case "$tok" in *'$'*) continue ;; esac   # a loop variable, not a glob
-    g="engine/patches/${tok#*engine/patches/}"
-    series="${g%/*}"
-    [ -d "$series" ] || continue
-    total=$(ls "$series"/[0-9]*.patch 2>/dev/null | wc -l | tr -d " ")
-    [ "$total" -gt 0 ] || continue
-    matched=$(eval ls "$g" 2>/dev/null | wc -l | tr -d " ")
-    # A line naming one patch by its full filename is not a glob.
-    [ "$matched" -eq 1 ] && [ "${g#*\*}" = "$g" ] && [ "${g#*[}" = "$g" ] && continue
-    if [ "$matched" -lt "$total" ]; then
-      missing=$(comm -13 <(eval ls "$g" 2>/dev/null | sort) <(ls "$series"/[0-9]*.patch | sort) \
-                | sed "s|.*/||" | cut -c1-4 | tr "\n" " ")
-      bad "$file:$lineno  \`$g\` matches $matched of $total -- misses $missing"
-      partial=1
-    fi
-  done
-done < <(grep -rn "git apply" engine/patches/*/README.md docs/*.md 2>/dev/null)
-[ "$partial" -eq 0 ] && ok "every glob quoted in the docs covers its whole series"
-
-# --------------------------------------------------------------------- report
 head_ "Summary"
 printf '  %d ok, %d failed, %d skipped\n\n' "$pass" "$fail" "$skipped"
-[ "$fail" -eq 0 ] || exit 1
+[ "$fail" -eq 0 ]
