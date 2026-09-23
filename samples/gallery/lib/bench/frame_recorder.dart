@@ -136,6 +136,11 @@ class SceneStats {
 
   bool get passed => stallMs == 0;
 
+  /// Frames divided by the time they took, which is not 1000 / [medianMs].
+  /// The median hides a scene that holds 60 fps and then drops ten frames;
+  /// this does not.
+  double get avgFps => spanMs <= 0 ? 0 : frames * 1000 / spanMs;
+
   Map<String, Object> toJson() => {
         'frames': frames,
         'span_ms': _r(spanMs),

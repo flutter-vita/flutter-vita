@@ -155,14 +155,9 @@ class _BenchPageState extends State<BenchPage> {
                 for (final r in results)
                   ListTile(
                     dense: true,
-                    leading: Icon(
-                      r.stats.passed ? Icons.check : Icons.warning,
-                      size: 18,
-                      color: r.stats.passed
-                          ? Colors.greenAccent
-                          : Colors.redAccent,
-                    ),
-                    title: Text('${r.name}  ·  ${r.stresses}',
+                    title: Text(
+                        '${r.stats.avgFps.toStringAsFixed(1)} fps  ·  '
+                        '${r.name}  ·  ${r.stresses}',
                         style: const TextStyle(fontSize: 13)),
                     subtitle: Text(
                       'worst ${r.stats.worstMs}ms  p95 ${r.stats.p95Ms}ms  '

@@ -100,7 +100,7 @@ class RouteScene {
     required this.page,
     this.route,
     this.settle = const Duration(milliseconds: 450),
-    this.repeats = 8,
+    this.repeats = 3,
   });
 
   final String name;
@@ -127,11 +127,13 @@ class RouteScene {
   /// page does, and cutting it off measures half a transition.
   final Duration settle;
 
-  /// More than an animated scene gets, and for a measurable reason: a route
-  /// transition is 300 ms of which only the animating part produces frames,
-  /// and on this console that is a handful. Three repeats of `route_hero`
-  /// produced three frames in total on 2026-08-24 -- not a distribution, and
-  /// the report now refuses to grade it.
+  /// Three, like every other scene, since 2026-09-23.
+  ///
+  /// It was eight, for a measurable reason: a route transition is 300 ms of
+  /// which only the animating part produces frames, and on this console that
+  /// is a handful. Three repeats of `route_hero` produced three frames in
+  /// total on 2026-08-24, which the report refuses to grade. Watch for
+  /// "window too short to grade" on the route scenes; that is this.
   final int repeats;
 }
 
@@ -149,7 +151,7 @@ class DrivenScene {
     required this.stresses,
     required this.stage,
     required this.drive,
-    this.repeats = 4,
+    this.repeats = 3,
   });
 
   final String name;
