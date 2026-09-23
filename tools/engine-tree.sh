@@ -70,11 +70,16 @@ if [ "${1:---verify}" = "--list" ]; then
   echo
   echo "dependencies: forks named in DEPS"
   ours | while read -r path url rev; do
-    printf '  %-52s %s\n' "${path#engine/src/}" "${rev:0:12}"
+    printf '  %-52s %s  %s\n' "${path#engine/src/}" "${rev:0:12}" "$url"
     d="$TREE/$path"
-    [ -d "$d/.git" ] &&
-      git -C "$d" log --oneline --no-decorate "$(git -C "$d" rev-list --max-parents=0 HEAD 2>/dev/null | head -1)..HEAD" 2>/dev/null |
+    [ -d "$d/.git" ] || continue
+    if [ "$(git -C "$d" rev-parse --is-shallow-repository 2>/dev/null)" = "true" ]; then
+      echo "      (shallow checkout; git -C $d fetch --unshallow to read the commits)"
+    else
+      git -C "$d" log --oneline --no-decorate \
+        "$(git -C "$d" rev-list --max-parents=0 HEAD 2>/dev/null | head -1)..HEAD" 2>/dev/null |
         sed 's/^/      /'
+    fi
   done
   exit 0
 fi

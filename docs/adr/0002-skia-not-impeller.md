@@ -18,6 +18,10 @@ of Impeller across all platforms, so the Skia path has an expiry date.
 Skia is the renderer. Pin one engine commit and treat it as frozen; all patches
 live as an ordered series in `patches/engine/`.
 
+**Amended 2026-09-23 — there is no patch series.** The pin stands, but the
+changes are commits on a fork of each repository that owns them. See
+[ADR-0021](0021-the-port-is-commits-not-patches.md).
+
 **Amended 2026-08-06 — the pin is 3.44.8, not "~3.24–3.27".** See
 [VERSIONS.md](../../VERSIONS.md) for the commits and the full reasoning. In
 short, the premise that a recent engine would lack Skia turned out to be wrong:

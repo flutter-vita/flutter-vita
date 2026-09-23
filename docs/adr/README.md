@@ -30,6 +30,7 @@ ADR-0001 through ADR-0004 are back-filled from §1 of `Flutter Vita Plan.md`
 | [0018](0018-the-lgpl-obligation-in-every-vpk.md) | vitaGL is LGPL, and the obligation lands on every developer who ships | Accepted — our own GLES2 over sceGxm; no LGPL in the vpk, none required on the console. Done 2026-09-14: vitaGL and vitashark are out of the tree |
 | [0019](0019-gles2-over-gxm-written-here.md) | GLES2 over sceGxm, written here | Accepted — 114 names, shaders via SceShaccCg, clean room. The only GL in the tree since 2026-09-14 (M5); progress in `docs/gles2-progress.md` |
 | [0020](0020-native-halves-inside-vita-packages.md) | A Vita package carries its own C, and the set grows to ten | Accepted — `vita/plugin.cmake` compiled into the app, one `vita/<name>` channel each; amends 0009's pinned set |
+| [0021](0021-the-port-is-commits-not-patches.md) | The port is commits in six repositories, not a patch series | Accepted — six forks, no patch files; amends 0002's "an ordered series in `patches/engine/`" |
 
 ## Open questions not yet decided
 

@@ -62,7 +62,8 @@ one `import:` commit, plus our commits on top.
 
 `git log <import-commit>..HEAD` in any of them prints our commits and nothing
 else, which is also how [an upgrade is
-priced](../docs/flutter-upgrade-cost.md).
+priced](../docs/flutter-upgrade-cost.md). `gclient` checks these out shallow,
+so `git fetch --unshallow` first, or read them on GitHub.
 
 ## What this directory holds
 
