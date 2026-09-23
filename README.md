@@ -75,6 +75,30 @@ See [Commands](docs/commands.md) for the full list, and
 Clone with `--recurse-submodules`, or run `git submodule update --init`
 after a plain clone.
 
+### The changes this port makes to other projects
+
+Every one is a commit in a fork of the project it changes, on branch
+`vita-3.44.8`. There are no patch files anywhere
+([ADR-0021](docs/adr/0021-the-port-is-commits-not-patches.md)).
+
+| Fork | Of | What we change |
+| --- | --- | --- |
+| [dart-sdk](https://github.com/flutter-vita/dart-sdk) | `dart-lang/sdk` | The Vita OS layer for the Dart VM: the platform, the toolchain, `dart:vita`, emulated TLS, `dart:io`, the TLS record layer |
+| [skia](https://github.com/flutter-vita/skia) | `google/skia` | Platform detection, and a file reader in place of `mmap` |
+| [abseil-cpp](https://github.com/flutter-vita/abseil-cpp) | `abseil/abseil-cpp` | No ELF introspection, no `tm_gmtoff`, `memalign` in place of `mmap` |
+| [boringssl](https://github.com/flutter-vita/boringssl) | `google/boringssl` | An entropy source on the console's kernel RNG |
+| [zlib](https://github.com/flutter-vita/zlib) | nothing to fork | No ARMv8 code paths on this ARMv7. Flutter takes zlib from Chromium, which GitHub does not carry, so this one is a copy rather than a fork |
+
+`DEPS` in the engine fork names each of them by commit, so `gclient sync`
+needs nothing else.
+
+The test apps work the same way, pinned by
+[`samples/test-apps/manifest.txt`](samples/test-apps/manifest.txt):
+[localsend](https://github.com/flutter-vita/localsend),
+[keklist_flutter](https://github.com/flutter-vita/keklist_flutter),
+[flutter-wonderous-app](https://github.com/flutter-vita/flutter-wonderous-app)
+and [flutter_manga_reader](https://github.com/flutter-vita/flutter_manga_reader).
+
 ## Docs
 
 ### Vita basics

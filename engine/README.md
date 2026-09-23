@@ -84,7 +84,7 @@ so `git fetch --unshallow` first, or read them on GitHub.
 ## Commands
 
 ```bash
-./tools/engine-tree.sh --verify   # the tree and the five forks are in place
+./tools/engine-tree.sh --verify   # the tree and its five dependencies are in place
 ./tools/engine-tree.sh --list     # the commits, in all six repositories
 ./tools/engine-tree.sh --apply    # put the branch into a fresh checkout
 ```
