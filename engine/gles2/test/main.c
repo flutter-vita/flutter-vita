@@ -13,7 +13,7 @@
 //       unpack alignment, filtering, a write into a texture in flight, an
 //       incomplete sampler, render to texture with scissor and gl_FragCoord,
 //       readback from a texture, and a copy from the display into one
-//   M4  culling, depth, stencil and the getters, run twice: on the display,
+//   M6  culling, depth, stencil and the getters, run twice: on the display,
 //       which is drawn bottom-up, and on a texture with a depth and stencil
 //       renderbuffer, which is not. The two disagree about which winding the
 //       rasteriser calls front, so the same expected picture on both is what
@@ -627,30 +627,30 @@ static int m3(void) {
   return failed;
 }
 
-// ---- M4 --------------------------------------------------------------------
+// ---- M6 --------------------------------------------------------------------
 //
 // Culling, depth, stencil and the getters. Each block draws into a rectangle
 // of its own so one failure does not hide the next.
 
-static const char kM4Vertex[] =
+static const char kM6Vertex[] =
     "#version 100\n"
     "attribute highp vec2 aPos;\n"
     "uniform highp float uZ;\n"
     "void main() { gl_Position = vec4(aPos, uZ, 1.0); }\n";
 
-static const char kM4Fragment[] =
+static const char kM6Fragment[] =
     "#version 100\n"
     "precision mediump float;\n"
     "uniform mediump vec4 uColor;\n"
     "void main() { gl_FragColor = uColor; }\n";
 
-static GLuint g_m4_prog;
-static GLint g_m4_color, g_m4_z;
+static GLuint g_m6_prog;
+static GLint g_m6_color, g_m6_z;
 
 // A quad over the GL pixel rectangle [x0,x1) x [y0,y1) of a target tw x th.
 // The vertex order is counter-clockwise in GL window coordinates; `ccw` false
 // reverses the two triangles, which makes it clockwise there.
-static void m4_quad(int x0, int y0, int x1, int y1, int tw, int th, int ccw) {
+static void m6_quad(int x0, int y0, int x1, int y1, int tw, int th, int ccw) {
   const float fx0 = (float)x0 / tw * 2 - 1, fx1 = (float)x1 / tw * 2 - 1;
   const float fy0 = (float)y0 / th * 2 - 1, fy1 = (float)y1 / th * 2 - 1;
   const float v[] = {fx0, fy0, fx1, fy0, fx1, fy1, fx0, fy1};
@@ -663,65 +663,65 @@ static void m4_quad(int x0, int y0, int x1, int y1, int tw, int th, int ccw) {
   glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_SHORT, ccw ? ccw_idx : cw_idx);
 }
 
-static void m4_fill(int x0, int y0, int x1, int y1, int tw, int th, int ccw, float z, float r, float g, float b) {
-  glUniform1f(g_m4_z, z);
-  glUniform4f(g_m4_color, r, g, b, 1.0f);
-  m4_quad(x0, y0, x1, y1, tw, th, ccw);
+static void m6_fill(int x0, int y0, int x1, int y1, int tw, int th, int ccw, float z, float r, float g, float b) {
+  glUniform1f(g_m6_z, z);
+  glUniform4f(g_m6_color, r, g, b, 1.0f);
+  m6_quad(x0, y0, x1, y1, tw, th, ccw);
 }
 
-static int m4_int(const char* tag, GLenum pname, GLint want, const char* what) {
+static int m6_int(const char* tag, GLenum pname, GLint want, const char* what) {
   GLint got = -12345;
   glGetIntegerv(pname, &got);
   const int ok = got == want;
-  sayf("m4 %s %s 0x%04X got %d want %d  %s", ok ? "ok  " : "FAIL", tag, pname, got, want, what);
+  sayf("m6 %s %s 0x%04X got %d want %d  %s", ok ? "ok  " : "FAIL", tag, pname, got, want, what);
   return !ok;
 }
 
 // The getters, before anything is drawn. Every value here is either the GLES
 // 2.0 initial state or something this test just set.
-static int m4_getters(void) {
+static int m6_getters(void) {
   int failed = 0;
-  failed += m4_int("get", GL_DEPTH_BITS, 24, "the display's depth");
-  failed += m4_int("get", GL_STENCIL_BITS, 8, "the display's stencil");
-  failed += m4_int("get", GL_DEPTH_FUNC, GL_LESS, "initial depth func");
-  failed += m4_int("get", GL_DEPTH_WRITEMASK, 1, "initial depth mask");
-  failed += m4_int("get", GL_CULL_FACE_MODE, GL_BACK, "initial cull face");
-  failed += m4_int("get", GL_FRONT_FACE, GL_CCW, "initial front face");
-  failed += m4_int("get", GL_STENCIL_FUNC, GL_ALWAYS, "initial stencil func");
-  failed += m4_int("get", GL_STENCIL_REF, 0, "initial stencil ref");
-  failed += m4_int("get", GL_STENCIL_FAIL, GL_KEEP, "initial stencil fail op");
-  failed += m4_int("get", GL_RENDERBUFFER_BINDING, 0, "nothing bound");
+  failed += m6_int("get", GL_DEPTH_BITS, 24, "the display's depth");
+  failed += m6_int("get", GL_STENCIL_BITS, 8, "the display's stencil");
+  failed += m6_int("get", GL_DEPTH_FUNC, GL_LESS, "initial depth func");
+  failed += m6_int("get", GL_DEPTH_WRITEMASK, 1, "initial depth mask");
+  failed += m6_int("get", GL_CULL_FACE_MODE, GL_BACK, "initial cull face");
+  failed += m6_int("get", GL_FRONT_FACE, GL_CCW, "initial front face");
+  failed += m6_int("get", GL_STENCIL_FUNC, GL_ALWAYS, "initial stencil func");
+  failed += m6_int("get", GL_STENCIL_REF, 0, "initial stencil ref");
+  failed += m6_int("get", GL_STENCIL_FAIL, GL_KEEP, "initial stencil fail op");
+  failed += m6_int("get", GL_RENDERBUFFER_BINDING, 0, "nothing bound");
 
   // The separate stencil calls touch one side and leave the other alone.
   glStencilFuncSeparate(GL_BACK, GL_EQUAL, 3, 0x0F);
   glStencilOpSeparate(GL_BACK, GL_ZERO, GL_INCR, GL_INVERT);
   glStencilMaskSeparate(GL_BACK, 0x3C);
-  failed += m4_int("get", GL_STENCIL_BACK_FUNC, GL_EQUAL, "back func after the separate call");
-  failed += m4_int("get", GL_STENCIL_BACK_REF, 3, "back ref");
-  failed += m4_int("get", GL_STENCIL_BACK_VALUE_MASK, 0x0F, "back compare mask");
-  failed += m4_int("get", GL_STENCIL_BACK_WRITEMASK, 0x3C, "back write mask");
-  failed += m4_int("get", GL_STENCIL_BACK_PASS_DEPTH_FAIL, GL_INCR, "back depth-fail op");
-  failed += m4_int("get", GL_STENCIL_FUNC, GL_ALWAYS, "front func untouched");
+  failed += m6_int("get", GL_STENCIL_BACK_FUNC, GL_EQUAL, "back func after the separate call");
+  failed += m6_int("get", GL_STENCIL_BACK_REF, 3, "back ref");
+  failed += m6_int("get", GL_STENCIL_BACK_VALUE_MASK, 0x0F, "back compare mask");
+  failed += m6_int("get", GL_STENCIL_BACK_WRITEMASK, 0x3C, "back write mask");
+  failed += m6_int("get", GL_STENCIL_BACK_PASS_DEPTH_FAIL, GL_INCR, "back depth-fail op");
+  failed += m6_int("get", GL_STENCIL_FUNC, GL_ALWAYS, "front func untouched");
   glStencilFunc(GL_ALWAYS, 0, 0xFFFFFFFFu);
   glStencilOp(GL_KEEP, GL_KEEP, GL_KEEP);
   glStencilMask(0xFFFFFFFFu);
 
   glCullFace(GL_FRONT);
-  failed += m4_int("get", GL_CULL_FACE_MODE, GL_FRONT, "cull face after glCullFace");
+  failed += m6_int("get", GL_CULL_FACE_MODE, GL_FRONT, "cull face after glCullFace");
   glCullFace(GL_BACK);
   glDepthFunc(GL_GEQUAL);
-  failed += m4_int("get", GL_DEPTH_FUNC, GL_GEQUAL, "depth func after glDepthFunc");
+  failed += m6_int("get", GL_DEPTH_FUNC, GL_GEQUAL, "depth func after glDepthFunc");
   glDepthFunc(GL_LESS);
 
   // Refusals. Each of these has to leave the state where it was.
   glCullFace(GL_TRIANGLES);
-  failed += m4_int("get", GL_CULL_FACE_MODE, GL_BACK, "cull face after a bad enum");
+  failed += m6_int("get", GL_CULL_FACE_MODE, GL_BACK, "cull face after a bad enum");
   glDepthFunc(GL_TRIANGLES);
-  failed += m4_int("get", GL_DEPTH_FUNC, GL_LESS, "depth func after a bad enum");
+  failed += m6_int("get", GL_DEPTH_FUNC, GL_LESS, "depth func after a bad enum");
   {
     const GLenum e = glGetError();
     const int ok = e == GL_INVALID_ENUM;
-    sayf("m4 %s error after the bad enums got 0x%04X want 0x%04X", ok ? "ok  " : "FAIL", e, GL_INVALID_ENUM);
+    sayf("m6 %s error after the bad enums got 0x%04X want 0x%04X", ok ? "ok  " : "FAIL", e, GL_INVALID_ENUM);
     failed += !ok;
   }
 
@@ -730,7 +730,7 @@ static int m4_getters(void) {
   glGetFloatv(GL_BLEND_COLOR, f4);
   {
     const int ok = f4[0] > 0.24f && f4[0] < 0.26f && f4[2] > 0.74f && f4[2] < 0.76f;
-    sayf("m4 %s blend colour got %.3f %.3f %.3f %.3f want 0.250 0.500 0.750 1.000", ok ? "ok  " : "FAIL",
+    sayf("m6 %s blend colour got %.3f %.3f %.3f %.3f want 0.250 0.500 0.750 1.000", ok ? "ok  " : "FAIL",
          (double)f4[0], (double)f4[1], (double)f4[2], (double)f4[3]);
     failed += !ok;
   }
@@ -738,47 +738,47 @@ static int m4_getters(void) {
   glGetFloatv(GL_POLYGON_OFFSET_UNITS, f4);
   {
     const int ok = f4[0] > 2.9f && f4[0] < 3.1f;
-    sayf("m4 %s polygon offset units got %.3f want 3.000", ok ? "ok  " : "FAIL", (double)f4[0]);
+    sayf("m6 %s polygon offset units got %.3f want 3.000", ok ? "ok  " : "FAIL", (double)f4[0]);
     failed += !ok;
   }
   glPolygonOffset(0.0f, 0.0f);
   glHint(GL_GENERATE_MIPMAP_HINT, GL_NICEST);
-  failed += m4_int("get", GL_GENERATE_MIPMAP_HINT, GL_NICEST, "the mipmap hint");
+  failed += m6_int("get", GL_GENERATE_MIPMAP_HINT, GL_NICEST, "the mipmap hint");
 
   // Reflection, over the program this suite links.
   char name[64];
   GLint size = 0;
   GLenum type = 0;
   GLsizei length = 0;
-  glGetActiveAttrib(g_m4_prog, 0, sizeof name, &length, &size, &type, name);
+  glGetActiveAttrib(g_m6_prog, 0, sizeof name, &length, &size, &type, name);
   {
     const int ok = size == 1 && type == GL_FLOAT_VEC2 && strcmp(name, "aPos") == 0;
-    sayf("m4 %s glGetActiveAttrib 0 got \"%s\" size %d type 0x%04X want \"aPos\" 1 0x%04X", ok ? "ok  " : "FAIL",
+    sayf("m6 %s glGetActiveAttrib 0 got \"%s\" size %d type 0x%04X want \"aPos\" 1 0x%04X", ok ? "ok  " : "FAIL",
          name, size, type, GL_FLOAT_VEC2);
     failed += !ok;
   }
   int found_color = 0;
   GLint active = 0;
-  glGetProgramiv(g_m4_prog, GL_ACTIVE_UNIFORMS, &active);
+  glGetProgramiv(g_m6_prog, GL_ACTIVE_UNIFORMS, &active);
   for (GLint i = 0; i < active; i++) {
-    glGetActiveUniform(g_m4_prog, (GLuint)i, sizeof name, &length, &size, &type, name);
+    glGetActiveUniform(g_m6_prog, (GLuint)i, sizeof name, &length, &size, &type, name);
     if (strcmp(name, "uColor") == 0) found_color = type == GL_FLOAT_VEC4 && size == 1;
   }
-  sayf("m4 %s glGetActiveUniform found uColor as a vec4 among %d", found_color ? "ok  " : "FAIL", active);
+  sayf("m6 %s glGetActiveUniform found uColor as a vec4 among %d", found_color ? "ok  " : "FAIL", active);
   failed += !found_color;
 
   GLuint shaders[4] = {0, 0, 0, 0};
   GLsizei count = 0;
-  glGetAttachedShaders(g_m4_prog, 4, &count, shaders);
-  sayf("m4 %s glGetAttachedShaders got %d want 2", count == 2 ? "ok  " : "FAIL", count);
+  glGetAttachedShaders(g_m6_prog, 4, &count, shaders);
+  sayf("m6 %s glGetAttachedShaders got %d want 2", count == 2 ? "ok  " : "FAIL", count);
   failed += count != 2;
 
-  glUseProgram(g_m4_prog);
-  glUniform4f(g_m4_color, 0.125f, 0.25f, 0.5f, 1.0f);
-  glGetUniformfv(g_m4_prog, g_m4_color, f4);
+  glUseProgram(g_m6_prog);
+  glUniform4f(g_m6_color, 0.125f, 0.25f, 0.5f, 1.0f);
+  glGetUniformfv(g_m6_prog, g_m6_color, f4);
   {
     const int ok = f4[0] > 0.12f && f4[0] < 0.13f && f4[2] > 0.49f && f4[2] < 0.51f;
-    sayf("m4 %s glGetUniformfv got %.3f %.3f %.3f %.3f want 0.125 0.250 0.500 1.000", ok ? "ok  " : "FAIL",
+    sayf("m6 %s glGetUniformfv got %.3f %.3f %.3f %.3f want 0.125 0.250 0.500 1.000", ok ? "ok  " : "FAIL",
          (double)f4[0], (double)f4[1], (double)f4[2], (double)f4[3]);
     failed += !ok;
   }
@@ -786,7 +786,7 @@ static int m4_getters(void) {
   GLint iv = -1;
   glEnableVertexAttribArray(0);
   glGetVertexAttribiv(0, GL_VERTEX_ATTRIB_ARRAY_ENABLED, &iv);
-  sayf("m4 %s glGetVertexAttribiv enabled got %d want 1", iv == 1 ? "ok  " : "FAIL", iv);
+  sayf("m6 %s glGetVertexAttribiv enabled got %d want 1", iv == 1 ? "ok  " : "FAIL", iv);
   failed += iv != 1;
   return failed;
 }
@@ -794,7 +794,7 @@ static int m4_getters(void) {
 // Culling, depth and stencil into whichever target is bound. The rectangles
 // are placed inside tw x th so the same code runs on the display and on a
 // 256x256 texture.
-static void m4_draw(int tw, int th) {
+static void m6_draw(int tw, int th) {
   const int u = tw / 16, v = th / 16;  // one grid cell
   glDisable(GL_SCISSOR_TEST);
   glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
@@ -804,7 +804,7 @@ static void m4_draw(int tw, int th) {
   glClearDepthf(1.0f);
   glClearStencil(0);
   glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT | GL_STENCIL_BUFFER_BIT);
-  glUseProgram(g_m4_prog);
+  glUseProgram(g_m6_prog);
 
   // Culling. Front is counter-clockwise, so the clockwise quads go.
   glDisable(GL_DEPTH_TEST);
@@ -812,11 +812,11 @@ static void m4_draw(int tw, int th) {
   glEnable(GL_CULL_FACE);
   glCullFace(GL_BACK);
   glFrontFace(GL_CCW);
-  m4_fill(u, v, 3 * u, 3 * v, tw, th, 1, 0.0f, 1, 0, 0);          // red, kept
-  m4_fill(4 * u, v, 6 * u, 3 * v, tw, th, 0, 0.0f, 0, 1, 0);      // green, culled
+  m6_fill(u, v, 3 * u, 3 * v, tw, th, 1, 0.0f, 1, 0, 0);          // red, kept
+  m6_fill(4 * u, v, 6 * u, 3 * v, tw, th, 0, 0.0f, 0, 1, 0);      // green, culled
   glFrontFace(GL_CW);
-  m4_fill(u, 4 * v, 3 * u, 6 * v, tw, th, 1, 0.0f, 0, 0, 1);      // blue, culled
-  m4_fill(4 * u, 4 * v, 6 * u, 6 * v, tw, th, 0, 0.0f, 1, 1, 0);  // yellow, kept
+  m6_fill(u, 4 * v, 3 * u, 6 * v, tw, th, 1, 0.0f, 0, 0, 1);      // blue, culled
+  m6_fill(4 * u, 4 * v, 6 * u, 6 * v, tw, th, 0, 0.0f, 1, 1, 0);  // yellow, kept
   glFrontFace(GL_CCW);
   glDisable(GL_CULL_FACE);
 
@@ -824,14 +824,14 @@ static void m4_draw(int tw, int th) {
   // buffer alone lets a far quad through in one corner.
   glEnable(GL_DEPTH_TEST);
   glDepthFunc(GL_LESS);
-  m4_fill(7 * u, v, 12 * u, 6 * v, tw, th, 1, 0.0f, 1, 0, 0);       // red at z 0.5
-  m4_fill(7 * u, v, 12 * u, 6 * v, tw, th, 1, 0.8f, 0, 1, 0);       // green behind, rejected
-  m4_fill(10 * u, 4 * v, 15 * u, 9 * v, tw, th, 1, -0.8f, 0, 0, 1); // blue in front, kept
+  m6_fill(7 * u, v, 12 * u, 6 * v, tw, th, 1, 0.0f, 1, 0, 0);       // red at z 0.5
+  m6_fill(7 * u, v, 12 * u, 6 * v, tw, th, 1, 0.8f, 0, 1, 0);       // green behind, rejected
+  m6_fill(10 * u, 4 * v, 15 * u, 9 * v, tw, th, 1, -0.8f, 0, 0, 1); // blue in front, kept
   glEnable(GL_SCISSOR_TEST);
   glScissor(7 * u, v, u, v);
   glClear(GL_DEPTH_BUFFER_BIT);  // colour untouched: the red stays
   glDisable(GL_SCISSOR_TEST);
-  m4_fill(7 * u, v, 9 * u, 3 * v, tw, th, 1, 0.9f, 1, 0, 1);  // magenta, only where the depth was cleared
+  m6_fill(7 * u, v, 9 * u, 3 * v, tw, th, 1, 0.9f, 1, 0, 1);  // magenta, only where the depth was cleared
   glDisable(GL_DEPTH_TEST);
 
   // Stencil. One pass writes the stencil and no colour, the next reads it.
@@ -839,35 +839,35 @@ static void m4_draw(int tw, int th) {
   glStencilFunc(GL_ALWAYS, 1, 0xFF);
   glStencilOp(GL_KEEP, GL_KEEP, GL_REPLACE);
   glColorMask(GL_FALSE, GL_FALSE, GL_FALSE, GL_FALSE);
-  m4_fill(2 * u, 9 * v, 5 * u, 12 * v, tw, th, 1, 0.0f, 1, 1, 1);
+  m6_fill(2 * u, 9 * v, 5 * u, 12 * v, tw, th, 1, 0.0f, 1, 1, 1);
   glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
   glStencilFunc(GL_EQUAL, 1, 0xFF);
   glStencilOp(GL_KEEP, GL_KEEP, GL_KEEP);
-  m4_fill(u, 8 * v, 7 * u, 14 * v, tw, th, 1, 0.0f, 0, 1, 1);  // cyan, only inside the stencilled box
+  m6_fill(u, 8 * v, 7 * u, 14 * v, tw, th, 1, 0.0f, 0, 1, 1);  // cyan, only inside the stencilled box
   glDisable(GL_STENCIL_TEST);
 }
 
-static int m4(void) {
-  g_m4_prog = m3_program(kM4Vertex, kM4Fragment);
-  if (!g_m4_prog) {
-    say("m4 FAILED: the program did not link");
+static int m6(void) {
+  g_m6_prog = m3_program(kM6Vertex, kM6Fragment);
+  if (!g_m6_prog) {
+    say("m6 FAILED: the program did not link");
     return 1;
   }
-  glUseProgram(g_m4_prog);
-  g_m4_color = glGetUniformLocation(g_m4_prog, "uColor");
-  g_m4_z = glGetUniformLocation(g_m4_prog, "uZ");
-  if (g_m4_color < 0 || g_m4_z < 0) {
-    sayf("m4 FAILED: uniforms not found (uColor %d, uZ %d)", g_m4_color, g_m4_z);
+  glUseProgram(g_m6_prog);
+  g_m6_color = glGetUniformLocation(g_m6_prog, "uColor");
+  g_m6_z = glGetUniformLocation(g_m6_prog, "uZ");
+  if (g_m6_color < 0 || g_m6_z < 0) {
+    sayf("m6 FAILED: uniforms not found (uColor %d, uZ %d)", g_m6_color, g_m6_z);
     return 1;
   }
-  int failed = m4_getters();
+  int failed = m6_getters();
 
   const int W = 960, H = 544;
   const int u = W / 16, v = H / 16;
-  m4_draw(W, H);
+  m6_draw(W, H);
   unsigned char* pixels = malloc((size_t)W * H * 4);
   glReadPixels(0, 0, W, H, GL_RGBA, GL_UNSIGNED_BYTE, pixels);
-  const SceUID f = sceIoOpen(DIR "gles2-m4.rgba", SCE_O_WRONLY | SCE_O_CREAT | SCE_O_TRUNC, 0777);
+  const SceUID f = sceIoOpen(DIR "gles2-m6.rgba", SCE_O_WRONLY | SCE_O_CREAT | SCE_O_TRUNC, 0777);
   if (f >= 0) {
     sceIoWrite(f, pixels, (SceSize)(W * H * 4));
     sceIoClose(f);
@@ -886,7 +886,7 @@ static int m4(void) {
       {6 * u, 13 * v, 0, 0, 0, 255, "stencil: black outside it"},
       {2 * u, 9 * v - v / 2, 0, 0, 0, 255, "stencil: black below it"},
   };
-  failed += check_pixels("m4", pixels, W, expect, sizeof expect / sizeof expect[0], 4);
+  failed += check_pixels("m6", pixels, W, expect, sizeof expect / sizeof expect[0], 4);
   free(pixels);
   fvgl_swap();
 
@@ -908,27 +908,27 @@ static int m4(void) {
   {
     GLint iv = 0;
     glGetRenderbufferParameteriv(GL_RENDERBUFFER, GL_RENDERBUFFER_WIDTH, &iv);
-    sayf("m4 %s renderbuffer width got %d want %d", iv == TW ? "ok  " : "FAIL", iv, TW);
+    sayf("m6 %s renderbuffer width got %d want %d", iv == TW ? "ok  " : "FAIL", iv, TW);
     failed += iv != TW;
     glGetRenderbufferParameteriv(GL_RENDERBUFFER, GL_RENDERBUFFER_DEPTH_SIZE, &iv);
-    sayf("m4 %s renderbuffer depth size got %d want 24", iv == 24 ? "ok  " : "FAIL", iv);
+    sayf("m6 %s renderbuffer depth size got %d want 24", iv == 24 ? "ok  " : "FAIL", iv);
     failed += iv != 24;
     glGetRenderbufferParameteriv(GL_RENDERBUFFER, GL_RENDERBUFFER_STENCIL_SIZE, &iv);
-    sayf("m4 %s renderbuffer stencil size got %d want 8", iv == 8 ? "ok  " : "FAIL", iv);
+    sayf("m6 %s renderbuffer stencil size got %d want 8", iv == 8 ? "ok  " : "FAIL", iv);
     failed += iv != 8;
     const GLenum status = glCheckFramebufferStatus(GL_FRAMEBUFFER);
-    sayf("m4 %s framebuffer status got 0x%04X want 0x%04X", status == GL_FRAMEBUFFER_COMPLETE ? "ok  " : "FAIL",
+    sayf("m6 %s framebuffer status got 0x%04X want 0x%04X", status == GL_FRAMEBUFFER_COMPLETE ? "ok  " : "FAIL",
          status, GL_FRAMEBUFFER_COMPLETE);
     failed += status != GL_FRAMEBUFFER_COMPLETE;
-    failed += m4_int("fbo", GL_DEPTH_BITS, 24, "the framebuffer's depth");
-    failed += m4_int("fbo", GL_STENCIL_BITS, 8, "the framebuffer's stencil");
+    failed += m6_int("fbo", GL_DEPTH_BITS, 24, "the framebuffer's depth");
+    failed += m6_int("fbo", GL_STENCIL_BITS, 8, "the framebuffer's stencil");
   }
   glViewport(0, 0, TW, TH);
-  m4_draw(TW, TH);
+  m6_draw(TW, TH);
   const int tu = TW / 16, tv = TH / 16;
   unsigned char* fbo_pixels = malloc((size_t)TW * TH * 4);
   glReadPixels(0, 0, TW, TH, GL_RGBA, GL_UNSIGNED_BYTE, fbo_pixels);
-  const SceUID g = sceIoOpen(DIR "gles2-m4-fbo.rgba", SCE_O_WRONLY | SCE_O_CREAT | SCE_O_TRUNC, 0777);
+  const SceUID g = sceIoOpen(DIR "gles2-m6-fbo.rgba", SCE_O_WRONLY | SCE_O_CREAT | SCE_O_TRUNC, 0777);
   if (g >= 0) {
     sceIoWrite(g, fbo_pixels, (SceSize)(TW * TH * 4));
     sceIoClose(g);
@@ -942,7 +942,7 @@ static int m4(void) {
       {3 * tu, 10 * tv, 0, 255, 255, 255, "fbo stencil: cyan inside the box"},
       {6 * tu, 13 * tv, 0, 0, 0, 255, "fbo stencil: black outside it"},
   };
-  failed += check_pixels("m4", fbo_pixels, TW, fbo_expect, sizeof fbo_expect / sizeof fbo_expect[0], 4);
+  failed += check_pixels("m6", fbo_pixels, TW, fbo_expect, sizeof fbo_expect / sizeof fbo_expect[0], 4);
   free(fbo_pixels);
 
   glBindFramebuffer(GL_FRAMEBUFFER, 0);
@@ -950,12 +950,12 @@ static int m4(void) {
   glDeleteRenderbuffers(1, &rb);
   glDeleteFramebuffers(1, &fbo);
   glDeleteTextures(1, &tex);
-  glDeleteProgram(g_m4_prog);
+  glDeleteProgram(g_m6_prog);
   glDisable(GL_CULL_FACE);
   glDisable(GL_DEPTH_TEST);
   glDisable(GL_STENCIL_TEST);
   fvgl_swap();
-  sayf("m4 %s: %d checks failed", failed ? "FAILED" : "PASSED", failed);
+  sayf("m6 %s: %d checks failed", failed ? "FAILED" : "PASSED", failed);
   return failed;
 }
 
@@ -973,7 +973,7 @@ int main(void) {
     m1();
     m2();
     m3();
-    m4();
+    m6();
   }
   // A moment on screen so the result is also visible, then back.
   sceKernelDelayThread(1500 * 1000);
