@@ -383,14 +383,14 @@ void fvgl_apply_raster(void) {
 
   sceGxmSetCullMode(fvgl.gxm, cull_mode_of(flipped));
 
+  // With GL_DEPTH_TEST off, GL bypasses the comparison *and* the update: a
+  // fragment passes and the depth buffer keeps what it had. So the test being
+  // off is not the same as GL_ALWAYS with the mask on, and the write follows
+  // the test, not only the mask.
   const bool test = have_ds && fvgl.depth_test_enabled;
   const SceGxmDepthFunc func = test ? depth_func_of(fvgl.depth_func) : SCE_GXM_DEPTH_FUNC_ALWAYS;
-  // GL writes depth whenever the mask allows it and the test passes, whether
-  // or not GL_DEPTH_TEST is on -- except that with the test off nothing is
-  // rejected, so a disabled test still writes. Without a surface there is
-  // nowhere to write.
-  const SceGxmDepthWriteMode write = (have_ds && fvgl.depth_mask) ? SCE_GXM_DEPTH_WRITE_ENABLED
-                                                                  : SCE_GXM_DEPTH_WRITE_DISABLED;
+  const SceGxmDepthWriteMode write =
+      (test && fvgl.depth_mask) ? SCE_GXM_DEPTH_WRITE_ENABLED : SCE_GXM_DEPTH_WRITE_DISABLED;
   sceGxmSetFrontDepthFunc(fvgl.gxm, func);
   sceGxmSetBackDepthFunc(fvgl.gxm, func);
   sceGxmSetFrontDepthWriteEnable(fvgl.gxm, write);

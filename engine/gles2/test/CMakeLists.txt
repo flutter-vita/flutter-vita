@@ -41,8 +41,8 @@ vita_create_vpk(${PROJECT_NAME}.vpk ${VITA_TITLEID} ${PROJECT_NAME}.self
   VERSION ${VITA_VERSION}
   NAME ${VITA_APP_NAME}
   ${CORPUS_FILES}
-  FILE ${CMAKE_SOURCE_DIR}/../../templates/vita-app/livearea/icon0.png sce_sys/icon0.png
-  FILE ${CMAKE_SOURCE_DIR}/../../templates/vita-app/livearea/template.xml sce_sys/livearea/contents/template.xml
-  FILE ${CMAKE_SOURCE_DIR}/../../templates/vita-app/livearea/bg0.png sce_sys/livearea/contents/bg0.png
-  FILE ${CMAKE_SOURCE_DIR}/../../templates/vita-app/livearea/startup.png sce_sys/livearea/contents/startup.png
+  FILE ${CMAKE_SOURCE_DIR}/../../../templates/vita-app/livearea/icon0.png sce_sys/icon0.png
+  FILE ${CMAKE_SOURCE_DIR}/../../../templates/vita-app/livearea/template.xml sce_sys/livearea/contents/template.xml
+  FILE ${CMAKE_SOURCE_DIR}/../../../templates/vita-app/livearea/bg0.png sce_sys/livearea/contents/bg0.png
+  FILE ${CMAKE_SOURCE_DIR}/../../../templates/vita-app/livearea/startup.png sce_sys/livearea/contents/startup.png
 )
