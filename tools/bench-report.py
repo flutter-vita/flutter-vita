@@ -273,11 +273,27 @@ def main():
     regressions = []
     ungated = []
     vanished = []
+    stale_method = []
     for m in have:
         base = load(os.path.join(args.baseline, f"{m}.json"))
         if not base:
             print(f"\n{DIM}no baseline for {m} — "
                   f"run with --baseline to write one{OFF}")
+            continue
+        # The suite's own definition, as the app computes it: every scene's
+        # name, repeat count and duration. A repeat count changes what a number
+        # means, and until 2026-09-23 nothing said so -- the route scenes went
+        # from eight repeats to three and every stored result still compared as
+        # though nothing had happened. A baseline from another method is not a
+        # baseline, and a baseline with no method at all is older than this
+        # rule, so it is not one either.
+        was_id = base.get("method")
+        now_id = results[m].get("method")
+        # Unconditional, so that a binary too old to report a method cannot
+        # gate against a baseline that has one. Two files that both predate
+        # the field still compare, which is the behaviour they always had.
+        if was_id != now_id:
+            stale_method.append((m, was_id, now_id))
             continue
         b = scenes_of(base)
         # A scene the baseline has never seen used to be skipped in silence,
@@ -320,6 +336,17 @@ def main():
                     continue
                 if now_m > max(was_m * (1 + MEAN_MARGIN), was_m + floor):
                     regressions.append((m, name, label, was_m, now_m))
+
+    if stale_method:
+        print(f"\n{RED}not graded — the baseline measured a different "
+              f"suite{OFF}")
+        for m, was_id, now_id in stale_method:
+            print(f"  {m:<3} baseline method {was_id or 'none recorded'}, "
+                  f"this run {now_id}")
+        print(f"{DIM}a scene's repeat count, duration or settle changed, or a "
+              f"scene came or went. The old numbers measured something else, "
+              f"so nothing is gated. Delete the baseline and write a new one "
+              f"with --baseline{OFF}")
 
     if regressions:
         print(f"\n{RED}regressions against the baseline{OFF}")
@@ -377,7 +404,11 @@ def main():
 
     if regressions or threw or thin:
         return 1
-    if not stalled:
+    # "no regressions" from a run that gated nothing is the green report this
+    # file exists to prevent. Say which it was.
+    if stale_method:
+        print(f"\n{DIM}nothing was gated this run{OFF}")
+    elif not stalled:
         print(f"\n{GREEN}no stalls, no regressions{OFF}")
     return 0
 

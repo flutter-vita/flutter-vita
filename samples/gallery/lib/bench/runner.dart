@@ -204,6 +204,35 @@ class BenchRunner {
         for (final s in modalScenes) (name: s.name, label: s.stresses.label),
       ];
 
+  /// What the suite does, as eight hex characters.
+  ///
+  /// Two runs compare only if this agrees. A repeat count, a duration, a
+  /// settle, an added scene or a removed one changes what a number means, and
+  /// before 2026-09-23 nothing in the file said so: the repeats went from
+  /// eight to three and every stored result still looked comparable.
+  ///
+  /// It covers the inputs a person edits, not the code around them. A change
+  /// to the recorder that moves the numbers without touching a scene is not
+  /// caught here, and the engine stamp is what covers that.
+  String get methodId {
+    final parts = <String>[
+      for (final x in animatedScenes) 'a:${x.name}:${x.repeats}:${x.duration.inMilliseconds}',
+      for (final x in motionScenes) 'm:${x.name}:${x.repeats}:${x.duration.inMilliseconds}',
+      for (final x in drivenScenes) 'd:${x.name}:${x.repeats}',
+      for (final x in routeScenes) 'r:${x.name}:${x.repeats}:${x.settle.inMilliseconds}',
+      for (final x in transitionScenes) 't:${x.name}:${x.repeats}:${x.settle.inMilliseconds}',
+      for (final x in modalScenes) 'o:${x.name}:${x.repeats}:${x.settle.inMilliseconds}',
+    ]..sort();
+    // FNV-1a, 32 bit. Not a security hash: it has to be stable across builds
+    // and readable in a file name, and nothing else.
+    var h = 0x811c9dc5;
+    for (final code in parts.join('|').codeUnits) {
+      h = (h ^ code) & 0xffffffff;
+      h = (h * 0x01000193) & 0xffffffff;
+    }
+    return h.toRadixString(16).padLeft(8, '0');
+  }
+
   /// Pick up where a restarted run left off.
   void _resume() {
     final partial = _readJsonList(kPartialPath);
@@ -575,6 +604,10 @@ class BenchRunner {
       'taken': DateTime.now().toIso8601String(),
       if (engineStamp() case final String e) 'engine': e,
       if (_clocks case final String c) 'clocks': c,
+      // What the suite did, so that a result from another method cannot be
+      // read as a regression. bench-report.py refuses to gate across a change.
+      'method': methodId,
+      'scene_count': _allScenes.length,
       'scenes': <Map<String, Object?>>[
         ...carried,
         ...results.map((r) => r.toJson()),
