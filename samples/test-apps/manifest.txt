@@ -5,6 +5,11 @@
 #
 # Format: owner/repo <commit-sha> [# note]
 #
+# An app whose changes we carry is our fork of it, and the changes are commits
+# on branch vita-<flutter> there. The port itself works that way (ADR-0021)
+# and a test app is no different: a patch file cannot be read in the file it
+# changes. Apps with no changes are pinned to their own upstream.
+#
 # Every app is public, so anyone can reproduce a result here from this file.
 # Each app is here for a different axis: two apps that fail the same way cost
 # two deploys and teach one lesson.
@@ -40,7 +45,10 @@ resashkin/keklist_flutter           d3e02ac9357e31188e7028b022c2ddd182132874
 # --- no dlopen, and static linking is not available either: the crate graph is
 # --- tokio, hyper, reqwest, rustls and ring, and tokio's I/O driver wants
 # --- epoll, which this console does not have.
-localsend/localsend                 fd8140b68813e968dc9253130a27abc1ff328fe5
+# ---
+# --- Our fork: two commits on vita-3.44.8, on upstream's fd8140b6 (v1.15.4).
+# --- They were two patch files until 2026-09-23.
+flutter-vita/localsend              97f65f8b9f03bdbc98da543e4a643a04b68e9503  # branch vita-3.44.8
     entry app/lib/main.dart
 
 # --- Remote content, code generation, and deferred FFI. Chosen over spotube

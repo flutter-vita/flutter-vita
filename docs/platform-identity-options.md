@@ -184,7 +184,7 @@ behaviour is.
 This is not hypothetical. The Linux identity has already cost a test apps patch:
 
 ```dart
-// patches/test-apps/localsend-0001-pure-dart-pin-vita-plugins-no-desktop.patch
+// flutter-vita/localsend, commit "vita: pure Dart, the Vita plugin implementations"
  bool checkPlatformIsDesktop() {
 -  return checkPlatform([TargetPlatform.linux, TargetPlatform.windows, TargetPlatform.macOS]);
 +  // The Vita reports itself as TargetPlatform.linux (ADR-0008), which is right

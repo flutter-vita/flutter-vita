@@ -51,9 +51,15 @@ found in an app you cannot name again is a bug you cannot regression-test.
 Five apps, one per axis, and one of them is a plugin-free **control** that must
 pass. Without it, five failures cannot tell a broken port from a broken
 harness. All five share one title id -- `FVTA00002`, because it is already registered --
-and the deliverable is a patch series
-under `samples/test-apps/patches/` — no third-party source enters this repository, and
-lines-changed-to-first-frame is the score rather than pass/fail.
+and the deliverable is the change each one needs — no third-party source
+enters this repository, and lines-changed-to-first-frame is the score rather
+than pass/fail.
+
+Where we carry changes to an app, the app is our fork of it and the changes
+are commits on `vita-<flutter>` there, the way the port itself works
+([ADR-0021](../docs/adr/0021-the-port-is-commits-not-patches.md)). LocalSend
+moved on 2026-09-23. The three apps still under `samples/test-apps/patches/`
+have not moved yet.
 
 See [ADR-0012](../docs/adr/0012-test-apps-as-measurement-instrument.md) for how
 it is run and what it is allowed to conclude, and

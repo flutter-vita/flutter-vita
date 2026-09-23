@@ -39,12 +39,19 @@ file.** There are no patch files.
 
 | Repository | What it holds |
 |---|---|
-| [flutter-vita/flutter](https://github.com/flutter-vita/flutter) `vita-3.44.8` | The engine. The tag `3.44.8` plus 16 commits. `third_party/flutter` is a checkout of this branch |
+| [flutter-vita/flutter](https://github.com/flutter-vita/flutter) `vita-3.44.8` | The engine. The tag `3.44.8` plus 17 commits. `third_party/flutter` is a checkout of this branch |
 | [flutter-vita/dart-sdk](https://github.com/flutter-vita/dart-sdk) `vita-3.44.8` | 11 commits |
 | [flutter-vita/skia](https://github.com/flutter-vita/skia) `vita-3.44.8` | 1 commit |
 | [flutter-vita/abseil-cpp](https://github.com/flutter-vita/abseil-cpp) `vita-3.44.8` | 1 commit |
 | [flutter-vita/boringssl](https://github.com/flutter-vita/boringssl) `vita-3.44.8` | 1 commit |
 | [flutter-vita/zlib](https://github.com/flutter-vita/zlib) `vita-3.44.8` | 1 commit |
+
+**Amended 2026-09-23, the same day.** Five of the six are GitHub forks of the
+repository they change, and our commits sit on the exact revision upstream
+published. The first version of this decision built them as standalone
+repositories starting at an orphan `import:` commit, which left `git blame`
+stopping at the import and no visible relation to upstream. See *Each
+dependency fork* below.
 
 Flutter does not contain the other five, so a commit on the engine fork
 cannot reach their files: `DEPS` names a revision of each and `gclient`
@@ -52,9 +59,23 @@ checks them out. `DEPS` therefore names **our** fork and **our** commit. The
 new `vita_git` var holds the organisation, and `github.com` joins
 `allowed_hosts`.
 
-Each dependency fork is the upstream tree at the revision `DEPS` named
-before, as one `import:` commit, plus our commits on top. `git log
-<import>..HEAD` is exactly our change and nothing else.
+### Each dependency fork
+
+Each is a GitHub fork of the mirror that publishes it — `dart-lang/sdk`,
+`google/skia`, `abseil/abseil-cpp`, `google/boringssl` — with our commits on
+the exact revision `DEPS` named before. `git log <that revision>..HEAD` is
+exactly our change and nothing else, and blame reaches all the way back.
+
+**zlib is the exception.** Flutter takes it from
+`chromium.googlesource.com/chromium/src/third_party/zlib`, which is a
+Chromium-side copy with its own history. `madler/zlib` does not contain
+`7eda07b1`, so there is nothing on GitHub to fork. That one repository keeps
+the orphan `import:` commit.
+
+**A fork of a public repository is public.** GitHub gives no other option, so
+the five are public. That settles the consequence this ADR recorded in its
+first version, where the public engine fork's `DEPS` named repositories
+nobody outside could read.
 
 `tools/apply-patches.sh` becomes `tools/engine-tree.sh`. It applies nothing.
 It checks that the tree is on the branch, is clean and is pushed; that each
@@ -85,21 +106,23 @@ harder, not easier.
 - Drift becomes impossible to miss. A changed file in a dependency checkout
   is an uncommitted change, and `engine-tree.sh --verify` fails on it. That
   check is what the `fvita_gl_trace` instrumentation would have tripped.
-- An upgrade is priced from the forks: import to HEAD is our file list, and
-  the work is a rebase onto a new import.
+- An upgrade is priced from the forks: the upstream revision to HEAD is our
+  file list, and the work is a rebase onto the next one.
 - Six repositories to push instead of one directory to regenerate. Every fork
   is pinned by SHA in `DEPS`, so a missed push shows up as a build that does
   not reproduce, not as silence.
-- `gclient` clones shallow, and GitHub refuses a push from a shallow clone.
-  Each fork was built with plumbing (`git commit-tree`) instead: an orphan
-  import commit, then our commits, then a push of the two-commit history. Do
-  the same for the next one.
-- The forks are private, and the engine fork is public. A stranger cloning
-  the public fork cannot sync its `DEPS`. **Open the five when the tool
-  repository opens.**
-- Upstream history is not in the dependency forks. The import commit is a
-  tree with no ancestors, so `git blame` on an untouched upstream line stops
-  at the import. Upstream's own repository still has it.
+- `gclient` clones shallow, and GitHub refuses a push from a shallow clone
+  when the remote lacks the ancestry. Build the commit with plumbing instead:
+  fetch the upstream revision from the fork at depth 1, then `git commit-tree
+  <our tree> -p <that revision>`, and push. The remote already holds the
+  history, so only our objects go. The working tree is never touched, and the
+  eleven Dart commits were replayed this way — each one's own tree, message,
+  author and date on the previous new commit — which is exact, because the
+  first parent's tree equals the import's.
+- **The repositories are public**, because a fork of a public repository has
+  to be. Anyone can now sync the public engine fork's `DEPS`.
+- Blame reaches upstream in five of the six. zlib is the exception and stops
+  at its import commit; upstream's own repository still has the rest.
 
 ## Revisit trigger
 

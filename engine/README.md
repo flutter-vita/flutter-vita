@@ -6,21 +6,29 @@ The engine under every app is Flutter 3.44.8 plus the Vita port.
 file.** There are no patch files. To read the port, read the commits below;
 to change it, commit in that repository and push.
 
-| Repository | Branch | What it is |
+All on branch `vita-3.44.8`, all public, all forks of the repository they
+change except zlib.
+
+| Repository | Forked from | Ours |
 |---|---|---|
-| [flutter-vita/flutter](https://github.com/flutter-vita/flutter) | `vita-3.44.8` | The engine. The tag `3.44.8` (`058e0af2`) plus 16 commits. `third_party/flutter` is a checkout of this branch |
-| [flutter-vita/dart-sdk](https://github.com/flutter-vita/dart-sdk) | `vita-3.44.8` | The Dart SDK, 11 commits |
-| [flutter-vita/skia](https://github.com/flutter-vita/skia) | `vita-3.44.8` | Skia, 1 commit |
-| [flutter-vita/abseil-cpp](https://github.com/flutter-vita/abseil-cpp) | `vita-3.44.8` | abseil, 1 commit |
-| [flutter-vita/boringssl](https://github.com/flutter-vita/boringssl) | `vita-3.44.8` | BoringSSL, 1 commit |
-| [flutter-vita/zlib](https://github.com/flutter-vita/zlib) | `vita-3.44.8` | zlib, 1 commit |
+| [flutter-vita/flutter](https://github.com/flutter-vita/flutter) | `flutter/flutter` | 17 commits on the tag `3.44.8` (`058e0af2`). `third_party/flutter` is a checkout of this branch |
+| [flutter-vita/dart-sdk](https://github.com/flutter-vita/dart-sdk) | `dart-lang/sdk` | 11 commits on `d684a576` |
+| [flutter-vita/skia](https://github.com/flutter-vita/skia) | `google/skia` | 1 commit on `e9ed4fc9` |
+| [flutter-vita/abseil-cpp](https://github.com/flutter-vita/abseil-cpp) | `abseil/abseil-cpp` | 1 commit on `564023aa` |
+| [flutter-vita/boringssl](https://github.com/flutter-vita/boringssl) | `google/boringssl` | 1 commit on `b0ae229f` |
+| [flutter-vita/zlib](https://github.com/flutter-vita/zlib) | nothing to fork | 1 commit on an `import:` of `7eda07b1` |
+
+zlib is the exception because Flutter takes it from Chromium's copy, which
+GitHub does not carry: `madler/zlib` does not contain `7eda07b1`. So that one
+repository begins at an import commit and `git blame` stops there. The other
+five reach upstream.
 
 `git log` and `git blame` answer for every line. `./tools/engine-tree.sh
 --verify` checks that the checkout on disk is these six and nothing else.
 
 ## The engine's own changes
 
-The 16 commits on `vita-3.44.8`, oldest first.
+The 17 commits on `vita-3.44.8`, oldest first.
 
 | Commit | What it does |
 |---|---|
@@ -39,18 +47,19 @@ The 16 commits on `vita-3.44.8`, oldest first.
 | `vita: abseil comes from our fork` | `DEPS` |
 | `vita: zlib, Skia and BoringSSL come from our forks` | `DEPS` |
 | `vita: the Dart SDK comes from our fork` | `DEPS`, and the last patch file goes |
+| `vita: four dependencies are real forks now, not imports` | `DEPS`, once each fork sat on the upstream revision instead of an import |
 
-The four `DEPS` commits are the story of the change itself: one commit added
-the dependency patch files, and the next three replaced them with forks. From
-`vita-3.44.8` upward, `DEPS` names our fork for each program that changes.
+The five `DEPS` commits are the story of the change itself: one added the
+dependency patch files, the next three replaced them with forks, and the last
+made four of those forks real forks of upstream. From `vita-3.44.8` upward,
+`DEPS` names our fork for each program that changes.
 
 ## The dependencies' changes
 
 Flutter does not contain the Dart SDK, zlib, Skia, abseil or BoringSSL.
 `DEPS` names a revision of each and `gclient sync` checks them out, so a
 commit on the engine fork cannot reach their files. Each one is a fork of
-its own instead: the upstream tree at the revision `DEPS` named before, as
-one `import:` commit, plus our commits on top.
+its own instead, on the exact revision `DEPS` named before.
 
 | Fork | Commits |
 |---|---|
@@ -60,8 +69,8 @@ one `import:` commit, plus our commits on top.
 | `boringssl` | An entropy source on the console's kernel RNG |
 | `zlib` | No ARMv8 code paths on this ARMv7 |
 
-`git log <import-commit>..HEAD` in any of them prints our commits and nothing
-else, which is also how [an upgrade is
+`git log <upstream-revision>..HEAD` in any of them prints our commits and
+nothing else, which is also how [an upgrade is
 priced](../docs/flutter-upgrade-cost.md). `gclient` checks these out shallow,
 so `git fetch --unshallow` first, or read them on GitHub.
 
