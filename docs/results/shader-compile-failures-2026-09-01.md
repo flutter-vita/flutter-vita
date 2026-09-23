@@ -8,7 +8,7 @@ Reported by the user, who named the row before any of this was measured:
 
 **The cause was vitaGL's own translation header, not Skia and not libshacccg.**
 `#define s x` renamed every variable called `s` in every shader. Fixed in
-[patches/vitagl/0004](../../engine/patches/vitagl/0004-the-define-that-renamed-every-s.patch);
+`patches/vitagl/0004`;
 the row now holds 29 fps with the raster thread at 8%. Read on for how it was
 found — the bisection is the useful part, because the compiler never said a
 word about what it objected to.
@@ -52,7 +52,7 @@ from the link stage, after vitaGL's GLSL-to-Cg translation.
 ## What was fixed, and what that leaves
 
 The failure used to be fatal. Four separate null-pointer paths behind it are
-closed in [patches/vitagl/0003](../../engine/patches/vitagl/0003-a-shader-that-failed-is-not-a-shader.patch),
+closed in `patches/vitagl/0003`,
 and a fifth thing it did was retry forever:
 
 **A failed compile caches nothing**, so the same program was recompiled on the

@@ -74,7 +74,7 @@ most mistakes immediately instead of after a multi-GB bring-up.
 
 The tree is a shallow checkout at the pinned commit (486 MB), gitignored;
 edits are captured as an ordered series in
-[`patches/dart-sdk/`](../engine/patches/dart-sdk/README.md).
+[`patches/dart-sdk/`](https://github.com/flutter-vita/dart-sdk/commits/vita-3.44.8).
 
 **Within minutes the compiler found three things this inventory did not:**
 

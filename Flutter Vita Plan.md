@@ -111,7 +111,7 @@ Measure before committing. Verdict: **go**. See [phase-0.5-feasibility.md](docs/
       changes — `FLAG_write_protect_code`, `FLAG_write_protect_vm_isolate`, and
       the BSS all require them. The original note said otherwise.
 - [x] `dart:io` natives excluded entirely.
-- [x] GN build with a `vita` OS target; patches 0001–0008 in [`patches/dart-sdk/`](engine/patches/dart-sdk/README.md).
+- [x] GN build with a `vita` OS target; patches 0001–0008 in [`patches/dart-sdk/`](https://github.com/flutter-vita/dart-sdk/commits/vita-3.44.8).
 - [x] **Milestone M1.** **[corrected]** `app-aot-assembly` linked into
       `eboot.bin`, not `app-aot-elf` loaded at runtime. Verified on a
       PSVita-1000: `main()` returns 6830, `print()` works, microtasks drain,

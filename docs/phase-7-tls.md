@@ -121,7 +121,7 @@ cannot exist here.
 **4. BoringSSL's entropy backend.** BoringSSL supplies its own and never calls
 Dart's, so the correct, 64-byte-chunked `sceKernelGetRandomNumber` in
 `crypto_linux.cc` was never in the handshake path.
-[`patches/boringssl/0001`](../engine/patches/boringssl/0001-vita-entropy-backend.patch)
+[`vita: an entropy source on the console's kernel RNG`](https://github.com/flutter-vita/boringssl/commit/bcc66c794bcd)
 adds a real one.
 
 **Cause 4 was a sound hypothesis and did not fix the crash.** The reasoning was
@@ -165,7 +165,7 @@ line.
   plugin is required. Only the certificate half of that problem was ever ours,
   and cause 2 is the answer to it.
 - **ARMv8 crypto extensions — probably.** This was the leading suspect by
-  analogy with [the zlib patch](../engine/patches/dart-sdk/0005-zlib-no-armv8-on-vita.patch),
+  analogy with [the zlib change](https://github.com/flutter-vita/zlib/commit/17693b467f9a),
   which exists because the Cortex-A9 has NEON but not the ARMv8 CRC32 and
   crypto extensions. BoringSSL is built with `OPENSSL_STATIC_ARMCAP` and none of
   the `OPENSSL_STATIC_ARMCAP_AES` / `_PMULL` / `_SHA*` sub-macros, so
@@ -325,7 +325,7 @@ month-old crash before the real one was found. Fixed.
 ## Related
 
 - [Phase 5 audit](phase-5-capability-audit.md) — where the failure was first measured
-- [patches/boringssl](../engine/patches/boringssl/README.md) — the entropy backend and why it lives where it does
+- [flutter-vita/boringssl](https://github.com/flutter-vita/boringssl/commits/vita-3.44.8) — the entropy backend and why it lives where it does
 
 
 ## Where to resume

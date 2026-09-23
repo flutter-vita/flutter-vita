@@ -71,7 +71,7 @@ as the fault is worth closing on its own terms.
 ## What it is not
 
 **Not a texture pool exhaustion.** `vgl_oom_count` is printed by the embedder
-whenever it changes ([patch 0001](../../engine/patches/vitagl/0001-what-a-failed-allocation-costs.patch))
+whenever it changes (`patch 0001`)
 and never appeared in the log.
 
 **Not suspend or resume.** The last `FRAMES` report before the fault reads
@@ -151,7 +151,7 @@ thread creation order.
 
 ### The clamp did not fix it
 
-[patches/vitagl/0002](../../engine/patches/vitagl/0002-the-reservation-vitagl-never-checked.patch)
+`patches/vitagl/0002`
 first clamped `region.w`/`region.h` at zero, skipped the tile clipper for an
 empty region, and clamped a zero-size viewport to 1x1. Built, linked (`nm`
 confirmed `vgl_degenerate_scissor` in the shipped ELF), deployed.

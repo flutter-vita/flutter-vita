@@ -45,7 +45,7 @@ than the CLI exposes, and each has its usage at the top of the file.
 | `tools/selfupdate-receiver.sh` | Replace the receiver on the console through the updater title. |
 | `tools/bench.sh` | Run the gallery's benchmark scenes unattended and write the report. |
 | `tools/panel.sh` | Drive the receiver's screen from the host: `tab files`, `shot out.png`, `select`, `back`. |
-| `tools/apply-patches.sh --apply\|--verify\|--list` | The engine tree, for engine builds: `--apply` puts the fork's branch into it, `--verify` checks the port is in place, `--list` prints the commits and the dependency patches. |
+| `tools/engine-tree.sh --apply\|--verify\|--list` | The engine tree, for engine builds: `--apply` puts the fork's branch into it, `--verify` checks the tree and the five dependency forks, `--list` prints their commits. |
 | `tools/package-engine.sh` | Turn an engine build into the artifact tarball. |
 
 ## The app's own port

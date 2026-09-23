@@ -61,8 +61,9 @@ console.
 **The engine tree is the fork's branch.** `third_party/flutter` is
 [flutter-vita/flutter](https://github.com/flutter-vita/flutter) on branch
 `vita-3.44.8`, so an engine change is a commit there, and `git log` and
-`git blame` answer for it. Use `tools/apply-patches.sh --verify` to check
-the tree. Do not do `git checkout` of another revision in `third_party/`:
+`git blame` answer for it. The five dependencies that also change are forks
+of the same kind, named in `DEPS`. There are no patch files. Use
+`tools/engine-tree.sh --verify` to check the tree and the five. Do not do `git checkout` of another revision in `third_party/`:
 the other trees there come from other projects, and a checkout removes
 work that is not committed.
 

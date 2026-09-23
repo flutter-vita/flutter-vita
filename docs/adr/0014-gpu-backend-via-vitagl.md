@@ -417,7 +417,7 @@ about the Vita:
 The second and third are the same upstream assumption: **`shell_enable_gl`
 implies Impeller.** It holds everywhere else and cannot hold here, because
 Impeller has no software backend and this port needs both. Recorded as
-[patch 0009](../../engine/patches/flutter-engine/0009-gl-without-impeller.patch).
+[patch 0009](https://github.com/flutter-vita/flutter/commits/vita-3.44.8).
 
 ### It renders
 
@@ -619,7 +619,7 @@ pool had been tried (VRAM, RAM, PHYCONT, BUDGET) and the collector had run its
 `FRAME_PURGE_FREQ` cycles. So this is genuine GPU-memory exhaustion, and the
 crash is what the code does about it.
 
-[patches/vitagl/0001](../../engine/patches/vitagl/0001-no-memcpy-into-a-failed-allocation.patch)
+`patches/vitagl/0001`
 skips the clone instead, and three sibling paths with the same shape with it.
 The cost is writing into a buffer the GPU may still be reading: a tear on one
 frame of one texture, against a power cycle. A dropped upload is otherwise
@@ -652,7 +652,7 @@ every cycle; waiting on that with a 50 ms ceiling took the worst frame gap
 across a full benchmark run from **8145 ms to 66 ms**.
 
 Both are in
-[patches/vitagl/0001](../../engine/patches/vitagl/0001-what-a-failed-allocation-costs.patch)
+`patches/vitagl/0001`
 and its README.
 
 **Still open**, unchanged: a way to release the GPU from outside the faulting

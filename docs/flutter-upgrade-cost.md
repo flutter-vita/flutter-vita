@@ -32,17 +32,19 @@ cd third_party/sdk && git fetch --depth=1 origin <candidate-dart-rev>
 
 That is enough to diff two trees even though neither has history.
 
-**2. Ask only about files the patch series owns.** The total commit count is
-noise. The number that matters is how many of *our* files upstream moved:
+**2. Ask only about files our commits own.** The total commit count is
+noise. The number that matters is how many of *our* files upstream moved. Our
+files are the ones our commits touch, so the fork answers directly — each fork
+starts at an import commit, and everything above it is ours:
 
 ```bash
-cat third_party/flutter/engine/src/flutter/tools/vita/patches/dart/*.patch |
-  grep '^+++ b/' | sed 's|+++ b/||' | sort -u
+cd third_party/flutter/engine/src/flutter/third_party/dart
+git diff --name-only $(git rev-list --max-parents=0 HEAD) HEAD
 ```
 
-Intersect that with `git diff --name-only <old> <new>`. Per patch, not in
-aggregate — a series where one patch absorbs all the churn is a very different
-job from one where every patch does.
+Intersect that with `git diff --name-only <old> <new>`. Per commit, not in
+aggregate — a series where one commit absorbs all the churn is a very different
+job from one where every commit does.
 
 **3. Check the ABI surface explicitly.** `shell/platform/embedder/embedder.h`
 is the contract the embedder is compiled against. A **reordered or inserted
@@ -170,11 +172,11 @@ Two smaller notes from the same area, both benign:
 
 ### The other vendored pins
 
-Only **Skia moves** (`e9ed4fc9` → `8df24be6`), so
-the Skia patch in the fork (`tools/vita/patches/skia/`) needs
-re-validating against a tree we have not diffed. **BoringSSL, abseil and zlib
-do not move at all** in this window, so those three patches are free —
-including Dart patch 0005, which despite its number applies to zlib.
+Only **Skia moves** (`e9ed4fc9` → `8df24be6`), so our Skia commit
+([flutter-vita/skia](https://github.com/flutter-vita/skia)) needs re-validating
+against a tree we have not diffed: rebase it onto the new import. **BoringSSL,
+abseil and zlib do not move at all** in this window, so those three forks are
+free — including the zlib change, which was Dart patch 0005 before the forks.
 
 ---
 

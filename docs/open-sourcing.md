@@ -11,9 +11,9 @@ real risk; the rest is tidying. I checked each claim below against the tree on
 | **Licence** | `LICENSE`, BSD-3-Clause. |
 | **Attribution** | `NOTICE`, which explains why it exists: a `.vpk` links Flutter, Skia, the Dart runtime, ICU and HarfBuzz into `eboot.bin` at build time, so every build distributes BSD-3 software and clause 2 travels with it. |
 | **Documentation** | 20 documents and 18 ADRs behind [an index](README.md) that names a starting point. Decisions carry their reasoning, including the ones I got wrong. See the corrections in [ADR-0014](adr/0014-gpu-backend-via-vitagl.md). |
-| **No secrets** | I grepped every tracked file. One hit is credential-shaped: `patches/test-apps/keklist-0001-dotenv-placeholders.patch`, which holds dummies and says so in a comment. The rest are the word "token" in prose. |
+| **No secrets** | I grepped every tracked file. One hit is credential-shaped: `samples/test-apps/patches/keklist-0001-dotenv-placeholders.patch`, which holds dummies and says so in a comment. The rest are the word "token" in prose. |
 | **Size** | 240 tracked files, 17 MB of history. The 12 GB engine checkout stays gitignored; it is the fork's branch, so a clone rebuilds it. |
-| **Reproducible vendoring** | The engine's changes are commits on the fork's branch. Five dependencies still change through patch files inside the fork, applied by a `DEPS` hook. `tools/apply-patches.sh --verify` checks both. |
+| **Reproducible vendoring** | Every change this port makes is a commit in the repository that owns the file: 16 on the engine fork's branch, and one fork for each of the five dependencies that change, named in `DEPS`. There are no patch files. `tools/engine-tree.sh --verify` checks all six. |
 | **Reproducible test apps** | Third-party apps stay out of the tree. `apps/test-apps/manifest.txt` pins each one to a URL and a commit SHA, so anyone can regression-test a bug found in it. |
 | **Third-party assets** | `assets/fonts/` carries Noto Emoji with its OFL and a README recording where it came from. |
 
@@ -44,7 +44,7 @@ on that directory picks it up without comment.
 ### 3. No CI. Half a day.
 
 Nothing proves a clean checkout still carries the port, and the project rests
-on it. Start with `tools/apply-patches.sh --verify`,
+on it. Start with `tools/engine-tree.sh --verify`,
 which needs no VitaSDK and no engine build. Running `flutter analyze` over
 `apps/` and `packages/` costs almost nothing on top. Leave the engine build out
 of CI at 12 GB and half an hour.
@@ -108,7 +108,7 @@ Check the author email in commit metadata during the same pass.
 1. A root `README.md` you can read in two minutes.
 2. No generated files, logs or absolute paths tracked, and the history decision
    made and carried out.
-3. CI green on `apply-patches.sh --verify` from a clean checkout.
+3. CI green on `engine-tree.sh --verify` from a clean checkout.
 4. One documented build from scratch on a machine that has never built this,
    with every failed step folded back into `dev-environment.md`.
 5. No live performance regression without an explanation.

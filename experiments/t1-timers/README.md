@@ -66,7 +66,7 @@ Three readings fall out of that table.
    `message_loop_vita.cc` already wakes the UI thread on sixty times a second.
 
 The consequence for the port is in
-[eventhandler_vita.cc](../../engine/patches/dart-sdk/0010-runtime-bin-for-vita.patch):
+[eventhandler_vita.cc](https://github.com/flutter-vita/dart-sdk/commits/vita-3.44.8):
 dart:io learned "arm a timer at T" by reading a **loopback socketpair**, so
 every timer registration paid one tick. `Future.delayed(33 ms)` took 200 ms,
 and localsend's spinner — which asks for 30 fps in a `while (true)` loop — ran

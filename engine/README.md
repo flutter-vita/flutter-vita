@@ -1,16 +1,26 @@
 # Engine
 
-The engine under every app is Flutter 3.44.8 plus the Vita port. Its source
-of truth is the fork [flutter-vita/flutter](https://github.com/flutter-vita/flutter),
-branch `vita-3.44.8`. The branch is the tag `3.44.8` (`058e0af2`) plus the
-commits below.
+The engine under every app is Flutter 3.44.8 plus the Vita port.
 
-`third_party/flutter` is a checkout of that branch, so `git log` and
-`git blame` answer for every line of the port. There is no patch series for
-the engine. An engine change is a commit, and `git push fork vita-3.44.8`
-publishes it.
+**Every change this port makes is a commit in the repository that owns the
+file.** There are no patch files. To read the port, read the commits below;
+to change it, commit in that repository and push.
+
+| Repository | Branch | What it is |
+|---|---|---|
+| [flutter-vita/flutter](https://github.com/flutter-vita/flutter) | `vita-3.44.8` | The engine. The tag `3.44.8` (`058e0af2`) plus 16 commits. `third_party/flutter` is a checkout of this branch |
+| [flutter-vita/dart-sdk](https://github.com/flutter-vita/dart-sdk) | `vita-3.44.8` | The Dart SDK, 11 commits |
+| [flutter-vita/skia](https://github.com/flutter-vita/skia) | `vita-3.44.8` | Skia, 1 commit |
+| [flutter-vita/abseil-cpp](https://github.com/flutter-vita/abseil-cpp) | `vita-3.44.8` | abseil, 1 commit |
+| [flutter-vita/boringssl](https://github.com/flutter-vita/boringssl) | `vita-3.44.8` | BoringSSL, 1 commit |
+| [flutter-vita/zlib](https://github.com/flutter-vita/zlib) | `vita-3.44.8` | zlib, 1 commit |
+
+`git log` and `git blame` answer for every line. `./tools/engine-tree.sh
+--verify` checks that the checkout on disk is these six and nothing else.
 
 ## The engine's own changes
+
+The 16 commits on `vita-3.44.8`, oldest first.
 
 | Commit | What it does |
 |---|---|
@@ -26,29 +36,33 @@ publishes it.
 | `shell: a report of where the memory goes` | Every 60 draws: Skia's resource cache, the raster cache, the glyph cache, the unref queue |
 | `ui: delete a snapshot's texture on the raster context` | The unref queue has no resource context here, and dropped every texture ([the record](../docs/results/snapshot-textures-2026-09-12.md)) |
 | `shell: --verbose_gc allowed in release on __vita__` | The embedder passes it when `ux0:data/flutter-vita/gc.on` starts with `1` ([the record](../docs/results/ui-thread-list-churn-2026-09-13.md)) |
-| `vita: the dependency patches, applied by a DEPS hook` | The patch files for the five dependencies below, and the hook that applies them |
+| `vita: abseil comes from our fork` | `DEPS` |
+| `vita: zlib, Skia and BoringSSL come from our forks` | `DEPS` |
+| `vita: the Dart SDK comes from our fork` | `DEPS`, and the last patch file goes |
+
+The four `DEPS` commits are the story of the change itself: one commit added
+the dependency patch files, and the next three replaced them with forks. From
+`vita-3.44.8` upward, `DEPS` names our fork for each program that changes.
 
 ## The dependencies' changes
 
-Five programs also change: the Dart SDK, zlib, Skia, abseil and BoringSSL.
-Flutter does not contain them. `DEPS` names a revision of each, and
-`gclient sync` checks them out. A commit on the fork cannot reach them.
+Flutter does not contain the Dart SDK, zlib, Skia, abseil or BoringSSL.
+`DEPS` names a revision of each and `gclient sync` checks them out, so a
+commit on the engine fork cannot reach their files. Each one is a fork of
+its own instead: the upstream tree at the revision `DEPS` named before, as
+one `import:` commit, plus our commits on top.
 
-Their changes are patch files inside the fork, under
-`engine/src/flutter/tools/vita/patches/`, one directory for each program. The
-`vita_patches` hook in `DEPS` applies them after every sync.
-
-| Directory | What the change is |
+| Fork | Commits |
 |---|---|
-| `patches/dart/` | A Vita OS layer for the Dart VM: platform dispatch, `runtime/bin` (sockets, files, the event handler), emulated TLS, the entry-point hooks, the SSL filter on the isolate |
-| `patches/zlib/` | No ARMv8 code paths on this ARMv7 |
-| `patches/skia/` | Platform detection, and a file reader in place of `mmap` |
-| `patches/abseil/` | No ELF introspection, no `tm_gmtoff`, and `memalign` in place of `mmap` |
-| `patches/boringssl/` | An entropy source on the console's kernel RNG |
+| `dart-sdk` | A Vita OS layer for the Dart VM: the platform, the toolchain, newlib portability, `dart:vita`, the entry-point hooks, emulated TLS, `dart:io` for the console, the TLS record layer on the calling isolate, the socket event mask |
+| `skia` | Platform detection, and a file reader in place of `mmap` |
+| `abseil-cpp` | No ELF introspection, no `tm_gmtoff`, and `memalign` in place of `mmap` |
+| `boringssl` | An entropy source on the console's kernel RNG |
+| `zlib` | No ARMv8 code paths on this ARMv7 |
 
-**These five will become forks.** Then each change is a commit in the
-repository it belongs to, `DEPS` names our forks, and the patch files and the
-hook go away. The Dart SDK is the largest, at 4 834 lines, and goes last.
+`git log <import-commit>..HEAD` in any of them prints our commits and nothing
+else, which is also how [an upgrade is
+priced](../docs/flutter-upgrade-cost.md).
 
 ## What this directory holds
 
@@ -60,9 +74,9 @@ hook go away. The Dart SDK is the largest, at 4 834 lines, and goes last.
 ## Commands
 
 ```bash
-./tools/apply-patches.sh --verify   # the tree is the branch, the hook is satisfied
-./tools/apply-patches.sh --list     # the commits, and the dependency patches
-./tools/apply-patches.sh --apply    # put the branch into a fresh checkout
+./tools/engine-tree.sh --verify   # the tree and the five forks are in place
+./tools/engine-tree.sh --list     # the commits, in all six repositories
+./tools/engine-tree.sh --apply    # put the branch into a fresh checkout
 ```
 
 ## The engine artifact

@@ -14,7 +14,7 @@
 > was already known.
 >
 > The fix, in `runtime/platform/emutls_vita.cc`
-> ([patch 0009](../engine/patches/dart-sdk/0009-vita-emulated-tls.patch)):
+> ([patch 0009](https://github.com/flutter-vita/dart-sdk/commits/vita-3.44.8)):
 >
 > - **Slots are reclaimed from threads that have exited.** `sceKernelGetThreadInfo`
 >   fails for a dead tid, so a full table reaps before giving up. This is the
@@ -42,7 +42,7 @@
 > ```
 >
 > `__emutls_get_address` returned NULL and the caller dereferenced it. From
-> [patch 0009](../engine/patches/dart-sdk/0009-vita-emulated-tls.patch):
+> [patch 0009](https://github.com/flutter-vita/dart-sdk/commits/vita-3.44.8):
 >
 > ```c
 > #define EMUTLS_MAX_THREADS 32

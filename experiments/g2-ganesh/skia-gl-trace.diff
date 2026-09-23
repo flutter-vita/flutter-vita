@@ -1,0 +1,292 @@
+diff --git a/src/core/SkMessageBus.h b/src/core/SkMessageBus.h
+index 5cb07bd..6ce4215 100644
+--- a/src/core/SkMessageBus.h
++++ b/src/core/SkMessageBus.h
+@@ -78,15 +78,24 @@ private:
+         return bus;                                                                   \
+     }
+ 
++extern "C" void fvita_gl_trace(const char* file, int line);
++
+ //   ----------------------- Implementation of SkMessageBus::Inbox -----------------------
+ 
+ template <typename Message, typename IDType, bool AllowCopyableMessage>
+ SkMessageBus<Message, IDType, AllowCopyableMessage>::Inbox::Inbox(IDType uniqueID)
+         : fUniqueID(uniqueID) {
++    // TEMPORARY DIAGNOSTIC -- not for commit. See spikes/g2-ganesh.
++    fvita_gl_trace("Inbox: before Get()", __LINE__);
+     // Register ourselves with the corresponding message bus.
+     auto* bus = SkMessageBus<Message, IDType, AllowCopyableMessage>::Get();
+-    SkAutoMutexExclusive lock(bus->fInboxesMutex);
+-    bus->fInboxes.push_back(this);
++    fvita_gl_trace(bus ? "Inbox: Get() ok" : "Inbox: Get() NULL", __LINE__);
++    {
++        SkAutoMutexExclusive lock(bus->fInboxesMutex);
++        fvita_gl_trace("Inbox: mutex acquired", __LINE__);
++        bus->fInboxes.push_back(this);
++    }
++    fvita_gl_trace("Inbox: registered", __LINE__);
+ }
+ 
+ template <typename Message, typename IDType, bool AllowCopyableMessage>
+diff --git a/src/gpu/ganesh/GrContextThreadSafeProxy.cpp b/src/gpu/ganesh/GrContextThreadSafeProxy.cpp
+index eb5c34e..d7f713b 100644
+--- a/src/gpu/ganesh/GrContextThreadSafeProxy.cpp
++++ b/src/gpu/ganesh/GrContextThreadSafeProxy.cpp
+@@ -36,13 +36,21 @@ GrContextThreadSafeProxy::GrContextThreadSafeProxy(GrBackendApi backend,
+ 
+ GrContextThreadSafeProxy::~GrContextThreadSafeProxy() = default;
+ 
++// TEMPORARY DIAGNOSTIC -- not for commit. See spikes/g2-ganesh.
++extern "C" void fvita_gl_trace(const char* file, int line);
++
+ void GrContextThreadSafeProxy::init(sk_sp<const GrCaps> caps,
+                                     sk_sp<GrThreadSafePipelineBuilder> pipelineBuilder) {
++    fvita_gl_trace("proxy::init entered", __LINE__);
+     fCaps = std::move(caps);
++    fvita_gl_trace("proxy::init caps moved", __LINE__);
+     fTextBlobRedrawCoordinator =
+             std::make_unique<sktext::gpu::TextBlobRedrawCoordinator>(fContextID);
++    fvita_gl_trace("proxy::init TextBlobRedrawCoordinator ok", __LINE__);
+     fThreadSafeCache = std::make_unique<GrThreadSafeCache>();
++    fvita_gl_trace("proxy::init GrThreadSafeCache ok", __LINE__);
+     fPipelineBuilder = std::move(pipelineBuilder);
++    fvita_gl_trace("proxy::init done", __LINE__);
+ }
+ 
+ GrSurfaceCharacterization GrContextThreadSafeProxy::createCharacterization(
+diff --git a/src/gpu/ganesh/GrDirectContext.cpp b/src/gpu/ganesh/GrDirectContext.cpp
+index b2e8f33..05cbb87 100644
+--- a/src/gpu/ganesh/GrDirectContext.cpp
++++ b/src/gpu/ganesh/GrDirectContext.cpp
+@@ -237,13 +237,29 @@ void GrDirectContext::freeGpuResources() {
+     fResourceCache->purgeUnlockedResources(GrPurgeResourceOptions::kAllResources);
+ }
+ 
++// TEMPORARY DIAGNOSTIC -- not for commit. See spikes/g2-ganesh.
++extern "C" void fvita_gl_trace(const char* file, int line);
++
+ bool GrDirectContext::init() {
+     ASSERT_SINGLE_OWNER
+     if (!fGpu) {
+         return false;
+     }
+ 
+-    fThreadSafeProxy->priv().init(fGpu->refCaps(), fGpu->refPipelineBuilder());
++    // Split apart because the whole statement faults and it has four things in
++    // it that could each be the cause.
++    fvita_gl_trace(fThreadSafeProxy ? "init: proxy non-null" : "init: PROXY NULL",
++                   __LINE__);
++    {
++        auto caps = fGpu->refCaps();
++        fvita_gl_trace(caps ? "init: refCaps ok" : "init: refCaps NULL", __LINE__);
++        auto pb = fGpu->refPipelineBuilder();
++        fvita_gl_trace(pb ? "init: refPipelineBuilder ok"
++                          : "init: refPipelineBuilder NULL", __LINE__);
++        fThreadSafeProxy->priv().init(std::move(caps), std::move(pb));
++        fvita_gl_trace("init: proxy init returned", __LINE__);
++    }
++    fvita_gl_trace("init: GrRecordingContext::init", __LINE__);
+     if (!GrRecordingContext::init()) {
+         return false;
+     }
+@@ -251,7 +267,9 @@ bool GrDirectContext::init() {
+     SkASSERT(this->getTextBlobRedrawCoordinator());
+     SkASSERT(this->threadSafeCache());
+ 
++    fvita_gl_trace("init: StrikeCache", __LINE__);
+     fStrikeCache = std::make_unique<StrikeCache>();
++    fvita_gl_trace("init: GrResourceCache", __LINE__);
+     fResourceCache = std::make_unique<GrResourceCache>(this->singleOwner(),
+                                                        this->directContextID(),
+                                                        this->contextID());
+@@ -262,8 +280,10 @@ bool GrDirectContext::init() {
+         this->setResourceCacheLimit(this->options().fResourceCacheLimitOverride);
+     }
+ #endif
++    fvita_gl_trace("init: GrResourceProvider", __LINE__);
+     fResourceProvider = std::make_unique<GrResourceProvider>(fGpu.get(), fResourceCache.get(),
+                                                              this->singleOwner());
++    fvita_gl_trace("init: MappedBufferManager", __LINE__);
+     fMappedBufferManager = std::make_unique<GrClientMappedBufferManager>(this->directContextID());
+ 
+     fDidTestPMConversions = false;
+@@ -276,6 +296,7 @@ bool GrDirectContext::init() {
+ 
+     fPersistentCache = this->options().fPersistentCache;
+ 
++    fvita_gl_trace("init: allowMultitexturing", __LINE__);
+     GrDrawOpAtlas::AllowMultitexturing allowMultitexturing;
+     if (GrContextOptions::Enable::kNo == this->options().fAllowMultipleGlyphCacheTextures ||
+         // multitexturing supported only if range can represent the index + texcoords fully
+@@ -286,14 +307,18 @@ bool GrDirectContext::init() {
+         allowMultitexturing = GrDrawOpAtlas::AllowMultitexturing::kYes;
+     }
+ 
++    fvita_gl_trace("init: proxyProvider", __LINE__);
+     GrProxyProvider* proxyProvider = this->priv().proxyProvider();
+ 
++    fvita_gl_trace("init: GrAtlasManager", __LINE__);
+     fAtlasManager = std::make_unique<GrAtlasManager>(proxyProvider,
+                                                      this->options().fGlyphCacheTextureMaximumBytes,
+                                                      allowMultitexturing,
+                                                      this->options().fSupportBilerpFromGlyphAtlas);
++    fvita_gl_trace("init: addOnFlushCallbackObject", __LINE__);
+     this->priv().addOnFlushCallbackObject(fAtlasManager.get());
+ 
++    fvita_gl_trace("init: complete", __LINE__);
+     return true;
+ }
+ 
+diff --git a/src/gpu/ganesh/gl/GrGLCaps.cpp b/src/gpu/ganesh/gl/GrGLCaps.cpp
+index 61f4c84..df20b44 100644
+--- a/src/gpu/ganesh/gl/GrGLCaps.cpp
++++ b/src/gpu/ganesh/gl/GrGLCaps.cpp
+@@ -883,15 +883,22 @@ void GrGLCaps::init(const GrContextOptions& contextOptions,
+ 
+     FormatWorkarounds formatWorkarounds;
+ 
++    // TEMPORARY DIAGNOSTIC -- not for commit. These three make no GL call
++    // between them, so the GR_GL_CALL trace goes quiet here and a fault looks
++    // like it happened at line 847. See spikes/g2-ganesh.
++    fvita_gl_trace("GrGLCaps::applyDriverCorrectnessWorkarounds", __LINE__);
+     if (!contextOptions.fDisableDriverCorrectnessWorkarounds) {
+         this->applyDriverCorrectnessWorkarounds(ctxInfo, contextOptions, gli, shaderCaps,
+                                                 &formatWorkarounds);
+     }
+ 
+     // Requires msaa support, ES compatibility have already been detected.
++    fvita_gl_trace("GrGLCaps::initFormatTable", __LINE__);
+     this->initFormatTable(ctxInfo, gli, formatWorkarounds);
+ 
++    fvita_gl_trace("GrGLCaps::finishInitialization", __LINE__);
+     this->finishInitialization(contextOptions);
++    fvita_gl_trace("GrGLCaps::init done", __LINE__);
+ 
+     // For GL, besides the user-specifiable override, we also want to avoid stencil buffers
+     // in Protected mode (to avoid using RenderBuffers)
+diff --git a/src/gpu/ganesh/gl/GrGLDirectContext.cpp b/src/gpu/ganesh/gl/GrGLDirectContext.cpp
+index a3da446..96a2772 100644
+--- a/src/gpu/ganesh/gl/GrGLDirectContext.cpp
++++ b/src/gpu/ganesh/gl/GrGLDirectContext.cpp
+@@ -17,6 +17,8 @@
+ 
+ #include "src/gpu/ganesh/GrContextThreadSafeProxyPriv.h"
+ #include "src/gpu/ganesh/GrDirectContextPriv.h"
++
++extern "C" void fvita_gl_trace(const char* file, int line);
+ #include "src/gpu/ganesh/gl/GrGLDefines.h"
+ #include "src/gpu/ganesh/gl/GrGLGpu.h"
+ 
+@@ -101,11 +103,15 @@ sk_sp<GrDirectContext> MakeGL(sk_sp<const GrGLInterface> glInterface,
+         glInterface = std::move(copy);
+     }
+ #endif
++    // TEMPORARY DIAGNOSTIC -- not for commit. See spikes/g2-ganesh.
+     GrDirectContextPriv::SetGpu(direct,
+                                 GrGLGpu::Make(std::move(glInterface), options, direct.get()));
++    fvita_gl_trace("MakeGL -> SetGpu done", __LINE__);
+     if (!GrDirectContextPriv::Init(direct)) {
++        fvita_gl_trace("MakeGL -> Init returned false", __LINE__);
+         return nullptr;
+     }
++    fvita_gl_trace("MakeGL -> Init ok, returning context", __LINE__);
+     return direct;
+ }
+ 
+diff --git a/src/gpu/ganesh/gl/GrGLGpu.cpp b/src/gpu/ganesh/gl/GrGLGpu.cpp
+index a080eec..29c6c4f 100644
+--- a/src/gpu/ganesh/gl/GrGLGpu.cpp
++++ b/src/gpu/ganesh/gl/GrGLGpu.cpp
+@@ -7,6 +7,8 @@
+ 
+ #include "src/gpu/ganesh/gl/GrGLGpu.h"
+ 
++extern "C" void fvita_gl_trace(const char* file, int line);
++
+ #include "include/core/SkAlphaType.h"
+ #include "include/core/SkColor.h"
+ #include "include/core/SkColorSpace.h"
+@@ -434,11 +436,17 @@ std::unique_ptr<GrGpu> GrGLGpu::Make(sk_sp<const GrGLInterface> interface,
+ #ifdef USE_NSIGHT
+     const_cast<GrContextOptions&>(options).fSuppressPathRendering = true;
+ #endif
++    // TEMPORARY DIAGNOSTIC -- not for commit. See spikes/g2-ganesh.
++    fvita_gl_trace("GrGLGpu::Make -> GrGLContext::Make", __LINE__);
+     auto glContext = GrGLContext::Make(std::move(interface), options);
+     if (!glContext) {
++        fvita_gl_trace("GrGLGpu::Make -> GrGLContext::Make returned null", __LINE__);
+         return nullptr;
+     }
+-    return std::unique_ptr<GrGpu>(new GrGLGpu(std::move(glContext), direct));
++    fvita_gl_trace("GrGLGpu::Make -> new GrGLGpu", __LINE__);
++    auto* gpu = new GrGLGpu(std::move(glContext), direct);
++    fvita_gl_trace("GrGLGpu::Make -> constructed", __LINE__);
++    return std::unique_ptr<GrGpu>(gpu);
+ }
+ 
+ GrGLGpu::GrGLGpu(std::unique_ptr<GrGLContext> ctx, GrDirectContext* dContext)
+diff --git a/src/gpu/ganesh/gl/GrGLInterfaceAutogen.cpp b/src/gpu/ganesh/gl/GrGLInterfaceAutogen.cpp
+index e83e745..8f34eb7 100644
+--- a/src/gpu/ganesh/gl/GrGLInterfaceAutogen.cpp
++++ b/src/gpu/ganesh/gl/GrGLInterfaceAutogen.cpp
+@@ -70,8 +70,17 @@ bool GrGLInterface::checkAndResetOOMed() const {
+ void GrGLInterface::suppressErrorLogging() { fSuppressErrorLogging = true; }
+ #endif
+ 
++// TEMPORARY DIAGNOSTIC -- not for commit. SkDEBUGF is compiled out under
++// NDEBUG, so a release build reports only "validate failed" across 55 possible
++// branches. This records which one fired so the spike can read it back.
++extern "C" __attribute__((weak)) void fvita_gl_trace(const char*, int) {}
++
++extern "C" int g_skia_validate_fail_line;
++int g_skia_validate_fail_line = 0;
++
+ #define RETURN_FALSE_INTERFACE                                                 \
+     SkDEBUGF("%s:%d GrGLInterface::validate() failed.\n", __FILE__, __LINE__); \
++    g_skia_validate_fail_line = __LINE__;                                      \
+     return false
+ 
+ bool GrGLInterface::validate() const {
+diff --git a/src/gpu/ganesh/gl/GrGLUtil.h b/src/gpu/ganesh/gl/GrGLUtil.h
+index 0f11ce1..5ff9fb6 100644
+--- a/src/gpu/ganesh/gl/GrGLUtil.h
++++ b/src/gpu/ganesh/gl/GrGLUtil.h
+@@ -386,8 +386,17 @@ void GrGLCheckErr(const GrGLInterface* gl,
+ #endif
+ 
+ // makes a GL call on the interface and does any error checking and logging
++// TEMPORARY DIAGNOSTIC -- not for commit. Records where the last GL call was
++// issued from, so a hard fault inside Ganesh names a file and line instead of
++// leaving 3000 call sites to choose between. See spikes/g2-ganesh.
++// A hard fault kills the process before it can print a saved location, so this
++// reports as it goes. The host program supplies the sink; the weak default
++// below does nothing, so an ordinary engine build is unaffected.
++extern "C" void fvita_gl_trace(const char* file, int line);
++
+ #define GR_GL_CALL(IFACE, X)                                    \
+     do {                                                        \
++        fvita_gl_trace(__FILE__, __LINE__);                     \
+         GR_GL_CALL_NOERRCHECK(IFACE, X);                        \
+         GR_GL_CHECK_ERROR_IMPL(IFACE, X);                       \
+     } while (false)
+diff --git a/src/text/gpu/TextBlobRedrawCoordinator.cpp b/src/text/gpu/TextBlobRedrawCoordinator.cpp
+index 1d4d3e3..8b9ad9c 100644
+--- a/src/text/gpu/TextBlobRedrawCoordinator.cpp
++++ b/src/text/gpu/TextBlobRedrawCoordinator.cpp
+@@ -31,10 +31,14 @@ static inline bool SkShouldPostMessageToBus(
+     return msg.fContextID == msgBusUniqueID;
+ }
+ 
++extern "C" void fvita_gl_trace(const char* file, int line);
++
+ TextBlobRedrawCoordinator::TextBlobRedrawCoordinator(uint32_t messageBusID)
+         : fSizeBudget(kDefaultBudget)
+         , fMessageBusID(messageBusID)
+-        , fPurgeBlobInbox(messageBusID) { }
++        , fPurgeBlobInbox(messageBusID) {
++    fvita_gl_trace("TextBlobRedrawCoordinator: constructed", __LINE__);
++}
+ 
+ void TextBlobRedrawCoordinator::drawGlyphRunList(SkCanvas* canvas,
+                                                  const SkMatrix& viewMatrix,
