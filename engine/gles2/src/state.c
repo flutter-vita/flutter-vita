@@ -64,6 +64,7 @@ GL_APICALL void GL_APIENTRY glFrontFace(GLenum mode) {
     return;
   }
   fvgl.front_face = mode;
+  fvgl.raster_dirty = true;  // it decides the cull mode
 }
 
 GL_APICALL void GL_APIENTRY glCullFace(GLenum mode) {
@@ -217,6 +218,7 @@ GL_APICALL void GL_APIENTRY glHint(GLenum target, GLenum mode) {
 GL_APICALL void GL_APIENTRY glPolygonOffset(GLfloat factor, GLfloat units) {
   fvgl.polygon_offset[0] = factor;
   fvgl.polygon_offset[1] = units;
+  fvgl.raster_dirty = true;
 }
 
 // Multisampling is off on every surface here (GL_SAMPLES reads 0), so the

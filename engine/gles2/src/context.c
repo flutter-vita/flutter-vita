@@ -304,8 +304,9 @@ static void apply_viewport(int x, int y, int w, int h) {
 // back change places. A texture target is not flipped and they agree.
 //
 // Two things follow, and both are easy to get wrong: the face glCullFace
-// names is culled in the other winding on the display, and GL's front stencil
-// state has to be written to the GPU's *back* there.
+// names is culled in the other winding on the display, and which of the
+// hardware's two sides carries GL's front stencil state changes with the
+// target as well as with glFrontFace.
 
 static SceGxmDepthFunc depth_func_of(GLenum f) {
   switch (f) {
@@ -346,11 +347,20 @@ static SceGxmStencilOp stencil_op_of(GLenum op) {
   }
 }
 
+// The console's answer, measured by M6 on 2026-09-24: SCE_GXM_CULL_CW names
+// the winding the hardware KEEPS, not the one it removes. The SDK header
+// reads the other way ("clockwise hardware culling"), and the first version
+// of this function believed it: with front CCW and GL_BACK culled, the
+// counter-clockwise quad disappeared and the clockwise one stayed, on both
+// targets. So the enum that goes out is the front winding in the
+// rasteriser's own frame.
 static SceGxmCullMode cull_mode_of(bool flipped) {
   if (!fvgl.cull_enabled || fvgl.cull_face == GL_FRONT_AND_BACK) return SCE_GXM_CULL_NONE;
   // Which winding GL wants gone, in GL's own window.
   const bool cull_cw = (fvgl.cull_face == GL_BACK) == (fvgl.front_face == GL_CCW);
-  return (cull_cw != flipped) ? SCE_GXM_CULL_CW : SCE_GXM_CULL_CCW;
+  // On a flipped target that winding reaches the rasteriser the other way
+  // round, and the enum then names the one left standing.
+  return (cull_cw != flipped) ? SCE_GXM_CULL_CCW : SCE_GXM_CULL_CW;
 }
 
 // One side's stencil state, or the pass-everything state when the target has
@@ -404,9 +414,19 @@ void fvgl_apply_raster(void) {
   sceGxmSetFrontDepthBias(fvgl.gxm, factor, units);
   sceGxmSetBackDepthBias(fvgl.gxm, factor, units);
 
+  // Two-sided stencil is off by default, and off means every triangle takes
+  // the front state whatever its winding. M6 measured that on 2026-09-24:
+  // with it off, the front-facing and the back-facing box came out alike on
+  // each target, and opposite between them.
   const bool stencil = have_ds && fvgl.stencil_test_enabled;
-  apply_stencil_side(!flipped, &fvgl.stencil_front, stencil);
-  apply_stencil_side(flipped, &fvgl.stencil_back, stencil);
+  sceGxmSetTwoSidedEnable(fvgl.gxm, stencil ? SCE_GXM_TWO_SIDED_ENABLED : SCE_GXM_TWO_SIDED_DISABLED);
+  // Which of the hardware's two sides is GL's front depends on glFrontFace as
+  // well as on the target. The rasteriser's frame counts rows downwards, so a
+  // GL front face is counter-clockwise there when GL calls counter-clockwise
+  // front and the target is not flipped, or when both are the other way.
+  const bool gl_front_is_ccw = (fvgl.front_face == GL_CCW) != flipped;
+  apply_stencil_side(gl_front_is_ccw, &fvgl.stencil_front, stencil);
+  apply_stencil_side(!gl_front_is_ccw, &fvgl.stencil_back, stencil);
 
   fvgl.raster_dirty = false;
 }
@@ -975,6 +995,8 @@ GL_APICALL void GL_APIENTRY glDisable(GLenum cap) {
 // context disagreeing with the GL state, so the next draw applies it again.
 static void apply_clear_raster(bool depth, bool stencil) {
   sceGxmSetCullMode(fvgl.gxm, SCE_GXM_CULL_NONE);
+  // Both sides get the same state below, so one side is enough.
+  sceGxmSetTwoSidedEnable(fvgl.gxm, SCE_GXM_TWO_SIDED_DISABLED);
   sceGxmSetFrontDepthFunc(fvgl.gxm, SCE_GXM_DEPTH_FUNC_ALWAYS);
   sceGxmSetBackDepthFunc(fvgl.gxm, SCE_GXM_DEPTH_FUNC_ALWAYS);
   const SceGxmDepthWriteMode w = depth ? SCE_GXM_DEPTH_WRITE_ENABLED : SCE_GXM_DEPTH_WRITE_DISABLED;

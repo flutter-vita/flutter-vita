@@ -844,7 +844,24 @@ static void m6_draw(int tw, int th) {
   glStencilFunc(GL_EQUAL, 1, 0xFF);
   glStencilOp(GL_KEEP, GL_KEEP, GL_KEEP);
   m6_fill(u, 8 * v, 7 * u, 14 * v, tw, th, 1, 0.0f, 0, 1, 1);  // cyan, only inside the stencilled box
+
+  // Front and back apart. The op that replaces is on the front side only, so
+  // the counter-clockwise box keeps a 2 and the clockwise one keeps its 0.
+  // Which side of the hardware GL's front is depends on the target, and this
+  // is the only check that reads it: the block above sets both alike.
+  glStencilFunc(GL_ALWAYS, 2, 0xFF);
+  glStencilOpSeparate(GL_FRONT, GL_KEEP, GL_KEEP, GL_REPLACE);
+  glStencilOpSeparate(GL_BACK, GL_KEEP, GL_KEEP, GL_KEEP);
+  glColorMask(GL_FALSE, GL_FALSE, GL_FALSE, GL_FALSE);
+  m6_fill(9 * u, 10 * v, 11 * u, 12 * v, tw, th, 1, 0.0f, 1, 1, 1);   // front facing
+  m6_fill(12 * u, 10 * v, 14 * u, 12 * v, tw, th, 0, 0.0f, 1, 1, 1);  // back facing
+  glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
+  glStencilFunc(GL_EQUAL, 2, 0xFF);
+  glStencilOp(GL_KEEP, GL_KEEP, GL_KEEP);
+  m6_fill(9 * u, 10 * v, 14 * u, 12 * v, tw, th, 1, 0.0f, 1, 1, 1);  // white where the front box wrote
   glDisable(GL_STENCIL_TEST);
+  glStencilFunc(GL_ALWAYS, 0, 0xFFFFFFFFu);
+  glStencilOp(GL_KEEP, GL_KEEP, GL_KEEP);
 }
 
 static int m6(void) {
@@ -885,6 +902,8 @@ static int m6(void) {
       {3 * u, 10 * v, 0, 255, 255, 255, "stencil: cyan inside the stencilled box"},
       {6 * u, 13 * v, 0, 0, 0, 255, "stencil: black outside it"},
       {2 * u, 9 * v - v / 2, 0, 0, 0, 255, "stencil: black below it"},
+      {10 * u, 11 * v, 255, 255, 255, 255, "stencil front/back: the front-facing box wrote a 2"},
+      {13 * u, 11 * v, 0, 0, 0, 255, "stencil front/back: the back-facing box wrote nothing"},
   };
   failed += check_pixels("m6", pixels, W, expect, sizeof expect / sizeof expect[0], 4);
   free(pixels);
@@ -941,6 +960,8 @@ static int m6(void) {
       {13 * tu, 7 * tv, 0, 0, 255, 255, "fbo depth: nearest blue"},
       {3 * tu, 10 * tv, 0, 255, 255, 255, "fbo stencil: cyan inside the box"},
       {6 * tu, 13 * tv, 0, 0, 0, 255, "fbo stencil: black outside it"},
+      {10 * tu, 11 * tv, 255, 255, 255, 255, "fbo stencil front/back: the front-facing box wrote a 2"},
+      {13 * tu, 11 * tv, 0, 0, 0, 255, "fbo stencil front/back: the back-facing box wrote nothing"},
   };
   failed += check_pixels("m6", fbo_pixels, TW, fbo_expect, sizeof fbo_expect / sizeof fbo_expect[0], 4);
   free(fbo_pixels);
