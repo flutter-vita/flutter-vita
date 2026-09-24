@@ -89,11 +89,10 @@ This is the second time a number was almost read as a regression that was not
 one. The first was `list_churn` on 2026-09-23. Both times the answer was to
 measure the spread before believing one run.
 
-One candidate for the difference, and it is a candidate and not an answer: the
-gallery's strip read **battery 25%, 30.2 degrees C** at the end of this
-sitting. The baseline was taken on a console that had just been charged. The
-report records the clocks the embedder asked for, which both runs agree on,
-and nothing about the state of the battery or the panel.
+The day-to-day difference is not going to be chased. The answer is a stable
+suite, not an explanation of one afternoon: a measurement that moves this much
+between two runs of the same code cannot gate anything, whatever the cause.
+That work is on the list and this document does not block on it.
 
 ## The gallery on the new layer
 
@@ -103,9 +102,10 @@ in that frame.
 
 ## What is left
 
-Find out why today is slower, before a new baseline is taken. Taking one now
-would write today's state into the repository as the reference and hide the
-question.
+The benchmark needs tests that hold still. Until it has them, the A/B above is
+the method: build the previous revision of the changed code, run it on the
+same console in the same sitting, and compare the two runs against each other
+rather than against a stored file. No new baseline was taken.
 
 `glGenerateMipmap` is still the one recording stub in the layer. A mip chain
 needs a layout other than `LINEAR_STRIDED`, and the packing rule for the
