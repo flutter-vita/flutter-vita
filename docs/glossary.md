@@ -134,7 +134,7 @@ never published an expansion, the entry says so instead of inventing one.
 | **FBO** | FrameBuffer Object | An off-screen render target. Every Skia `saveLayer` is one. |
 | **MSAA** | MultiSample Anti-Aliasing | Off everywhere: `SCE_GXM_MULTISAMPLE_NONE`. Skia anti-aliases in its shaders. |
 | **A8B8G8R8** | 8 bits each of alpha, blue, green, red, as one little-endian word | The display surface format. In memory the bytes are R, G, B, A, which is GL's `GL_RGBA`. |
-| **S8D24** | 8-bit stencil, 24-bit depth | The depth/stencil surface format GXM offers. `engine/gles2/` has none yet; Skia in the gallery never touched stencil. |
+| **S8D24** | 8-bit stencil, 24-bit depth | The depth/stencil surface format GXM offers, packed in one allocation. What `engine/gles2/` makes for a target that needs depth or stencil, tiled, in whole 32x32 tiles (`renderbuffers.c`, M6 on hardware 2026-09-24). The display's is made only after an app enables a test or clears one of the two buffers, so Flutter never pays for it: the shell sets `fAvoidStencilBuffers` and Skia in the gallery never touches stencil. |
 | **CDRAM** | Sony's name for the video memory; not expanded | 128 MB next to the GPU. Surfaces and textures. See its own entry above. |
 | **LPDDR** | Low-Power Double Data Rate SDRAM | The 512 MB main memory. `SCE_KERNEL_MEMBLOCK_TYPE_USER_RW_UNCACHE` is LPDDR the GPU reads without a CPU cache in the way. |
 | **UID** (`SceUID`) | Unique IDentifier | The kernel's handle for a memblock, thread, module or file. |
