@@ -23,13 +23,18 @@ Add the `VITASDK` and `PATH` exports to your shell profile.
 
 ## 2. Flutter 3.44.8
 
+You need a normal Flutter 3.44.8, not our fork of Flutter. The fork changes
+only the engine, and the engine comes prebuilt
+([why](install-macos.md#2-flutter-3448)). We recommend fvm, because it
+keeps your other projects on their own Flutter version:
+
 ```sh
 dart pub global activate fvm
 fvm install 3.44.8
 ```
 
-The tools look in `$HOME/fvm/versions/3.44.8`; `FLUTTER_ROOT` or
-`--flutter DIR` names another location.
+The tools look in `$HOME/fvm/versions/3.44.8`. `FLUTTER_ROOT` or
+`--flutter DIR` gives a different location.
 
 ## 3. Python
 

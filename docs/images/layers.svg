@@ -1,0 +1,102 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="880" height="626" viewBox="0 0 880 626" role="img" aria-labelledby="t d">
+<title id="t">How Flutter runs on the PS Vita</title>
+<desc id="d">Seven layers from top to bottom: your app, the Flutter framework, the Flutter engine, the Vita embedder, the GLES2 layer, sceGxm with libshacccg, and the PowerVR GPU. Each layer is tagged with where it comes from.</desc>
+<style>
+.card{fill:#ffffff;stroke:#d0d7de}
+.bar{fill:#f6f8fa;stroke:#d0d7de}
+.name{font:600 15px -apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,Arial,sans-serif;fill:#1f2328}
+.desc{font:13px -apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,Arial,sans-serif;fill:#59636e}
+.link{font:12px ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;fill:#59636e}
+.arrow{stroke:#8c959f;stroke-width:1.5;fill:none}
+.head{fill:#8c959f}
+.tag{font:12px ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+.leg{font:12px -apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,Arial,sans-serif;fill:#59636e}
+.s-yours{fill:#6e7781}.p-yours{fill:#eaeef2}.t-yours{fill:#424a53}
+.s-stock{fill:#0969da}.p-stock{fill:#ddf4ff}.t-stock{fill:#0550ae}
+.s-fork{fill:#8250df}.p-fork{fill:#fbefff}.t-fork{fill:#6639ba}
+.s-ours{fill:#1a7f37}.p-ours{fill:#dafbe1}.t-ours{fill:#116329}
+.s-sony{fill:#bc4c00}.p-sony{fill:#fff1e5}.t-sony{fill:#953800}
+@media (prefers-color-scheme: dark){
+.card{fill:#0d1117;stroke:#30363d}
+.bar{fill:#161b22;stroke:#30363d}
+.name{fill:#e6edf3}.desc,.link,.leg{fill:#9198a1}
+.arrow{stroke:#6e7681}.head{fill:#6e7681}
+.s-yours{fill:#8b949e}.p-yours{fill:#21262d}.t-yours{fill:#c9d1d9}
+.s-stock{fill:#4493f8}.p-stock{fill:#0c2d6b}.t-stock{fill:#a5d6ff}
+.s-fork{fill:#ab7df8}.p-fork{fill:#2e1c4f}.t-fork{fill:#e2c5ff}
+.s-ours{fill:#3fb950}.p-ours{fill:#0f2e1a}.t-ours{fill:#aff5b4}
+.s-sony{fill:#db6d28}.p-sony{fill:#3d1e0a}.t-sony{fill:#ffc680}
+}
+</style>
+<rect class="card" x="0.5" y="0.5" width="879" height="625" rx="12"/>
+<rect class="bar" x="40" y="28" width="800" height="54" rx="8"/>
+<rect class="s-yours" x="40" y="28" width="6" height="54" rx="3"/>
+<text class="name" x="62" y="50">Your app</text>
+<text class="desc" x="62" y="69">Your Dart code. main.dart does not change.</text>
+<rect class="p-yours" x="740" y="43" width="86" height="24" rx="12"/>
+<text class="tag t-yours" x="783.0" y="59" text-anchor="middle">your code</text>
+<line class="arrow" x1="100" y1="85" x2="100" y2="100"/>
+<path class="head" d="M96,99 L104,99 L100,105 Z"/>
+<text class="link" x="114" y="99.0">package:flutter</text>
+<rect class="bar" x="40" y="108" width="800" height="54" rx="8"/>
+<rect class="s-stock" x="40" y="108" width="6" height="54" rx="3"/>
+<text class="name" x="62" y="130">Flutter framework</text>
+<text class="desc" x="62" y="149">Widgets, layout, animation. Compiled with your app to ARMv7 code on your Mac.</text>
+<rect class="p-stock" x="624" y="123" width="202" height="24" rx="12"/>
+<text class="tag t-stock" x="725.0" y="139" text-anchor="middle">Flutter 3.44.8, unchanged</text>
+<line class="arrow" x1="100" y1="165" x2="100" y2="180"/>
+<path class="head" d="M96,179 L104,179 L100,185 Z"/>
+<text class="link" x="114" y="179.0">dart:ui</text>
+<rect class="bar" x="40" y="188" width="800" height="54" rx="8"/>
+<rect class="s-fork" x="40" y="188" width="6" height="54" rx="3"/>
+<text class="name" x="62" y="210">Flutter engine</text>
+<text class="desc" x="62" y="229">Skia draws each frame. The Dart runtime runs your compiled code.</text>
+<rect class="p-fork" x="580" y="203" width="246" height="24" rx="12"/>
+<text class="tag t-fork" x="703.0" y="219" text-anchor="middle">flutter-vita/flutter · prebuilt</text>
+<line class="arrow" x1="100" y1="245" x2="100" y2="260"/>
+<path class="head" d="M96,259 L104,259 L100,265 Z"/>
+<text class="link" x="114" y="259.0">Flutter embedder API: frames out, input in</text>
+<rect class="bar" x="40" y="268" width="800" height="54" rx="8"/>
+<rect class="s-ours" x="40" y="268" width="6" height="54" rx="3"/>
+<text class="name" x="62" y="290">Vita embedder</text>
+<text class="desc" x="62" y="309">Starts the engine, sends touch and buttons in, puts each frame on the screen.</text>
+<rect class="p-ours" x="653" y="283" width="173" height="24" rx="12"/>
+<text class="tag t-ours" x="739.5" y="299" text-anchor="middle">flutter-vita-embedder</text>
+<line class="arrow" x1="100" y1="325" x2="100" y2="340"/>
+<path class="head" d="M96,339 L104,339 L100,345 Z"/>
+<text class="link" x="114" y="339.0">OpenGL ES 2.0</text>
+<rect class="bar" x="40" y="348" width="800" height="54" rx="8"/>
+<rect class="s-ours" x="40" y="348" width="6" height="54" rx="3"/>
+<text class="name" x="62" y="370">GLES2 layer (fvita_gles2)</text>
+<text class="desc" x="62" y="389">OpenGL ES 2.0 on top of sceGxm. Translates GLSL shaders to Cg.</text>
+<rect class="p-ours" x="609" y="363" width="217" height="24" rx="12"/>
+<text class="tag t-ours" x="717.5" y="379" text-anchor="middle">flutter-vita · engine/gles2</text>
+<line class="arrow" x1="100" y1="405" x2="100" y2="420"/>
+<path class="head" d="M96,419 L104,419 L100,425 Z"/>
+<text class="link" x="114" y="419.0">sceGxm commands, Cg through libshacccg</text>
+<rect class="bar" x="40" y="428" width="800" height="54" rx="8"/>
+<rect class="s-sony" x="40" y="428" width="6" height="54" rx="3"/>
+<text class="name" x="62" y="450">sceGxm and libshacccg</text>
+<text class="desc" x="62" y="469">Sony's GPU interface and shader compiler, on the console.</text>
+<rect class="p-sony" x="653" y="443" width="173" height="24" rx="12"/>
+<text class="tag t-sony" x="739.5" y="459" text-anchor="middle">Sony · on the console</text>
+<line class="arrow" x1="100" y1="485" x2="100" y2="500"/>
+<path class="head" d="M96,499 L104,499 L100,505 Z"/>
+<text class="link" x="114" y="499.0">GPU commands</text>
+<rect class="bar" x="40" y="508" width="800" height="54" rx="8"/>
+<rect class="s-sony" x="40" y="508" width="6" height="54" rx="3"/>
+<text class="name" x="62" y="530">PowerVR SGX543MP4+</text>
+<text class="desc" x="62" y="549">The GPU of the PS Vita.</text>
+<rect class="p-sony" x="748" y="523" width="78" height="24" rx="12"/>
+<text class="tag t-sony" x="787.0" y="539" text-anchor="middle">hardware</text>
+<rect class="s-yours" x="40.0" y="587" width="10" height="10" rx="2"/>
+<text class="leg" x="56.0" y="596">your code</text>
+<rect class="s-stock" x="200.0" y="587" width="10" height="10" rx="2"/>
+<text class="leg" x="216.0" y="596">Flutter, unchanged</text>
+<rect class="s-fork" x="360.0" y="587" width="10" height="10" rx="2"/>
+<text class="leg" x="376.0" y="596">fork of Flutter</text>
+<rect class="s-ours" x="520.0" y="587" width="10" height="10" rx="2"/>
+<text class="leg" x="536.0" y="596">written for this port</text>
+<rect class="s-sony" x="680.0" y="587" width="10" height="10" rx="2"/>
+<text class="leg" x="696.0" y="596">Sony, on the console</text>
+</svg>

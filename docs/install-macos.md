@@ -33,17 +33,28 @@ arm-vita-eabi-gcc --version
 
 ## 2. Flutter 3.44.8
 
-The engine is prebuilt for 3.44.8 and the framework has to match it. Use
-[fvm](https://fvm.app) so your other projects keep their own Flutter:
+You need a normal Flutter 3.44.8. The prebuilt engine is compiled for that
+version, so the framework must be the same version.
+
+**Why not our fork of Flutter?** The fork,
+[flutter-vita/flutter](https://github.com/flutter-vita/flutter), changes
+only the engine: `engine/src` and `DEPS`. Its framework and its `flutter`
+command are the same as in the 3.44.8 release. The engine comes prebuilt
+(step 5), so an app build does not read the fork. The build uses the Flutter
+SDK on the Mac only: `flutter pub get`, `flutter build bundle` for the
+assets, and the Dart compiler front end.
+
+We recommend [fvm](https://fvm.app), because it keeps your other projects
+on their own Flutter version:
 
 ```sh
 dart pub global activate fvm
 fvm install 3.44.8
 ```
 
-The tools look for the SDK in `$HOME/fvm/versions/3.44.8`. Another location
-works with `--flutter DIR` on `tools/build-vita-app.sh`, or by exporting
-`FLUTTER_ROOT`.
+The tools look for the SDK in `$HOME/fvm/versions/3.44.8`. If your Flutter
+3.44.8 is in a different location, export `FLUTTER_ROOT`, or give
+`--flutter DIR` to `tools/build-vita-app.sh`.
 
 ## 3. Python
 

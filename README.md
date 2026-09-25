@@ -4,20 +4,67 @@ Flutter apps on the PS Vita. This is the Flutter engine and the Flutter
 framework, compiled for `arm-vita-eabi` and drawing through the console's
 GPU. Your `main.dart` does not change.
 
-```
-Flutter framework (Dart AOT)
-        v
-Flutter engine + Skia          flutter-vita/flutter, branch vita-3.44.8
-        v
-Vita embedder                  flutter-vita/flutter-vita-embedder
-        v
-GLES2 -> fvita_gles2 -> sceGxm engine/gles2/, this repo
-        v
-PowerVR SGX543MP4+
-```
+| | |
+| --- | --- |
+| ![Wonderous on a PS Vita, with the debug strip across the top](docs/images/wonderous.png) | ![LocalSend on a PS Vita](docs/images/localsend.png) |
+| **Wonderous**, an app we did not write, at 60 fps. The debug strip across the top shows the live numbers. | **LocalSend**, file transfer over the local network. We did not write it either. |
+| ![The gallery's widget panel on a PS Vita](docs/images/gallery.png) | ![The receiver's deploy log on a PS Vita](docs/images/receiver.png) |
+| **The gallery**: widgets, benchmark scenes and hardware checks. | **The receiver** installs your app over Wi-Fi and keeps its logs. |
 
 *PlayStation and PS Vita are trademarks of Sony Interactive Entertainment.
 This project is not affiliated with or endorsed by Sony.*
+
+## Quick start
+
+You need:
+
+- A PS Vita with HENkaku or h-encore², firmware 3.60 to 3.74, and Sony's
+  shader compiler on the card ([Console setup](docs/configure-console.md)).
+- A Mac with Apple silicon. On Linux you build the engine one time,
+  because the prebuilt engine has `gen_snapshot` for macOS only
+  ([Linux](docs/install-linux.md)).
+- VitaSDK, CMake, and Python 3 with Pillow
+  ([Install on macOS](docs/install-macos.md)).
+- Flutter 3.44.8. A normal install of that version is correct. You do not
+  need our fork of Flutter ([why](docs/install-macos.md#2-flutter-3448)).
+
+Get the tool and the prebuilt engine, then check the setup:
+
+```sh
+git clone --recurse-submodules https://github.com/flutter-vita/flutter-vita
+cd flutter-vita
+export PATH="$PWD/cli:$PATH"
+flutter-vita precache
+flutter-vita doctor
+```
+
+Install the receiver on the console. You do this one time, with VitaShell
+([Console setup, step 4](docs/configure-console.md#4-install-the-receiver)).
+After that, all installs go over Wi-Fi.
+
+Run the gallery, then your own app:
+
+```sh
+flutter-vita run samples/gallery
+flutter-vita run ~/projects/my_app
+```
+
+`run` builds a `.vpk`, installs it, starts it and shows its log. The first
+build takes about a minute. Before you run your own app, read the three
+notes in [Get started](docs/get-started.md#2-run-your-own-app): the title
+id, fonts and plugins.
+
+## How it works
+
+![The layers of a Flutter app on the PS Vita, from your app down to the GPU. Each layer shows where it comes from.](docs/images/layers.svg)
+
+On your Mac, `gen_snapshot` compiles your app and the Flutter framework to
+ARMv7 machine code. The build links that code with the prebuilt engine, the
+embedder and the GLES2 layer into one `eboot.bin`, and packs it into a
+`.vpk`. The receiver on the console installs the `.vpk` and starts it.
+
+A plugin with native code has a Vita implementation in C. The build
+compiles it into the same `eboot.bin` ([Available plugins](plugins/)).
 
 ## Supported devices
 
@@ -65,12 +112,12 @@ See [Commands](docs/commands.md) for the full list, and
 
 ## Repositories
 
-| Repository | What it is |
-| --- | --- |
-| [flutter-vita](https://github.com/flutter-vita/flutter-vita) (this one) | The `flutter-vita` command, the app template, the receiver, the GLES2 layer, the Vita implementations of upstream plugins (`plugins/`), the samples and the docs. |
-| [flutter](https://github.com/flutter-vita/flutter) | The fork of Flutter, branch `vita-3.44.8`: the engine's Vita changes as commits on the `3.44.8` tag. Its releases carry the prebuilt engine archive; [`versions.json`](versions.json) names the one this tool uses. |
-| [flutter-vita-embedder](https://github.com/flutter-vita/flutter-vita-embedder) | The embedder, the `main()` of every app. A submodule here at `engine/embedder`, compiled from source into each build. |
-| [flutter-vita-packages](https://github.com/flutter-vita/flutter-vita-packages) | The project's own pub packages: `flutter_vita`, `vita_debug_strip`, `vita_file_browser`. A submodule here at `packages/`. |
+| Repository | What it is | Why it exists |
+| --- | --- | --- |
+| [flutter-vita](https://github.com/flutter-vita/flutter-vita) (this one) | The `flutter-vita` command, the app template, the receiver, the GLES2 layer, the Vita implementations of twelve plugins (`plugins/`), the samples and the docs. | This is the part you use. You build, install, run and debug your app from here. |
+| [flutter](https://github.com/flutter-vita/flutter) | Our fork of Flutter, branch `vita-3.44.8`. The engine's Vita changes are commits on the `3.44.8` tag. Its releases carry the prebuilt engine; [`versions.json`](versions.json) names the one this tool uses. | The engine does not run on the console without these changes. The prebuilt engine saves you a 12 GB checkout and a long build. |
+| [flutter-vita-embedder](https://github.com/flutter-vita/flutter-vita-embedder) | The embedder, the `main()` of every app. It starts the engine, reads touch and buttons, and puts each frame on the screen. A submodule here at `engine/embedder`. | Each Flutter platform has an embedder, and this is the one for the Vita. Every app build compiles it from source, so a fix in it needs no new engine. |
+| [flutter-vita-packages](https://github.com/flutter-vita/flutter-vita-packages) | Our pub packages: `flutter_vita`, `vita_debug_strip`, `vita_file_browser`. A submodule here at `packages/`. | Your app adds them to `pubspec.yaml` like any other package. `flutter_vita` sets up the app for the console with one call in `main()`. |
 
 Clone with `--recurse-submodules`, or run `git submodule update --init`
 after a plain clone.
