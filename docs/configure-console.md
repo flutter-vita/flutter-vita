@@ -67,7 +67,7 @@ shows all of it on its screen:
 
 | Tab | What it shows |
 |---|---|
-| DEPLOY | The current install, byte by byte, and the app it launched |
+| DEPLOY | The current install, byte by byte, and the app it launched. It starts empty each time the receiver opens; the previous session stays on the card as `ux0:data/flutter-vita/deploy.log.1` |
 | LOGS | Logs of past runs, by title and build |
 | CRASHES | Crash dumps on the card, with the thread that faulted |
 | APPS | Installed titles; launch one |

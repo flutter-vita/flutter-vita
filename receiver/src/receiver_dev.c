@@ -228,17 +228,17 @@ static void note(const char* fmt, ...) {
   publish();
 }
 
-// Keep the deploy log from growing without end.
+// A new deploy log on every start, with the last session kept as deploy.log.1.
 //
-// Truncated at boot rather than trimmed line by line: the panel shows only the
-// last few dozen lines, and trimming per note would put a read-modify-write of
-// 64 KB in the path of every log line.
-#define DEPLOY_LOG_MAX (64 * 1024)
-
-static void trim_deploy_log(void) {
+// Until 2026-10-01 the log was only cut back once it reached 64 KB, so the
+// panel opened on days of old deploys: a self-update leaves a dozen lines per
+// cycle, and the screen filled with cycles nobody was looking at. The receiver
+// exits whenever it launches an app, so a session is one deploy, and the one
+// before it is still on the card for a host to `get`. Rotating at boot also
+// keeps the file small without a read-modify-write in the path of every note.
+static void start_deploy_log(void) {
   SceIoStat st;
   if (sceIoGetstat(DEPLOY_LOG, &st) < 0) return;
-  if (st.st_size < DEPLOY_LOG_MAX) return;
   sceIoRemove(DEPLOY_LOG ".1");
   sceIoRename(DEPLOY_LOG, DEPLOY_LOG ".1");
 }
@@ -1700,7 +1700,7 @@ __attribute__((constructor)) static void receiver_register(void) {
   read_small(LOG_DIR "/last", prev, sizeof prev);
 
   rotate_app_log("receiver");
-  trim_deploy_log();
+  start_deploy_log();
   note("---- receiver %s up ----", SELF_TITLEID);
   if (prev[0] != '\0' && strcmp(prev, "receiver") != 0) {
     note("- left %s", prev);
