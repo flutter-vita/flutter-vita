@@ -48,7 +48,7 @@ You must have HENkaku and [VitaSDK](https://vitasdk.org).
 You do **not** need taiHEN, a kernel plugin, a card change, or VitaShell. If a
 step tells you to use one of them, that step is old. Tell us.
 
-The console does not need a special condition. The receiver holds a TCP port,
+The console does not need a special condition. The bridge holds a TCP port,
 and everything goes through it.
 
 ## Rules that came from failures

@@ -1,17 +1,17 @@
 // Flutter Vita Supervisor -- packaged as eboot2.bin, run as a background app.
 //
-// When the app under test crashes, both it and the receiver are gone and
+// When the app under test crashes, both it and the bridge are gone and
 // nothing left on the device can start anything, so recovery needs a physical
 // tap.
 //
 // sceBgAppUtilStartBgApp(0) starts eboot2.bin from the same app directory as a
 // background application, which is not the foreground app and so survives it
-// crashing. This binary stays alive and can launch the receiver again.
+// crashing. This binary stays alive and can launch the bridge again.
 //
-// It ships with the app rather than the receiver, and that is forced: only the
+// It ships with the app rather than the bridge, and that is forced: only the
 // app slot is writable by anything we control. An app cannot write its own
 // directory (0x8001000D even for an UNSAFE self), and ScePromoterUtil refuses
-// to load for us, so the receiver cannot gain an eboot2.bin.
+// to load for us, so the bridge cannot gain an eboot2.bin.
 //
 // Started from dev_server_run, so it leaves with the dev server: an app that
 // links a devserver stub for shipping gets no supervisor.
@@ -80,7 +80,7 @@ static void serve(int sock) {
     if (strcmp(line, "ping") == 0) {
       send_str(sock, "supervisor\n");
     } else if (strncmp(line, "launch ", 7) == 0) {
-      // The whole point. Note we do NOT exit afterwards, unlike the receiver:
+      // The whole point. Note we do NOT exit afterwards, unlike the bridge:
       // staying alive is the entire reason this process exists.
       // Six attempts, three seconds apart, because one is not enough.
       //

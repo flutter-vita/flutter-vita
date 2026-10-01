@@ -10,11 +10,11 @@
 //              console's own decoder
 //   video      not drawn: a video frame needs a texture route the
 //              embedder does not have yet. The sound track plays.
-//   vpk        installed by the receiver's own C: unpacked into
+//   vpk        installed by the bridge's own C: unpacked into
 //              ux0:data/pkg, a package header written for its title id,
 //              promoted, the LiveArea art copied in. Progress comes back
 //              through a file (device.dart, InstallProgress). VitaShell
-//              stays on offer as the second route, and closes the receiver.
+//              stays on offer as the second route, and closes the bridge.
 //   text       the first 64 KB, monospace
 //   anything   name, size, modified
 //
@@ -408,13 +408,13 @@ class _TextView extends StatelessWidget {
   }
 }
 
-/// A vpk: the receiver installs it, or VitaShell does.
+/// A vpk: the bridge installs it, or VitaShell does.
 ///
 /// INSTALL writes `install <path>` to the request file; the C side's
 /// install thread reports through the progress file, polled here three
 /// times a second until it says done or failed. VitaShell is the other
 /// route: the embedder's `vita/shell` channel writes VitaShell's lastdir and
-/// launches it in the file's folder, which closes the receiver.
+/// launches it in the file's folder, which closes the bridge.
 class _VpkView extends StatefulWidget {
   const _VpkView({required this.path});
   final String path;
@@ -498,7 +498,7 @@ class _VpkViewState extends State<_VpkView> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           const Text(
-            'A package for the console. The receiver unpacks it, writes its '
+            'A package for the console. The bridge unpacks it, writes its '
             'package header and promotes it; the title then shows in APPS '
             'and on the home screen.',
             style: label,
@@ -514,7 +514,7 @@ class _VpkViewState extends State<_VpkView> {
           if (done) ...[
             const SizedBox(height: 10),
             Btn(
-              text: 'RUN ${p.name} (CLOSES RECEIVER)',
+              text: 'RUN ${p.name} (CLOSES BRIDGE)',
               colour: good,
               onTap: () => requestLaunch(p.name),
             ),
@@ -530,7 +530,7 @@ class _VpkViewState extends State<_VpkView> {
             text: _available == null
                 ? 'LOOKING FOR VITASHELL…'
                 : _available!
-                ? 'OPEN IN VITASHELL (CLOSES RECEIVER)'
+                ? 'OPEN IN VITASHELL (CLOSES BRIDGE)'
                 : 'VITASHELL IS NOT INSTALLED',
             colour: warn,
             enabled: _available == true && !_installing,

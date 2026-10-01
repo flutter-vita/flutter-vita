@@ -7,7 +7,7 @@
 # ## The two routes
 #
 # **promote** (default) is a real install. The extracted package is staged under
-# ux0:data/pkg, a package header is generated for its title id, and the receiver
+# ux0:data/pkg, a package header is generated for its title id, and the bridge
 # calls scePromoterUtilityPromotePkgWithRif. The title is registered with the
 # shell, a bubble appears, and the id need not have existed.
 #
@@ -17,7 +17,7 @@
 # ## What the promote route needs
 #
 # No taiHEN, no kernel plugin, no VitaShell, no card swap. It does need the
-# receiver, because PromotePkgWithRif must be called from a process on the
+# bridge, because PromotePkgWithRif must be called from a process on the
 # console. Three things were load-bearing, each costing an experiment:
 #
 #   PAF must be resident before the promoter loads and must stay resident.
@@ -37,7 +37,7 @@ HERE="$(cd "$(dirname "$0")" && pwd)"
 # back on a different lease -- which it does, often. VITA_HOST still overrides
 # it, and an IP is still the right answer when the name will not resolve.
 HOST="${VITA_HOST:-fluttervita.local}"
-PORT="${RECEIVER_PORT:-1341}"
+PORT="${BRIDGE_PORT:-1341}"
 STAGE="ux0:data/pkg"
 VPK=""
 TITLE_ID=""
@@ -75,17 +75,17 @@ say() { printf '%s\n' "$2" | nc -4 -w "${3:-30}" "$HOST" "$1"; }
 # around it.
 
 
-# Retried, because one connect is not evidence. The receiver's listener is
+# Retried, because one connect is not evidence. The bridge's listener is
 # non-blocking and a single ping races with its accept loop: it reported "no
-# receiver" three times in a row on 2026-08-15 against a receiver that answered
+# bridge" three times in a row on 2026-08-15 against a bridge that answered
 # `ls` on the same port a second later.
 alive=0
 for _ in 1 2 3; do
-  if say "$PORT" ping 8 2>/dev/null | grep -q receiver; then alive=1; break; fi
+  if say "$PORT" ping 8 2>/dev/null | grep -q -E "bridge|receiver"; then alive=1; break; fi
   sleep 2
 done
 [ "$alive" -eq 1 ] || {
-  echo "!! no receiver on $HOST:$PORT — open the receiver" >&2; exit 1; }
+  echo "!! no bridge on $HOST:$PORT — open the bridge" >&2; exit 1; }
 
 WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
@@ -136,7 +136,7 @@ else
 
   # Cleared first. The promoter reads the whole staging directory, so a file
   # left by a previous install of something else becomes part of this package.
-  # `rmtree` is confined to ux0:data on the receiver side; see cmd_rmtree.
+  # `rmtree` is confined to ux0:data on the bridge side; see cmd_rmtree.
   say "$PORT" "rmtree $STAGE" 120 | sed 's/^/    /'
 
   # The LiveArea art is staged nowhere and copied in after the promote.
@@ -168,12 +168,12 @@ else
   # 0x8010111C is a missing or misplaced header, 0x80871004 a bad digest,
   # 0x80870005 a header signed for a different title.
   # The title id is passed even though the promoter reads it out of head.bin:
-  # the receiver writes it into installed.txt, which the APPS tab lists.
+  # the bridge writes it into installed.txt, which the APPS tab lists.
   RESULT="$(say "$PORT" "promoterif $STAGE $TITLE_ID" 600 || true)"
   printf '    %s\n' "$RESULT"
   case "$RESULT" in
     OK*) ;;
-    *) echo "!! promote failed. More in the receiver's log:" >&2
+    *) echo "!! promote failed. More in the bridge's log:" >&2
        echo "     printf 'log\\n' | nc -4 $HOST $PORT | tail -20" >&2
        exit 1 ;;
   esac

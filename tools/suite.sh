@@ -6,7 +6,7 @@
 #   ./tools/suite.sh all                   tests, then hardware
 #   ./tools/suite.sh tests --relaunch      reuse the installed build, skip build and deploy
 #   ./tools/suite.sh tests --no-build      deploy what is already built
-#   ./tools/suite.sh tests --host NAME --receiver-port N
+#   ./tools/suite.sh tests --host NAME --bridge-port N
 #
 # Each suite is started by its own switch on the card and ends with its own
 # done marker (samples/README.md). This script arms the switch, deploys the
@@ -36,7 +36,7 @@ while [ $# -gt 0 ]; do
   case "$1" in
     tests|hardware|all) SUITE="$1"; shift ;;
     --host)        HOST="$2"; shift 2 ;;
-    --receiver-port) LDR="$2"; shift 2 ;;
+    --bridge-port) LDR="$2"; shift 2 ;;
     --no-build)    BUILD=0; shift ;;
     --relaunch)    RELAUNCH=1; BUILD=0; shift ;;
     -h|--help)     sed -n '2,9p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
@@ -58,8 +58,8 @@ trap 'rm -f "$LOCK"' EXIT
 say() { printf '%s\n' "$2" | nc -4 -w "${3:-20}" "$HOST" "$1" 2>/dev/null; }
 # Write a switch file, through whichever of the two is actually listening.
 #
-# Both the app and the receiver serve `put`, and which one holds the console
-# depends on where the last run left it. Assuming the receiver cost two silent
+# Both the app and the bridge serve `put`, and which one holds the console
+# depends on where the last run left it. Assuming the bridge cost two silent
 # aborts on 2026-08-24: nc found nothing, `set -e` took the script down between
 # two echoes, and the output looked like it had simply stopped.
 put() {  # <content> <device path>
@@ -100,7 +100,7 @@ run_suite() {  # <tests|hardware>
     say "$DEV" relaunch 10 >/dev/null || true
   else
     echo "==> $suite: deploying"
-    VITA_HOST="$HOST" "$HERE/deploy.sh" --vpk "$APP_VPK" --receiver-port "$LDR" \
+    VITA_HOST="$HOST" "$HERE/deploy.sh" --vpk "$APP_VPK" --bridge-port "$LDR" \
       >"$OUT_DIR/$suite-deploy.log" 2>&1 || true
   fi
   echo "==> $suite: running"

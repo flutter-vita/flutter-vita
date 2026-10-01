@@ -161,7 +161,7 @@ The shell installs `sce_sys/icon0.png` (128x128), `bg0.png` (840x500) and
 `startup.png` (280x158) only as 8-bit indexed PNGs. A 32-bit RGBA icon, which
 is what every image editor exports by default, fails the install with
 `0x8010113D`, from VitaShell and from `install-vpk.sh` alike, and the code says
-nothing about images. The receiver's own first install on a fresh console
+nothing about images. The bridge's own first install on a fresh console
 failed this way on 2026-09-11; re-encoding the three files was the whole fix.
 
 The build checks the art at configure time (`tools/check-livearea-art.py`) and

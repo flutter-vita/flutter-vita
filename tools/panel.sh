@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Drive the receiver's panel from here, and see what it drew.
+# Drive the bridge's panel from here, and see what it drew.
 #
 #   ./tools/panel.sh tab crashes          switch tabs
 #   ./tools/panel.sh select 0             open the first row of a list tab
@@ -18,7 +18,7 @@ set -euo pipefail
 HERE="$(cd "$(dirname "$0")" && pwd)"
 ROOT="$(cd "$HERE/.." && pwd)"
 HOST="${VITA_HOST:-fluttervita.local}"
-PORT="${RECEIVER_PORT:-1341}"
+PORT="${BRIDGE_PORT:-1341}"
 REQ="ux0:data/flutter-vita/panel-request.txt"
 
 [ $# -gt 0 ] || { sed -n '2,16p' "$0" | sed 's/^# \{0,1\}//'; exit 2; }
@@ -31,7 +31,7 @@ else
   # picked up is a panel that is not running -- which the screenshot shows.
   { printf 'put %s %s\n' "$(( ${#LINE} + 1 ))" "$REQ"; printf '%s\n' "$LINE"; } \
     | nc -4 -w 30 "$HOST" "$PORT" | grep -q OK \
-    || { echo "!! the receiver did not take '$LINE'" >&2; exit 1; }
+    || { echo "!! the bridge did not take '$LINE'" >&2; exit 1; }
   # Two poll ticks: one to read the request, one to rebuild and present.
   sleep 2
   OUT="$ROOT/out/panel.png"

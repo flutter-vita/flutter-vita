@@ -65,7 +65,7 @@ void flutter_vita_gl_set_frame_hook(void (*hook)(void*, void*, int, int, int), v
 // fvgl_shutdown did not return on the gallery's first exit (2026-09-12) and
 // the console sat on the last frame. The stages it reached are in
 // ux0:data/flutter-vita/gles2-shutdown.txt; this thread makes sure the
-// receiver comes up regardless.
+// bridge comes up regardless.
 static volatile int g_shutdown_started, g_shutdown_done;
 
 static int shutdown_watchdog(SceSize args, void* argp) {
@@ -73,7 +73,7 @@ static int shutdown_watchdog(SceSize args, void* argp) {
   (void)argp;
   sceKernelDelayThread(5 * 1000 * 1000);
   if (g_shutdown_done) return 0;
-  log_line("fvita_gles2: shutdown did not return in 5 s; bailing to the receiver");
+  log_line("fvita_gles2: shutdown did not return in 5 s; bailing to the bridge");
   if (vita_bail_to_loader) vita_bail_to_loader("fvgl_shutdown did not return in 5 s");
   return 0;
 }

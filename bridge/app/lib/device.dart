@@ -16,14 +16,14 @@ import 'dart:io';
 import 'dart:typed_data';
 
 const dataDir = 'ux0:data/flutter-vita';
-const statePath = '$dataDir/receiver-state.txt';
-const requestPath = '$dataDir/receiver-request.txt';
+const statePath = '$dataDir/bridge-state.txt';
+const requestPath = '$dataDir/bridge-request.txt';
 const installProgressPath = '$dataDir/install-progress.txt';
 const panelRequestPath = '$dataDir/panel-request.txt';
 const logDir = '$dataDir/logs';
 const appLogPath = '$dataDir/app.log';
 const deployLogPath = '$dataDir/deploy.log';
-const receiverLogPath = '$dataDir/m3.log';
+const bridgeLogPath = '$dataDir/m3.log';
 const installedPath = '$dataDir/installed.txt';
 const dumpDir = 'ux0:data';
 
@@ -104,8 +104,8 @@ class MdnsStatus {
 }
 
 /// Everything the C layer publishes, as one immutable snapshot.
-class ReceiverState {
-  const ReceiverState({
+class BridgeState {
+  const BridgeState({
     this.seq = 0,
     this.ip = '',
     this.port = 0,
@@ -137,7 +137,7 @@ class ReceiverState {
   /// `key value` per line, oldest log line first. Deliberately not JSON: the
   /// writer is 300 lines of C with no allocator to spare, and every field
   /// here is a single token or the rest of the line.
-  static ReceiverState parse(String text) {
+  static BridgeState parse(String text) {
     var seq = 0, port = 0, done = 0, total = 0, lastCmd = -1;
     var ip = '', status = 'Starting', detail = '', self = '';
     final log = <String>[];
@@ -171,7 +171,7 @@ class ReceiverState {
           log.add(value);
       }
     }
-    return ReceiverState(
+    return BridgeState(
       seq: seq,
       ip: ip,
       port: port,
@@ -185,7 +185,7 @@ class ReceiverState {
     );
   }
 
-  static ReceiverState? read() {
+  static BridgeState? read() {
     try {
       final file = File(statePath);
       if (!file.existsSync()) return null;
@@ -200,8 +200,8 @@ class ReceiverState {
 
 /// The DEPLOY console's history, newest last.
 ///
-/// `launch` ends the receiver's process, so the C side's in-memory ring is
-/// empty at every boot. receiver_dev.c appends every note to a file instead.
+/// `launch` ends the bridge's process, so the C side's in-memory ring is
+/// empty at every boot. bridge_dev.c appends every note to a file instead.
 ///
 /// Read from the end: the file is capped at 64 KB and this wants the last
 /// screenful, so the first partial line after the seek is dropped.
@@ -282,7 +282,7 @@ List<LogFile> listLogs() {
   }
 
   live(appLogPath, 'app (live)');
-  live(receiverLogPath, 'receiver (live)');
+  live(bridgeLogPath, 'bridge (live)');
 
   final dir = Directory(logDir);
   if (dir.existsSync()) {
@@ -398,7 +398,7 @@ Future<int> clearCrashes(void Function(int done, int total) onProgress) async {
   return removed;
 }
 
-/// A title this receiver installed, and how much of ux0:data it is holding.
+/// A title this bridge installed, and how much of ux0:data it is holding.
 class InstalledApp {
   InstalledApp(
     this.titleId,
@@ -419,14 +419,14 @@ class InstalledApp {
 
   /// Whether ux0:app/<id> is actually there.
   ///
-  /// installed.txt lists what this receiver installed, not what is installed. A
+  /// installed.txt lists what this bridge installed, not what is installed. A
   /// title deleted any other way stays in it, and a RUN button on that row hands
   /// the console to a title that does not exist: sceAppMgrLaunchAppByUri fails
-  /// quietly after the receiver has exited, leaving the LiveArea home screen.
+  /// quietly after the bridge has exited, leaving the LiveArea home screen.
   final bool present;
 }
 
-/// The receiver is left out. It installed itself and the registry records that,
+/// The bridge is left out. It installed itself and the registry records that,
 /// but a row you cannot delete, cannot run because you are already in it, and
 /// whose data directory is the one holding the list, is a row that only takes
 /// up space.
@@ -463,7 +463,7 @@ List<InstalledApp> listInstalled(String self) {
 /// parser ships with the SDK.
 ///
 /// Every failure returns null. This reads files written by other people's
-/// installers, and a malformed one must not stop the receiver starting.
+/// installers, and a malformed one must not stop the bridge starting.
 String? appTitle(String titleId) {
   try {
     final f = File('ux0:app/$titleId/sce_sys/param.sfo');

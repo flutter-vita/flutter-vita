@@ -1,7 +1,7 @@
 # Console setup
 
 Everything between your computer and the console goes over Wi-Fi, through
-a small Flutter app that stays on the console: the **receiver**. This page
+a small Flutter app that stays on the console: the **bridge**. This page
 takes a console from stock homebrew to one that answers `fluttervita.local`.
 You do it once.
 
@@ -23,7 +23,7 @@ Every app draws through the GPU, and the GPU wants Sony's shader compiler,
 firmware and not in this repository; the community extracts it from the
 PlayStation Mobile runtime (the usual tool is ShaRKF00D). Without it an app
 starts, logs that the compiler is missing, and shows nothing.
-`bootstrap-receiver.sh` below checks for the file and says so.
+`bootstrap-bridge.sh` below checks for the file and says so.
 
 ## 3. The network
 
@@ -32,42 +32,42 @@ Connect the console to the same Wi-Fi network as your computer. In
 develop: a console that goes to sleep takes its port with it, and from the
 host that looks like an app that died.
 
-## 4. Install the receiver
+## 4. Install the bridge
 
 This is the one step that needs the console's IP address, and it needs it
 once. Open VitaShell on the console and press **SELECT**: it starts an FTP
 server and shows its address. Then, from the repository:
 
 ```sh
-./tools/build-receiver.sh
-./tools/bootstrap-receiver.sh 192.168.1.23
+./tools/build-bridge.sh
+./tools/bootstrap-bridge.sh 192.168.1.23
 ```
 
-The script sends `receiver/app/build/vita/flutter_vita_receiver.vpk` to
+The script sends `bridge/app/build/vita/flutter_vita_bridge.vpk` to
 `ux0:/` over that FTP server. Install it from VitaShell (open the file,
-confirm), then start **Flutter Vita Receiver** from the LiveArea. The
+confirm), then start **Flutter Vita Bridge** from the LiveArea. The
 [releases](https://github.com/flutter-vita/flutter-vita/releases) carry
-the same file as `flutter-vita-receiver-<version>.vpk`, for a console set
+the same file as `flutter-vita-bridge-<version>.vpk`, for a console set
 up before the toolchain.
 
 From now on the console announces itself as `fluttervita.local` whenever
-the receiver or an app built with this toolchain runs, and no tool asks for
+the bridge or an app built with this toolchain runs, and no tool asks for
 an address again.
 
 ```sh
 flutter-vita doctor      # ends with the console it found
 ```
 
-## 5. What the receiver is
+## 5. What the bridge is
 
-The receiver is title `FVTA00001`, listening on port 1341. It installs
+The bridge is title `FVTA00001`, listening on port 1341. It installs
 apps (through the console's own installer service, so a new title needs
 no VitaShell step), launches them, keeps their logs and crash dumps, and
 shows all of it on its screen:
 
 | Tab | What it shows |
 |---|---|
-| DEPLOY | The current install, byte by byte, and the app it launched. It starts empty each time the receiver opens; the previous session stays on the card as `ux0:data/flutter-vita/deploy.log.1` |
+| DEPLOY | The current install, byte by byte, and the app it launched. It starts empty each time the bridge opens; the previous session stays on the card as `ux0:data/flutter-vita/deploy.log.1` |
 | LOGS | Logs of past runs, by title and build |
 | CRASHES | Crash dumps on the card, with the thread that faulted |
 | APPS | Installed titles; launch one |
@@ -76,30 +76,30 @@ shows all of it on its screen:
 
 An app you deploy goes into slot `FVTA00002` by default and listens on
 port 1339 while it runs. Only one of the two is on screen at a time: the
-receiver launches the app and goes away; the app hands back to the
-receiver when asked.
+bridge launches the app and goes away; the app hands back to the
+bridge when asked.
 
 ## 6. The two button chords
 
 Both work in every app built without `--release`, without a network:
 
 - **L + R + START, held for one second**: hand the console back to the
-  receiver. This is the way home when the network is down or the app has
+  bridge. This is the way home when the network is down or the app has
   stopped answering.
 - **L + R + SELECT**: show or hide the debug strip
   ([Debug an app](debug-app.md)).
 
-## 7. Updating the receiver
+## 7. Updating the bridge
 
-A running title cannot overwrite its own files, so the receiver is
+A running title cannot overwrite its own files, so the bridge is
 replaced by a second, 50 KB title, the **updater** (`FVTA00009`):
 
 ```sh
-./tools/selfupdate-receiver.sh
+./tools/selfupdate-bridge.sh
 ```
 
-It builds the receiver, stages it on the card, launches the updater, which
+It builds the bridge, stages it on the card, launches the updater, which
 copies the files over `FVTA00001` and relaunches it. The updater keeps the
-previous receiver; start it with L held to put that one back.
+previous bridge; start it with L held to put that one back.
 
 Next: [Get started](get-started.md).

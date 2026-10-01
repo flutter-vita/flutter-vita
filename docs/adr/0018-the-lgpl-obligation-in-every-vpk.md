@@ -55,7 +55,7 @@ Measured on this tree:
 | Item | Size |
 |---|---|
 | `libflutter_engine_vita.a` | 67.0 MB, 19.2 MB gzipped |
-| Application objects, receiver | 4.3 MB |
+| Application objects, bridge | 4.3 MB |
 | vitaGL and vitashark source plus `patches/vitagl/` | ~1 MB |
 | **Bundle** | **~22 MB** |
 | The `.vpk` it accompanies | 14.7 MB |
@@ -73,7 +73,7 @@ becomes unnecessary.
 ### How much of vitaGL is actually reachable
 
 `--gc-sections` against a vitaGL rebuilt with `-ffunction-sections`, linked into
-the receiver:
+the bridge:
 
 | | |
 |---|---|

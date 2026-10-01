@@ -55,7 +55,7 @@ one slow write's worth).
 
 The last lines still reach the card on every exit this process takes on
 purpose: `flutter_vita_log_flush` runs in the dev server before a handoff or
-relaunch (`release_gpu`), in the bail-out before it launches the receiver,
+relaunch (`release_gpu`), in the bail-out before it launches the bridge,
 in the watchdog before it copies the log and relaunches, and before the
 VitaShell handoff. A hardware fault loses what arrived during the write in
 flight, and nothing on this platform catches those anyway (ADR-0011).

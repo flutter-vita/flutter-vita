@@ -61,7 +61,7 @@ int fvita_json_bool(const char* body, size_t len, const char* key, int dflt);
 // Threads. Two things outlive a thread that has ended: the kernel's thread
 // object, until someone deletes it, and newlib's per-thread record (its
 // reent; there are 256, and the C library crashes on the 257th -- see
-// docs/results/receiver-files-2026-09-16.md). sceKernelDeleteThread frees
+// docs/results/bridge-files-2026-09-16.md). sceKernelDeleteThread frees
 // the first only. These free both: the creator calls the first on a thread
 // that has ended, a thread that ends itself calls the second and never
 // returns.

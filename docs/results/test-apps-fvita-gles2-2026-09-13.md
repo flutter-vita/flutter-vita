@@ -49,7 +49,7 @@ varying or a `gl_` name (those are `main`'s parameters in Cg; Skia passes
 them as arguments anyway). The shader is `gles2/corpus/skia-46-frag.glsl`;
 M2 on the console is 47 of 47, this one in 1391 ms.
 
-### 2. The "cold receiver" was a 5 second name lookup
+### 2. The "cold bridge" was a 5 second name lookup
 
 Every `nc flutter-vita.local` paid 5.00 s before the connect, measured with
 `getaddrinfo`: macOS asks mDNS for an AAAA record first, the console's
@@ -58,7 +58,7 @@ timeout before it falls back to the A record. `nc -4` connects in 0.06 s.
 That lookup was paid once per file by `deploy.sh`: wonderous' 454-file
 bundle took 45 minutes, and after the change the same deploy takes 39 s.
 Every `nc` in `tools/` now has `-4`. The retries in `alive()` stay; a
-receiver that has just started is still a real case.
+bridge that has just started is still a real case.
 
 ### 3. A screenshot was a smear of forty frames
 

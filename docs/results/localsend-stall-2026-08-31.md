@@ -21,7 +21,7 @@ like this:
 running at exactly the panel's vblank with nothing queued, and not one frame
 presented**. Six touch events land during it, so input is still being polled and
 delivered. The process is alive the whole time. It ends only because a human
-opens the receiver.
+opens the bridge.
 
 So the app does not fault. It stops producing frames and keeps running.
 
@@ -110,7 +110,7 @@ parses to an exception, not to a partial answer.
 
 Something interrupts the write about 40% of the time. The crash supervisor is
 switched off (`supervisor.on` is `0`), so it is not that. The remaining
-candidate is a human opening the receiver while the console is still writing,
+candidate is a human opening the bridge while the console is still writing,
 which is the standing habit after every crash and exactly the wrong moment.
 
 **After a fault, leave the console alone for two minutes before opening

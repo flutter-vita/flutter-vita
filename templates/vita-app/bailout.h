@@ -5,7 +5,7 @@
 extern "C" {
 #endif
 
-// Record `reason`, launch the dev receiver, and exit cleanly. Does not return.
+// Record `reason`, launch the dev bridge, and exit cleanly. Does not return.
 //
 // The clean exit is the point: a faulting process leaves an error dialog on the
 // console for someone to dismiss by hand.

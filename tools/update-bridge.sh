@@ -1,18 +1,18 @@
 #!/usr/bin/env bash
-# Install a new receiver from a running app, by file copy.
+# Install a new bridge from a running app, by file copy.
 #
-#   ./tools/update-receiver.sh [--host IP] [--vpk PATH] [--port N] [--title-id ID]
-#   ./tools/update-receiver.sh --backup /tmp/receiver-eboot.bak
+#   ./tools/update-bridge.sh [--host IP] [--vpk PATH] [--port N] [--title-id ID]
+#   ./tools/update-bridge.sh --backup /tmp/bridge-eboot.bak
 #
-# A receiver cannot install itself: ux0:app/<self> is the read-only app0: mount,
+# A bridge cannot install itself: ux0:app/<self> is the read-only app0: mount,
 # so a `put` there returns 0x8001000D whatever the app's permissions. Every
 # other title's directory is ordinary storage an UNSAFE self writes freely.
 #
-# So the receiver installs an app, and the app installs the receiver. Any app
+# So the bridge installs an app, and the app installs the bridge. Any app
 # with the dev server in it will do:
 #
-#   ./tools/deploy.sh --vpk <small-app>.vpk --receiver-port 1342
-#   ./tools/update-receiver.sh
+#   ./tools/deploy.sh --vpk <small-app>.vpk --bridge-port 1342
+#   ./tools/update-bridge.sh
 #
 # Not through the promoter. The promoter is reachable, but loading it takes the
 # console down about ten seconds later, and it is only needed to register a new
@@ -25,12 +25,12 @@ HERE="$(cd "$(dirname "$0")" && pwd)"
 # back on a different lease -- which it does, often. VITA_HOST still overrides
 # it, and an IP is still the right answer when the name will not resolve.
 HOST="${VITA_HOST:-fluttervita.local}"
-# The app's port, not a receiver's. This talks to the installer, and the installer
+# The app's port, not a bridge's. This talks to the installer, and the installer
 # is an ordinary app.
 PORT=1339
 TITLE_ID=""
 BACKUP=""
-VPK="$HERE/../receiver/app/build/vita/flutter_vita_receiver.vpk"
+VPK="$HERE/../bridge/app/build/vita/flutter_vita_bridge.vpk"
 
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -44,7 +44,7 @@ while [ $# -gt 0 ]; do
   esac
 done
 
-[ -f "$VPK" ] || { echo "!! no $VPK — build the receiver first" >&2; exit 1; }
+[ -f "$VPK" ] || { echo "!! no $VPK — build the bridge first" >&2; exit 1; }
 
 say() { printf '%s\n' "$2" | nc -4 -w "${3:-30}" "$HOST" "$1" 2>/dev/null; }
 
@@ -58,16 +58,17 @@ for _ in 1 2 3; do
 done
 [ "$alive" -eq 1 ] || {
   echo "!! nothing answers on $HOST:$PORT" >&2
-  echo "   This needs an *app* running, not the receiver. Install one first:" >&2
-  echo "     ./tools/deploy.sh samples/gallery --receiver-port 1342" >&2
+  echo "   This needs an *app* running, not the bridge. Install one first:" >&2
+  echo "     ./tools/deploy.sh samples/gallery --bridge-port 1342" >&2
   exit 1; }
 
-# The receiver answers "pong receiver <slot> <port>" and an app answers a bare
-# "pong". Refusing the receiver here is not pedantry: it is the one process on the
+# The bridge answers "pong bridge <slot> <port>" ("pong receiver" before
+# 2026-10-01) and an app answers a bare
+# "pong". Refusing the bridge here is not pedantry: it is the one process on the
 # console that cannot do this job, and its failure mode is a bare EACCES that
 # reads like a full memory card.
-if say "$PORT" ping 8 | grep -q '^pong receiver'; then
-  echo "!! that is a receiver on $HOST:$PORT, and a receiver cannot install itself." >&2
+if say "$PORT" ping 8 | grep -q -E '^pong (bridge|receiver)'; then
+  echo "!! that is a bridge on $HOST:$PORT, and a bridge cannot install itself." >&2
   echo "   Deploy an app through it first, then run this again." >&2
   exit 1
 fi
@@ -95,7 +96,7 @@ DEST="ux0:app/$TITLE_ID"
 # means the wrong slot or a title that needs one manual VitaShell install first.
 LISTING="$(say "$PORT" "ls $DEST" 20)"
 printf '%s\n' "$LISTING" | grep -q 'eboot.bin' || {
-  echo "!! $DEST has no eboot.bin, so there is no receiver there to update." >&2
+  echo "!! $DEST has no eboot.bin, so there is no bridge there to update." >&2
   echo "   Registering a fresh title id needs the promote route (tools/install-vpk.sh)" >&2
   echo "   or one manual VitaShell install. This script only replaces files." >&2
   printf '%s\n' "$LISTING" | sed 's/^/   /' >&2
@@ -114,7 +115,7 @@ put() {  # <local> <device path>
   local size; size=$(wc -c <"$1" | tr -d ' ')
   # `put 0` is refused by the dev server, and this is the second guard on the
   # same mistake: a blank shell expansion once truncated a 12 MB eboot to
-  # nothing, and the console then had a receiver that could not start.
+  # nothing, and the console then had a bridge that could not start.
   [ "${size:-0}" -gt 0 ] || { echo "!! refusing to put an empty $1" >&2; return 1; }
   { printf 'put %s %s\n' "$size" "$2"; cat "$1"; } | nc -4 -w 300 "$HOST" "$PORT" \
     | grep -q OK || { echo "!! put failed: $2" >&2; return 1; }
@@ -122,7 +123,7 @@ put() {  # <local> <device path>
 }
 
 # eboot.bin last. Everything else is an asset the old binary can also read, so
-# an interrupted run leaves a receiver that still starts -- and the file that
+# an interrupted run leaves a bridge that still starts -- and the file that
 # decides which build runs is the one written when the transfer has already
 # proved itself over 3 MB of fonts.
 ( cd "$WORK" && find . -type f ! -name eboot.bin | sed 's|^\./||' | sort ) \
@@ -137,10 +138,10 @@ put "$WORK/eboot.bin" "$DEST/eboot.bin"
 # nothing, compared a size against an empty string, and failed every run that
 # had in fact worked.
 #
-# `stat` is a receiver command and the far end here is an app, which runs the
+# `stat` is a bridge command and the far end here is an app, which runs the
 # base dev server and does not have it. Say so and carry on rather than
 # refusing an install that succeeded: this route exists for the day both
-# receivers are broken, and that is the wrong day to be pedantic.
+# bridges are broken, and that is the wrong day to be pedantic.
 WANT="$(wc -c <"$WORK/eboot.bin" | tr -d ' ')"
 GOT="$(say "$PORT" "stat $DEST/eboot.bin" 20 | awk '{ print $1 }')"
 case "$GOT" in

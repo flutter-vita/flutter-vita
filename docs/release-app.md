@@ -15,8 +15,8 @@ default build, `--release` leaves out:
 - the dev server (the socket on port 1339 that reads and writes the card;
   nothing a shipped app should carry),
 - the debug strip,
-- the fall-back to the receiver on `abort` and on a fault, and the UI-thread
-  watchdog: a user's console has no receiver to fall back to,
+- the fall-back to the bridge on `abort` and on a fault, and the UI-thread
+  watchdog: a user's console has no bridge to fall back to,
 - the crash supervisor.
 
 The Dart side is the same in both: AOT, `dart.vm.product=true`, the bundle

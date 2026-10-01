@@ -5,7 +5,7 @@
 
 ## Context
 
-The [conformance app](../../samples/gallery/lib/conformance) reports 45 probes, 45 pass. That
+The [conformance app](../../samples/gallery/lib/tests) reports 45 probes, 45 pass. That
 number is worth exactly as much as the imagination of the people who wrote it,
 and those are the same people who wrote the engine. It cannot find a capability
 nobody thought to probe.
@@ -69,7 +69,7 @@ first thing that breaks in the running app. Depth on a single app is a separate
 decision to be taken *after* the breadth pass says which app deserves it.
 
 **One title id, `FVTA00002`**, shared by all five and swapped in place by the
-existing receiver path. A title id buys a separate LiveArea bubble and nothing
+existing bridge path. A title id buys a separate LiveArea bubble and nothing
 else, and the test apps does not need five bubbles. `FVTA00002` specifically
 because it is **already registered** with the shell, so the test apps needs no new
 title and never has to touch the installed-titles database
@@ -106,7 +106,7 @@ patches no longer applied and was not in the checkout either.
 - The control can fail. If it does, everything stops until it passes, and no
   other result from that run may be quoted.
 - Sharing one title id means the test apps cannot have two apps installed at once.
-  Comparing two apps means two deploys, which the receiver already makes cheap.
+  Comparing two apps means two deploys, which the bridge already makes cheap.
 
 ## Revisit trigger
 

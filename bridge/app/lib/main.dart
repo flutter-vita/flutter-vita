@@ -1,14 +1,14 @@
-// The receiver's screen.
+// The bridge's screen.
 //
 // A header saying where the console is and what it is doing, four tabs, and a
 // footer of versions. The header is what justifies the screen: when Wi-Fi
-// drops and returns on a different address, the receiver is the only thing
+// drops and returns on a different address, the bridge is the only thing
 // that knows where it went.
 //
 // The address shown is the mDNS name, not the number. Every tool defaults to
 // fluttervita.local, so the number is a fallback and lives in the footer.
 //
-// receiver_dev.c owns the port and republishes receiver-state.txt on every
+// bridge_dev.c owns the port and republishes bridge-state.txt on every
 // change; polling a file is what keeps that half free of a platform channel.
 
 import 'dart:async';
@@ -30,20 +30,20 @@ void main() {
   // The FILES tab plays through audioplayers. Its Vita half registers itself:
   // build-vita-app.sh generates the plugin registrant from the packages'
   // pubspecs (ADR-0009).
-  runApp(const ReceiverApp());
+  runApp(const BridgeApp());
 }
 
 enum Tab { deploy, logs, crashes, apps, tests, files }
 
-class ReceiverApp extends StatefulWidget {
-  const ReceiverApp({super.key});
+class BridgeApp extends StatefulWidget {
+  const BridgeApp({super.key});
 
   @override
-  State<ReceiverApp> createState() => _ReceiverAppState();
+  State<BridgeApp> createState() => _BridgeAppState();
 }
 
-class _ReceiverAppState extends State<ReceiverApp> {
-  ReceiverState _state = const ReceiverState();
+class _BridgeAppState extends State<BridgeApp> {
+  BridgeState _state = const BridgeState();
   List<String> _console = const [];
   Tab _tab = Tab.deploy;
   PanelCommand? _cmd;
@@ -89,7 +89,7 @@ class _ReceiverAppState extends State<ReceiverApp> {
       });
     }
 
-    final next = ReceiverState.read();
+    final next = BridgeState.read();
     if (next == null) return;
     // The sequence number exists so an unchanged file costs one comparison
     // rather than a rebuild of the whole tree twice a second.
@@ -139,7 +139,7 @@ class _ReceiverAppState extends State<ReceiverApp> {
     );
   }
 
-  Widget _body(ReceiverState s) => switch (_tab) {
+  Widget _body(BridgeState s) => switch (_tab) {
     Tab.deploy => _DeployTab(
       state: s,
       console: _console,
@@ -161,7 +161,7 @@ class _ReceiverAppState extends State<ReceiverApp> {
 class _Header extends StatelessWidget {
   const _Header({required this.state, required this.mdns});
 
-  final ReceiverState state;
+  final BridgeState state;
   final MdnsStatus mdns;
 
   /// What the badge should say, which is not always what C published.
@@ -340,7 +340,7 @@ class _Rail extends StatelessWidget {
               FlutterLogo(size: 26),
               SizedBox(width: 10),
               Text(
-                'RECEIVER',
+                'BRIDGE',
                 style: TextStyle(
                   fontSize: 15,
                   height: 1.0,
@@ -419,7 +419,7 @@ class _RailItem extends StatelessWidget {
 class _Footer extends StatelessWidget {
   const _Footer({required this.state});
 
-  final ReceiverState state;
+  final BridgeState state;
 
   @override
   Widget build(BuildContext context) {
@@ -452,7 +452,7 @@ class _DeployTab extends StatelessWidget {
     required this.onClear,
   });
 
-  final ReceiverState state;
+  final BridgeState state;
   final List<String> console;
   final VoidCallback onClear;
 
@@ -547,7 +547,7 @@ class _Progress extends StatelessWidget {
 /// The deploy history, oldest at the top, newest pinned to the bottom.
 ///
 /// Reads a file rather than the C side's in-memory ring, which was empty at
-/// every launch -- and since `launch` is the last thing the receiver does, that
+/// every launch -- and since `launch` is the last thing the bridge does, that
 /// emptied it exactly when you wanted to read it.
 ///
 /// Reversed rather than bottom-aligned: a Column that runs past the panel
@@ -561,13 +561,13 @@ class _Console extends StatelessWidget {
   /// an app starting and an app ending. Everything else is the same grey.
   ///
   /// Every line carries a fixed-width "MM-DD HH:MM:SS " ahead of the marker
-  /// (STAMP_LEN in receiver_dev.c), so the marker is stepped over rather than
+  /// (STAMP_LEN in bridge_dev.c), so the marker is stepped over rather than
   /// found. A line shorter than the stamp is one this side did not write.
   static const _stampLen = 15;
 
   /// Checked with the stamp and without it. A log written before timestamps
   /// existed keeps its colours, and so does one written by something that is
-  /// not this receiver -- blindly stepping over fifteen characters turned
+  /// not this bridge -- blindly stepping over fifteen characters turned
   /// "+ opened FVTA00009" into "0009" and lost the line.
   static Color _colourOf(String line) {
     final body = line.length > _stampLen ? line.substring(_stampLen) : '';
@@ -643,7 +643,7 @@ class _LogsTabState extends State<_LogsTab> {
   // A listing read only on entry is a listing that is wrong whenever a file
   // lands while you are already looking at the tab, which is most of the time
   // here: the log of a run that just ended is archived a moment after the
-  // receiver comes back and has already listed. So re-read, slowly, and
+  // bridge comes back and has already listed. So re-read, slowly, and
   // rebuild only when the answer changed.
   //
   // Twice a second was the wrong rate for this and still is -- twenty stat
@@ -810,7 +810,7 @@ class _CrashesTabState extends State<_CrashesTab> {
   // The dump lands after the panel has already asked.
   //
   // The shell writes psp2core-*.psp2dmp for a process that has just died while
-  // the receiver is being brought back, and a 100 KB dump is not instant. The
+  // the bridge is being brought back, and a 100 KB dump is not instant. The
   // listing on entry therefore runs against a card that does not have the file
   // yet, and the tab says "nothing has crashed" about the crash you are
   // holding the console to read. This is why a crash sometimes did not appear
@@ -1166,7 +1166,7 @@ class _AppsTabState extends State<_AppsTab> {
           children: [
             Expanded(
               child: Text(
-                _note ?? 'titles this receiver installed',
+                _note ?? 'titles this bridge installed',
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 style: label,
@@ -1201,7 +1201,7 @@ class _AppsTabState extends State<_AppsTab> {
                         setState(() {
                           _confirming = null;
                           _note =
-                              'asked the receiver to remove '
+                              'asked the bridge to remove '
                               '${_apps[i].titleId}; watch the DEPLOY log';
                         });
                       },
@@ -1381,7 +1381,7 @@ class _Dot extends StatelessWidget {
 ///
 /// Starting a run means launching the app that owns the suite and getting out
 /// of the way -- see the note at the top of tests.dart for why nothing runs
-/// inside the receiver. The bottom half is every result on the card, which is the
+/// inside the bridge. The bottom half is every result on the card, which is the
 /// part that makes this a tab rather than a second RUN button.
 class _TestsTab extends StatefulWidget {
   const _TestsTab({required this.command});

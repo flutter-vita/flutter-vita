@@ -10,7 +10,7 @@ import 'suites.dart';
 
 /// Everything this port is measured with, on one panel.
 ///
-/// Tabs on a rail down the left, the shape the receiver has. Panel is
+/// Tabs on a rail down the left, the shape the bridge has. Panel is
 /// what the port looks like, judged by eye. Tests is the probe suite
 /// that was its own app until 2026-09-14. Hardware asks each piece of the
 /// console to answer. Results reads the two result files back. Above all of
@@ -216,7 +216,7 @@ class _StripTitle extends StatelessWidget {
       );
 }
 
-/// The tabs, down the left. The receiver's shape: a landscape panel has
+/// The tabs, down the left. The bridge's shape: a landscape panel has
 /// width to spare and no height to spare, and a 44 px row is a target a
 /// thumb hits without aiming.
 class _Rail extends StatelessWidget {

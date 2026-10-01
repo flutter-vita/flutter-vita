@@ -6,10 +6,10 @@
 # deploy.sh waits for the app to open its dev port, which an experiment never does:
 # an experiment runs, writes a file and ends, so that wait is pure latency, and when
 # the experiment faults instead it is latency followed by a ten-minute prompt for a
-# tap. This installs, launches, and then watches the *receiver* rather than the
-# app, because the receiver coming back is the signal either way -- the experiment
+# tap. This installs, launches, and then watches the *bridge* rather than the
+# app, because the bridge coming back is the signal either way -- the experiment
 # handed the console over on its own, or it faulted and somebody opened the
-# receiver. Both end with a readable report.
+# bridge. Both end with a readable report.
 #
 # Short timeouts throughout, deliberately. A crash is the expected outcome of a
 # experiment, not an exception to plan around.
@@ -20,40 +20,40 @@ HERE="$(cd "$(dirname "$0")" && pwd)"
 # back on a different lease -- which it does, often. VITA_HOST still overrides
 # it, and an IP is still the right answer when the name will not resolve.
 HOST="${VITA_HOST:-fluttervita.local}"
-# The receiver's port. 1341 is the real one; a scratch receiver (ADR-0016) answers
+# The bridge's port. 1341 is the real one; a scratch bridge (ADR-0016) answers
 # somewhere else, and an experiment deployed through it needs to be told.
-LDR="${RECEIVER_PORT:-1341}"
+LDR="${BRIDGE_PORT:-1341}"
 VPK="${1:?usage: run-experiment.sh <vpk> <report-path>}"
 REPORT="${2:?usage: run-experiment.sh <vpk> <report-path>}"
 DEADLINE="${EXPERIMENT_DEADLINE:-90}"
 
 ldr() { printf '%s\n' "$1" | nc -4 -w 3 "$HOST" "$LDR" 2>/dev/null; }
 
-wait_receiver() {
+wait_bridge() {
   local until=$((SECONDS + $1))
   while [ $SECONDS -lt $until ]; do
-    ldr ping | grep -q receiver && return 0
+    ldr ping | grep -q -E "bridge|receiver" && return 0
   done
   return 1
 }
 
 echo "==> installing $(basename "$VPK")"
 VITA_HOST="$HOST" "$HERE/deploy.sh" --vpk "$VPK" --no-launch \
-  --receiver-port "$LDR" >/dev/null 2>&1 || {
-  echo "!! install failed -- is the receiver open?" >&2; exit 1; }
+  --bridge-port "$LDR" >/dev/null 2>&1 || {
+  echo "!! install failed -- is the bridge open?" >&2; exit 1; }
 
 echo "==> launching"
 ldr launch >/dev/null
 
-# The receiver is gone the moment the app starts; waiting for it to disappear
+# The bridge is gone the moment the app starts; waiting for it to disappear
 # first avoids reading the report from the previous run.
 sleep 2
 
-echo "==> waiting for the receiver (experiment ends, or it crashes and you open it)"
-if wait_receiver "$DEADLINE"; then
-  echo "    receiver back"
+echo "==> waiting for the bridge (experiment ends, or it crashes and you open it)"
+if wait_bridge "$DEADLINE"; then
+  echo "    bridge back"
 else
-  echo "!! receiver did not return within ${DEADLINE}s -- open it and re-run with --report-only" >&2
+  echo "!! bridge did not return within ${DEADLINE}s -- open it and re-run with --report-only" >&2
   exit 2
 fi
 

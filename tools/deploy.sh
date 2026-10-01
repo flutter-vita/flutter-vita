@@ -4,13 +4,13 @@
 #   ./tools/deploy.sh samples/gallery               build, then deploy
 #   ./tools/deploy.sh samples/gallery --no-build   deploy what is already built
 #   ./tools/deploy.sh --vpk path/to/app.vpk
-#   ./tools/deploy.sh --vpk x.vpk --receiver-port 1342
+#   ./tools/deploy.sh --vpk x.vpk --bridge-port 1342
 #
 # The tap was never necessary while the app was alive. `handoff` has been in the
-# dev server since M1: the app launches the receiver and exits, and the receiver
+# dev server since M1: the app launches the bridge and exits, and the bridge
 # can replace an eboot.bin the app could not replace itself.
 #
-# So the order is: hand off if the app is up, use the receiver if it is up, and
+# So the order is: hand off if the app is up, use the bridge if it is up, and
 # only ask for a tap when neither answers.
 set -uo pipefail
 
@@ -23,7 +23,7 @@ ROOT="$(cd "$HERE/.." && pwd)"
 HOST="${VITA_HOST:-fluttervita.local}"
 # Wait for the name, do not go round it.
 #
-# The responder lives inside whichever of the app and the receiver is running,
+# The responder lives inside whichever of the app and the bridge is running,
 # so the name goes dark for the seconds between one exiting and the other
 # answering. This used to resolve the name to an address and carry that
 # address through the run, which papered over the gap.
@@ -50,8 +50,8 @@ except OSError:
     sleep 2
   done
   echo "!! $HOST does not resolve after 20 s." >&2
-  echo "   The responder runs inside the app or the receiver, so nothing" >&2
-  echo "   answers while neither is up. Open the receiver on the console." >&2
+  echo "   The responder runs inside the app or the bridge, so nothing" >&2
+  echo "   answers while neither is up. Open the bridge on the console." >&2
   echo "   If one is running, read ux0:data/flutter-vita/mdns.txt: a zero" >&2
   echo "   'joined' means the console never hears a query, and a rising" >&2
   echo "   'sendfail' means its announcements are not leaving." >&2
@@ -69,9 +69,9 @@ LAUNCH=1
 while [ $# -gt 0 ]; do
   case "$1" in
     --host)      HOST="$2"; shift 2 ;;
-    # Which receiver to deploy through. The Flutter receiver (ADR-0016) is tested
+    # Which bridge to deploy through. The Flutter bridge (ADR-0016) is tested
     # from a scratch slot on 1342 before it ever replaces the one on 1341.
-    --receiver-port) LDR="$2"; shift 2 ;;
+    --bridge-port) LDR="$2"; shift 2 ;;
     --vpk)       VPK="$2"; BUILD=0; shift 2 ;;
     --no-build)  BUILD=0; shift ;;
     --no-launch) LAUNCH=0; shift ;;
@@ -85,22 +85,22 @@ done
 # an AAAA record first, the console's responder has no IPv6 to answer with,
 # and getaddrinfo waits the full 5.00 s before it falls back to the A record.
 # Measured 2026-09-14: connect 5.01 s, reply 0.01 s; with -4 the whole ping is
-# 0.06 s. That one lookup was the "cold receiver" of every earlier note, and
+# 0.06 s. That one lookup was the "cold bridge" of every earlier note, and
 # it was paid once per file below: the 454-file wonderous bundle took 45 min.
 say()  { printf '%s\n' "$2" | nc -4 -w "${3:-30}" "$HOST" "$1" 2>/dev/null; }
 # Retried, because one connect is not evidence: the listeners are non-blocking
 # and a single probe races the accept loop.
 alive() {
   local port="$1" want="$2"
-  # Six, not three: measured on 2026-08-21, the receiver answered on the fifth
-  # probe from a cold connect. Three tries reported a live receiver as dead and
+  # Six, not three: measured on 2026-08-21, the bridge answered on the fifth
+  # probe from a cold connect. Three tries reported a live bridge as dead and
   # sent the script down the "wait for a human tap" path for no reason. (Most
   # of that "cold" was the 5 s AAAA lookup above; the retries stay, because a
-  # receiver that has just started is a real case too.)
+  # bridge that has just started is a real case too.)
   for _ in 1 2 3 4 5 6; do
-    # "receiver" matches both the C receiver's bare reply and the Flutter
-    # receiver's "pong receiver <slot> <port>".
-    say "$port" ping 6 | grep -q "$want" && return 0
+    # A pattern: "bridge|receiver" matches the bridge's "pong bridge <slot>
+    # <port>" and the "pong receiver ..." of a bridge from before 2026-10-01.
+    say "$port" ping 6 | grep -q -E "$want" && return 0
     sleep 1
   done
   return 1
@@ -119,26 +119,26 @@ fi
 
 echo "==> $(basename "$VPK")"
 
-# 1. Get to the receiver, by whatever route needs the least of the human.
-if alive "$LDR" receiver; then
-  echo "    receiver already up"
+# 1. Get to the bridge, by whatever route needs the least of the human.
+if alive "$LDR" 'bridge|receiver'; then
+  echo "    bridge already up"
 elif alive "$DEV" pong; then
-  echo "    app is up — handing off to the receiver"
+  echo "    app is up — handing off to the bridge"
   say "$DEV" handoff 20 >/dev/null
   for i in $(seq 1 20); do
-    alive "$LDR" receiver && break
+    alive "$LDR" 'bridge|receiver' && break
     sleep 3
   done
-  alive "$LDR" receiver || { echo "!! handoff did not bring the receiver up" >&2; exit 1; }
-  echo "    receiver up, no tap needed"
+  alive "$LDR" 'bridge|receiver' || { echo "!! handoff did not bring the bridge up" >&2; exit 1; }
+  echo "    bridge up, no tap needed"
 else
   echo "    nothing is answering — a hard crash, so this one needs a tap"
-  echo "    >>> open Flutter Vita Receiver; waiting up to 10 min"
+  echo "    >>> open Flutter Vita Bridge; waiting up to 10 min"
   for i in $(seq 1 200); do
-    alive "$LDR" receiver && break
+    alive "$LDR" 'bridge|receiver' && break
     sleep 3
   done
-  alive "$LDR" receiver || { echo "!! receiver never appeared" >&2; exit 1; }
+  alive "$LDR" 'bridge|receiver' || { echo "!! bridge never appeared" >&2; exit 1; }
 fi
 
 WORK="$(mktemp -d)"
@@ -294,7 +294,7 @@ no_rm=0
 while read -r rel; do
   [ -n "$rel" ] || continue
   if [ "$no_rm" -eq 1 ]; then
-    # The receiver has no `rm`; it said so for the first file and would say so
+    # The bridge has no `rm`; it said so for the first file and would say so
     # for every one. Asking again per file cost a hung connection and the
     # whole time budget on 2026-09-13.
     awk -v r="$rel" '$2 == r { print; exit }' "$HAVE" >> "$NEXT"
@@ -320,16 +320,16 @@ else
   printf '    %d removed, %d could not be\n' "$removed" "$rmfail"
 fi
 if [ "$rmfail" -gt 0 ]; then
-  # The likeliest reason, and the fix. A receiver built before `rm` existed
+  # The likeliest reason, and the fix. A bridge built before `rm` existed
   # refuses the line rather than failing at it, and says so every deploy.
-  echo "    (a receiver without \`rm\` answers ERR here — ./tools/selfupdate-receiver.sh)" >&2
+  echo "    (a bridge without \`rm\` answers ERR here — ./tools/selfupdate-bridge.sh)" >&2
 fi
 
 # Written last, and only naming files the device confirmed. A push that failed
 # is absent from it and is retried next run.
 #
 # Retried, like the install and unlike the first version of this. The write is
-# small and idempotent, and the receiver's listener is non-blocking and single
+# small and idempotent, and the bridge's listener is non-blocking and single
 # threaded -- the same race `alive` probes six times for. On 2026-09-09 a
 # deploy printed "could not record the manifest" and the manifest was on the
 # console, complete and correct: the put had landed and the reply had not been

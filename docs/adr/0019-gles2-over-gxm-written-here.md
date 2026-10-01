@@ -83,5 +83,5 @@ project does not predict development time.
 ## Related
 
 - [ADR-0018](0018-the-lgpl-obligation-in-every-vpk.md), the decision this executes
-- [ADR-0016](0016-the-receiver-becomes-a-flutter-app.md), the receiver renders in software and never links this
+- [ADR-0016](0016-the-bridge-becomes-a-flutter-app.md), the bridge renders in software and never links this
 - `experiments/gl-usage`, `experiments/vitagl-module`

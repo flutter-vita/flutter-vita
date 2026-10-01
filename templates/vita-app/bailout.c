@@ -1,13 +1,13 @@
-// Turn a fatal error into a clean exit that returns to the receiver.
+// Turn a fatal error into a clean exit that returns to the bridge.
 //
 // A crash needs a person: the console puts up an error dialog, and somebody has
-// to tap OK, find the receiver bubble and open it. Nothing here can catch a
+// to tap OK, find the bridge bubble and open it. Nothing here can catch a
 // hardware fault -- excpmgr.h is psp2kern only, newlib's signal() is not wired
 // to data aborts, and catching one needs a kernel plugin (ADR-0011).
 //
 // But most crashes in a port are our own code discovering it cannot continue: a
 // NULL returned to a caller that cannot check it, a failed assertion, an empty
-// allocation. Those do not have to become dialogs. This launches the receiver
+// allocation. Those do not have to become dialogs. This launches the bridge
 // and exits cleanly, so there is nothing to dismiss.
 //
 // Dev-loop infrastructure. A shipping app drops this file from the build.
@@ -31,14 +31,18 @@
 #define VITA_LOADER_TITLEID "FVTA00001"
 #endif
 
-// Which receiver to bail out to, read the same way the dev server's `handoff`
+// Which bridge to bail out to, read the same way the dev server's `handoff`
 // reads it. Duplicated rather than shared: this runs after something has
 // already gone wrong, so it depends on nothing but sceIo. Returns a static
 // buffer.
-static const char* receiver_titleid(void) {
+//
+// bridge.titleid first, then receiver.titleid, its name until 2026-10-01.
+static const char* bridge_titleid(void) {
   static char id[16];
-  const SceUID fd =
-      sceIoOpen("ux0:data/flutter-vita/receiver.titleid", SCE_O_RDONLY, 0777);
+  SceUID fd =
+      sceIoOpen("ux0:data/flutter-vita/bridge.titleid", SCE_O_RDONLY, 0777);
+  if (fd < 0)
+    fd = sceIoOpen("ux0:data/flutter-vita/receiver.titleid", SCE_O_RDONLY, 0777);
   if (fd < 0) return VITA_LOADER_TITLEID;
   char buf[16];
   const int n = sceIoRead(fd, buf, sizeof buf - 1);
@@ -136,7 +140,7 @@ void vita_bail_to_loader_from(const char* reason, const void* caller) {
 
   // Each step leaves a line before it starts, so a step that never returns
   // names itself. 0xFFFFF rather than the documented 0x20000 for the
-  // launch, matching what the receiver itself uses to launch the app; it
+  // launch, matching what the bridge itself uses to launch the app; it
   // is the value known to work on this console.
   if (flutter_vita_gpu_shutdown != NULL) {
     record("  releasing the GPU");
@@ -148,11 +152,11 @@ void vita_bail_to_loader_from(const char* reason, const void* caller) {
     record("  flushing the log");
     flutter_vita_log_flush();
   }
-  record("  launching the receiver");
+  record("  launching the bridge");
 
   {
     char uri[48];
-    snprintf(uri, sizeof uri, "psgm:play?titleid=%s", receiver_titleid());
+    snprintf(uri, sizeof uri, "psgm:play?titleid=%s", bridge_titleid());
     sceAppMgrLaunchAppByUri(0xFFFFF, uri);
   }
 
@@ -161,7 +165,7 @@ void vita_bail_to_loader_from(const char* reason, const void* caller) {
 // A `sceKernelDelayThread(100 * 1000)` used to sit here, to avoid racing the
 // asynchronous launch. It cost a "close the current application?" prompt on
 // every bail, because that prompt appears only while the outgoing app is still
-// alive. The receiver launches an app on every deploy, exits at once, and has
+// alive. The bridge launches an app on every deploy, exits at once, and has
 // never prompted. There was nothing to race either: record() already called
 // sceIoSyncByFd and sceIoClose.
 //

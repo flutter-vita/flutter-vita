@@ -744,7 +744,7 @@ fail:
 }
 
 // The shutdown stages, in the log and in a file of their own. The log is the
-// app's, and the receiver that takes over afterwards writes the same file, so
+// app's, and the bridge that takes over afterwards writes the same file, so
 // a hang here used to leave nothing behind (the gallery, 2026-09-12).
 #define FVGL_SHUTDOWN_FILE "ux0:data/flutter-vita/gles2-shutdown.txt"
 

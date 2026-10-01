@@ -1,8 +1,8 @@
-name: flutter_vita_receiver
+name: flutter_vita_bridge
 description: >
-  The Vita's deploy receiver, as a Flutter app. It receives a build over TCP,
+  The Vita's deploy bridge, as a Flutter app. It receives a build over TCP,
   writes it into the app slot, launches it, and shows you where it is while it
-  waits. See docs/adr/0016-the-receiver-becomes-a-flutter-app.md.
+  waits. See docs/adr/0016-the-bridge-becomes-a-flutter-app.md.
 publish_to: none
 version: 1.0.0
 
@@ -22,7 +22,7 @@ dependencies:
 
 vita:
   title_id: FVTA00003
-  name: Flutter Vita Receiver
+  name: Flutter Bridge
 
 flutter:
   uses-material-design: false

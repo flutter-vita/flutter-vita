@@ -6,11 +6,11 @@
 // a suite that wedges takes its app down, and the app is usually the only
 // thing on the console answering a socket.
 //
-// The receiver survives that. It starts a run by launching the app and getting
-// out of the way, the same as the APPS tab. Nothing runs inside the receiver.
+// The bridge survives that. It starts a run by launching the app and getting
+// out of the way, the same as the APPS tab. Nothing runs inside the bridge.
 //
 // Nothing here may throw. Every file this reads is written by something else,
-// some of it while a process was dying, and a receiver that crashes on a
+// some of it while a process was dying, and a bridge that crashes on a
 // truncated JSON file is worse than no TESTS tab. Every read is guarded and every
 // parse falls back to "unknown".
 
@@ -33,9 +33,9 @@ const legacyResultPath = '$dataDir/bench-result.json';
 
 /// The list of suites, on the memory card rather than compiled in here.
 ///
-/// Adding a benchmark must not mean rebuilding the receiver. Reflashing it is the
+/// Adding a benchmark must not mean rebuilding the bridge. Reflashing it is the
 /// riskiest routine operation in this project -- there is a pin-and-promote
-/// flow around it precisely because a bad receiver strands the console -- and
+/// flow around it precisely because a bad bridge strands the console -- and
 /// "we added a scene" is not worth paying that.
 const manifestPath = '$dataDir/benchmarks.txt';
 
@@ -59,7 +59,7 @@ class BenchEntry {
 
   /// Whether the app is actually installed. A RUN button on a title that is not
   /// there hands the console to nothing: sceAppMgrLaunchAppByUri fails quietly
-  /// and the receiver has already exited, so you land on the LiveArea home
+  /// and the bridge has already exited, so you land on the LiveArea home
   /// screen. That stranded this console twice on 2026-08-31.
   bool get present => Directory('ux0:app/$titleId').existsSync();
 }
@@ -235,7 +235,7 @@ void _read(File f, List<BenchResult> out) {
     );
   } catch (_) {
     // Truncated, half-written, or not JSON at all. A result that cannot be read
-    // is not a result, and it is certainly not a reason to take the receiver
+    // is not a result, and it is certainly not a reason to take the bridge
     // down.
   }
 }
@@ -252,7 +252,7 @@ DateTime? _modified(File f) {
 ///
 /// Returns false without launching when the title is not installed, because
 /// launching a title that is not there strands the console on the home screen
-/// with the receiver already gone.
+/// with the bridge already gone.
 bool startRun(BenchEntry entry) {
   if (!entry.present) return false;
   try {
@@ -260,11 +260,11 @@ bool startRun(BenchEntry entry) {
     // Tells the suite the TESTS tab is waiting for it, so it hands the console back
     // when it finishes. A host-started run writes the same bench.on and must
     // not hand back, which is why this is a separate file rather than a flag.
-    File('$dataDir/bench.from-receiver').writeAsStringSync('1', flush: true);
+    File('$dataDir/bench.from-bridge').writeAsStringSync('1', flush: true);
     // Cleared so a marker left by the previous run cannot be mistaken for this
     // one finishing. Same reason the bench app's tool/bench.sh clears it.
     File('$dataDir/bench-done').writeAsStringSync('0', flush: true);
-    // Always written, even empty: the receiver can put a file and cannot delete
+    // Always written, even empty: the bridge can put a file and cannot delete
     // one, so a subset left from a host-driven run would silently restrict this
     // one.
     File('$dataDir/bench.only').writeAsStringSync('', flush: true);

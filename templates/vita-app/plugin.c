@@ -233,7 +233,7 @@ static int job_thread(SceSize args, void* argp) {
 
 // Ends through fvita_thread_exit_delete, never a return. A thread that has
 // ended stays allocated until it is deleted, and nothing else holds this
-// one's id: until 2026-09-16 every call leaked one, the receiver's audio
+// one's id: until 2026-09-16 every call leaked one, the bridge's audio
 // view polls four times a second, and after a few minutes
 // sceKernelCreateThread answered 0x8002450D to everyone -- the Dart VM
 // included, which aborted on "Could not start thread DartWorker". The

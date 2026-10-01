@@ -49,7 +49,7 @@ eight runs since.
 ## Two crashes in the teardown
 
 The deploy of build 30 and the relaunch of build 33 both ended in the
-console's crash dialog rather than the receiver. `gles2-shutdown.txt`
+console's crash dialog rather than the bridge. `gles2-shutdown.txt`
 stopped at `framebuffers and textures` both times. The first dump reads,
 against build 29's ELF:
 
@@ -74,7 +74,7 @@ one of them a second time. Two fixes, in layers:
   calling GL: the teardown then runs from the caller as before (build 35).
 
 Runs 34 to 38 relaunched and handed off five times without a fault. The
-second dump was truncated by the receiver's launch and could not be read.
+second dump was truncated by the bridge's launch and could not be read.
 
 The third came from the relaunch that was to start build 38's hardware
 suite, four seconds into the teardown, on the main thread:
@@ -248,7 +248,7 @@ captions over values: `fps`, `ui thread`, `raster`, `gpu busy`, `cpu
 cores %`, `ram MB`, `cdram MB`, `heap MB`, `battery`. The memory cells
 read used / total. The totals were to come from `sceAppMgrGetBudgetInfo`;
 on 3.73 the SceAppMgrUser wrapper and the syscall under it both answer
-0x8080201C to this process (builds 41 and 42, launched from the receiver
+0x8080201C to this process (builds 41 and 42, launched from the bridge
 and from the home screen), so the embedder reports the standard
 application budget (256 MiB main, 112 MiB CDRAM, 26 MiB phycont) and says
 so in the reply. The 26 is what `sceKernelGetFreeMemorySize` reports

@@ -7,7 +7,7 @@
 
 Every tool in this repo was built for exactly one user, who is also its author.
 `deploy.sh` assumes the engine artifact sits at a path relative to the repo
-root. The receiver installs into a hard-coded title id. The CLI locates its
+root. The bridge installs into a hard-coded title id. The CLI locates its
 dependencies by walking up from its own script:
 
 ```dart
@@ -29,13 +29,13 @@ on unexamined assumptions is harder to undo than one that does not exist yet.
 
 | Persona | Wants | Gets from us |
 |---|---|---|
-| **The Flutter developer** | To build a Vita app | CLI, receiver, runtime package, docs |
+| **The Flutter developer** | To build a Vita app | CLI, bridge, runtime package, docs |
 | **Their users** | To play the finished app | Nothing. A `.vpk` from the developer |
 
 **The product boundary ends at the `.vpk`.** That single line settles several
 questions that looked independent:
 
-- The **receiver never ships to players**. It exists to make the edit-run loop
+- The **bridge never ships to players**. It exists to make the edit-run loop
   fast — crash recovery, redeploy into a fixed slot, log pulling — and someone
   who rebuilds nothing has no use for it. Its polish bar is "a Flutter
   developer who is not the author can install and run it", which is a real bar
@@ -53,7 +53,7 @@ questions that looked independent:
 | # | Product | Is | Ships as |
 |---|---|---|---|
 | 1 | **CLI** (`flutter-vita`) | Build, install, run, logs, screenshot, tap | `pub global activate` |
-| 2 | **Receiver** | On-device receiver: install, launch, log and dump retrieval, crash recovery | `.vpk`, developer-only |
+| 2 | **Bridge** | On-device bridge: install, launch, log and dump retrieval, crash recovery | `.vpk`, developer-only |
 | 3 | **Runtime package** | In-app Dart API — button mapping, suspend/resume, memory pressure | pub.dev, name deferred |
 | 4 | **Docs** | Getting Started and API/tool reference | Repo, later a site |
 
@@ -64,12 +64,12 @@ already exists and lives in `pubspec.yaml`'s `vita:` block, read by two parsers
 and deliberately kept flat. Adding a second way to express the same thing would
 be strictly worse than the one that works.
 
-**The receiver does not gain an FTP server.** The word "FTP" in the framing of
-this interview meant the receiver's existing `get`/`put` commands, not a new
+**The bridge does not gain an FTP server.** The word "FTP" in the framing of
+this interview meant the bridge's existing `get`/`put` commands, not a new
 service. Removing BGFTP from the loop was won rather than given: it took the
 promoter, which runs as a system service and so installs into `ux0:app` the way
 VHBB and PKGj do, outside our sandbox. `cmd_promote_rif` in
-`receiver/src/receiver_dev.c` is what stands in its place. It stands.
+`bridge/src/bridge_dev.c` is what stands in its place. It stands.
 
 ## Distribution
 
@@ -119,7 +119,7 @@ them.** The forcing functions to watch are named in the revisit trigger below.
 - **The CLI's `repoRoot` path-walking must go.** It is the blocker on shipping
   the CLI anywhere, independent of channel, and it is now on the critical path
   rather than a cleanup item.
-- **The receiver graduates out of `experiments/`.** It is a product component with a
+- **The bridge graduates out of `experiments/`.** It is a product component with a
   named audience, and leaving it filed as an experiment misrepresents what it is.
 - **Two documentation audiences, kept apart.** The 14 ADRs and ~20 design docs
   are contributor-facing and stay that way. User docs are Getting Started and
@@ -138,7 +138,7 @@ them.** The forcing functions to watch are named in the revisit trigger below.
   cadences worth their cost; a solo project they are pure overhead.
 - **Windows becomes committed rather than intended.** That is when the bash
   scripts have to move into the CLI, and it is a larger change than it looks.
-- **The receiver is asked to do something a player would need.** That would mean
+- **The bridge is asked to do something a player would need.** That would mean
   the product boundary has moved off the `.vpk`, and this ADR's central claim
   needs re-arguing rather than quietly widening.
 
@@ -146,6 +146,6 @@ them.** The forcing functions to watch are named in the revisit trigger below.
 
 - [ADR-0009](0009-plugins-via-non-endorsed-vita-implementations.md) — why
   configuration lives in the app
-- [ADR-0011](0011-crash-recovery-without-taihen.md) — what the receiver is for
+- [ADR-0011](0011-crash-recovery-without-taihen.md) — what the bridge is for
 - [phase-4-distribution.md](../phase-4-distribution.md) — the artifact, the
   `vita:` block, and engine/SDK lockstep

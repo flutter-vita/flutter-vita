@@ -1,7 +1,7 @@
 # Get started
 
 Before this page: the toolchain is installed
-([macOS](install-macos.md), [Linux](install-linux.md)) and the receiver is on
+([macOS](install-macos.md), [Linux](install-linux.md)) and the bridge is on
 the console ([Console setup](configure-console.md)). `flutter-vita doctor`
 prints `ok` on every line and names the console.
 
@@ -11,7 +11,7 @@ prints `ok` on every line and names the console.
 flutter-vita run samples/gallery
 ```
 
-`run` builds the app into a `.vpk`, hands the console to the receiver if an
+`run` builds the app into a `.vpk`, hands the console to the bridge if an
 app is on screen, installs, launches, and prints the app's log as it comes.
 The first build compiles the Dart of the app to an AOT snapshot and links it
 with the engine; count on a minute. The install itself takes about 35
@@ -20,7 +20,7 @@ seconds for a 15 MB app.
 The gallery is the port's own instrument: a strip of live numbers across
 the top, tabs for widgets, tests, hardware checks and the settings of
 `flutter_vita`. Tap around. When you are done, hold **L + R + START** for a
-second: the console goes back to the receiver.
+second: the console goes back to the bridge.
 
 ## 2. Run your own app
 
@@ -33,7 +33,7 @@ flutter-vita run ~/projects/my_app
 Three things are worth knowing before the first run.
 
 **The title id.** Every Vita title has a nine-character id. Without one in
-`pubspec.yaml`, the app goes into the receiver's app slot, `FVTA00002`, and
+`pubspec.yaml`, the app goes into the bridge's app slot, `FVTA00002`, and
 replaces whatever was there. To give the app a slot of its own, add a
 `vita:` block:
 
@@ -81,5 +81,5 @@ flutter-vita build ~/projects/my_app --release
 ```
 
 The release build drops the dev server, the debug strip and the fallback
-to the receiver. The `.vpk` under `build/vita/` is what your users install.
+to the bridge. The `.vpk` under `build/vita/` is what your users install.
 [Release an app](release-app.md) covers the LiveArea art and the notices.

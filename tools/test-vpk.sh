@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
-# Check receiver/src/vpk.c on the host, against unzip and make-head-bin.py.
+# Check bridge/src/vpk.c on the host, against unzip and make-head-bin.py.
 #
 #   ./tools/test-vpk.sh <vpk> [<vpk>...]
 #
-# The receiver installs a vpk from the card with this file: the zip reader,
+# The bridge installs a vpk from the card with this file: the zip reader,
 # the sfo reader and the head.bin writer. All three are plain bytes, so they
 # build with the system zlib and can be held against the host tools that do
 # the same job in install-vpk.sh. A mistake found here costs seconds; the
@@ -51,8 +51,8 @@ C
 # (27.0) carries .tbd files the linker calls malformed; Xcode's own is fine.
 SYSROOT="${SDKROOT:-$(xcrun --sdk macosx --show-sdk-path 2>/dev/null || true)}"
 cc -std=gnu11 -Wall -Wextra -O1 ${SYSROOT:+-isysroot "$SYSROOT"} \
-  -I"$ROOT/receiver/src" -o "$WORK/vpk" \
-  "$ROOT/receiver/src/vpk.c" "$WORK/main.c" -lz
+  -I"$ROOT/bridge/src" -o "$WORK/vpk" \
+  "$ROOT/bridge/src/vpk.c" "$WORK/main.c" -lz
 
 fail=0
 for vpk in "$@"; do

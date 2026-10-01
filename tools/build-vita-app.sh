@@ -16,11 +16,11 @@
 #   --out DIR         default <app-dir>/build/vita
 #   --entry-point F   default lib/main.dart; real apps use flavors
 #   --extra-source F  extra C/C++ compiled into the app; repeatable
-#   --no-supervisor   leave out eboot2.bin (the receiver; ADR-0016)
+#   --no-supervisor   leave out eboot2.bin (the bridge; ADR-0016)
 #   --define K=V      preprocessor define for the extra sources; repeatable
 #   --link-option F   extra linker flag, for measurement builds; repeatable
 #   --debug           the default: dev server on 1339, the debug strip
-#                     (L+R+SELECT), the bailout to the receiver
+#                     (L+R+SELECT), the bailout to the bridge
 #   --release         none of those; what a shipped app is
 #
 # The app configures itself in pubspec.yaml:
@@ -33,7 +33,7 @@
 #
 # Title id resolution: --title-id, then pubspec vita.title_id, then a value
 # derived from the package name if a vita: block exists, then FVTA00002 -- the
-# slot the dev receiver installs into.
+# slot the dev bridge installs into.
 set -euo pipefail
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
@@ -59,7 +59,7 @@ OUT_DIR=""
 # test apps unbuildable for an app whose only sin was shipping three build flavors.
 ENTRY_POINT="lib/main.dart"
 # Product-specific C, and whether to ship the crash supervisor. Both exist for
-# the receiver (ADR-0016), which is an ordinary app from this same script plus a
+# the bridge (ADR-0016), which is an ordinary app from this same script plus a
 # translation unit that owns its port and its commands.
 EXTRA_SOURCES=""
 NO_SUPERVISOR="OFF"
@@ -100,8 +100,8 @@ while [ $# -gt 0 ]; do
       EXTRA_SOURCES="${EXTRA_SOURCES:+$EXTRA_SOURCES;}$src"; shift 2 ;;
     --no-supervisor) NO_SUPERVISOR="ON"; shift ;;
     # Implies --no-supervisor. The supervisor's whole job is relaunching the
-    # development receiver when the app dies, and a release build is one that has
-    # no receiver to relaunch.
+    # development bridge when the app dies, and a release build is one that has
+    # no bridge to relaunch.
     --release)  RELEASE="ON"; NO_SUPERVISOR="ON"; shift ;;
     --debug)    RELEASE="OFF"; shift ;;
     --define) EXTRA_DEFINES="${EXTRA_DEFINES:+$EXTRA_DEFINES;}$2"; shift 2 ;;
@@ -188,7 +188,7 @@ PKG_NAME="$(grep -m1 '^name:' "$APP_DIR/pubspec.yaml" | sed 's/^name: *//' | tr 
 # reinstalling replaces rather than accumulates.
 #
 # Only for apps with a vita: block. Without one the default stays FVTA00002, the
-# slot the dev receiver installs into.
+# slot the dev bridge installs into.
 derive_title_id() {
   local n l1 l2
   n=$((16#$(printf '%s' "$1" | shasum -a 1 | cut -c1-8)))
@@ -216,7 +216,7 @@ fi
 #
 # The app's own, though Sony's sample gives its background app a distinct id.
 # That sample is installed by the promoter, which registers every title in the
-# package; ours is side-loaded into a directory the receiver can write, so the
+# package; ours is side-loaded into a directory the bridge can write, so the
 # only id the shell knows is the app's.
 #
 # Measured: with a distinct id, sceBgAppUtilStartBgApp returned 0 and the shell

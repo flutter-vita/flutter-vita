@@ -2,7 +2,7 @@
 
 Run from the repo root. Writes templates/vita-app/livearea/, which every app
 built from the template ships as its icon, gate and background. The palette is
-the receiver panel's, so the bubble and the app agree.
+the bridge panel's, so the bubble and the app agree.
 
 The silhouette follows the real hardware: two full-height oval ends, a slab
 between them a shade shorter, a 16:9 screen taking just over half the width,

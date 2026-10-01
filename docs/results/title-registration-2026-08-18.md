@@ -1,6 +1,6 @@
 # How the shell registers a title, measured
 
-**Question:** can the receiver install an app from scratch the way VitaShell does,
+**Question:** can the bridge install an app from scratch the way VitaShell does,
 without VitaShell?
 
 **Answer: yes, and the mechanism is plain SQLite — but it was not exercised.**

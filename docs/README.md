@@ -8,7 +8,7 @@ meets them.
 | Page | What it is |
 |---|---|
 | [install-macos.md](install-macos.md), [install-linux.md](install-linux.md) | The toolchain: VitaSDK, Flutter 3.44.8, the engine artifact |
-| [configure-console.md](configure-console.md) | Homebrew, the shader compiler, the network, the receiver, the two button chords |
+| [configure-console.md](configure-console.md) | Homebrew, the shader compiler, the network, the bridge, the two button chords |
 | [get-started.md](get-started.md) | The first run: the gallery, then your own app |
 | [commands.md](commands.md) | `flutter-vita`, the scripts under it, the app's own port |
 | [debug-app.md](debug-app.md) | The debug strip column by column, the log, screenshots, crash dumps, a console that stops answering |
@@ -53,8 +53,8 @@ meets them.
 ## Where the project stands
 
 **Flutter runs on real hardware.** Not the Dart runtime alone: the engine, Skia
-and the framework, drawing through the Vita's GPU. The receiver in
-`receiver/app/` is itself a Flutter application — tabs, lists, touch, a
+and the framework, drawing through the Vita's GPU. The bridge in
+`bridge/app/` is itself a Flutter application — tabs, lists, touch, a
 monospace log view — and it is what installs everything else.
 
 The renderer is Skia on GLES2 through `fvita_gles2`, this repository's own
@@ -73,7 +73,7 @@ Measured against the pinned Flutter 3.44.8:
 
 | Measurement | Value |
 |---|---|
-| Receiver `.text` (armv7) | 14.67 MiB, 14 MB `.vpk` |
+| Bridge `.text` (armv7) | 14.67 MiB, 14 MB `.vpk` |
 | Engine code (armv7) | 12.41 MiB `.text`, ~14.5 MiB resident |
 | Flutter counter app AOT snapshot | 2.11 MiB instructions + 1.40 MiB data |
 | `icudtl.dat` | 862 KB after trimming, was 10 MB |
@@ -87,7 +87,7 @@ order of magnitude. Dart build cost is: the slowest thing on the console is a
 list rebuilding every frame, not anything the rasteriser does.
 
 **The deploy loop needs no kernel plugin, no card swap and no VitaShell.**
-`ScePromoterUtil` registers a fresh title id from inside the receiver, which
+`ScePromoterUtil` registers a fresh title id from inside the bridge, which
 took three experiments and one stale conclusion to establish — see **Promote**
 in [glossary.md](glossary.md). A full 15 MB deploy is about 35 seconds and a
 code-only change about six.

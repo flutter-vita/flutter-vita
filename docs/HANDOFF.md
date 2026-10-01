@@ -7,7 +7,7 @@ this file is specifically *where we stopped and why*.
 ---
 
 > **The status below is from 2026-08-08 and is superseded.** It predates the
-> engine port, the GPU backend and the receiver becoming a Flutter app. Flutter
+> engine port, the GPU backend and the bridge becoming a Flutter app. Flutter
 > runs on hardware now; see "Where the project stands" in
 > [README.md](README.md). *The machine* and *Deploying* were brought up to
 > date on 2026-10-01. The build pipeline and the gotchas below still hold,
@@ -29,8 +29,8 @@ yet. Phase 0.5 (feasibility) is complete and the verdict was go.
 | depot_tools | `~/depot_tools` — provides `gclient`; `gn`/`ninja` come from the Dart checkout |
 | Dart SDK | `third_party/sdk` — **gclient-owned**, pinned `d684a576`, ~7.8 GB, gitignored |
 | Flutter | 3.44.8, downloaded by `tools/flutter-sdk.sh` to `~/.flutter-vita/flutter/3.44.8` |
-| Vita | `fluttervita.local`, never an address. The receiver listens on 1341, a running debug app's dev server on 1339. Use `nc -4`: without it, each connect waits 5 s for an IPv6 mDNS answer |
-| Title ID | `FVTA00001` the receiver, `FVTA00002` the app slot the dev loop reuses, `FVTA00009` the updater |
+| Vita | `fluttervita.local`, never an address. The bridge listens on 1341, a running debug app's dev server on 1339. Use `nc -4`: without it, each connect waits 5 s for an IPv6 mDNS answer |
+| Title ID | `FVTA00001` the bridge, `FVTA00002` the app slot the dev loop reuses, `FVTA00009` the updater |
 
 **Never `rsync` into `third_party/sdk`.** gclient records DEPS sub-repos with
 gitlinks that a file copy corrupts; the failures surface later as
@@ -85,7 +85,7 @@ and the timeline, which otherwise fail to build for an unknown OS.
 
 ## Deploying
 
-The receiver on the console installs and launches the app over Wi-Fi, and
+The bridge on the console installs and launches the app over Wi-Fi, and
 sends its log back ([Console setup](configure-console.md)):
 
 ```bash
@@ -94,7 +94,7 @@ sends its log back ([Console setup](configure-console.md)):
 ```
 
 In August this section overwrote `eboot.bin` with `curl` through BGFTP's FTP
-server, and the app was launched by hand from LiveArea. The receiver replaced
+server, and the app was launched by hand from LiveArea. The bridge replaced
 both, and BGFTP is out of the loop.
 
 **Do not suggest taiHEN plugins.** vitacompanion destabilised the device (it

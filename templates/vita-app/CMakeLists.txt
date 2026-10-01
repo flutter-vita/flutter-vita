@@ -164,7 +164,7 @@ add_executable(${PROJECT_NAME}
   # defining them means the SDK's polling ones are never pulled from
   # libpthread. See its header.
   ${CMAKE_CURRENT_SOURCE_DIR}/pthread_cond.c
-  # Product-specific C, compiled beside the dev server. The receiver (ADR-0016)
+  # Product-specific C, compiled beside the dev server. The bridge (ADR-0016)
   # registers its own commands and port from a constructor, which is what lets
   # it be an ordinary app built from this template.
   ${EXTRA_SOURCES}
@@ -179,7 +179,7 @@ add_executable(${PROJECT_NAME}
 # fvita_plugin.h, for the plugins' sources. flutter_vita_gl.h and devserver.h
 # arrive with the embedder target below.
 target_include_directories(${PROJECT_NAME} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
-# For EXTRA_SOURCES to be configured from the outside -- the receiver builds
+# For EXTRA_SOURCES to be configured from the outside -- the bridge builds
 # twice, once into its real slot and once into a scratch one on a different
 # port, and the difference is two defines rather than two source trees.
 target_compile_definitions(${PROJECT_NAME} PRIVATE ${EXTRA_DEFINES})
@@ -232,14 +232,14 @@ target_link_libraries(${PROJECT_NAME}
   SceIme_stub SceAppUtil_stub
   # For flutter_vita's `psButton: locked` (sceShellUtilLock).
   SceShellSvc_stub
-  # For the receiver's `promote`, the only route by which it can replace itself.
+  # For the bridge's `promote`, the only route by which it can replace itself.
   # A stub archive costs nothing to an app that never calls into it.
   ScePromoterUtil_stub
-  # For the receiver's installer: a vpk is a zip, and VitaSDK's libz.a
+  # For the bridge's installer: a vpk is a zip, and VitaSDK's libz.a
   # inflates it on the console. Ordinary archive semantics, so an app that
   # never inflates links none of it.
   z
-  # For the receiver's timestamps. The clock is whatever the console was last
+  # For the bridge's timestamps. The clock is whatever the console was last
   # set to, so nothing sorts by it, but it still shows two lines an hour apart.
   SceRtc_stub
   ${HARDWARE_LIBS}
@@ -253,13 +253,13 @@ vita_create_self(${PROJECT_NAME}.self ${PROJECT_NAME} UNSAFE)
 #
 # A background application: a separate process, started by this app and
 # outliving it, so a crash still leaves something listening that can bring the
-# receiver back. Otherwise every crash costs a walk to the Vita and a tap.
+# bridge back. Otherwise every crash costs a walk to the Vita and a tap.
 #
 # ATTRIBUTE and MEMSIZE come from Sony's background-app sample
 # (Vita-Development-Suite/samples, notification-util/bootparam-bg.yml). 2 MiB is
 # far more than a socket and a 16 KiB net pool need.
 #
-# Left out under NO_SUPERVISOR: the receiver is what the supervisor recovers to,
+# Left out under NO_SUPERVISOR: the bridge is what the supervisor recovers to,
 # so one carrying its own would contend for the same background title id and
 # never stop (ADR-0016 decision 8).
 if(NOT NO_SUPERVISOR)

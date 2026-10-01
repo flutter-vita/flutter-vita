@@ -3,8 +3,8 @@
 // A vpk is a zip. Installing one is what tools/install-vpk.sh does from the
 // host -- unzip, generate sce_sys/package/head.bin for the title id in
 // sce_sys/param.sfo, stage under ux0:data/pkg, promote -- and this file is
-// the first three of those steps in C, so the receiver's FILES tab can do it
-// from a vpk already on the card. No receiver state in here: the caller owns
+// the first three of those steps in C, so the bridge's FILES tab can do it
+// from a vpk already on the card. No bridge state in here: the caller owns
 // the staging directory, the promoter and the log, and hears about progress
 // through a callback.
 //
@@ -49,7 +49,7 @@ int vpk_title_id(const char* sfo, char* out, size_t cap);
 
 // Write the package header the promoter wants for `titleid` at `dst`,
 // from the header at `tmpl`: any head.bin the promoter itself wrote will do,
-// this receiver's own app0:sce_sys/package/head.bin included. Rewrites the
+// this bridge's own app0:sce_sys/package/head.bin included. Rewrites the
 // content id at 0x30 and the three keyless digests whose offsets the header
 // carries (tools/make-head-bin.py describes the format and where the
 // template came from). Returns 0, or a negative number with `err` filled.

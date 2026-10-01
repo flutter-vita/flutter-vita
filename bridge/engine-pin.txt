@@ -1,7 +1,7 @@
-# The engine the receiver links against -- ADR-0016 decision 2.
+# The engine the bridge links against -- ADR-0016 decision 2.
 #
-# Written by tools/pin-receiver-engine.sh; read by tools/build-receiver.sh, which
-# refuses to build if out/artifacts/receiver-engine does not match. Bump it by
+# Written by tools/pin-bridge-engine.sh; read by tools/build-bridge.sh, which
+# refuses to build if out/artifacts/bridge-engine does not match. Bump it by
 # running the pin script, never by editing this file: the sha is what makes
 # the check mean anything.
 

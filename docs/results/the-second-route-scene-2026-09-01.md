@@ -10,7 +10,7 @@
 
 ## What happens
 
-A full sweep from the receiver's TESTS tab was killed by the kernel at 158 MB of
+A full sweep from the bridge's TESTS tab was killed by the kernel at 158 MB of
 native heap. The log attributes it exactly:
 
 ```

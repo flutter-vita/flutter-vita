@@ -79,7 +79,7 @@ cost weeks.
 **A `flutter-vita` wrapper CLI**, the model Samsung uses for Tizen: a Dart CLI
 that depends on `flutter_tools` as a package, subclasses `Device` with its own
 `supportsRuntimeMode`, discovers Vitas on the network, builds and packages the
-`.vpk`, and installs through the receiver protocol this project already has.
+`.vpk`, and installs through the bridge protocol this project already has.
 
 That is more work than a JSON file, but it is the only route that can express an
 AOT-only device, and it owns packaging properly instead of bolting it onto
@@ -229,18 +229,18 @@ device, and can link a stub with the same three entry points.
 ./tools/install-vpk.sh path/to/App.vpk
 ```
 
-Unpacks the `.vpk`, stages `eboot.bin` through the receiver, pushes every other
+Unpacks the `.vpk`, stages `eboot.bin` through the bridge, pushes every other
 file, and launches.
 
 **It pushes the data files by reading the archive**, not from a list. The
-receiver's `install` replaces `eboot.bin` and nothing else, so an app otherwise
+bridge's `install` replaces `eboot.bin` and nothing else, so an app otherwise
 runs against whatever the previous install left behind — which is exactly how
 an engine spent an afternoon failing on a missing `icudtl.dat` that had never
 been pushed at all, and then on a `flutter_assets` directory it could not
 reach.
 
 It also refuses a `.vpk` whose `param.sfo` title id does not match the slot the
-receiver writes into. The receiver hard-codes `FVTA00002`; the asset-test build was
+bridge writes into. The bridge hard-codes `FVTA00002`; the asset-test build was
 `FVTA00009`. Without the check that installs into the wrong slot and launches
 the previous app, which looks like a build that silently did nothing.
 
@@ -265,7 +265,7 @@ value derived from the *package* name if a `vita:` block exists, then
 `FVTA00002`.
 
 The last step is why an existing app keeps working untouched. `FVTA00002` is
-the slot the dev receiver installs into, so deriving unconditionally would break
+the slot the dev bridge installs into, so deriving unconditionally would break
 the edit-run loop for the counter app and every experiment. Adding a `vita:` block
 is the signal that this is a real app wanting a real identity.
 

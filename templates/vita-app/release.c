@@ -2,7 +2,7 @@
 //
 // The dev server (an unauthenticated socket on 1339 that reads and writes any
 // path on the card) and bailout.c (which launches FVTA00001 on abort, so on a
-// console with no receiver the app just vanishes) are dropped by leaving their
+// console with no bridge the app just vanishes) are dropped by leaving their
 // files out of the build. The debug strip is compiled into the embedder, so it
 // is switched off by a symbol: `flutter_vita_release`, which main() reads
 // before anything else and zeroes the strip's knob from.

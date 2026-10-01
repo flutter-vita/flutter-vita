@@ -1,24 +1,24 @@
 #!/usr/bin/env bash
-# Pin an engine artifact as the one the receiver links against.
+# Pin an engine artifact as the one the bridge links against.
 #
-#   ./tools/pin-receiver-engine.sh [--engine DIR] [--reason "..."]
+#   ./tools/pin-bridge-engine.sh [--engine DIR] [--reason "..."]
 #
-# ADR-0016 decision 2. The receiver is the tool used to deploy a fix, so it must
+# ADR-0016 decision 2. The bridge is the tool used to deploy a fix, so it must
 # not link the engine that fix is fixing: an engine change that breaks an app
 # would otherwise break the only way to replace that app. The pin is bumped by
 # running this, deliberately, and never as a side effect of a rebuild.
 #
 # What it does is a copy and a receipt. The pinned tree is out/artifacts/
-# receiver-engine/, which is gitignored -- what is committed is receiver/
+# bridge-engine/, which is gitignored -- what is committed is bridge/
 # engine-pin.txt, recording exactly which engine that tree is supposed to be.
-# tools/build-receiver.sh checks one against the other and refuses a mismatch,
+# tools/build-bridge.sh checks one against the other and refuses a mismatch,
 # so a pinned tree that quietly drifts is a build error rather than a subtle
-# runtime difference between the receiver and everything else.
+# runtime difference between the bridge and everything else.
 #
 # The embedder (embedder, the flutter-vita-embedder submodule) is
 # pinned with it, as embedder/ inside the same tree: it is compiled into
-# every app, so an embedder change is as able to break the receiver as an
-# engine change, and the two are one unit as far as the receiver is
+# every app, so an embedder change is as able to break the bridge as an
+# engine change, and the two are one unit as far as the bridge is
 # concerned.
 set -euo pipefail
 
@@ -30,8 +30,8 @@ FLUTTER_PIN="${FLUTTER_VITA_PIN:-$(sed -n 's/^[[:space:]]*"flutter":[[:space:]]*
 [ -n "$FLUTTER_PIN" ] || FLUTTER_PIN=3.44.8
 SRC="$ROOT/out/artifacts/flutter-engine-vita-$FLUTTER_PIN"
 EMBEDDER="${FLUTTER_VITA_EMBEDDER:-$ROOT/embedder}"
-DEST="$ROOT/out/artifacts/receiver-engine"
-PIN="$ROOT/receiver/engine-pin.txt"
+DEST="$ROOT/out/artifacts/bridge-engine"
+PIN="$ROOT/bridge/engine-pin.txt"
 REASON=""
 
 while [ $# -gt 0 ]; do
@@ -89,10 +89,10 @@ cp "$EMBEDDER/CMakeLists.txt" "$DEST/embedder/"
 cp -R "$EMBEDDER/src" "$EMBEDDER/include" "$DEST/embedder/"
 
 cat > "$PIN" <<EOF
-# The engine the receiver links against -- ADR-0016 decision 2.
+# The engine the bridge links against -- ADR-0016 decision 2.
 #
-# Written by tools/pin-receiver-engine.sh; read by tools/build-receiver.sh, which
-# refuses to build if out/artifacts/receiver-engine does not match. Bump it by
+# Written by tools/pin-bridge-engine.sh; read by tools/build-bridge.sh, which
+# refuses to build if out/artifacts/bridge-engine does not match. Bump it by
 # running the pin script, never by editing this file: the sha is what makes
 # the check mean anything.
 

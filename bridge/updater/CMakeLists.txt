@@ -12,7 +12,7 @@ endif()
 project(flutter_vita_updater C)
 include("${VITASDK}/share/vita.cmake" REQUIRED)
 
-set(VITA_APP_NAME "Flutter Receiver Updater")
+set(VITA_APP_NAME "Flutter Bridge Updater")
 set(VITA_TITLEID  "FVTA00009")
 set(VITA_VERSION  "01.00")
 

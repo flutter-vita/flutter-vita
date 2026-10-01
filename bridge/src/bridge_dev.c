@@ -1,7 +1,7 @@
-// The receiver's C layer: the port, the commands, and the state the screen reads.
+// The bridge's C layer: the port, the commands, and the state the screen reads.
 //
-// ADR-0016. The receiver is an ordinary Flutter-Vita application built from
-// templates/vita-app, and this is the translation unit that makes it a receiver
+// ADR-0016. The bridge is an ordinary Flutter-Vita application built from
+// templates/vita-app, and this is the translation unit that makes it a bridge
 // rather than an app. It registers from a constructor, which runs before main()
 // and therefore before the embedder's StartDevServer(), so the socket is
 // listening before the engine's ~3 second startup. If Flutter never comes up,
@@ -33,19 +33,19 @@
 #include "fvita_plugin.h"
 #include "vpk.h"
 
-// Overridable so a receiver under test can be installed beside the working one.
+// Overridable so a bridge under test can be installed beside the working one.
 // Replacing FVTA00001 in place with something unproven costs the only deploy
 // path there is.
-#ifndef RECEIVER_PORT
-#define RECEIVER_PORT 1341
+#ifndef BRIDGE_PORT
+#define BRIDGE_PORT 1341
 #endif
-// Which slot this receiver occupies.
+// Which slot this bridge occupies.
 //
 // A running title cannot write its own directory: ux0:app/<self> is the
 // read-only app0: mount, and that covers the whole slot, not just eboot.bin --
-// `put 6 ux0:app/FVTA00001/wtest.txt` answers ERR open. So the receiver is the
-// one thing the receiver cannot install, and FVTA00009 exists to do it. See
-// tools/selfupdate-receiver.sh.
+// `put 6 ux0:app/FVTA00001/wtest.txt` answers ERR open. So the bridge is the
+// one thing the bridge cannot install, and FVTA00009 exists to do it. See
+// tools/selfupdate-bridge.sh.
 //
 // The id here is what refuses to delete ourselves and refuses to hand over to
 // ourselves. See cmd_delete and hand_over.
@@ -59,18 +59,18 @@
 
 #define DATA_DIR "ux0:data/flutter-vita"
 #define STAGED DATA_DIR "/staged-eboot.bin"
-#define STATE_PATH DATA_DIR "/receiver-state.txt"
+#define STATE_PATH DATA_DIR "/bridge-state.txt"
 // The panel reads this one and removes it; see readPanelRequest in device.dart.
 #define PANEL_REQUEST_PATH DATA_DIR "/panel-request.txt"
 // What the DEPLOY console reads. Survives the launch that ends this process.
 #define DEPLOY_LOG DATA_DIR "/deploy.log"
-#define STATE_TMP DATA_DIR "/receiver-state.tmp"
+#define STATE_TMP DATA_DIR "/bridge-state.tmp"
 
 // The engine's debug HUD is drawn over every frame from a weak symbol, and a
-// strong definition here wins. Hidden for the receiver: this screen is the
+// strong definition here wins. Hidden for the bridge: this screen is the
 // product (ADR-0016 decision 1), and a showcase with a diagnostic overlay
 // bolted to its corner is a worse advertisement than no showcase. 2 rather
-// than 0, so L + R + SELECT can still bring it up when the receiver itself
+// than 0, so L + R + SELECT can still bring it up when the bridge itself
 // is the thing being measured.
 int flutter_vita_debug_overlay = 2;
 
@@ -99,7 +99,7 @@ static void release_gpu(void) {
 // single watcher thread -- so this is guarded by nothing more than that fact
 // and the atomic rename at the end of publish().
 
-// When a host last sent this receiver a command, in process time. Negative
+// When a host last sent this bridge a command, in process time. Negative
 // means never.
 //
 // The badge said "Waiting" through every unreachable stretch of 2026-09-01, and
@@ -135,7 +135,7 @@ static void publish(void) {
   int n = snprintf(buf, sizeof buf,
                    "seq %u\nip %s\nport %d\ntarget %s\nstatus %s\ndetail %s\n"
                    "self %s\nrecv %d %d\nlastcmd %d\n",
-                   g_seq, g_ip[0] ? g_ip : "-", RECEIVER_PORT, g_target,
+                   g_seq, g_ip[0] ? g_ip : "-", BRIDGE_PORT, g_target,
                    g_status, g_detail, SELF_TITLEID, g_recv_done,
                    g_recv_total, last_cmd_age());
   // Oldest first, so the Dart side can append without reversing.
@@ -232,7 +232,7 @@ static void note(const char* fmt, ...) {
 //
 // Until 2026-10-01 the log was only cut back once it reached 64 KB, so the
 // panel opened on days of old deploys: a self-update leaves a dozen lines per
-// cycle, and the screen filled with cycles nobody was looking at. The receiver
+// cycle, and the screen filled with cycles nobody was looking at. The bridge
 // exits whenever it launches an app, so a session is one deploy, and the one
 // before it is still on the card for a host to `get`. Rotating at boot also
 // keeps the file small without a read-modify-write in the path of every note.
@@ -416,7 +416,7 @@ static int cmd_install(int sock) {
 // the wrong lifetime for the thing you go looking for after a crash, and it
 // cannot be fixed in the app: the truncate is inside the engine archive.
 //
-// The receiver is what launches apps, so it is the one process that knows a log
+// The bridge is what launches apps, so it is the one process that knows a log
 // is about to be destroyed and can move it first. Numbered rather than
 // timestamped because this console's clock is whatever the user last set it to.
 #define LOG_DIR DATA_DIR "/logs"
@@ -477,7 +477,7 @@ static void rotate_app_log(const char* next_titleid) {
   write_small(LOG_DIR "/next", idx);
 
   // Bounded, because a memory card is not infinite and nobody reads the
-  // twenty-first-oldest log. Only this receiver's own naming is removed, so a
+  // twenty-first-oldest log. Only this bridge's own naming is removed, so a
   // file dropped in here by hand survives.
   const int oldest = seq - LOG_KEEP;
   for (int i = oldest - 8; i < oldest; i++) {
@@ -500,7 +500,7 @@ static void rotate_app_log(const char* next_titleid) {
   }
 }
 
-// Which title ids this receiver has installed.
+// Which title ids this bridge has installed.
 //
 // The panel lists these and offers to remove them or clear their data, and it
 // deliberately lists nothing else. ux0:app holds the console's own titles, and
@@ -566,7 +566,7 @@ static int installed_has(const char* titleid) {
 }
 
 // Deduplicated on write after all. It was on read, which is cheaper on the
-// install path, but the receiver now records itself on every boot -- and a file
+// install path, but the bridge now records itself on every boot -- and a file
 // that grows by a line each time the console is switched on is a file that
 // eventually outgrows the 1 KB the readers allocate for it.
 static void record_installed(const char* titleid) {
@@ -591,7 +591,7 @@ static int title_installed(const char* titleid) {
 // Hand the console over and end this process. Returns only if it could not.
 //
 // Terminal by construction, and ADR-0016's status model says so: there is no
-// state after Launching, because there is no receiver after it. Launching
+// state after Launching, because there is no bridge after it. Launching
 // another title is what unlocks the target's directory, which cannot happen
 // while this process holds it.
 //
@@ -607,7 +607,7 @@ static int hand_over(const char* titleid) {
   // Never to ourselves. Launching the title that is still running and then
   // exiting is a race the shell loses: it drops to LiveArea, which answers no
   // port, and the console needs a tap to come back. Measured 2026-09-08, when
-  // `selfupdate-receiver.sh --remove-updater` deleted FVTA00009 and the restart
+  // `selfupdate-bridge.sh --remove-updater` deleted FVTA00009 and the restart
   // that followed handed over to FVTA00001. The log ends `+ opened FVTA00001`
   // and the console was found on the home screen.
   //
@@ -633,13 +633,13 @@ static int hand_over(const char* titleid) {
   rotate_app_log(titleid);
 
   // Under GL this is where the console would be lost without a teardown. The
-  // receiver ran software until 2026-08-31 and this was a comment saying so;
+  // bridge ran software until 2026-08-31 and this was a comment saying so;
   // it now runs GL like everything else, and the call is real.
   release_gpu();
 
   // Four attempts, not one, and read what each one returns.
   //
-  // Opening the receiver from the LiveArea fails on the first tap and succeeds
+  // Opening the bridge from the LiveArea fails on the first tap and succeeds
   // on the second, often enough to be the normal case. A single launch is
   // therefore not reliable here, and every exit path in this project fired
   // exactly one and then exited. None of them read the return value either --
@@ -648,7 +648,7 @@ static int hand_over(const char* titleid) {
   // as successful handovers.
   //
   // The likely reason a first attempt fails is that this process has not
-  // released its memory budget yet, and the receiver asks for a 160 MB arena
+  // released its memory budget yet, and the bridge asks for a 160 MB arena
   // on top of the engine's blocks. That is a guess; the error code logged here
   // is what will settle it.
   char uri[64];
@@ -672,7 +672,7 @@ static int hand_over(const char* titleid) {
 static void cmd_launch(int sock) {
   // Checked before the reply, not after: the caller is a deploy script that
   // reads OK as "the console is on its way", and a script that believes that
-  // wrongly waits out its whole timeout against a receiver still sitting here.
+  // wrongly waits out its whole timeout against a bridge still sitting here.
   if (!title_installed(g_target)) {
     char msg[80];
     snprintf(msg, sizeof msg, "ERR %s is not installed\n", g_target);
@@ -695,15 +695,15 @@ static void cmd_launch(int sock) {
 
 // --- the promoter -------------------------------------------------------
 //
-// How the receiver replaces *itself*, which matters more now that a Flutter
-// receiver is ~20 MB rather than 91 KB. The promoter is a system service and is
+// How the bridge replaces *itself*, which matters more now that a Flutter
+// bridge is ~20 MB rather than 91 KB. The promoter is a system service and is
 // not bound by this sandbox.
 
 // PAF, loaded the way VitaShell loads it.
 //
 // ScePromoterUtil imports from PAF. Until PAF is resident the promoter's library
 // cannot be linked and the load is refused with MODULEMGR_NO_LIB -- which this
-// receiver, the C one before it, and three ADRs all read as "the promoter is
+// bridge, the C one before it, and three ADRs all read as "the promoter is
 // unavailable on this console". It is not; the error was naming its own cause.
 // See experiments/promoter, in git history at c91294a.
 //
@@ -757,7 +757,7 @@ static int g_pu_up = 0;
 // Driven from here rather than from the experiment for a second reason: the
 // experiment draws with debugScreen and initialises no display subsystem, while
 // VitaShell, which does all of this safely, is a vita2d app with a live GXM
-// context. The receiver is the only thing here with VitaShell's shape.
+// context. The bridge is the only thing here with VitaShell's shape.
 static void cmd_paf(int sock, const char* arg) {
   char m[192];
   if (strcmp(arg, "on") == 0) {
@@ -886,7 +886,7 @@ static int promoter_finish(int sock, const char* what, int r,
 // The three ways in, kept as three commands because they want different things
 // of the directory and nothing here knows which this console accepts.
 //
-//   promote      PromotePkg. What the receiver has always called.
+//   promote      PromotePkg. What the bridge has always called.
 //   promoterif   PromotePkgWithRif. What VitaShell calls, and it builds a
 //                sce_sys/package/head.bin with three HMAC-SHA1 signatures first.
 //   import       PromoteImport, documented as installing Content Manager import
@@ -970,7 +970,7 @@ static void cmd_exist(int sock, const char* titleid) {
 // of the next package.
 //
 // The prefix check is not decoration. This is a recursive delete on an
-// unauthenticated socket, and the receiver runs as an UNSAFE self, so
+// unauthenticated socket, and the bridge runs as an UNSAFE self, so
 // `rmtree ux0:app` would be honoured. Confined to ux0:data, the worst it can do
 // is cost a redeploy.
 #define RMTREE_ROOT "ux0:data/"
@@ -1098,11 +1098,11 @@ static void cmd_rm(int sock, const char* path) {
 
 // After a delete, stay up.
 //
-// This used to relaunch the receiver. The reasoning was that a delete takes
+// This used to relaunch the bridge. The reasoning was that a delete takes
 // this process down a few seconds later for reasons nobody has found, so it
 // restarted first and got ahead of the death.
 //
-// The restart was the worse failure. It handed over to this receiver's own
+// The restart was the worse failure. It handed over to this bridge's own
 // slot, and on 2026-09-08 that left the console on LiveArea with nothing
 // answering a port, which is the exact outcome the restart existed to avoid.
 // The delete itself had already succeeded.
@@ -1122,9 +1122,9 @@ static void after_delete(void) {
 // Through promoter_finish like every other promoter call, and it was not until
 // 2026-09-01. It fired DeletePkg and answered on the spot, so `OK delete
 // FVTA00009 0x00000000` meant the request had been accepted and nothing more.
-// The receiver then went back to serving the panel -- which lists ux0:app on
+// The bridge then went back to serving the panel -- which lists ux0:app on
 // every poll -- while the promoter's worker was still removing a title from
-// under that enumeration. Twice that evening the receiver went down within a
+// under that enumeration. Twice that evening the bridge went down within a
 // second of a delete and left the console on LiveArea.
 //
 // The wait is the fix, and reading the result is the other half: a call can be
@@ -1137,10 +1137,10 @@ static void after_delete(void) {
 // the UI stalled in fifteen consecutive gaps of almost exactly ten seconds --
 // a fixed timeout being retried, not work being done. Nothing answered port
 // 1341 for the whole of it, so every host tool reported a dead console and the
-// obvious reading was that the receiver had crashed. It had not: it presented
+// obvious reading was that the bridge had crashed. It had not: it presented
 // 318 frames during the same window.
 //
-// Answering immediately costs a synchronous result and buys a receiver that
+// Answering immediately costs a synchronous result and buys a bridge that
 // stays reachable while the promoter grinds. The outcome goes to the log and
 // the status line, which the panel shows and `log` returns.
 static char g_deleting[16];
@@ -1181,7 +1181,7 @@ static int start_delete(const char* titleid) {
 
 static void cmd_delete(int sock, const char* titleid) {
   if (strcmp(titleid, SELF_TITLEID) == 0) {
-    dev_server_send(sock, "ERR refusing to delete the receiver\n");
+    dev_server_send(sock, "ERR refusing to delete the bridge\n");
     return;
   }
   if (!promoter_up(sock)) return;
@@ -1244,9 +1244,9 @@ static void cmd_ls(int sock, const char* path) {
 // promote, then copy the art into ux0:app/<id>. vpk.c does the bytes; this
 // does the order, the promoter and the reporting.
 //
-// The header template is this receiver's own app0:sce_sys/package/head.bin:
+// The header template is this bridge's own app0:sce_sys/package/head.bin:
 // the promoter wrote it, so it has the format the promoter reads, and every
-// receiver has one. Nothing is embedded.
+// bridge has one. Nothing is embedded.
 //
 // On a thread, like delete, for the same reason: the promoter takes its
 // time, and the dev server and the panel stay answerable meanwhile. Progress
@@ -1314,11 +1314,11 @@ static void install_run(void) {
     g_install_busy = 0;
     return;
   }
-  // A vpk carrying the receiver's own id would replace the process that is
-  // installing it; that route is tools/selfupdate-receiver.sh, from the host,
-  // through the scratch receiver.
+  // A vpk carrying the bridge's own id would replace the process that is
+  // installing it; that route is tools/selfupdate-bridge.sh, from the host,
+  // through the scratch bridge.
   if (strcmp(titleid, SELF_TITLEID) == 0) {
-    install_failed("%s is this receiver; update it from the host", titleid);
+    install_failed("%s is this bridge; update it from the host", titleid);
     g_install_busy = 0;
     return;
   }
@@ -1413,18 +1413,20 @@ static void cmd_installvpk(int sock, const char* vpk) {
 static int handle(int sock, const char* line, int* stop) {
   g_last_cmd = (SceInt64)sceKernelGetProcessTimeWide();
   // Shadows the dev server's own `pong`, so that a reply identifies what
-  // answered. tools/update-receiver.sh greps for it, and the alternative --
+  // answered. tools/update-bridge.sh greps for it, and the alternative --
   // a bare "pong" from whatever happens to hold the port -- is how you
-  // promote a receiver over an app.
+  // promote a bridge over an app.
   //
-  // The fourth field is this receiver's own slot. A scratch receiver on 1342
+  // The fourth field is this bridge's own slot. A scratch bridge on 1342
   // is the same program in a different title, and "which one am I talking to"
   // has cost a deploy before. Appended rather than inserted, so the parsers
   // that read three fields still read three fields.
   if (strcmp(line, "ping") == 0) {
     char m[80];
-    snprintf(m, sizeof m, "pong receiver %s %d %s\n", TARGET_TITLEID,
-             RECEIVER_PORT, SELF_TITLEID);
+    // "pong bridge" since 2026-10-01, "pong receiver" before. The tools
+    // accept both, so a console with the old app still answers to them.
+    snprintf(m, sizeof m, "pong bridge %s %d %s\n", TARGET_TITLEID,
+             BRIDGE_PORT, SELF_TITLEID);
     dev_server_send(sock, m);
     return 1;
   }
@@ -1452,7 +1454,7 @@ static int handle(int sock, const char* line, int* stop) {
     }
     char dest[256];
     snprintf(dest, sizeof dest, "%s", space + 1);
-    // The destination's parent is not always there -- update-receiver.sh streams
+    // The destination's parent is not always there -- update-bridge.sh streams
     // a whole extracted vpk into a staging tree it has never created.
     for (char* p = strchr(dest, '/'); p != NULL; p = strchr(p + 1, '/')) {
       *p = '\0';
@@ -1481,7 +1483,7 @@ static int handle(int sock, const char* line, int* stop) {
     // No `*stop = 1` here. It used to sit on the next line, which was correct
     // for as long as cmd_launch could not fail. It can now -- it refuses a title
     // that is not installed -- and `stop` closes the listening socket and ends
-    // the dev server thread, so the first refused launch left the receiver on
+    // the dev server thread, so the first refused launch left the bridge on
     // screen and unreachable. A launch that succeeds never returns here.
     cmd_launch(sock);
     return 1;
@@ -1567,7 +1569,7 @@ static int handle(int sock, const char* line, int* stop) {
 // One line -- `delete <titleid>`, `launch <titleid>`, `install <vpk path>` --
 // removed before it is acted on so a crash in the middle cannot replay it on
 // the next boot.
-#define REQUEST_PATH DATA_DIR "/receiver-request.txt"
+#define REQUEST_PATH DATA_DIR "/bridge-request.txt"
 
 static void serve_request(void) {
   const SceUID fd = sceIoOpen(REQUEST_PATH, SCE_O_RDONLY, 0777);
@@ -1584,7 +1586,7 @@ static void serve_request(void) {
   if (strncmp(buf, "delete ", 7) == 0) {
     const char* titleid = buf + 7;
     if (strcmp(titleid, SELF_TITLEID) == 0) {
-      note("panel asked to delete the receiver; refused");
+      note("panel asked to delete the bridge; refused");
       return;
     }
     if (!promoter_up(-1)) {
@@ -1595,7 +1597,7 @@ static void serve_request(void) {
   } else if (strncmp(buf, "launch ", 7) == 0) {
     const char* titleid = buf + 7;
     if (strcmp(titleid, SELF_TITLEID) == 0) {
-      note("panel asked to launch the receiver; already here");
+      note("panel asked to launch the bridge; already here");
       return;
     }
     note("panel launch %s", titleid);
@@ -1664,7 +1666,7 @@ static int watcher(SceSize args, void* argp) {
 // Registered before main(), which is the whole point: the embedder calls
 // StartDevServer() as its first act, and the port has to be ours by then.
 static void on_network_ready(void) {
-  const SceUID th = sceKernelCreateThread("fvita_receiver_watch", watcher,
+  const SceUID th = sceKernelCreateThread("fvita_bridge_watch", watcher,
                                           0x10000100, 16 * 1024, 0, 0, NULL);
   if (th < 0) {
     // Not fatal, and worth saying so on the panel rather than in a log nobody
@@ -1676,8 +1678,8 @@ static void on_network_ready(void) {
   sceKernelStartThread(th, 0, NULL);
 }
 
-__attribute__((constructor)) static void receiver_register(void) {
-  dev_server_set_port(RECEIVER_PORT);
+__attribute__((constructor)) static void bridge_register(void) {
+  dev_server_set_port(BRIDGE_PORT);
   dev_server_set_command_handler(handle);
   dev_server_set_ready_handler(on_network_ready);
   dev_server_set_minimal(1);
@@ -1688,12 +1690,12 @@ __attribute__((constructor)) static void receiver_register(void) {
   // Before main(), and that is the whole point.
   //
   // The engine opens its log with O_TRUNC as the first line of main(), and now
-  // that the receiver runs GL it shares app.log with every app -- so without
-  // this, opening the receiver after a crash destroys the log of the crash.
+  // that the bridge runs GL it shares app.log with every app -- so without
+  // this, opening the bridge after a crash destroys the log of the crash.
   // Measured on 2026-08-28 chasing keklist's emoji grid.
 
-  rotate_app_log("receiver");
-  // The DEPLOY tab starts empty: no line for the receiver starting, none for
+  rotate_app_log("bridge");
+  // The DEPLOY tab starts empty: no line for the bridge starting, none for
   // the app it came back from, none for the log it archived. Until 2026-10-01
   // it opened with four such lines, and none of them was a thing that was done.
   start_deploy_log();

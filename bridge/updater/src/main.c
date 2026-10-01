@@ -1,11 +1,11 @@
-// The receiver's updater: the one app whose job is to replace the receiver.
+// The bridge's updater: the one app whose job is to replace the bridge.
 //
 // A running title cannot write its own directory. app0: is the read-only mount
-// of ux0:app/<own id>, so every attempt is 0x8001000D, and the receiver can
-// install anything on this console except a new receiver.
+// of ux0:app/<own id>, so every attempt is 0x8001000D, and the bridge can
+// install anything on this console except a new bridge.
 //
 // This is that path as its own title. No engine, no network, no protocol: the
-// receiver stages the new build onto the card with `put`, launches this, and
+// bridge stages the new build onto the card with `put`, launches this, and
 // this copies the staged tree over ux0:app/<target> and launches it back.
 //
 // eboot.bin is written last, after every asset, because a half-written eboot is
@@ -33,9 +33,13 @@
 
 #define printf psvDebugScreenPrintf
 
+// receiver-update, not bridge-update: the bridge was the receiver until
+// 2026-10-01, and an updater built before then looks here.
 #define STAGE_DIR "ux0:data/flutter-vita/receiver-update"
 #define MANIFEST STAGE_DIR "/manifest.txt"
 #define PAYLOAD STAGE_DIR "/files"
+// receiver-backup, like receiver-update: the names from before 2026-10-01,
+// when the bridge was the receiver, so a backup taken then can still be restored.
 #define BACKUP_DIR "ux0:data/flutter-vita/receiver-backup"
 
 #define SELF_TITLEID "FVTA00009"
@@ -101,8 +105,8 @@ static int file_size(const char* path) {
 }
 
 // One `key value` per line. Unknown keys are ignored rather than fatal: the
-// receiver that writes this file is updated more often than the app that reads
-// it, and a manifest from a newer receiver must not brick the older updater.
+// bridge that writes this file is updated more often than the app that reads
+// it, and a manifest from a newer bridge must not brick the older updater.
 static int read_manifest(void) {
   const SceUID fd = sceIoOpen(MANIFEST, SCE_O_RDONLY, 0777);
   if (fd < 0) return 0;
@@ -144,7 +148,7 @@ static int looks_like_titleid(const char* s) {
 // Never `return`, never sceKernelExitProcess on its own: either drops the
 // console on the LiveArea home screen, which answers no port and cannot be
 // driven from the network. Whatever went wrong, the right end state is the
-// receiver running, because the receiver is the thing that can be talked to.
+// bridge running, because the bridge is the thing that can be talked to.
 // Four attempts, not one. A single launch is not reliable on this console --
 // opening a title from the LiveArea often fails once and works on the retry --
 // and this app exits straight afterwards, so a refused launch leaves the
@@ -167,7 +171,7 @@ static void launch(const char* titleid) {
   sceKernelExitProcess(0);
 }
 
-// `titleid` first, the receiver second. They are the same id in every ordinary
+// `titleid` first, the bridge second. They are the same id in every ordinary
 // run; they differ only when someone pointed this at another title and that
 // title is the thing that will not start.
 static void give_up(const char* titleid, int seconds) {
@@ -198,7 +202,7 @@ static int restore(const char* titleid) {
 
 int main(void) {
   psvDebugScreenInit();
-  printf("\n  Flutter Vita receiver updater\n\n");
+  printf("\n  Flutter Vita bridge updater\n\n");
 
   if (read_manifest() == 0 || g_target[0] == '\0') {
     printf("  nothing staged.\n");
@@ -281,7 +285,7 @@ int main(void) {
     //
     // The window this opens is between the rename and the write below, and
     // during it the slot has no eboot at all. A power cut there leaves a
-    // receiver that will not start, and the backup is still on the card for
+    // bridge that will not start, and the backup is still on the card for
     // the L-trigger path to put back. The copy had the same window in a
     // different place: it overwrote the live eboot with a partial write.
     sceIoMkdir("ux0:data/flutter-vita", 0777);
@@ -318,7 +322,7 @@ int main(void) {
   sceIoRemove(MANIFEST);
 
   // No hold here. Every second this screen stays up is a second the console
-  // is not the receiver, and the two seconds this used to spend letting you
+  // is not the bridge, and the two seconds this used to spend letting you
   // read "done" are two of the twelve the whole update took.
   printf("\n  done. launching %s\n", g_target);
   launch(g_target);

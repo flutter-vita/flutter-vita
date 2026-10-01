@@ -225,7 +225,7 @@ context, and none of them is the interesting one:
   to nobody in a release build. Two of the six are not honest implementations:
   `glBlendColor` discards its argument because vitaGL has no constant blend
   colour, and `glGetRenderbufferParameteriv` returns zeroes.
-- **A suffix-stripping receiver.** Skia's assembler asks for extension entry
+- **A suffix-stripping bridge.** Skia's assembler asks for extension entry
   points by their suffixed names — `GET_PROC_SUFFIX(PopGroupMarker, EXT)`
   requests `glPopGroupMarkerEXT` — and vitaGL exports the core spelling with no
   alias. A function that is present fails to resolve on its name alone, which is
@@ -390,7 +390,7 @@ paints. That is evidence for these five operations and not a general result.
 
 The embedder now has both paths. `shell_enable_gl = true`, a
 `FlutterOpenGLRendererConfig` in `vita_embedder.cc`, the six shims and the
-suffix-stripping receiver moved out of the experiment into a proc resolver, and
+suffix-stripping bridge moved out of the experiment into a proc resolver, and
 vitaGL owning GXM and the display in place of this file's own CDRAM
 framebuffer. Which path runs is decided at startup: GL unless
 `ux0:data/flutter-vita/software.on` holds a `1`, and software automatically if
@@ -531,7 +531,7 @@ Worth chasing, and not chased yet.
 Three console lockups on 2026-08-22, each needing the power button — the PS
 button did not respond. All three were under GL, and they have one cause.
 
-**Every exit path launched the receiver and called `sceKernelExitProcess` with
+**Every exit path launched the bridge and called `sceKernelExitProcess` with
 nothing in between.** That was correct for as long as this process never
 touched the GPU: the software path owns a CDRAM block and a memcpy, and there
 is nothing to hand back. Under GL it leaves a live GXM context and queued flips
@@ -551,14 +551,14 @@ server's `handoff`, `relaunch` and `exit`, and `bailout.c`'s abort path. Weakly
 referenced, so the software-only build is unchanged. Verified on hardware:
 
 ```
-  [dev] handing off to the receiver
+  [dev] handing off to the bridge
 flutter-vita: releasing the GPU before exit
 [ERROR:gpu_surface_gl_skia.cc(220)] Could not make the context current   (x18)
 flutter-vita: GPU released
 ```
 
 — eighteen frames refused while the raster thread quiesced, then a clean
-handoff and the receiver back.
+handoff and the bridge back.
 
 **The crash path cannot be fixed the same way, and this is the important
 part.** `bailout.c` says it in its own first paragraph:
@@ -595,8 +595,8 @@ and are written up in ADR-0017.
 Nothing above about the crash cost has been repaired. It is now a risk taken
 deliberately in exchange for those numbers, and the escape hatch is one `put`
 away rather than a rebuild. Two callers still want the CPU path and get it: the
-receiver forces it through a strong `flutter_vita_force_software` symbol
-([ADR-0016](0016-the-receiver-becomes-a-flutter-app.md) decision 7), and anything
+bridge forces it through a strong `flutter_vita_force_software` symbol
+([ADR-0016](0016-the-bridge-becomes-a-flutter-app.md) decision 7), and anything
 needing text input wanted it until the common dialog could composite over
 vitaGL. The second caller went away on 2026-08-28: text input now runs on
 libime's inline keyboard, which does not use the common dialog at all. See
@@ -844,7 +844,7 @@ ADR-0011's rule is written flat.
 **2. A safe self fails in ways that look like hardware limits.**
 `vita_create_self` builds a *safe* self by default, and a safe self cannot read
 `ur0:` or resolve taiHEN's user hooks — regardless of the HENkaku "unsafe
-homebrew" setting. The experiment was built safe while the receiver and the app
+homebrew" setting. The experiment was built safe while the bridge and the app
 template have always been `UNSAFE`. The symptom was `vglInit` returning
 `GL_FALSE` on a console with 182 MB free and the module correctly installed,
 which reads as a platform limitation and is a missing keyword.

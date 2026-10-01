@@ -168,7 +168,7 @@ Future<int> _doctor(Map<String, String> opts) async {
 
   final device = await _findDevice(opts, quiet: true);
   check('device', device != null,
-      'power on the Vita and open the receiver, or pass --host');
+      'power on the Vita and open the bridge, or pass --host');
   if (device != null) {
     stdout.writeln('       $device');
   } else if (await _localNetworkBlocked()) {
@@ -203,7 +203,7 @@ Future<int> _devices(Map<String, String> opts) async {
   if (found.isEmpty) {
     stdout.writeln('no devices found');
     stdout.writeln(
-        '  the Vita must be awake with the receiver or an app running');
+        '  the Vita must be awake with the bridge or an app running');
     return 1;
   }
   for (final device in found) {
@@ -262,18 +262,18 @@ Future<int> _install(
   final vpk = await _build(args, opts);
   if (vpk == null) return 1;
 
-  // The receiver is what installs, so hand off if the app is what is running.
+  // The bridge is what installs, so hand off if the app is what is running.
   var device = await _findDevice(opts);
   if (device == null) return 1;
   if (device.role == VitaRole.app) {
-    stdout.writeln('==> handing off to the receiver');
+    stdout.writeln('==> handing off to the bridge');
     await device.handoff();
-    final receiver = await VitaDevice.waitFor(device.host, VitaRole.receiver);
-    if (receiver == null) {
-      stderr.writeln('!! the receiver never came up — tap it on the device');
+    final bridge = await VitaDevice.waitFor(device.host, VitaRole.bridge);
+    if (bridge == null) {
+      stderr.writeln('!! the bridge never came up — tap it on the device');
       return 1;
     }
-    device = receiver;
+    device = bridge;
   }
 
   final result = await Process.start(
@@ -292,7 +292,7 @@ Future<int> _install(
   final app = await VitaDevice.waitFor(device.host, VitaRole.app);
   if (app == null) {
     stderr.writeln('!! the app never opened its port — it may have crashed');
-    stderr.writeln('   open the receiver and run: flutter-vita logs');
+    stderr.writeln('   open the bridge and run: flutter-vita logs');
     return 1;
   }
   stdout.writeln('==> running on ${app.host}');
@@ -374,7 +374,7 @@ int _version() {
 /// sweep of the subnet (an app built before the name existed still answers).
 ///
 /// [role] narrows it when the command only makes sense against one — `logs`
-/// needs the app, and finding the receiver instead should say so rather than
+/// needs the app, and finding the bridge instead should say so rather than
 /// failing on a refused connection.
 Future<VitaDevice?> _findDevice(
   Map<String, String> opts, {
@@ -405,13 +405,13 @@ Future<VitaDevice?> _findDevice(
 
   if (match == null && !quiet) {
     if (found.isEmpty) {
-      stderr.writeln('!! no Vita found — is it awake, with the receiver open?');
+      stderr.writeln('!! no Vita found — is it awake, with the bridge open?');
     } else {
       stderr
           .writeln('!! found ${found.first} but this needs the ${role!.label}');
       stderr.writeln(role == VitaRole.app
           ? '   launch the app first'
-          : '   hand off to the receiver first');
+          : '   hand off to the bridge first');
     }
   }
   return match;

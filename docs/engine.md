@@ -100,5 +100,5 @@ embedder and the GL layer are not in it. The app build compiles both.
 To build the engine you need a 12 GB checkout and about thirty minutes. See
 [docs/dev-environment.md](dev-environment.md).
 `tools/package-engine.sh` turns a build into the artifact that apps link
-against. `tools/pin-receiver-engine.sh` pins one, with the embedder beside it,
-for the receiver.
+against. `tools/pin-bridge-engine.sh` pins one, with the embedder beside it,
+for the bridge.

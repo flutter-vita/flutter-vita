@@ -56,7 +56,7 @@ String? engineStamp() {
 /// True when the host has asked for an unattended run.
 ///
 /// A '1' in the first byte, not merely the file existing, because the
-/// receiver can `put` a file and cannot delete one -- a switch keyed on
+/// bridge can `put` a file and cannot delete one -- a switch keyed on
 /// existence is a switch that cannot be turned off remotely.
 bool switchOn(String path) {
   try {

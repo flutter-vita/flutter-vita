@@ -158,7 +158,7 @@ COUNT=$(wc -l < "$OUT/.objs" | tr -d ' ')
 # `xargs -a` is a GNU extension; BSD xargs on macOS needs the redirect.
 # D: deterministic headers (no timestamps, uid, gid), so the same objects give
 # the same archive and the same sha256, and a repackage does not move the
-# receiver's pin.
+# bridge's pin.
 xargs arm-vita-eabi-ar rcsD "$STAGE/lib/libflutter_engine_vita.a" < "$OUT/.objs"
 rm -f "$OUT/.objs"
 

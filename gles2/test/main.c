@@ -1,7 +1,7 @@
 // The fvita_gles2 milestone tests. Each one draws something whose pixels are
 // known in advance, reads them back through glReadPixels, writes a report and
 // the raw frame to ux0:data/flutter-vita, and hands the console back to the
-// receiver so both can be pulled with `get`.
+// bridge so both can be pulled with `get`.
 //
 //   M0  clear, scissor, present: our own sceGxm context on the screen
 //   M1  two triangles from GLSL: translator, link, uniforms (a mat3 among
@@ -35,7 +35,7 @@
 #include <string.h>
 
 #define DIR "ux0:data/flutter-vita/"
-#define RECEIVER "FVTA00001"
+#define BRIDGE "FVTA00001"
 
 static SceUID g_report = -1;
 
@@ -55,20 +55,20 @@ static void sayf(const char* fmt, ...) {
   say(line);
 }
 
-static void launch_receiver(void) {
-  sceAppMgrLaunchAppByUri(0xFFFFF, "psgm:play?titleid=" RECEIVER);
+static void launch_bridge(void) {
+  sceAppMgrLaunchAppByUri(0xFFFFF, "psgm:play?titleid=" BRIDGE);
   sceKernelExitProcess(0);
 }
 
 // The shutdown on 2026-09-12 never returned and the console sat on the last
-// frame until a hand opened the receiver. The stages are logged, and this
+// frame until a hand opened the bridge. The stages are logged, and this
 // thread hands over regardless after ten seconds.
 static int watchdog(SceSize args, void* argp) {
   (void)args;
   (void)argp;
   sceKernelDelayThread(10 * 1000 * 1000);
   say("watchdog: shutdown did not return in 10 s");
-  launch_receiver();
+  launch_bridge();
   return 0;
 }
 
@@ -77,7 +77,7 @@ static void hand_back(void) {
   if (w >= 0) sceKernelStartThread(w, 0, NULL);
   fvgl_shutdown();
   if (g_report >= 0) sceIoClose(g_report);
-  launch_receiver();
+  launch_bridge();
 }
 
 // ---- M0 --------------------------------------------------------------------

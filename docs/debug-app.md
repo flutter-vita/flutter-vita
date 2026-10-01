@@ -68,7 +68,7 @@ launch. The lines worth knowing:
   have yet. Also collected in `ux0:data/flutter-vita/gles2-unimplemented.txt`.
 
 Logs of past runs stay on the card under `ux0:data/flutter-vita/logs/`,
-and the receiver's LOGS tab lists them by title.
+and the bridge's LOGS tab lists them by title.
 
 ## Screenshots and taps
 
@@ -85,9 +85,9 @@ instance, sit down the left at x=60.
 ## Crashes
 
 An app that faults leaves a dump, `psp2core-*.psp2dmp`, under `ux0:data`.
-The console then comes back to the receiver by itself (a debug build
+The console then comes back to the bridge by itself (a debug build
 links a fallback that launches it on `abort` and on a fault), and the
-receiver's CRASHES tab lists the dump with the thread that faulted.
+bridge's CRASHES tab lists the dump with the thread that faulted.
 
 From the host:
 
@@ -100,7 +100,7 @@ fault type, every thread's stack, the registers. The ELF has to be the one
 that produced the dump; a rebuilt app symbolicates to confident nonsense.
 
 An `abort()` (a failed Dart assertion, an `FML_CHECK`) writes its reason to
-`ux0:data/flutter-vita/bailout.txt` before the fallback runs; the receiver
+`ux0:data/flutter-vita/bailout.txt` before the fallback runs; the bridge
 shows it too.
 
 ## When the console stops answering
@@ -110,9 +110,9 @@ A silent port is one of three things:
 1. **The console went to sleep.** Press the power button. Turn automatic
    standby off in Power Save Settings while developing.
 2. **The app is stuck.** Hold **L + R + START** for a second: the app hands
-   the console to the receiver without needing the network. The receiver's
+   the console to the bridge without needing the network. The bridge's
    LOGS tab has the app's last lines.
-3. **The app died without a dump.** The receiver comes up on its own; look
+3. **The app died without a dump.** The bridge comes up on its own; look
    at CRASHES and at the last log.
 
 Nothing here needs the power button held down. If the screen has frozen

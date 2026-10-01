@@ -2,11 +2,11 @@
 
 **Question:** ADR-0019's last milestone asks for a tree in which `fvita_gles2`
 is the only GL. What had to go, what proves nothing still needs it, and does
-the receiver, which links a pinned engine, come along?
+the bridge, which links a pinned engine, come along?
 
 **Builds:** gallery builds 25 and 26 of 2026-09-14 (`gallery-gles2-run25`,
-`run26`), the scratch receiver FVTA00004 and the receiver FVTA00001 on engine
-pin `a2f902e2` (`receiver/engine-pin.txt`). Bench results
+`run26`), the scratch bridge FVTA00004 and the bridge FVTA00001 on engine
+pin `a2f902e2` (`bridge/engine-pin.txt`). Bench results
 `out/bench/gl-gles2-run{24,25,26}-2026-09-14.json`.
 
 ## What left
@@ -36,7 +36,7 @@ of the `glGetIntegerv` table. Neither name is in Skia's bound set
 **Symbols.** `arm-vita-eabi-nm` over the unstripped ELF, counting names that
 start with `vgl`, `vitashark` or `shark_`: build 25 has 8, all weak
 references from the embedder's counter block, which is why that block went
-too; build 26 has 0. The receiver's ELF on the new pin has 0.
+too; build 26 has 0. The bridge's ELF on the new pin has 0.
 
 **The gallery.** Builds 25 and 26 ran the 36-scene bench to the end, no
 `interrupted` scene, no `WATCHDOG` report, no `unimplemented:` line in the
@@ -63,26 +63,26 @@ spread of one console, not a cost of removing the shims. The runs that
 followed the same morning (`docs/results/log-writes-on-the-frame-threads-2026-09-14.md`)
 found where a good part of that spread comes from.
 
-**The receiver.** The engine pin moved to the archive built at
+**The bridge.** The engine pin moved to the archive built at
 2026-09-14T06:19:23Z (`archive_sha256 a2f902e2…`), which carries the UI-thread
 watchdog and wait notes, the Dart monitors on LwMutex/LwCond, the AAAA answer
 below, the one-frame screenshot copy, and links `fvita_gles2` with
 `pthread_cond` on LwCond from the template. In order:
 
-1. `tools/build-receiver.sh --scratch` and `tools/install-vpk.sh` promoted the
-   scratch receiver FVTA00004. It boots on the layer (`GL up -- OpenGL ES 2.0
-   fvita_gles2`), draws its panel, and `deploy.sh --receiver-port 1342`
+1. `tools/build-bridge.sh --scratch` and `tools/install-vpk.sh` promoted the
+   scratch bridge FVTA00004. It boots on the layer (`GL up -- OpenGL ES 2.0
+   fvita_gles2`), draws its panel, and `deploy.sh --bridge-port 1342`
    pushed and launched the gallery through it, exit 0.
-2. `tools/selfupdate-receiver.sh` staged the 16 files of the FVTA00001 build
+2. `tools/selfupdate-bridge.sh` staged the 16 files of the FVTA00001 build
    (12.6 MB `eboot.bin` in 18 s), handed the console to the updater
-   FVTA00009, and the new receiver answered `pong receiver FVTA00002 1341
+   FVTA00009, and the new bridge answered `pong receiver FVTA00002 1341
    FVTA00001` 15 s later. Its panel renders (`shotinfo`: `match=fvita_gles2
    … copy=20499 us`), its log shows eight programs linked and no error past
    the two expected resource-context lines.
 3. `deploy.sh apps/gallery --no-build` through the new FVTA00001: eboot
    staged, installed, launched, `up on 1339 after 3s`, 34 s end to end.
 
-The scratch receiver stays installed; it is the rehearsal slot for the next
+The scratch bridge stays installed; it is the rehearsal slot for the next
 pin and costs nothing.
 
 ## What rode along on the same pin
@@ -111,7 +111,7 @@ before. Builds 24 to 26 ran 108 scenes without a freeze.
 ## What this settles
 
 - The tree builds, runs, benches and deploys with no vitaGL and no
-  vitaShaRK object in any ELF, receiver included. ADR-0019's M5 is done and
+  vitaShaRK object in any ELF, bridge included. ADR-0019's M5 is done and
   ADR-0014 is superseded in full.
 - The LGPL question of ADR-0018 is closed by absence: a `.vpk` built from
   this tree links BSD-3 code, Sony's runtime modules, and `libshacccg` on

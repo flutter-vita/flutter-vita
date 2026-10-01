@@ -158,7 +158,7 @@ that every tier above it also needs.
   Use it to find *where*, then confirm *how much* with a counter in release.
 - **Not free at Tier 3.** A second engine build is roughly 30 minutes and
   another 12 GB, and a second artifact to keep in step with the release one.
-  [tools/pin-receiver-engine.sh](../tools/pin-receiver-engine.sh) exists
+  [tools/pin-bridge-engine.sh](../tools/pin-bridge-engine.sh) exists
   because keeping *one* engine artifact honest already needed a mechanism.
   Tiers 1 and 2 avoid this entirely.
 - **Not a thing to leave on.** Tier 2's macros cost time in the build that

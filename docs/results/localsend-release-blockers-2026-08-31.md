@@ -143,7 +143,7 @@ device.
     on channel dev.fluttercommunity.plus/connectivity_status)
 
 This console drops its Wi-Fi and comes back on a different lease often enough
-that the receiver exists partly to report it. localsend will not notice.
+that the bridge exists partly to report it. localsend will not notice.
 
 ### 6. wakelock_plus throws on every toggle — and nothing on this port stays awake
 

@@ -56,7 +56,7 @@ dependencies:
   url_launcher: ^6.3.0
   image_picker: ^1.2.0
 
-# Its own slot, so it can sit on the LiveArea beside the receiver's slot. The
+# Its own slot, so it can sit on the LiveArea beside the bridge's slot. The
 # dev loop installs into FVTA00002 whatever this says (tools/deploy.sh).
 #
 # hardware_checks compiles templates/vita-app/hardware.c into this app and

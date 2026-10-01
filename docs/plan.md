@@ -30,7 +30,7 @@
 | 960×544 is "~2 MP" | 522,240 px ≈ **0.52 MP**. The arithmetic this justified was wrong | [ADR-0006](adr/0006-performance-bar-set-from-measurement.md) |
 | 60 fps for simple UIs | **Arithmetically impossible** at native resolution — the present blit alone is 8.06 ms, 48% of the frame budget. 30 fps marginal; **720×408 reaches 68 fps** | [ADR-0006](adr/0006-performance-bar-set-from-measurement.md) |
 | Docker toolchain image | VitaSDK installed natively via vdpm; no Docker | [dev-environment](dev-environment.md) |
-| `psp2shell` / network logging | **No taiHEN plugin works on this device.** BGFTP for file transfer, manual launch from LiveArea, logs pulled over FTP. **[corrected]** The receiver now installs, launches and returns logs over TCP; BGFTP is out of the loop | [HANDOFF](HANDOFF.md), [ADR-0016](adr/0016-the-receiver-becomes-a-flutter-app.md) |
+| `psp2shell` / network logging | **No taiHEN plugin works on this device.** BGFTP for file transfer, manual launch from LiveArea, logs pulled over FTP. **[corrected]** The bridge now installs, launches and returns logs over TCP; BGFTP is out of the loop | [HANDOFF](HANDOFF.md), [ADR-0016](adr/0016-the-bridge-becomes-a-flutter-app.md) |
 | M1 = `app-aot-elf` snapshot that prints | `app-aot-assembly` **linked into eboot.bin**; success is a checksum, though `print()` now works too | [ADR-0005](adr/0005-aot-snapshot-delivery.md) |
 
 ---
@@ -78,7 +78,7 @@
 |   - sceTouch -> FlutterPointerEvent                           |
 |   - sceCtrl (buttons/sticks) -> platform channel "vita/input" |
 |   - sceImeDialog -> TextInput channel                         |
-|   - asset bundle receiver (app0:/assets)                        |
+|   - asset bundle bridge (app0:/assets)                        |
 +---------------------------------------------------------------+
 | Vita OS (sceKernel, sceGxm, sceDisplay, sceTouch, sceCtrl)    |
 +---------------------------------------------------------------+
@@ -216,7 +216,7 @@ flutter-vita/
 ├── packages/       # submodule: github.com/flutter-vita/flutter-vita-packages
 ├── gles2/          # fvita_gles2, OpenGL ES 2.0 over sceGxm
 ├── plugins/        # the *_vita implementations of upstream plugins
-├── receiver/       # FVTA00001, the app that installs the others
+├── bridge/       # FVTA00001, the app that installs the others
 ├── templates/      # the app template and the fonts every app gets
 ├── samples/        # the gallery and the test-app manifest
 ├── tools/
