@@ -59,8 +59,7 @@ done
 [ "$alive" -eq 1 ] || {
   echo "!! nothing answers on $HOST:$PORT" >&2
   echo "   This needs an *app* running, not the receiver. Install one first:" >&2
-  echo "     ./tools/deploy.sh --vpk experiments/m1-vpk/build/flutter_vita_m1.vpk \\" >&2
-  echo "         --receiver-port 1342" >&2
+  echo "     ./tools/deploy.sh samples/gallery --receiver-port 1342" >&2
   exit 1; }
 
 # The receiver answers "pong receiver <slot> <port>" and an app answers a bare
@@ -97,7 +96,7 @@ DEST="ux0:app/$TITLE_ID"
 LISTING="$(say "$PORT" "ls $DEST" 20)"
 printf '%s\n' "$LISTING" | grep -q 'eboot.bin' || {
   echo "!! $DEST has no eboot.bin, so there is no receiver there to update." >&2
-  echo "   Registering a fresh title id needs the promoter (experiments/promoter)" >&2
+  echo "   Registering a fresh title id needs the promote route (tools/install-vpk.sh)" >&2
   echo "   or one manual VitaShell install. This script only replaces files." >&2
   printf '%s\n' "$LISTING" | sed 's/^/   /' >&2
   exit 1; }

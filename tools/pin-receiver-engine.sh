@@ -15,7 +15,7 @@
 # so a pinned tree that quietly drifts is a build error rather than a subtle
 # runtime difference between the receiver and everything else.
 #
-# The embedder (engine/embedder, the flutter-vita-embedder submodule) is
+# The embedder (embedder, the flutter-vita-embedder submodule) is
 # pinned with it, as embedder/ inside the same tree: it is compiled into
 # every app, so an embedder change is as able to break the receiver as an
 # engine change, and the two are one unit as far as the receiver is
@@ -29,7 +29,7 @@ ROOT="$(cd "$HERE/.." && pwd)"
 FLUTTER_PIN="${FLUTTER_VITA_PIN:-$(sed -n 's/^[[:space:]]*"flutter":[[:space:]]*"\([0-9.]*\)".*/\1/p' "$ROOT/versions.json" 2>/dev/null | head -1)}"
 [ -n "$FLUTTER_PIN" ] || FLUTTER_PIN=3.44.8
 SRC="$ROOT/out/artifacts/flutter-engine-vita-$FLUTTER_PIN"
-EMBEDDER="${FLUTTER_VITA_EMBEDDER:-$ROOT/engine/embedder}"
+EMBEDDER="${FLUTTER_VITA_EMBEDDER:-$ROOT/embedder}"
 DEST="$ROOT/out/artifacts/receiver-engine"
 PIN="$ROOT/receiver/engine-pin.txt"
 REASON=""

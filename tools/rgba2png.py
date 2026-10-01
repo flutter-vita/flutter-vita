@@ -7,7 +7,7 @@ easiest thing for the device to produce -- it is a single write of the buffer
 the display controller is already scanning out -- and it means what arrives
 here is exactly what is on the panel, not a re-render of what should be.
 
-    APP=m3 ./experiments/m1-vpk/dev.sh shot out/screen.png
+    ./tools/panel.sh shot out/screen.png
 
 Pixel order is SCE_DISPLAY_PIXELFORMAT_A8B8G8R8, which on a little-endian
 target is R,G,B,A in memory order -- byte-identical to PNG's RGBA. So there is

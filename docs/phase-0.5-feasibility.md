@@ -143,7 +143,7 @@ sides, no mismatch.** See B5 results below.
 ### ✅ B1 result — done 2026-08-06
 
 **The host half of M1 works.** Reproducible via
-[`experiments/b1-aot-snapshot/build.sh`](../experiments/b1-aot-snapshot/build.sh).
+[`experiments/b1-aot-snapshot/build.sh`](https://github.com/flutter-vita/flutter-vita/blob/c91294a/experiments/b1-aot-snapshot/build.sh).
 
 ```
 out/hello-armv7.elf: ELF 32-bit LSB shared object, ARM, EABI5 version 1 (SYSV)
@@ -161,7 +161,7 @@ Findings:
   `gen_snapshot_macos_x64_release` is an x86_64 Mach-O running under Rosetta;
   host architecture is irrelevant to the output, as expected of a cross compiler.
 - **The pinned version is confirmed correct.** The Flutter 3.44.8 SDK reports revision
-  `0cd610717b`, matching [VERSIONS.md](../VERSIONS.md) exactly, and ardera's
+  `0cd610717b`, matching [docs/versions.md](versions.md) exactly, and ardera's
   `gen_snapshot` reports Dart 3.12.2 — the same Dart the SDK ships. The kernel
   format matched on the first attempt, so the version-pin reasoning holds.
 - **A pure-Dart floor uses 2.15% of the 16 MiB VM-block cap.** Pure Dart is
@@ -169,7 +169,7 @@ Findings:
   the whole framework — that is B2.
 - **We did not have to build the Dart SDK.** Phase 1 can begin against a real
   armv7 snapshot instead of a hypothetical one, exactly as
-  [VERSIONS.md](../VERSIONS.md) predicted.
+  [docs/versions.md](versions.md) predicted.
 
 Note: the ELF form was used here only because it is the easiest to inspect.
 Which form ships on Vita is still [ADR-0005](adr/0005-aot-snapshot-delivery.md).
@@ -179,7 +179,7 @@ Which form ships on Vita is still [ADR-0005](adr/0005-aot-snapshot-delivery.md).
 **The 16 MiB cap is not a problem.** A stock Flutter counter app, compiled to
 armv7 AOT with `--target=flutter --aot --tfa` against the Flutter patched
 product SDK. Reproducible via
-[`experiments/b2-flutter-snapshot/build.sh`](../experiments/b2-flutter-snapshot/build.sh).
+[`experiments/b2-flutter-snapshot/build.sh`](https://github.com/flutter-vita/flutter-vita/blob/c91294a/experiments/b2-flutter-snapshot/build.sh).
 
 | | `.text` (instructions) | `.rodata` (heap image) |
 |---|---|---|

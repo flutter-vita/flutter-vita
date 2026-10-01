@@ -16,9 +16,9 @@
 #   EXTRA_LINK_OPTIONS  ;-list of extra linker flags
 #   RELEASE         ON to link release.c instead of the dev loop
 #   GLES2_DIR       the fvita_gles2 source, built into the app (ADR-0019);
-#                   default ../../engine/gles2 from this file
+#                   default ../../gles2 from this file
 #   EMBEDDER_DIR    the Vita embedder source (flutter-vita-embedder), built
-#                   into the app; default ../../engine/embedder from this file
+#                   into the app; default ../../embedder from this file
 cmake_minimum_required(VERSION 3.16)
 
 if(NOT DEFINED CMAKE_TOOLCHAIN_FILE)
@@ -69,10 +69,10 @@ endif()
 
 # The embedder: main(), and everything between the engine and the console.
 # Its own repository, flutter-vita/flutter-vita-embedder, a submodule of this
-# one at engine/embedder; compiled into every app against the archive's
+# one at embedder; compiled into every app against the archive's
 # include/. An OBJECT library, so main() and the weak hooks reach the link
 # line whether or not anything references them.
-set(EMBEDDER_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../../engine/embedder" CACHE PATH
+set(EMBEDDER_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../../embedder" CACHE PATH
     "the Vita embedder source")
 if(NOT EXISTS "${EMBEDDER_DIR}/CMakeLists.txt")
   message(FATAL_ERROR
@@ -145,7 +145,7 @@ endif()
 # The GL under Ganesh: fvita_gles2, built from source into every app
 # (ADR-0019). The embedder calls the eight functions of flutter_vita_gl.h and
 # nothing else of it; gl_gles2.c answers. vitaGL sat here until 2026-09-14.
-set(GLES2_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../../engine/gles2" CACHE PATH "fvita_gles2 source")
+set(GLES2_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../../gles2" CACHE PATH "fvita_gles2 source")
 add_subdirectory("${GLES2_DIR}" fvita_gles2)
 set(GL_PLATFORM_SOURCE ${CMAKE_CURRENT_SOURCE_DIR}/gl_gles2.c)
 set(GL_LIBS fvita_gles2 ${FVITA_GLES2_LIBS})
@@ -190,7 +190,7 @@ target_compile_definitions(${PROJECT_NAME} PRIVATE ${EXTRA_DEFINES})
 set_target_properties(${PROJECT_NAME} PROPERTIES LINKER_LANGUAGE CXX)
 
 target_link_options(${PROJECT_NAME} PRIVATE
-  # Set from the outside for measurement builds: experiments/gl-usage wrapped
+  # Set from the outside for measurement builds: experiments/gl-usage (c91294a) wrapped
   # the GL proc lookup here to see what an app asks of GL, since Skia binds by
   # name and no link map can tell you.
   ${EXTRA_LINK_OPTIONS}
@@ -321,7 +321,7 @@ set(VPK_FILES
   FILE "${ENGINE_DIR}/data/Roboto-Regular.ttf" fonts/Roboto-Regular.ttf
   # Emoji. Everything in app0:/fonts is a fallback candidate for every codepoint
   # (see platform_vita.cc). Monochrome, 1.9 MB; the colour font was tried and is
-  # documented in assets/fonts/README.md.
+  # documented in templates/fonts/README.md.
   # 109 KB, and it is what "monospace" resolves to. app0:/fonts is matched by
   # the family name inside each file, so the alias table in platform_vita.cc
   # needs this present or it points at nothing.

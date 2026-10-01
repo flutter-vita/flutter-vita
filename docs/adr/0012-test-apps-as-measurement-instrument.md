@@ -5,7 +5,7 @@
 
 ## Context
 
-The [conformance app](../../samples/conformance) reports 45 probes, 45 pass. That
+The [conformance app](../../samples/gallery/lib/conformance) reports 45 probes, 45 pass. That
 number is worth exactly as much as the imagination of the people who wrote it,
 and those are the same people who wrote the engine. It cannot find a capability
 nobody thought to probe.
@@ -43,7 +43,7 @@ reintroduced by hand exactly the human step ADR-0011 removed.
 > rejected on sight, is about what the test apps measures, not about how many
 > title ids we could afford — but "we cannot" was never true, and a future
 > reader should not take the number five as forced. See
-> [`experiments/promoter`](../../experiments/promoter/).
+> [`experiments/promoter`](https://github.com/flutter-vita/flutter-vita/blob/c91294a/experiments/promoter).
 
 ## Decision
 

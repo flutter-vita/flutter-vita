@@ -128,8 +128,8 @@ Future<int> _doctor(Map<String, String> opts) async {
   if (root != null) {
     check(
         'embedder submodule',
-        File('$root/engine/embedder/CMakeLists.txt').existsSync(),
-        'engine/embedder is empty: git submodule update --init');
+        File('$root/embedder/CMakeLists.txt').existsSync(),
+        'embedder is empty: git submodule update --init');
   }
 
   final host = '${_hostOs()}-${_arch()}';
@@ -189,7 +189,7 @@ Future<int> _doctor(Map<String, String> opts) async {
     stdout.writeln(
         '       The shell tools work meanwhile: they use nc, which is');
     stdout.writeln(
-        '       already permitted. tools/install-vpk.sh, experiments/m1-vpk/dev.sh');
+        '       already permitted. tools/install-vpk.sh, tools/deploy.sh');
     ok = false;
   }
 

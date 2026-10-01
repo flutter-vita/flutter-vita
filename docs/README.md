@@ -27,15 +27,15 @@ meets them.
 | [phase-1-workplan.md](phase-1-workplan.md) | What Phase 1 actually requires, derived from the Dart SDK source |
 | [embedder-startup.md](embedder-startup.md) | What `runtime/bin` does at startup, what M1 skips, and the timer/print plan for Phase 2 |
 | [phase-2-gn-notes.md](phase-2-gn-notes.md) | The GN gate: what it is, tooling reality, and why the foreign-toolchain risk is lower than feared |
-| [../engine/README.md](../engine/README.md) | Where the port lives: the fork's commits, and the dependency patches inside the fork |
+| [engine.md](engine.md) | Where the port lives: the fork's commits, and the dependency patches inside the fork |
 | [phase-0.5-feasibility.md](phase-0.5-feasibility.md) | The completed gate. Every measurement taken so far, and the exit criteria still open |
 | [adr/](adr/README.md) | Architecture decision records, with an index and the open questions |
-| [../Flutter Vita Plan.md](../Flutter%20Vita%20Plan.md) | The original plan, reconciled against measurement. Intent and phases 2–5; `docs/` wins on anything measured |
+| [plan.md](plan.md) | The original plan, reconciled against measurement. Intent and phases 2–5; `docs/` wins on anything measured |
 | [glossary.md](glossary.md) | Shared vocabulary across the Vita homebrew and Flutter halves |
 | [open-sourcing.md](open-sourcing.md) | What stands between this tree and a public one, audited against the repository rather than remembered |
 | [dev-environment.md](dev-environment.md) | Toolchain and IDE setup, including the three-index clangd arrangement |
 | [vita3k-as-a-target.md](vita3k-as-a-target.md) | What the emulator can and cannot be trusted for |
-| [../VERSIONS.md](../VERSIONS.md) | Pinned commits and why 3.44.8 |
+| [versions.md](versions.md) | Pinned commits and why 3.44.8 |
 | [../tools/engine-tree.sh](../tools/engine-tree.sh) | `--apply` puts the fork's branch into the engine tree; `--verify` checks the port is in place, in the tree and in the five dependency forks |
 | [platform-identity-options.md](platform-identity-options.md) | Which OS the Vita should claim to be: all six candidates priced, linux vs android measured, and why a real `vita` platform stays rejected |
 | [flutter-upgrade-cost.md](flutter-upgrade-cost.md) | How to price a Flutter/Dart upgrade before committing to it, and the priced answer for 3.47.0 |
@@ -58,7 +58,7 @@ and the framework, drawing through the Vita's GPU. The receiver in
 monospace log view — and it is what installs everything else.
 
 The renderer is Skia on GLES2 through `fvita_gles2`, this repository's own
-layer in `engine/gles2/`, onto `sceGxm` ([ADR-0019](adr/0019-gles2-over-gxm-written-here.md);
+layer in `gles2/`, onto `sceGxm` ([ADR-0019](adr/0019-gles2-over-gxm-written-here.md);
 vitaGL carried it from 2026-08-22 to 2026-09-14,
 [ADR-0014](adr/0014-gpu-backend-via-vitagl.md)). Route transitions hold 60 fps
 at a median 16.67 ms. Where the GPU wins it wins by 6-18x over the software

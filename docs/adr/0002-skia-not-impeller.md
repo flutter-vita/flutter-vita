@@ -1,7 +1,7 @@
 # ADR-0002: Skia renderer on a frozen engine, not Impeller
 
 **Status:** Accepted
-**Date:** 2026-08-06 (back-filled from `Flutter Vita Plan.md` §1)
+**Date:** 2026-08-06 (back-filled from `docs/plan.md` §1)
 
 ## Context
 
@@ -23,7 +23,7 @@ changes are commits on a fork of each repository that owns them. See
 [ADR-0021](0021-the-port-is-commits-not-patches.md).
 
 **Amended 2026-08-06 — the pin is 3.44.8, not "~3.24–3.27".** See
-[VERSIONS.md](../../VERSIONS.md) for the commits and the full reasoning. In
+[docs/versions.md](../versions.md) for the commits and the full reasoning. In
 short, the premise that a recent engine would lack Skia turned out to be wrong:
 
 - `kSoftware` / `FlutterSoftwareRendererConfig` are present in `embedder.h` at HEAD.

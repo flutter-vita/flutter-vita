@@ -2,7 +2,7 @@
 
 ## `gallery/` — committed
 
-Everything this port is measured with, on one panel, five tabs:
+What this port looks like and what it can do, on one panel:
 
 - **Panel**: what the port *looks like*, judged by eye. A widget either looks
   right or it does not, and no app can assess that about itself.

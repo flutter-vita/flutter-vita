@@ -22,7 +22,7 @@
 #
 #   PAF must be resident before the promoter loads and must stay resident.
 #   Unloading it kills the console about ten seconds later. See
-#   experiments/promoter.
+#   experiments/promoter, in git history at c91294a.
 #
 #   The staging directory is ux0:data/pkg and nowhere else. PromotePkgWithRif
 #   returns 0x8010111C from anywhere else.

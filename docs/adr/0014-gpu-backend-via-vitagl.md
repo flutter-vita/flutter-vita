@@ -1040,4 +1040,4 @@ which path an installed app actually took.
 - [ADR-0004](0004-static-single-binary.md) — why vitaGL being a static archive matters
 - [ADR-0006](0006-performance-bar-set-from-measurement.md) — the bar this is measured against
 - [ADR-0007](0007-enable-partial-repaint-in-software-path.md) — made the blit small, and thereby obsoleted the NEON-blit recommendation
-- [test apps-localsend-2026-08-19.md](../results/test apps-localsend-2026-08-19.md) — the raster attribution in full
+- [test apps-localsend-2026-08-19.md](../results/corpus-localsend-2026-08-19.md) — the raster attribution in full

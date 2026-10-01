@@ -15,7 +15,7 @@ real risk; the rest is tidying. I checked each claim below against the tree on
 | **Size** | 240 tracked files, 17 MB of history. The 12 GB engine checkout stays gitignored; it is the fork's branch, so a clone rebuilds it. |
 | **Reproducible vendoring** | Every change this port makes is a commit in the repository that owns the file: 16 on the engine fork's branch, and one fork for each of the five dependencies that change, named in `DEPS`. There are no patch files. `tools/engine-tree.sh --verify` checks all six. |
 | **Reproducible test apps** | Third-party apps stay out of the tree. `apps/test-apps/manifest.txt` pins each one to a URL and a commit SHA, so anyone can regression-test a bug found in it. |
-| **Third-party assets** | `assets/fonts/` carries Noto Emoji with its OFL and a README recording where it came from. |
+| **Third-party assets** | `templates/fonts/` carries Roboto and Roboto Mono with their OFL and a README recording where they came from. |
 
 ## What is missing
 

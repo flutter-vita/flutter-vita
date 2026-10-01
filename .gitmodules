@@ -1,5 +1,5 @@
-[submodule "engine/embedder"]
-	path = engine/embedder
+[submodule "embedder"]
+	path = embedder
 	url = https://github.com/flutter-vita/flutter-vita-embedder.git
 [submodule "packages"]
 	path = packages

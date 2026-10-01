@@ -1,7 +1,7 @@
 # ADR-0001: AOT-only; JIT is permanently out of scope
 
 **Status:** Accepted (rationale corrected 2026-08-06 — see *Correction* below)
-**Date:** 2026-08-06 (back-filled from `Flutter Vita Plan.md` §1)
+**Date:** 2026-08-06 (back-filled from `docs/plan.md` §1)
 
 ## Correction to the original premise
 

@@ -1,7 +1,7 @@
 # ADR-0003: Software raster first, vitaGL/GLES2 second
 
 **Status:** Accepted
-**Date:** 2026-08-06 (back-filled from `Flutter Vita Plan.md` §1)
+**Date:** 2026-08-06 (back-filled from `docs/plan.md` §1)
 
 ## Context
 

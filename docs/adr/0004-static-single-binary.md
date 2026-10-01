@@ -1,7 +1,7 @@
 # ADR-0004: Static linking into a single ELF
 
 **Status:** Accepted
-**Date:** 2026-08-06 (back-filled from `Flutter Vita Plan.md` §1)
+**Date:** 2026-08-06 (back-filled from `docs/plan.md` §1)
 
 ## Context
 

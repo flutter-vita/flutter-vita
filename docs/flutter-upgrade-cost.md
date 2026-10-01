@@ -1,6 +1,6 @@
 # What upgrading Flutter costs, and what it buys
 
-The pin is [VERSIONS.md](../VERSIONS.md) and moving it is an explicit project,
+The pin is [docs/versions.md](versions.md) and moving it is an explicit project,
 never routine maintenance ([ADR-0002](adr/0002-skia-not-impeller.md)). This
 document is what makes that decision cheap: a **procedure for pricing an
 upgrade before committing to it**, and the priced answer for the upgrade

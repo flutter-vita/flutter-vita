@@ -956,7 +956,7 @@ Three changes, and they have to go together:
    default families.
 3. The `.vpk` ships `Roboto-Regular.ttf` into `app0:/fonts`.
 
-`app0:/fonts` is deliberately **not** `app0:/flutter_assets/fonts`. That
+`app0:/fonts` is deliberately **not** `app0:/flutter_templates/fonts`. That
 directory belongs to `flutter build bundle` and holds icon fonts meant to be
 looked up by asset key. Scanning it would offer MaterialIcons as a candidate for
 text fallback, and text rendered in icons is a failure that looks like a font

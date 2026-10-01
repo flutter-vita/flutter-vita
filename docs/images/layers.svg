@@ -70,7 +70,7 @@
 <text class="name" x="62" y="370">GLES2 layer (fvita_gles2)</text>
 <text class="desc" x="62" y="389">OpenGL ES 2.0 on top of sceGxm. Translates GLSL shaders to Cg.</text>
 <rect class="p-ours" x="609" y="363" width="217" height="24" rx="12"/>
-<text class="tag t-ours" x="717.5" y="379" text-anchor="middle">flutter-vita · engine/gles2</text>
+<text class="tag t-ours" x="717.5" y="379" text-anchor="middle">flutter-vita · gles2</text>
 <line class="arrow" x1="100" y1="405" x2="100" y2="420"/>
 <path class="head" d="M96,419 L104,419 L100,425 Z"/>
 <text class="link" x="114" y="419.0">sceGxm commands, Cg through libshacccg</text>

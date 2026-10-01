@@ -105,7 +105,7 @@ Vita3K run as a finding to be recorded, not log noise. Grep for it in CI.
   this bites.
 - **GXM specifics.** Vita3K translates GXM to host GL/Vulkan, so framebuffer
   format, stride, and alignment quirks will not reproduce — including the
-  possible zero-copy `memcpy` blit noted in [VERSIONS.md](../VERSIONS.md).
+  possible zero-copy `memcpy` blit noted in [docs/versions.md](versions.md).
 
 ---
 

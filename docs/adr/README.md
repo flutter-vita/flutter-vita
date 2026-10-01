@@ -101,7 +101,7 @@ Nothing here needs a rebuild to decide.
 - **Engine/framework version coupling is unenforced.** `dart:ui` and the engine
   are one source tree cut in half; a mismatch fails at runtime, not build time.
   `package-engine.sh` writes the pins into `MANIFEST.txt` and **nothing reads
-  it** — both entry points instead read `VERSIONS.md` from the repo working
+  it** — both entry points instead read `docs/versions.md` from the repo working
   tree ([build-vita-app.sh:21](../../tools/build-vita-app.sh:21),
   [flutter_vita.dart:352](../../cli/bin/flutter_vita.dart:352)),
   which a downstream user does not have. Proposal: `MANIFEST.txt` becomes the

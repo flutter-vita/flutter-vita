@@ -9,7 +9,7 @@
 #   --livearea DIR    icon0.png, bg0.png, startup.png, template.xml; default
 #                     the template's set (docs/release-app.md)
 #   --engine DIR      unpacked flutter-engine-vita-<version>/
-#   --embedder DIR    the Vita embedder source; default engine/embedder,
+#   --embedder DIR    the Vita embedder source; default embedder,
 #                     the flutter-vita-embedder submodule
 #   --flutter DIR     Flutter SDK; default FLUTTER_ROOT, else the pinned SDK
 #                     tools/flutter-sdk.sh downloads to ~/.flutter-vita/flutter/
@@ -51,7 +51,7 @@ TITLE_ID=""
 APP_NAME=""
 ENGINE_DIR="${FLUTTER_VITA_ENGINE:-$ROOT/out/artifacts/flutter-engine-vita-$FLUTTER_PIN}"
 # The embedder, compiled into every app: the flutter-vita-embedder submodule.
-EMBEDDER_DIR="${FLUTTER_VITA_EMBEDDER:-$ROOT/engine/embedder}"
+EMBEDDER_DIR="${FLUTTER_VITA_EMBEDDER:-$ROOT/embedder}"
 FLUTTER_DIR=""
 OUT_DIR=""
 # Flavors are the norm outside sample apps: the entry point is lib/main_prod.dart
@@ -105,7 +105,7 @@ while [ $# -gt 0 ]; do
     --release)  RELEASE="ON"; NO_SUPERVISOR="ON"; shift ;;
     --debug)    RELEASE="OFF"; shift ;;
     --define) EXTRA_DEFINES="${EXTRA_DEFINES:+$EXTRA_DEFINES;}$2"; shift 2 ;;
-    # For measurement builds. experiments/gl-usage needs
+    # For measurement builds. experiments/gl-usage (c91294a) needed
     # -Wl,--wrap=vglGetProcAddress and there is no other way in.
     --link-option) EXTRA_LINK_OPTIONS="${EXTRA_LINK_OPTIONS:+$EXTRA_LINK_OPTIONS;}$2"; shift 2 ;;
     -h|--help)  sed -n '2,20p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
@@ -496,7 +496,7 @@ cmake -S "${FLUTTER_VITA_TEMPLATE:-$ROOT/templates/vita-app}" -B "$OUT_DIR/cmake
   -DEXTRA_LINK_OPTIONS="$EXTRA_LINK_OPTIONS" \
   -DHARDWARE_CHECKS="$HARDWARE_CHECKS" \
   -DVITA_PLUGINS="$VITA_PLUGINS" \
-  -DGLES2_DIR="$ROOT/engine/gles2" \
+  -DGLES2_DIR="$ROOT/gles2" \
   -DEMBEDDER_DIR="$EMBEDDER_DIR" \
   ${LIVEAREA_DIR:+-DLIVEAREA_DIR="$LIVEAREA_DIR"} \
   -DTOOLS_DIR="$ROOT/tools" >/dev/null

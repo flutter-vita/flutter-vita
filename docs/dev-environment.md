@@ -45,7 +45,7 @@ stat -f%Sm out/vita_release/obj/flutter/shell/platform/embedder/embedder.embedde
 
 (`tools/package-engine.sh` refuses a build with pending steps for the same
 reason.) The embedder itself is not an engine object any more: it is the
-`engine/embedder` submodule, compiled into every app, so an embedder change
+`embedder` submodule, compiled into every app, so an embedder change
 needs no engine build at all.
 
 Three things worth knowing, learned the hard way:

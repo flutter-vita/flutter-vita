@@ -3,7 +3,7 @@
 How far the GLES2-over-sceGxm layer of ADR-0019 is from complete. It has been
 the only GL in the tree since 2026-09-14 (M5). The
 blocks marked as generated are rewritten by `tools/gles2-progress.py` from the
-source and `engine/gles2/surface.txt`; the area table's `done` column is set by hand
+source and `gles2/surface.txt`; the area table's `done` column is set by hand
 and every change to it has to name its evidence in the last column.
 
 <!-- progress:begin -->
@@ -11,7 +11,7 @@ and every change to it has to name its evidence in the last column.
 
 | entry points | count |
 |---|---|
-| bound by Skia (`engine/gles2/surface.txt`) | 108 |
+| bound by Skia (`gles2/surface.txt`) | 108 |
 | called in some run, implemented | 60 of 60 |
 | never called, implemented anyway | 47 of 48 |
 | recording stubs | 1 |

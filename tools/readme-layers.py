@@ -21,7 +21,7 @@ LAYERS = [
     ("stock", "Flutter framework", "Widgets, layout, animation. Compiled with your app to ARMv7 code on your Mac.", "Flutter 3.44.8, unchanged"),
     ("fork", "Flutter engine", "Skia draws each frame. The Dart runtime runs your compiled code.", "flutter-vita/flutter · prebuilt"),
     ("ours", "Vita embedder", "Starts the engine, sends touch and buttons in, puts each frame on the screen.", "flutter-vita-embedder"),
-    ("ours", "GLES2 layer (fvita_gles2)", "OpenGL ES 2.0 on top of sceGxm. Translates GLSL shaders to Cg.", "flutter-vita · engine/gles2"),
+    ("ours", "GLES2 layer (fvita_gles2)", "OpenGL ES 2.0 on top of sceGxm. Translates GLSL shaders to Cg.", "flutter-vita · gles2"),
     ("sony", "sceGxm and libshacccg", "Sony's GPU interface and shader compiler, on the console.", "Sony · on the console"),
     ("sony", "PowerVR SGX543MP4+", "The GPU of the PS Vita.", "hardware"),
 ]

@@ -3,14 +3,11 @@ build/
 *.dill
 *.snapshot
 
-# Phase 0.5 experiment outputs — regenerate with the scripts, don't commit binaries
-experiments/**/out/
-
-# Vendored third-party trees (Phase 2). Pinned in VERSIONS.md, patched via engine/patches/.
-# These are large; they are checked out by tooling, not committed.
+# The engine checkout. Pinned in versions.json; the port is commits on the
+# forks it names (docs/engine.md). Large, and checked out by tooling.
 third_party/
 
-# Everything the tools write: packaged engines, crash dumps, benchmark runs,
+# Everything the tools write: packaged engines, crash dumps, suite results,
 # shader probes, screenshots, and the per-console record of what has already
 # been pushed. All of it is regenerated, and most of it describes one console.
 out/
@@ -22,19 +19,6 @@ eboot.bin
 *.vpk
 
 .DS_Store
-
-# CMake build trees inside experiments
-experiments/**/build/
-
-# Link-check outputs
-experiments/p1-link-check/out/
-experiments/m1-snapshot/out/
-experiments/m1-vpk/build/
-experiments/m1-vpk/out/
-
-
-
-
 
 receiver/app/lib/build_info.dart
 

@@ -30,7 +30,7 @@ build configuration can be studied from the 486 MB shallow checkout, for free.
 
 ## The foreign-toolchain risk is lower than the plan assumed
 
-`Flutter Vita Plan.md` rates "engine GN build resists a foreign toolchain" as
+`docs/plan.md` rates "engine GN build resists a foreign toolchain" as
 **High**, and the roadmap repeated it. Reading the config, it looks
 **moderate** — GN is *designed* for this:
 

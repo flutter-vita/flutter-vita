@@ -102,7 +102,7 @@ whether the fix below also fixes that is untested.
 
 ### The cause
 
-[experiments/t1-timers](../../experiments/t1-timers/README.md) measured the primitives
+[experiments/t1-timers](https://github.com/flutter-vita/flutter-vita/blob/c91294a/experiments/t1-timers/README.md) measured the primitives
 directly. Every timeout on this console is exact -- `sceKernelDelayThread`,
 `poll()` with and without a socket in the array, and `sceNetEpollWait` all
 honour 33 ms to within a tenth of a millisecond, and the epoll instance

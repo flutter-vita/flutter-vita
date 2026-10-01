@@ -3,7 +3,7 @@
 **2026-09-24.** The depth and stencil work of 2026-09-23 ran on hardware for
 the first time. The surfaces, the renderbuffers and the clears were correct on
 the first run. Culling was not, for three reasons, and all three are now
-closed. `engine/gles2/test` M6 passes 58 of 58 on both targets.
+closed. `gles2/test` M6 passes 58 of 58 on both targets.
 
 ## The three findings
 

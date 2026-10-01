@@ -75,7 +75,7 @@ compiles it into the same `eboot.bin` ([Available plugins](plugins/)).
 - The console needs Sony's shader compiler, `ur0:data/libshacccg.suprx`.
   [Console setup](docs/configure-console.md) says how to check for it.
 - Flutter 3.44.8, pinned. The engine is prebuilt for this version and the
-  framework must match it ([VERSIONS.md](VERSIONS.md)). The tool downloads it
+  framework must match it ([docs/versions.md](docs/versions.md)). The tool downloads it
   for itself.
 - The Vita3K emulator is not a supported target
   ([why](docs/vita3k-as-a-target.md)).
@@ -119,11 +119,25 @@ See [Commands](docs/commands.md) for the full list, and
 | --- | --- | --- |
 | [flutter-vita](https://github.com/flutter-vita/flutter-vita) (this one) | The `flutter-vita` command, the app template, the receiver, the GLES2 layer, the Vita implementations of twelve plugins (`plugins/`), the samples and the docs. | This is the part you use. You build, install, run and debug your app from here. |
 | [flutter](https://github.com/flutter-vita/flutter) | Our fork of Flutter, branch `vita-3.44.8`. The engine's Vita changes are commits on the `3.44.8` tag. Its releases carry the prebuilt engine; [`versions.json`](versions.json) names the one this tool uses. | The engine does not run on the console without these changes. The prebuilt engine saves you a 12 GB checkout and a long build. |
-| [flutter-vita-embedder](https://github.com/flutter-vita/flutter-vita-embedder) | The embedder, the `main()` of every app. It starts the engine, reads touch and buttons, and puts each frame on the screen. A submodule here at `engine/embedder`. | Each Flutter platform has an embedder, and this is the one for the Vita. Every app build compiles it from source, so a fix in it needs no new engine. |
+| [flutter-vita-embedder](https://github.com/flutter-vita/flutter-vita-embedder) | The embedder, the `main()` of every app. It starts the engine, reads touch and buttons, and puts each frame on the screen. A submodule here at `embedder`. | Each Flutter platform has an embedder, and this is the one for the Vita. Every app build compiles it from source, so a fix in it needs no new engine. |
 | [flutter-vita-packages](https://github.com/flutter-vita/flutter-vita-packages) | Our pub packages: `flutter_vita`, `vita_debug_strip`, `vita_file_browser`. A submodule here at `packages/`. | Your app adds them to `pubspec.yaml` like any other package. `flutter_vita` sets up the app for the console with one call in `main()`. |
+| [flutter-vita-bench](https://github.com/flutter-vita/flutter-vita-bench) | The benchmark: a Flutter app with 36 scenes, and a script that compares each run with a baseline. Not a submodule. | When you change the engine, the GLES2 layer or the embedder, it tells you which scenes got slower. It builds with `flutter-vita` like any other app. |
 
 Clone with `--recurse-submodules`, or run `git submodule update --init`
-after a plain clone.
+after a plain clone. The folders of this repository:
+
+```text
+cli/         the flutter-vita command
+embedder/    submodule: flutter-vita-embedder
+packages/    submodule: flutter-vita-packages
+gles2/       the GLES2 layer (fvita_gles2)
+plugins/     the Vita implementations of twelve plugins
+receiver/    the receiver, FVTA00001
+templates/   the app template, and the fonts every app gets
+samples/     the gallery, and the list of test apps
+tools/       the scripts that the command runs
+docs/        guides, decisions (ADRs) and records
+```
 
 ### The changes this port makes to other projects
 

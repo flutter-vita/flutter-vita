@@ -173,7 +173,7 @@ Bisect by removing, not by counting. In rough order of cost:
 1. **Pure Dart, no Flutter.** An app that runs the probe loop and journals, with
    no `runApp`, no widgets, no rendering. Dies → the VM or `dart:io`. Survives →
    the engine. This single result halves the search space and the
-   [M1 experiment](../experiments/m1-snapshot/) already proves pure-Dart AOT runs here.
+   [M1 experiment](https://github.com/flutter-vita/flutter-vita/blob/c91294a/experiments/m1-snapshot) already proves pure-Dart AOT runs here.
 2. **Flutter with a trivial tree.** `runApp(Container())` plus the journal loop.
    Isolates the widget/render layers from the VM.
 3. **Engine with no Dart.** The embedder rendering a fixed buffer in a loop, no
@@ -268,7 +268,7 @@ the receiver installed on the device predates `rm`.
 
 Nothing we control can add a title to that database: `ScePromoterUtil` refuses
 to load with `MODULEMGR_NO_LIB` (`0x8002D003`), the same refusal
-[the tooling notes](../experiments/vita-tooling/README.md) recorded — and *not*
+[the tooling notes](https://github.com/flutter-vita/flutter-vita/blob/c91294a/experiments/vita-tooling/README.md) recorded — and *not*
 because of the safe-self mistake, since this was measured under UNSAFE.
 
 **So the background app is not reachable from a side-loaded build**, and no

@@ -217,7 +217,7 @@ No DevTools, no profiler, no timeline, no on-device debugger — all disabled or
 impossible. What exists instead:
 
 - **Crash dumps.** The Vita writes `psp2core-*.psp2dmp` to `ux0:data/` on every
-  fault. [`experiments/m1-vpk/analyse-crash.sh`](../experiments/m1-vpk/analyse-crash.sh)
+  fault. [`experiments/m1-vpk/analyse-crash.sh`](https://github.com/flutter-vita/flutter-vita/blob/c91294a/experiments/m1-vpk/analyse-crash.sh)
   symbolicates one against `build/flutter_vita_m1` (the ELF, **not** eboot.bin).
   This has been the single most effective tool — it found the BSS problem in one
   run after four rounds of trace-point bisection got nowhere. Needs
@@ -450,7 +450,7 @@ deterministic, and it will be far worse to debug under a Flutter heap.
   [embedder-startup.md](embedder-startup.md).
 - **Threading substrate and iteration cost** were never grilled. Both are logged
   in [the ADR index](adr/README.md).
-- `Flutter Vita Plan.md` contradicts the docs in seven places (pin version, the
+- `docs/plan.md` contradicts the docs in seven places (pin version, the
   "~2 MP" arithmetic, JIT needing kernel plugins, 60 fps, pthread absence). Left
   as the historical record; either reconcile it or mark it superseded.
 - `runtime/docs/qemu.md` — a `linux-arm` build under QEMU would allow a real

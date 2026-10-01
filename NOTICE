@@ -34,7 +34,7 @@ Until that date every `eboot.bin` this toolchain produced linked vitaGL and
 vitaShaRK, both LGPL-3.0-or-later, and the paragraph that stood here told
 whoever shipped a `.vpk` what section 4 of the LGPL asked of them. ADR-0018
 found that obligation landing on every developer, ADR-0019 decided to write
-the GLES2 layer here instead, and `engine/gles2/` is that layer: BSD-3, this
+the GLES2 layer here instead, and `gles2/` is that layer: BSD-3, this
 project's own, over `sceGxm` and Sony's `libshacccg` on the console. No
 vitaGL, no vitaShaRK, no taiHEN in the link. The history is in the two ADRs
 and in git; nothing about it applies to a `.vpk` built from this tree.
@@ -96,10 +96,10 @@ fork of the project it changes, under the licence that fork already carries
 | Roboto (`Roboto-Regular.ttf`) | SIL Open Font License 1.1 |
 | Roboto Mono (`RobotoMono-Regular.ttf`) | SIL Open Font License 1.1 |
 | VitaSDK headers and stub libraries | see the VitaSDK distribution; not redistributed here |
-| `engine/gles2/` (fvita_gles2) | BSD-3-Clause, this project's ([LICENSE](LICENSE)) |
+| `gles2/` (fvita_gles2) | BSD-3-Clause, this project's ([LICENSE](LICENSE)) |
 
 This project vendors no third-party source. `third_party/` is checked out by
 tooling and is not committed; the exact revisions are pinned in
-[VERSIONS.md](VERSIONS.md) and the modifications are in [engine/patches/](engine/patches/).
-The patch files themselves are committed, and the table above says what each
-series is licensed under.
+[docs/versions.md](docs/versions.md). The modifications are commits on a fork
+of each project, listed in [docs/engine.md](docs/engine.md), and each fork
+keeps its upstream's license.

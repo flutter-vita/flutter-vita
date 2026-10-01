@@ -195,15 +195,15 @@ cp "$ENGINE_SRC/flutter/third_party/icu/flutter/icudtl.dat" "$STAGE/data/"
 # asset. That is why LICENSE.engine has no mention of Roboto: upstream's
 # licence tooling excludes fixtures, correctly, because upstream does not ship
 # them. This port does ship it, so it is tracked here with its licence.
-cp "$ROOT/assets/fonts/Roboto-Regular.ttf" "$STAGE/data/"
+cp "$ROOT/templates/fonts/Roboto-Regular.ttf" "$STAGE/data/"
 # Roboto Mono, so that fontFamily: 'monospace' has something to resolve to.
 # Without it the alias table in platform_vita.cc names a family nobody shipped
 # and every fixed-pitch request falls back to Roboto, which is proportional.
-cp "$ROOT/assets/fonts/RobotoMono-Regular.ttf" "$STAGE/data/"
+cp "$ROOT/templates/fonts/RobotoMono-Regular.ttf" "$STAGE/data/"
 # The OFL requires the notice and the licence to travel with every copy of the
 # font. Both fonts above are under it and neither carried it until 2026-09-09,
 # so every vpk built before then was out of compliance.
-cp "$ROOT/assets/fonts/OFL.txt" "$STAGE/data/"
+cp "$ROOT/templates/fonts/OFL.txt" "$STAGE/data/"
 
 # No emoji font ships. It used to, and it was 1.9 MB in every vpk for one test
 # app. Emoji coverage is an application's choice, not a platform guarantee:
