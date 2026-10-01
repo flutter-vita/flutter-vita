@@ -471,7 +471,6 @@ static void rotate_app_log(const char* next_titleid) {
   snprintf(dest, sizeof dest, LOG_DIR "/%04d-%s.log", seq, prev);
   sceIoRemove(dest);
   if (sceIoRename(DATA_DIR "/app.log", dest) < 0) return;
-  note("kept log %04d-%s.log", seq, prev);
 
   seq++;
   snprintf(idx, sizeof idx, "%d", seq);
@@ -706,7 +705,7 @@ static void cmd_launch(int sock) {
 // cannot be linked and the load is refused with MODULEMGR_NO_LIB -- which this
 // receiver, the C one before it, and three ADRs all read as "the promoter is
 // unavailable on this console". It is not; the error was naming its own cause.
-// See experiments/promoter.
+// See experiments/promoter, in git history at c91294a.
 //
 // The argument block is not optional: plain sceSysmoduleLoadModuleInternal(PAF)
 // faults the process. These values are VitaShell's verbatim -- 0x180000 is the
@@ -749,7 +748,7 @@ static int g_pu_up = 0;
 // the wrong shape for an investigation: every run tested five things at once
 // and the console went down about ten seconds after each.
 //
-// What the dumps say (experiments/promoter): PAF starts a thread of its own,
+// What the dumps say (experiments/promoter, c91294a): PAF starts a thread of its own,
 // `ScePaf EntryCall`, and that thread takes a data abort six bytes into the PAF
 // module while our threads sit idle. Every run that died had unmapped PAF
 // first. Filling in the cell that is still blank -- kept resident and survived
@@ -824,7 +823,6 @@ static int promoter_up(int sock) {
     return 0;
   }
   g_pu_up = 1;
-  note("promoter up");
   return 1;
 }
 
@@ -1633,7 +1631,8 @@ static int watcher(SceSize args, void* argp) {
       if (strcmp(last, info.ip_address) != 0) {
         snprintf(last, sizeof last, "%s", info.ip_address);
         snprintf(g_ip, sizeof g_ip, "%s", info.ip_address);
-        note("network up: %s:%d", g_ip, RECEIVER_PORT);
+        // No DEPLOY line: the header shows the address, and the status
+        // below says when the network goes.
         // Only from a state the address invalidates. A transfer in flight is
         // still in flight; saying "Waiting" over it would be a lie the panel
         // has no way to take back.
@@ -1693,17 +1692,10 @@ __attribute__((constructor)) static void receiver_register(void) {
   // this, opening the receiver after a crash destroys the log of the crash.
   // Measured on 2026-08-28 chasing keklist's emoji grid.
 
-  // Read before the rotation, which overwrites it. logs/last names whatever ran
-  // before this boot, so it is how the receiver knows an app has ended: there is
-  // no notification, only the fact of being alive again.
-  char prev[24] = {0};
-  read_small(LOG_DIR "/last", prev, sizeof prev);
-
   rotate_app_log("receiver");
+  // The DEPLOY tab starts empty: no line for the receiver starting, none for
+  // the app it came back from, none for the log it archived. Until 2026-10-01
+  // it opened with four such lines, and none of them was a thing that was done.
   start_deploy_log();
-  note("---- receiver %s up ----", SELF_TITLEID);
-  if (prev[0] != '\0' && strcmp(prev, "receiver") != 0) {
-    note("- left %s", prev);
-  }
   publish();
 }
