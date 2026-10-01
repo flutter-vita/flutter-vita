@@ -139,9 +139,12 @@ Set<String> onlyScenes() {
 }
 
 class SceneResult {
-  SceneResult(this.name, this.stresses, this.stats) : error = null;
+  SceneResult(this.name, this.stresses, this.stats,
+      [this.perRepeat = const <SceneStats>[]])
+      : error = null;
   SceneResult.failed(this.name, this.stresses, this.error)
-      : stats = const SceneStats(
+      : perRepeat = const <SceneStats>[],
+        stats = const SceneStats(
           frames: 0,
           spanMs: 0,
           worstMs: 0,
@@ -158,6 +161,14 @@ class SceneResult {
   final String stresses;
   final SceneStats stats;
 
+  /// The same scene, measured once per repetition.
+  ///
+  /// The report needs the spread between these to know what it can resolve.
+  /// A scene whose own repetitions disagree by more than the gate band cannot
+  /// be graded against a baseline, and saying so is the point of recording
+  /// them (`docs/results/gles2-depth-stencil-on-hardware-2026-09-24.md`).
+  final List<SceneStats> perRepeat;
+
   /// Set when the scene threw. A scene that did not run is not a scene that
   /// passed, and the report has to be able to tell those apart.
   final String? error;
@@ -167,9 +178,30 @@ class SceneResult {
         // Marked as a label so nobody reads it as something that was measured.
         'stresses_label': stresses,
         ...stats.toJson(),
+        if (perRepeat.isNotEmpty)
+          'repeats': <Map<String, Object>>[
+            for (final r in perRepeat)
+              <String, Object>{
+                'frames': r.frames,
+                'span_ms': SceneStats.round(r.spanMs),
+                'median_ms': SceneStats.round(r.medianMs),
+                'p95_ms': SceneStats.round(r.p95Ms),
+                'worst_ms': SceneStats.round(r.worstMs),
+                'stall_ms': SceneStats.round(r.stallMs),
+                'build_ms': SceneStats.round(r.buildMs),
+                'raster_ms': SceneStats.round(r.rasterMs),
+              },
+          ],
         'passed': error == null && stats.passed,
         if (error != null) 'error': error!,
       };
+}
+
+/// A scene's whole span, and each repetition of it on its own.
+class _Measured {
+  const _Measured(this.whole, this.perRepeat);
+  final SceneStats whole;
+  final List<SceneStats> perRepeat;
 }
 
 /// Runs every scene once and reports as it goes.
@@ -214,14 +246,28 @@ class BenchRunner {
   /// It covers the inputs a person edits, not the code around them. A change
   /// to the recorder that moves the numbers without touching a scene is not
   /// caught here, and the engine stamp is what covers that.
+  /// How the suite measures, apart from what it measures.
+  ///
+  /// Bumped when a change to the runner moves the numbers without touching a
+  /// scene. v2 (2026-09-24): every repetition is measured on its own, windows
+  /// are cut in produced-frame indices rather than in recorder indices, and an
+  /// animated scene runs one untimed round first.
+  static const String _measurementVersion = 'v2';
+
   String get methodId {
     final parts = <String>[
-      for (final x in animatedScenes) 'a:${x.name}:${x.repeats}:${x.duration.inMilliseconds}',
-      for (final x in motionScenes) 'm:${x.name}:${x.repeats}:${x.duration.inMilliseconds}',
+      _measurementVersion,
+      for (final x in animatedScenes)
+        'a:${x.name}:${x.repeats}:${x.duration.inMilliseconds}',
+      for (final x in motionScenes)
+        'm:${x.name}:${x.repeats}:${x.duration.inMilliseconds}',
       for (final x in drivenScenes) 'd:${x.name}:${x.repeats}',
-      for (final x in routeScenes) 'r:${x.name}:${x.repeats}:${x.settle.inMilliseconds}',
-      for (final x in transitionScenes) 't:${x.name}:${x.repeats}:${x.settle.inMilliseconds}',
-      for (final x in modalScenes) 'o:${x.name}:${x.repeats}:${x.settle.inMilliseconds}',
+      for (final x in routeScenes)
+        'r:${x.name}:${x.repeats}:${x.settle.inMilliseconds}',
+      for (final x in transitionScenes)
+        't:${x.name}:${x.repeats}:${x.settle.inMilliseconds}',
+      for (final x in modalScenes)
+        'o:${x.name}:${x.repeats}:${x.settle.inMilliseconds}',
     ]..sort();
     // FNV-1a, 32 bit. Not a security hash: it has to be stable across builds
     // and readable in a file name, and nothing else.
@@ -299,10 +345,12 @@ class BenchRunner {
     _writeAtomic(kPartialPath, jsonEncode(all));
   }
 
-  /// Frames forced after each scene so the batched timings for its final
-  /// frames arrive. Dropped from the window afterwards -- see
-  /// FrameRecorder.take.
-  static const int _flushFrames = 5;
+  /// Ceiling on the frames driven after a repetition so its timings arrive.
+  ///
+  /// A ceiling, not a count: the flush stops as soon as the entries are in.
+  /// The old figure was a flat five, on the belief that the engine was "a
+  /// frame or two" behind. It is about thirty here.
+  static const int _maxFlushFrames = 60;
 
   /// Quiet wall-clock time before a scene is measured.
   ///
@@ -316,10 +364,46 @@ class BenchRunner {
   static Future<void> _quiet() =>
       Future<void>.delayed(const Duration(milliseconds: 500));
 
-  Future<void> _flush() async {
-    for (var i = 0; i < _flushFrames; i++) {
+  /// Drives frames until every frame produced before [upTo] has reported.
+  Future<void> _flush(int upTo) async {
+    for (var i = 0; i < _maxFlushFrames && !recorder.settled(upTo); i++) {
       await SchedulerBinding.instance.endOfFrame;
     }
+  }
+
+  /// Runs [body] [repeats] times and measures each repetition on its own as
+  /// well as all of them together.
+  ///
+  /// Every repetition is flushed, the same way a scene is. The engine
+  /// delivers frame timings in batches, so at the moment a repetition returns
+  /// the recorder is still tens of frames behind it. The first version of
+  /// this method marked a boundary there and assumed the lag was "a frame or
+  /// two". It is not: the console gave repetition 1 of `fill_lerp` 25 frames
+  /// where 2 and 3 got 60 each, and gave the last repetition of `alpha_probe`
+  /// 121. Every one of those frames belonged to the repetition before it.
+  ///
+  /// Both boundaries are read off FrameRecorder.produced, which counts frames
+  /// as the app makes them rather than as the engine reports them, so a
+  /// repetition holds exactly the frames its body drew. The flush that follows
+  /// only waits for those entries to arrive; its own frames are produced after
+  /// the boundary and land in no repetition. The scene's own numbers come from
+  /// the repetitions joined back together rather than from one window over the
+  /// lot, which would count the flushes.
+  Future<_Measured> _repeat(int repeats, Future<void> Function() body) async {
+    final ranges = <List<int>>[];
+    for (var i = 0; i < repeats; i++) {
+      final from = recorder.produced;
+      await body();
+      final to = recorder.produced;
+      await _flush(to);
+      ranges.add(<int>[from, to]);
+    }
+    return _Measured(
+      recorder.takeRanges(ranges, keep: repeats),
+      <SceneStats>[
+        for (final r in ranges) recorder.takeRange(r[0], r[1], keep: 1),
+      ],
+    );
   }
 
   Future<void> runAnimated(AnimatedScene scene) async {
@@ -337,20 +421,29 @@ class BenchRunner {
     await SchedulerBinding.instance.endOfFrame;
     await SchedulerBinding.instance.endOfFrame;
 
-    final mark = recorder.mark();
-    for (var i = 0; i < scene.repeats; i++) {
-      // Forward then reverse, rather than forward then jump back to zero. The
-      // jump is a repaint belonging to nothing, and it would land in the
-      // window as a frame the scene never really produces.
+    // Forward then reverse, rather than forward then jump back to zero. The
+    // jump is a repaint belonging to nothing, and it would land in the window
+    // as a frame the scene never really produces.
+    Future<void> round() async {
       await controller.forward();
       await controller.reverse();
     }
-    await _flush();
-    results.add(SceneResult(
-      scene.name,
-      scene.stresses.label,
-      recorder.take(mark, dropTrailing: _flushFrames, keep: scene.repeats),
-    ));
+
+    // One untimed round first, the same one a route scene and a driven scene
+    // get. Two settle frames are not enough: the animation touches shaders,
+    // glyph atlases and picture rasters that the settled frame never asks
+    // for. Repetition 1 of `alpha_probe` rastered in 12.9 ms against 1.4 for
+    // repetitions 2 and 3, and `transform_rotate` in 18.7 against 10.9, all
+    // of it first use. Charged to repetition 1 it is not noise, it is a
+    // second measurement of a different thing, and it widened the spread
+    // enough to put honest scenes past the gate's grading limit.
+    await round();
+    await _flush(recorder.produced);
+    await _quiet();
+
+    final m = await _repeat(scene.repeats, round);
+    results.add(
+        SceneResult(scene.name, scene.stresses.label, m.whole, m.perRepeat));
 
     setStage(null);
     controller.dispose();
@@ -418,18 +511,20 @@ class BenchRunner {
     // One untimed round first: the very first build of a route pays for
     // everything it touches for the first time, and charging that to the
     // transition measures the app's cold start rather than its animation.
+    //
+    // Then drained and left quiet, which it was not until 2026-09-24. A push
+    // returns when its settle elapses, not when the raster thread has finished
+    // with it, so the first measured repetition began on top of the warm-up's
+    // queue and its allocator. It showed: repetition 1 of `route_grid_bare`
+    // rastered in 8.5 ms against 1.9 and 2.1 for repetitions 2 and 3, and
+    // `route_spans` in 6.7 against 1.4 and 1.5.
     await pushAndPop();
+    await _flush(recorder.produced);
+    await _quiet();
 
-    final mark = recorder.mark();
-    for (var i = 0; i < scene.repeats; i++) {
-      await pushAndPop();
-    }
-    await _flush();
-    results.add(SceneResult(
-      scene.name,
-      scene.stresses.label,
-      recorder.take(mark, dropTrailing: _flushFrames, keep: scene.repeats),
-    ));
+    final m = await _repeat(scene.repeats, pushAndPop);
+    results.add(
+        SceneResult(scene.name, scene.stresses.label, m.whole, m.perRepeat));
   }
 
   /// Mount, settle, then call the scene's driver [DrivenScene.repeats] times.
@@ -446,18 +541,12 @@ class BenchRunner {
     // drawer open builds the drawer, the first fling builds every row it
     // passes, and neither is what the scene is about.
     await scene.drive();
+    await _flush(recorder.produced);
     await _quiet();
 
-    final mark = recorder.mark();
-    for (var i = 0; i < scene.repeats; i++) {
-      await scene.drive();
-    }
-    await _flush();
-    results.add(SceneResult(
-      scene.name,
-      scene.stresses.label,
-      recorder.take(mark, dropTrailing: _flushFrames, keep: scene.repeats),
-    ));
+    final m = await _repeat(scene.repeats, scene.drive);
+    results.add(
+        SceneResult(scene.name, scene.stresses.label, m.whole, m.perRepeat));
 
     setStage(null);
     await SchedulerBinding.instance.endOfFrame;
@@ -608,6 +697,11 @@ class BenchRunner {
       // read as a regression. bench-report.py refuses to gate across a change.
       'method': methodId,
       'scene_count': _allScenes.length,
+      // Frames the app drew, and frames the engine reported. They must agree:
+      // a window is cut in produced-frame indices, so a produced frame that
+      // never reports shifts every window after it by one.
+      'frames_produced': recorder.produced,
+      'frames_reported': recorder.reported,
       'scenes': <Map<String, Object?>>[
         ...carried,
         ...results.map((r) => r.toJson()),

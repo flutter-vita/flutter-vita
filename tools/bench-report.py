@@ -10,35 +10,151 @@ import json
 import os
 import sys
 
-# ADR-0017 decision 8. Wide enough to absorb this console's thermal and Wi-Fi
-# noise, tight enough to catch a real slowdown. Gates on worst-frame rather
-# than mean, because worst-frame is the number the stall rule is made of.
-MARGIN = 0.10
-
-# Worst-frame is quantised: at 60 Hz a frame period is always a multiple of
-# 16.67 ms, so the smallest change any scene can report is one vsync. Near
-# 100 ms that is 17%, which means a flat 10% margin flags a single-step move as
-# a regression -- and it did, three times at once, on 2026-08-24. A change
-# smaller than the measurement's own resolution is not a change.
-VSYNC_MS = 1000.0 / 60.0
-
-# Worst-frame alone is not enough to grade a scene on. Every route scene runs
-# at a clean 60 fps with a single outlier of exactly 133.33 ms somewhere in the
-# window, so whether that outlier lands inside the sample decides whether the
-# scene grades 33.3 or 133.3 with nothing changed. One report flagged two
-# scenes as +300% regressions, silently "improved" a third 8x, and passed a
-# scene whose raster mean had gone 8.0 ms to 41.5 ms.
-#
-# So two more metrics are graded, both means or totals over the whole window:
-#
-#   raster_ms  the rasteriser's mean. What a renderer change moves.
-#   stall_ms   total time below 30 fps. What a person actually feels.
-#
-# Wider margins than worst-frame's, and an absolute floor on each: a mean that
-# moves from 0.5 ms to 0.7 ms is not news.
-MEAN_MARGIN = 0.25
+# ADR-0017 decision 8 gated on worst-frame, with raster and stall added later
+# as the backstops worst-frame could not be. All three were retired on
+# 2026-09-24 when they were measured against their own noise; what replaced
+# them is below. RASTER_FLOOR_MS survives as one of the absolute floors.
 RASTER_FLOOR_MS = 1.0
-STALL_FLOOR_MS = 100.0
+
+# ---- what a run can actually resolve ---------------------------------------
+#
+# Measured on 2026-09-24, three runs of the gallery where two carried the same
+# code and the third carried the layer from before that day's work. Across the
+# 31 scenes all three produced, the run-to-run spread of each metric was:
+#
+#   build (ui)  median  1.0%   p90   8.3%   max  14.3%
+#   raster      median  9.2%   p90  67.4%   max  77.8%
+#   worst       median  0.0%   p90  80.0%   max  83.3%
+#   stall       median 36.6%   p90 100.0%   max 100.0%
+#
+# The gate fired at 10% on worst and 25% on raster and stall. Fifteen scenes
+# moved more than 10% on worst between runs of the same code, twelve moved
+# more than 25% on raster, and nine moved more than 25% on stall. So the three
+# graded metrics were all noisier than their own thresholds, and the one that
+# held still was not graded at all.
+#
+# Worst-frame and stall cannot be fixed by a wider band. Worst-frame is a
+# maximum over a few hundred samples, quantised to whole vsyncs, so it moves in
+# 16.67 ms steps or not at all. Stall counts rare events and is usually zero,
+# which makes every occurrence an infinite increase. Both are reported and
+# neither is graded.
+#
+# What is graded is the median across a scene's repetitions, of three metrics
+# that are means or medians over every frame. And the band is not a constant:
+# each scene measures its own spread across its repetitions and is graded
+# against that, so a scene that cannot resolve a change does not claim to.
+GRADED = (
+    # key          label      absolute floor, below which a move is not news
+    ("median_ms", "median", 1.0),
+    ("build_ms", "build", 0.5),
+    ("raster_ms", "raster", RASTER_FLOOR_MS),
+)
+
+# Never claim to resolve better than this, however tight the repetitions look.
+# Three samples cannot measure a 2% spread.
+MIN_BAND = 0.10
+
+# A scene whose own repetitions disagree by more than this is not graded. It
+# is printed instead, with the spread, because a scene that cannot be measured
+# is a finding and not a silence.
+#
+# 35%, and a run at 100% is what settled it. The argument for 100% was that
+# the band is the scene's own spread, so a noisy scene already gets a wide band
+# and refusing to grade it as well throws away the doubling the band would have
+# caught. Two runs of the same code then produced three regressions -- switch_fade
+# raster +64% inside a 46% band, route_push +75% inside 64%, route_boxes +55%
+# inside 40%.
+#
+# The band is built from the spread of three repetitions and compared against
+# the median of them. That holds while the repetitions differ by chance. It
+# breaks when they drift: switch_fade rastered 5.70, 7.31, 9.09 ms in one run,
+# a ramp, and the median of a ramp sits wherever the run happened to start. A
+# band drawn from the ramp's width does not contain that.
+#
+# Nothing here can tell a ramp from noise with three samples, so a scene that
+# moves more than a third across its own repetitions is not graded at all.
+MAX_GRADEABLE_SPREAD = 0.35
+
+
+def spread(values, floor=0.0):
+    """How far apart the repetitions of one scene are, relative to the middle.
+
+    The number the gate's band is built from, and the number that decides
+    whether a scene can be graded at all.
+
+    `floor` is the metric's absolute floor from GRADED, and it protects the
+    denominator. Raster on a cheap scene sits near 1 ms, where a 0.4 ms wobble
+    is 40% of nothing. The same 0.4 ms is declared "not news" by the floor when
+    the gate compares two runs, so it cannot be allowed to disqualify the scene
+    here.
+    """
+    values = [v for v in values if v is not None]
+    if len(values) < 2:
+        return None
+    mid = max(median(values), floor)
+    if mid <= 0:
+        return None
+    return (max(values) - min(values)) / mid
+
+
+def median(values):
+    values = sorted(values)
+    n = len(values)
+    if not n:
+        return 0.0
+    return values[n // 2] if n % 2 else (values[n // 2 - 1] + values[n // 2]) / 2
+
+
+def repeats_of(scene, key):
+    """One metric, once per repetition, or None when the run did not record
+    them. A result from before 2026-09-24 has no `repeats`."""
+    rs = (scene or {}).get("repeats")
+    if not rs:
+        return None
+    vals = [r.get(key) for r in rs if r.get(key) is not None and r.get("frames", 0) >= 2]
+    return vals if len(vals) >= 2 else None
+
+
+# ---- a baseline over several launches ---------------------------------------
+#
+# Three repetitions in one launch measure how a scene varies within a launch.
+# They cannot see how it varies between launches, and some scenes do: on
+# 2026-10-01 route_push rastered at 4.4 ms in one launch and 12.8 ms in the
+# next, each launch's repetitions agreeing within 34%, and the gate called the
+# second launch a +191% regression on unchanged code. On 2026-09-25 a single
+# launch had gone 12.5, 14.0, 4.6.
+#
+# So a baseline can be several launches. `--add-to-baseline` appends a run's
+# repetitions to the baseline's, scene by scene, and the band and the grading
+# limit are then measured over all of them. A scene that jumps between launches
+# shows it in the baseline's own spread and is listed as not graded, which is
+# what was decided for scenes that cannot be measured.
+
+# The newest repetitions a merged baseline keeps per scene: four launches.
+BASELINE_REPEATS_KEPT = 12
+
+
+def merge_into_baseline(old, new):
+    """`new` with `old`'s repetitions in front of its own, per scene.
+
+    Returns (merged, None), or (None, reason) when the two runs measured
+    different things: repetitions of another suite, engine or clock are not
+    more samples of this one.
+    """
+    if not old:
+        return dict(new, launches=1), None
+    for key in ("method", "engine", "clocks", "scene_count"):
+        if old.get(key) != new.get(key):
+            return None, f"{key} differs ({old.get(key)} vs {new.get(key)})"
+    old_scenes = {s["name"]: s for s in old.get("scenes", [])}
+    scenes = []
+    for s in new.get("scenes", []):
+        was = old_scenes.pop(s["name"], None)
+        if was and was.get("repeats") and s.get("repeats"):
+            s = dict(s, repeats=(was["repeats"] + s["repeats"])[-BASELINE_REPEATS_KEPT:])
+        scenes.append(s)
+    scenes.extend(old_scenes.values())
+    return dict(new, scenes=scenes, launches=old.get("launches", 1) + 1), None
 
 # A scene has been sampled adequately when it ran long enough, not when it
 # produced many frames. The first run on hardware graded route_hero "pass" off
@@ -77,6 +193,10 @@ def main():
     ap.add_argument("--baseline", required=True)
     ap.add_argument("--modes", default="sw gl")
     ap.add_argument("--write-baseline", action="store_true")
+    ap.add_argument(
+        "--add-to-baseline", action="store_true",
+        help="append this run's repetitions to the baseline instead of "
+             "replacing it, so the baseline covers several launches")
     ap.add_argument(
         "--frames", nargs="*", metavar="SCENE",
         help="print the slowest frames split by phase; no names means every "
@@ -271,6 +391,10 @@ def main():
 
     # ---- the gate --------------------------------------------------------
     regressions = []
+    # Scenes whose own repetitions disagree too much to grade, and runs too old
+    # to carry repetitions at all.
+    unresolvable = []
+    no_repeats = set()
     ungated = []
     vanished = []
     stale_method = []
@@ -332,21 +456,35 @@ def main():
             # untrustworthy as a thin result measured against it.
             if not sound(s) or not sound(b[name]):
                 continue
-            was, now = b[name]["worst_ms"], s["worst_ms"]
-            # The half-millisecond is not slack, it is the rounding: worst-frame
-            # is stored to two decimals, so 83.33 + 16.67 lands just under a
-            # reported 100.0 and a single-vsync step reads as a regression.
-            allowed = max(was * (1 + MARGIN), was + VSYNC_MS + 0.5)
-            if was > 0 and now > allowed:
-                regressions.append((m, name, "worst", was, now))
-            # See MEAN_MARGIN. These two carry the weight worst-frame cannot.
-            for key, label, floor in (("raster_ms", "raster", RASTER_FLOOR_MS),
-                                      ("stall_ms", "stall", STALL_FLOOR_MS)):
-                was_m, now_m = b[name].get(key), s.get(key)
-                if was_m is None or now_m is None:
+            # Each metric is graded on the median of the scene's repetitions
+            # against the same from the baseline, inside a band the scene
+            # measured for itself. See GRADED.
+            now_reps = {k: repeats_of(s, k) for k, _, _ in GRADED}
+            was_reps = {k: repeats_of(b[name], k) for k, _, _ in GRADED}
+            if all(v is None for v in now_reps.values()):
+                # A run from before repetitions were recorded. Nothing to
+                # grade it with, and the old gate is gone, so say so once.
+                no_repeats.add(m)
+                continue
+            for key, label, floor in GRADED:
+                now_v, was_v = now_reps[key], was_reps[key]
+                if not now_v or not was_v:
                     continue
-                if now_m > max(was_m * (1 + MEAN_MARGIN), was_m + floor):
-                    regressions.append((m, name, label, was_m, now_m))
+                now_m, was_m = median(now_v), median(was_v)
+                if was_m <= 0:
+                    continue
+                # The band is whichever side is less certain, never tighter
+                # than MIN_BAND. A scene that wobbles is a scene the report
+                # cannot make fine claims about, in either direction.
+                noise = max(
+                    spread(now_v, floor) or 0.0, spread(was_v, floor) or 0.0
+                )
+                if noise > MAX_GRADEABLE_SPREAD:
+                    unresolvable.append((m, name, label, noise, now_m))
+                    continue
+                band = max(noise, MIN_BAND)
+                if now_m > max(was_m * (1 + band), was_m + floor):
+                    regressions.append((m, name, label, was_m, now_m, band))
 
     if stale_method:
         print(f"\n{RED}not graded — the baseline measured a different "
@@ -359,18 +497,37 @@ def main():
               f"so nothing is gated. Delete the baseline and write a new one "
               f"with --baseline{OFF}")
 
+    if no_repeats:
+        print(f"\n{RED}not graded — no repetitions recorded{OFF}")
+        print(f"{DIM}{', '.join(sorted(no_repeats))}: this result predates "
+              f"2026-09-24, when the runner began measuring each repetition of "
+              f"a scene on its own. Without them the report cannot tell a "
+              f"change from its own noise, and it no longer guesses. Take the "
+              f"run again{OFF}")
+
     if regressions:
         print(f"\n{RED}regressions against the baseline{OFF}")
-        print(f"{DIM}worst-frame >{int(MARGIN * 100)}% and >1 vsync; "
-              f"raster and stall >{int(MEAN_MARGIN * 100)}% and "
-              f">{RASTER_FLOOR_MS:g}ms / >{STALL_FLOOR_MS:g}ms{OFF}")
-        for m, name, metric, was, now in regressions:
+        print(f"{DIM}the median of a scene's repetitions, against the same "
+              f"from the baseline, outside the band that scene measured for "
+              f"itself (never tighter than {int(MIN_BAND * 100)}%){OFF}")
+        for m, name, metric, was, now, band in regressions:
             pct = f"{(now / was - 1) * 100:+.0f}%" if was > 0 else "new"
             print(f"  {m:<3} {name:<18} {metric:<6} {fmt(was)}ms -> "
-                  f"{fmt(now)}ms ({pct})")
-        print(f"{DIM}a worst-frame move on a route_* scene is usually the "
-              f"outlier landing inside the window rather than outside it; "
-              f"raster and stall are the ones to believe{OFF}")
+                  f"{fmt(now)}ms ({pct}, band {band * 100:.0f}%)")
+        print(f"{DIM}worst-frame and stall are printed in the table above and "
+              f"graded nowhere: a maximum quantised to whole vsyncs and a "
+              f"count of rare events cannot resolve a change. See GRADED in "
+              f"tools/bench-report.py{OFF}")
+
+    if unresolvable:
+        print(f"\n{DIM}not graded — the scene disagrees with itself{OFF}")
+        for m, name, metric, noise, now in sorted(unresolvable,
+                                                  key=lambda r: -r[3]):
+            print(f"  {DIM}{m:<3} {name:<18} {metric:<6} {fmt(now)}ms, "
+                  f"its own repetitions spread {noise * 100:.0f}%{OFF}")
+        print(f"{DIM}over {int(MAX_GRADEABLE_SPREAD * 100)}% between "
+              f"repetitions of the same scene in the same run. Nothing can be "
+              f"concluded about a change smaller than that, so nothing is{OFF}")
 
     if ungated:
         print(f"\n{DIM}not graded — no baseline for these scenes; "
@@ -384,12 +541,17 @@ def main():
         for m, name in vanished:
             print(f"  {m:<3} {name}")
 
+    # Listed and not graded, and not a failure. Until 2026-10-01 a thin window
+    # failed the run, and route_tx_none (6 frames) and modal_dialog (1000 ms)
+    # are thin on every run, so the gate failed on unchanged code every time.
+    # A scene that cannot be measured is the same case as one whose repetitions
+    # disagree: say so, grade nothing, and keep the exit code for regressions.
     thin = [(n, m, v) for n, m, k, v in failures if k == "thin"]
     if thin:
-        print(f"\n{RED}window too short to grade "
+        print(f"\n{DIM}not graded — window too short "
               f"(need {MIN_SPAN_MS}ms and {MIN_FRAMES} frames){OFF}")
         for name, m, n_frames in thin:
-            print(f"  {m:<3} {name:<18} {n_frames} frames")
+            print(f"  {DIM}{m:<3} {name:<18} {n_frames} frames{OFF}")
 
     threw = [(n, m, v) for n, m, k, v in failures if k == "error"]
     if threw:
@@ -403,17 +565,26 @@ def main():
         for name, m in stalled:
             print(f"  {m:<3} {name}")
 
-    if args.write_baseline:
+    if args.write_baseline or args.add_to_baseline:
         os.makedirs(args.baseline, exist_ok=True)
         for m in have:
             dst = os.path.join(args.baseline, f"{m}.json")
+            doc = dict(results[m], launches=1)
+            if args.add_to_baseline:
+                doc, why = merge_into_baseline(load(dst), results[m])
+                if doc is None:
+                    print(f"\n{RED}not added to the baseline: {why}{OFF}")
+                    print(f"{DIM}start a new one with --baseline{OFF}")
+                    return 1
             with open(dst, "w") as f:
-                json.dump(results[m], f, indent=2)
+                json.dump(doc, f, indent=2)
                 f.write("\n")
-            print(f"\nbaseline written: {dst}")
+            print(f"\nbaseline written: {dst} "
+                  f"({doc.get('launches', 1)} launch"
+                  f"{'es' if doc.get('launches', 1) != 1 else ''})")
         return 0
 
-    if regressions or threw or thin:
+    if regressions or threw:
         return 1
     # "no regressions" from a run that gated nothing is the green report this
     # file exists to prevent. Say which it was.

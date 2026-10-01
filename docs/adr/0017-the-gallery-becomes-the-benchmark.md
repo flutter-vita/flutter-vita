@@ -1,6 +1,6 @@
 # ADR-0017: The gallery becomes the benchmark, and a scene is the unit
 
-**Status:** Accepted
+**Status:** Accepted. Decision 8 superseded by [ADR-0022](0022-the-bench-gate-grades-inside-each-scenes-own-spread.md) on 2026-10-01.
 **Date:** 2026-08-24
 
 ## Context
@@ -100,8 +100,11 @@ of sync the moment only one side is re-run, and nothing can diff two builds.
 Rejected "just write a file and compare by eye", which is precisely how
 today's bad numbers happened.
 
-**8. Report, and fail against a committed baseline.** The results file goes in
-the repo. A scene regressing more than **10% on its worst-frame time** fails
+**8. Report, and fail against a committed baseline.** *(Superseded on
+2026-10-01 by [ADR-0022](0022-the-bench-gate-grades-inside-each-scenes-own-spread.md):
+the worst frame moved more between two runs of the same code than the margin
+below, and the gate now grades medians inside each scene's own spread.)* The
+results file goes in the repo. A scene regressing more than **10% on its worst-frame time** fails
 the run. Worst-frame rather than mean, because that is the number the 30 fps
 rule is made of. Rejected failing on any measurable slowdown — this console
 has thermal and Wi-Fi noise, and a gate that cries wolf gets bypassed — and

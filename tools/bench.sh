@@ -4,6 +4,9 @@
 #   ./tools/bench.sh                       the GPU, the only renderer anyone runs
 #   ./tools/bench.sh --only sw             software, to localise a GL defect
 #   ./tools/bench.sh --baseline            write the result in as the baseline
+#   ./tools/bench.sh --baseline-add        add the result to the baseline: one
+#                                          --baseline, then two of these, makes a
+#                                          baseline over three launches
 #   ./tools/bench.sh --relaunch            reuse the installed build, skip deploy
 #   ./tools/bench.sh --leave sw|gl         renderer the console rests on (default gl)
 #   ./tools/bench.sh --scenes a,b,c        run only these scenes
@@ -87,6 +90,7 @@ while [ $# -gt 0 ]; do
     --scenes)      SCENES="$2"; shift 2 ;;
     --stuck-after) STUCK_AFTER="$2"; shift 2 ;;
     --baseline)    WRITE_BASELINE=1; shift ;;
+    --baseline-add) WRITE_BASELINE=2; shift ;;
     --no-build)    BUILD=0; shift ;;
     --relaunch)    RELAUNCH=1; BUILD=0; shift ;;
     -h|--help)     sed -n '2,18p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
@@ -409,4 +413,5 @@ put "0" "ux0:data/flutter-vita/hud.off"
 echo
 python3 "$HERE/bench-report.py" \
   --out "$OUT_DIR" --baseline "$BASELINE_DIR" --modes "$MODES" \
-  ${WRITE_BASELINE:+$([ "$WRITE_BASELINE" -eq 1 ] && echo --write-baseline)}
+  ${WRITE_BASELINE:+$([ "$WRITE_BASELINE" -eq 1 ] && echo --write-baseline)} \
+  ${WRITE_BASELINE:+$([ "$WRITE_BASELINE" -eq 2 ] && echo --add-to-baseline)}

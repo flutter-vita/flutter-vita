@@ -72,9 +72,11 @@ arbitrary choice. It is the version that has prebuilt 32-bit ARM engine
 binaries. To move it is work with a cost. Calculate the cost first.
 
 **A number with no method is not a result.** Use `tools/bench.sh` for
-measurements, so that the next person can do them again. The gate examines
-build, raster, and stall together. When it examined the worst frame only, it
-gave three incorrect answers in one report.
+measurements, so that the next person can do them again. The gate grades
+the median frame period, build and raster of each scene inside the spread
+that scene measured for itself. When it examined the worst frame, it gave
+incorrect answers on unchanged code
+([ADR-0022](docs/adr/0022-the-bench-gate-grades-inside-each-scenes-own-spread.md)).
 
 ## Before you change something large
 

@@ -157,6 +157,9 @@ class SceneStats {
       };
 
   static double _r(double v) => (v * 100).roundToDouble() / 100;
+
+  /// The same rounding, for a caller outside this file writing the same JSON.
+  static double round(double v) => _r(v);
 }
 
 /// How many slow frames a scene reports individually, when the caller does not
@@ -172,11 +175,19 @@ const int _kWorstKept = 5;
 /// would drop the last few.
 class FrameRecorder {
   final List<FrameTiming> _all = <FrameTiming>[];
+  int _produced = 0;
   bool _attached = false;
+  bool _counting = false;
 
   void attach() {
     if (_attached) return;
     SchedulerBinding.instance.addTimingsCallback(_onTimings);
+    // A persistent frame callback cannot be removed, so it is added once and
+    // left. It costs an increment per frame.
+    if (!_counting) {
+      SchedulerBinding.instance.addPersistentFrameCallback(_onFrame);
+      _counting = true;
+    }
     _attached = true;
   }
 
@@ -188,30 +199,70 @@ class FrameRecorder {
 
   void _onTimings(List<FrameTiming> timings) => _all.addAll(timings);
 
-  /// Index to hand back to [take] when the scene is over.
-  int mark() => _all.length;
+  void _onFrame(Duration _) => _produced++;
 
-  /// Everything recorded since [mark], minus [dropTrailing] entries.
+  /// Frames the app has produced since the recorder attached.
   ///
-  /// The caller forces a fixed number of frames after the animation ends so the
-  /// batched timings for its final frames arrive. Those are idle and fast, so
-  /// leaving them in would soften every percentile; dropping exactly as many as
-  /// were forced is deterministic, because an idle frame does not itself drop.
+  /// **This, and not [length], is a position in a scene.** The engine reports
+  /// timings in batches and runs about thirty frames behind the screen on this
+  /// console, so a boundary read off [length] the moment a repetition ends
+  /// sits thirty frames inside that repetition. It did: repetition 1 of
+  /// `alpha_probe` came out 24 frames long against 55 for repetitions 2 and 3,
+  /// and the 31 missing frames were counted in repetition 2.
   ///
-  /// [keep] is how many heavy frames to record individually; pass the scene's
-  /// repeat count, because the report takes a median over them. A route scene
-  /// pushes eight times, so eight samples make that median the typical push.
-  /// Taking five instead let a scene's outliers land in the middle, which is
-  /// what made route_boxes read 12.6 and 30.8 on one binary.
-  SceneStats take(int from, {int dropTrailing = 0, int keep = _kWorstKept}) {
-    final end = math.max(from, _all.length - dropTrailing);
-    final window = _all.sublist(math.min(from, end), end);
-    return _reduce(window, keep);
+  /// Frames report in the order they were produced, so produced frame i is
+  /// entry i. Cut every window in these indices and wait for the entries with
+  /// [settled].
+  int get produced => _produced;
+
+  /// Whether the entries for every frame produced before [upTo] have arrived.
+  bool settled(int upTo) => _all.length >= upTo;
+
+  /// Entries recorded. Equal to [produced] once a run has settled; a gap
+  /// between the two says a produced frame reported no timing, which would
+  /// shift every window after it. The result file carries both.
+  int get reported => _all.length;
+
+  /// One repetition of a scene, between two marks.
+  ///
+  /// The whole-scene window says what a scene costs. This says how much the
+  /// same work varies between one run of it and the next, which is the only
+  /// thing that tells the report what it can resolve. Merged into one window,
+  /// as they were until 2026-09-24, three repetitions of a scene cannot
+  /// disagree, and the gate fired on scenes whose repetitions disagreed by
+  /// more than the band it was testing.
+  SceneStats takeRange(int from, int to, {int keep = _kWorstKept}) {
+    final end = math.min(math.max(from, to), _all.length);
+    return _reduce(
+        <List<FrameTiming>>[_all.sublist(math.min(from, end), end)], keep);
+  }
+
+  /// Several windows reduced as one.
+  ///
+  /// A scene's repetitions are measured one at a time, each with its own
+  /// flush, so the frames between them belong to no repetition. The scene's
+  /// own numbers come from the repetitions joined back together rather than
+  /// from one window over the lot, which would count those frames.
+  SceneStats takeRanges(List<List<int>> ranges, {int keep = _kWorstKept}) {
+    return _reduce(<List<FrameTiming>>[
+      for (final r in ranges)
+        _all.sublist(math.min(r[0], _all.length),
+            math.min(math.max(r[0], r[1]), _all.length)),
+    ], keep);
   }
 
   void clear() => _all.clear();
 
-  static SceneStats _reduce(List<FrameTiming> window, int keep) {
+  /// The numbers for one or more windows.
+  ///
+  /// Several windows are reduced as one set of frames, but no measurement
+  /// crosses from one window to the next. A period is the gap between two
+  /// frames that followed each other on the screen, and the last frame of one
+  /// window and the first frame of the next did not: between them the scene
+  /// was flushed and stood still. A stall does not cross a seam either, for
+  /// the same reason.
+  static SceneStats _reduce(List<List<FrameTiming>> windows, int keep) {
+    final window = <FrameTiming>[for (final w in windows) ...w];
     if (window.length < 2) {
       return const SceneStats(
         frames: 0,
@@ -232,46 +283,55 @@ class FrameRecorder {
     // frame, it is a 33.3 ms frame, because it misses its vsync and waits for
     // the following one. Only the period says what was actually seen.
     final periods = <double>[];
+    final runs = <List<double>>[];
     final samples = <FrameSample>[];
-    for (var i = 1; i < window.length; i++) {
-      final prev = window[i - 1].timestampInMicroseconds(FramePhase.vsyncStart);
-      final next = window[i].timestampInMicroseconds(FramePhase.vsyncStart);
-      final ms = (next - prev) / 1000.0;
-      if (ms <= 0 || ms >= 5000) continue;
+    var base = 0;
+    for (final w in windows) {
+      final run = <double>[];
+      runs.add(run);
+      for (var i = 1; i < w.length; i++) {
+        final prev = w[i - 1].timestampInMicroseconds(FramePhase.vsyncStart);
+        final next = w[i].timestampInMicroseconds(FramePhase.vsyncStart);
+        final ms = (next - prev) / 1000.0;
+        if (ms <= 0 || ms >= 5000) continue;
 
-      // Drop idle gaps. A route scene waits between repeats and nothing is
-      // scheduled during the wait, so the next frame's period spans the whole
-      // pause and arrives looking like a 2.5 second stall. route_hero reported
-      // exactly that on 2026-08-24.
-      //
-      // The test is whether the frame did work. Anything under 100 ms is kept
-      // regardless, because at that scale the ratio is noise.
-      //
-      // What this hides: a stall from outside the frame -- a long GC pause, a
-      // blocking read -- also shows as a long period with no work. The suite
-      // runs no IO during a scene, and a GC pause long enough to matter would
-      // raise the median across the whole scene rather than vanish.
-      final work = (window[i].buildDuration.inMicroseconds +
-              window[i].rasterDuration.inMicroseconds) /
-          1000.0;
-      if (ms > 100 && work < ms * 0.25) continue;
+        // Drop idle gaps. A route scene waits between repeats and nothing is
+        // scheduled during the wait, so the next frame's period spans the whole
+        // pause and arrives looking like a 2.5 second stall. route_hero reported
+        // exactly that on 2026-08-24.
+        //
+        // The test is whether the frame did work. Anything under 100 ms is kept
+        // regardless, because at that scale the ratio is noise.
+        //
+        // What this hides: a stall from outside the frame -- a long GC pause, a
+        // blocking read -- also shows as a long period with no work. The suite
+        // runs no IO during a scene, and a GC pause long enough to matter would
+        // raise the median across the whole scene rather than vanish.
+        final work = (w[i].buildDuration.inMicroseconds +
+                w[i].rasterDuration.inMicroseconds) /
+            1000.0;
+        if (ms > 100 && work < ms * 0.25) continue;
 
-      periods.add(ms);
+        periods.add(ms);
+        run.add(ms);
 
-      // Same frame, split by phase. Recorded for every kept frame and sorted
-      // at the end rather than tracked as a running maximum, because the
-      // interesting question is usually "are the slow frames in the same
-      // place" and that needs more than one of them.
-      final t = window[i];
-      double at(FramePhase phase) => t.timestampInMicroseconds(phase) / 1000.0;
-      samples.add(FrameSample(
-        index: i,
-        periodMs: ms,
-        gapMs: at(FramePhase.buildStart) - at(FramePhase.vsyncStart),
-        buildMs: at(FramePhase.buildFinish) - at(FramePhase.buildStart),
-        waitMs: at(FramePhase.rasterStart) - at(FramePhase.buildFinish),
-        rasterMs: at(FramePhase.rasterFinish) - at(FramePhase.rasterStart),
-      ));
+        // Same frame, split by phase. Recorded for every kept frame and sorted
+        // at the end rather than tracked as a running maximum, because the
+        // interesting question is usually "are the slow frames in the same
+        // place" and that needs more than one of them.
+        final t = w[i];
+        double at(FramePhase phase) =>
+            t.timestampInMicroseconds(phase) / 1000.0;
+        samples.add(FrameSample(
+          index: base + i,
+          periodMs: ms,
+          gapMs: at(FramePhase.buildStart) - at(FramePhase.vsyncStart),
+          buildMs: at(FramePhase.buildFinish) - at(FramePhase.buildStart),
+          waitMs: at(FramePhase.rasterStart) - at(FramePhase.buildFinish),
+          rasterMs: at(FramePhase.rasterFinish) - at(FramePhase.rasterStart),
+        ));
+      }
+      base += w.length;
     }
     if (periods.isEmpty) {
       return const SceneStats(
@@ -292,22 +352,26 @@ class FrameRecorder {
     var longestStallFrames = 0;
     var runMs = 0.0;
     var runFrames = 0;
-    for (final p in periods) {
-      if (p >= kSlowFrameMs - 0.5) {
-        runMs += p;
-        runFrames++;
-      } else {
-        if (runFrames >= 2 && runMs > longestStall) {
-          longestStall = runMs;
-          longestStallFrames = runFrames;
+    for (final run in runs) {
+      runMs = 0;
+      runFrames = 0;
+      for (final p in run) {
+        if (p >= kSlowFrameMs - 0.5) {
+          runMs += p;
+          runFrames++;
+        } else {
+          if (runFrames >= 2 && runMs > longestStall) {
+            longestStall = runMs;
+            longestStallFrames = runFrames;
+          }
+          runMs = 0;
+          runFrames = 0;
         }
-        runMs = 0;
-        runFrames = 0;
       }
-    }
-    if (runFrames >= 2 && runMs > longestStall) {
-      longestStall = runMs;
-      longestStallFrames = runFrames;
+      if (runFrames >= 2 && runMs > longestStall) {
+        longestStall = runMs;
+        longestStallFrames = runFrames;
+      }
     }
 
     final sorted = List<double>.from(periods)..sort();
