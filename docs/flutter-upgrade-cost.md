@@ -243,5 +243,5 @@ carrying forward:
 ## Sources
 
 Every number above came from a command in the procedure, run on 2026-08-19
-against `~/fvm/versions/3.47.0` (framework + engine) and a shallow fetch of
+against a Flutter 3.47.0 checkout (framework + engine) and a shallow fetch of
 `da6595cd` into `third_party/sdk` (Dart).

@@ -15,7 +15,7 @@ set -euo pipefail
 cd "$(dirname "$0")"
 OUT=out
 FLUTTER_VERSION=3.44.8   # must match VERSIONS.md
-FLUTTER="$HOME/fvm/versions/$FLUTTER_VERSION"
+FLUTTER="$(../../tools/flutter-sdk.sh)" || exit 1
 SDK="$FLUTTER/bin/cache/dart-sdk"
 PATCHED_SDK="$FLUTTER/bin/cache/artifacts/engine/common/flutter_patched_sdk_product"
 
@@ -28,7 +28,7 @@ mkdir -p "$OUT"
 if [[ ! -d "$PATCHED_SDK" ]]; then
   echo "error: flutter_patched_sdk_product not found at:" >&2
   echo "       $PATCHED_SDK" >&2
-  echo "       run: fvm flutter precache" >&2
+  echo "       run: $FLUTTER/bin/flutter precache" >&2
   exit 1
 fi
 

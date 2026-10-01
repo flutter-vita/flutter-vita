@@ -11,7 +11,7 @@ set -euo pipefail
 cd "$(dirname "$0")"
 OUT=out
 FLUTTER_VERSION=3.44.8   # must match VERSIONS.md
-SDK="$HOME/fvm/versions/$FLUTTER_VERSION/bin/cache/dart-sdk"
+SDK="$(../../tools/flutter-sdk.sh)/bin/cache/dart-sdk" || exit 1
 PLATFORM="$(cd "$(dirname "$0")/../.." && pwd)/third_party/sdk/out/host/vm_platform_product.dill"
 
 GEN_SNAPSHOT="$OUT/gen_snapshot_arm"
@@ -21,7 +21,7 @@ mkdir -p "$OUT"
 
 if [[ ! -d "$SDK" ]]; then
   echo "error: Dart SDK not found at $SDK" >&2
-  echo "       run: fvm install $FLUTTER_VERSION" >&2
+  echo "       run: tools/flutter-sdk.sh" >&2
   exit 1
 fi
 
@@ -40,7 +40,7 @@ fi
 # product platform dill drops assertions and debug-only code. The kernel binary
 # format is version-locked to the SDK, so this SDK must match gen_snapshot's.
 #
-# The platform dill comes from *our* tree, not from FVM. It carries patch 0007
+# The platform dill comes from *our* tree, not from the Flutter SDK. It carries patch 0007
 # (VMLibraryHooks marked vm:entry-point), without which timers cannot be
 # installed at all. It also removes a latent mismatch: the runtime is built from
 # third_party/sdk, so the SDK sources compiled into the snapshot should come

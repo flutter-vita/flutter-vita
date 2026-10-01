@@ -160,7 +160,7 @@ Findings:
 - **Real armv7 code, generated on an Apple Silicon Mac.** ardera's
   `gen_snapshot_macos_x64_release` is an x86_64 Mach-O running under Rosetta;
   host architecture is irrelevant to the output, as expected of a cross compiler.
-- **The pinned version is confirmed correct.** FVM's 3.44.8 reports revision
+- **The pinned version is confirmed correct.** The Flutter 3.44.8 SDK reports revision
   `0cd610717b`, matching [VERSIONS.md](../VERSIONS.md) exactly, and ardera's
   `gen_snapshot` reports Dart 3.12.2 — the same Dart the SDK ships. The kernel
   format matched on the first attempt, so the version-pin reasoning holds.

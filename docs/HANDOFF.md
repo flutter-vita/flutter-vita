@@ -29,7 +29,7 @@ yet. Phase 0.5 (feasibility) is complete and the verdict was go.
 | VitaSDK | `~/vitasdk` (GCC 15.2.0, `arm-vita-eabi`) — no sudo, installed via vdpm |
 | depot_tools | `~/depot_tools` — provides `gclient`; `gn`/`ninja` come from the Dart checkout |
 | Dart SDK | `third_party/sdk` — **gclient-owned**, pinned `d684a576`, ~7.8 GB, gitignored |
-| Flutter | FVM 3.44.8, pinned in committed `.fvmrc` |
+| Flutter | 3.44.8, downloaded by `tools/flutter-sdk.sh` to `~/.flutter-vita/flutter/3.44.8` |
 | Vita | `192.168.0.40`, FTP on 1337 — always on, served by **BGFTP** |
 | Title ID | `FVTA00002` (M1), `FVTA00001` (Track A probe) |
 
