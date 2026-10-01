@@ -66,9 +66,14 @@ late final String? devRoot = () {
   return null;
 }();
 
-/// The Flutter SDK the developer is building with.
+/// The Flutter SDK the build uses.
+///
+/// FLUTTER_ROOT, which the launcher sets: to the SDK tools/flutter-sdk.sh
+/// downloaded, or to the developer's own when they set it themselves. The
+/// fallback is where that script puts it, for a CLI started without the
+/// launcher.
 String flutterDir() =>
-    _env('FLUTTER_ROOT') ?? '$_home/fvm/versions/${flutterPin()}';
+    _env('FLUTTER_ROOT') ?? '$flutterVitaHome/flutter/${flutterPin()}';
 
 /// The Flutter version to match an engine artifact against.
 ///

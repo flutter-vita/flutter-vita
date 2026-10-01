@@ -1,8 +1,8 @@
 # Install the toolchain on macOS
 
 What you need on the Mac: VitaSDK (the `arm-vita-eabi` compiler and the
-Vita's headers and stubs), Flutter 3.44.8, CMake, Python 3 with Pillow, and
-this repository with its patches applied. Rebuilding the Flutter engine
+Vita's headers and stubs), CMake, Python 3 with Pillow, and this repository.
+Flutter 3.44.8 is not on the list: the tool downloads its own. Rebuilding the Flutter engine
 itself is not part of this page; the engine comes prebuilt.
 
 ## 1. VitaSDK
@@ -33,28 +33,27 @@ arm-vita-eabi-gcc --version
 
 ## 2. Flutter 3.44.8
 
-You need a normal Flutter 3.44.8. The prebuilt engine is compiled for that
-version, so the framework must be the same version.
+Nothing to install. The first `flutter-vita` command downloads Google's
+release archive of Flutter 3.44.8 (2.1 GB, one time), checks it against the
+sha256 in [`versions.json`](../versions.json), and unpacks it to
+`~/.flutter-vita/flutter/3.44.8`. `tools/flutter-sdk.sh` does this, and you
+can run it on its own. The Flutter you use for other projects is not read
+and not changed.
+
+The prebuilt engine is compiled for exactly 3.44.8, so the framework must be
+the same version. The tool owns its copy so that nobody has to manage that
+by hand.
 
 **Why not our fork of Flutter?** The fork,
 [flutter-vita/flutter](https://github.com/flutter-vita/flutter), changes
 only the engine: `engine/src` and `DEPS`. Its framework and its `flutter`
-command are the same as in the 3.44.8 release. The engine comes prebuilt
-(step 5), so an app build does not read the fork. The build uses the Flutter
-SDK on the Mac only: `flutter pub get`, `flutter build bundle` for the
-assets, and the Dart compiler front end.
+command are the same as in the 3.44.8 release, and the engine comes
+prebuilt (step 5). An app build uses the Flutter SDK on the Mac only:
+`flutter pub get`, `flutter build bundle` for the assets, and the Dart
+compiler front end.
 
-We recommend [fvm](https://fvm.app), because it keeps your other projects
-on their own Flutter version:
-
-```sh
-dart pub global activate fvm
-fvm install 3.44.8
-```
-
-The tools look for the SDK in `$HOME/fvm/versions/3.44.8`. If your Flutter
-3.44.8 is in a different location, export `FLUTTER_ROOT`, or give
-`--flutter DIR` to `tools/build-vita-app.sh`.
+To use a Flutter 3.44.8 that you already have, export `FLUTTER_ROOT`. The
+build refuses an SDK at another revision.
 
 ## 3. Python
 

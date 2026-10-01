@@ -11,7 +11,8 @@
 #   --engine DIR      unpacked flutter-engine-vita-<version>/
 #   --embedder DIR    the Vita embedder source; default engine/embedder,
 #                     the flutter-vita-embedder submodule
-#   --flutter DIR     Flutter SDK, default $HOME/fvm/versions/<pinned>
+#   --flutter DIR     Flutter SDK; default FLUTTER_ROOT, else the pinned SDK
+#                     tools/flutter-sdk.sh downloads to ~/.flutter-vita/flutter/
 #   --out DIR         default <app-dir>/build/vita
 #   --entry-point F   default lib/main.dart; real apps use flavors
 #   --extra-source F  extra C/C++ compiled into the app; repeatable
@@ -51,7 +52,7 @@ APP_NAME=""
 ENGINE_DIR="${FLUTTER_VITA_ENGINE:-$ROOT/out/artifacts/flutter-engine-vita-$FLUTTER_PIN}"
 # The embedder, compiled into every app: the flutter-vita-embedder submodule.
 EMBEDDER_DIR="${FLUTTER_VITA_EMBEDDER:-$ROOT/engine/embedder}"
-FLUTTER_DIR="$HOME/fvm/versions/$FLUTTER_PIN"
+FLUTTER_DIR=""
 OUT_DIR=""
 # Flavors are the norm outside sample apps: the entry point is lib/main_prod.dart
 # or lib/main_dev.dart and lib/main.dart does not exist. Hard-coding it made the
@@ -120,6 +121,10 @@ APP_DIR="$(cd "$APP_DIR" && pwd)"
 
 : "${VITASDK:?Define VITASDK. See docs/dev-environment.md}"
 export PATH="$VITASDK/bin:$PATH"
+
+# The tools' own Flutter, downloaded the first time; FLUTTER_ROOT overrides it.
+# The revision check further down refuses one that does not match the engine.
+[ -n "$FLUTTER_DIR" ] || FLUTTER_DIR="$("$HERE/flutter-sdk.sh")" || exit 1
 
 OUT_DIR="${OUT_DIR:-$APP_DIR/build/vita}"
 # Absolute, because the paths derived from it are handed to cmake, which runs

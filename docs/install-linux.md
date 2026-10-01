@@ -1,7 +1,8 @@
 # Install the toolchain on Linux
 
-The same five pieces as on macOS: VitaSDK, Flutter 3.44.8, CMake, Python 3
-with Pillow, and this repository with the engine artifact. The maintainer
+The same pieces as on macOS: VitaSDK, CMake, Python 3 with Pillow, and
+this repository with the engine artifact. The tool downloads its own Flutter
+3.44.8. The maintainer
 builds on macOS; the scripts are plain bash and CMake and have nothing
 macOS-specific in them, but a Linux run has not been done end to end. If a
 step fails for you, open an issue with the output.
@@ -23,18 +24,11 @@ Add the `VITASDK` and `PATH` exports to your shell profile.
 
 ## 2. Flutter 3.44.8
 
-You need a normal Flutter 3.44.8, not our fork of Flutter. The fork changes
-only the engine, and the engine comes prebuilt
-([why](install-macos.md#2-flutter-3448)). We recommend fvm, because it
-keeps your other projects on their own Flutter version:
-
-```sh
-dart pub global activate fvm
-fvm install 3.44.8
-```
-
-The tools look in `$HOME/fvm/versions/3.44.8`. `FLUTTER_ROOT` or
-`--flutter DIR` gives a different location.
+Nothing to install. The first `flutter-vita` command downloads Google's
+Linux archive of Flutter 3.44.8 (1.5 GB, one time), checks its sha256 and
+unpacks it to `~/.flutter-vita/flutter/3.44.8`
+([details](install-macos.md#2-flutter-3448)). `FLUTTER_ROOT` names a Flutter
+3.44.8 you already have.
 
 ## 3. Python
 

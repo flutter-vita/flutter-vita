@@ -25,8 +25,10 @@ You need:
   ([Linux](docs/install-linux.md)).
 - VitaSDK, CMake, and Python 3 with Pillow
   ([Install on macOS](docs/install-macos.md)).
-- Flutter 3.44.8. A normal install of that version is correct. You do not
-  need our fork of Flutter ([why](docs/install-macos.md#2-flutter-3448)).
+- No Flutter install. The first `flutter-vita` command downloads Flutter
+  3.44.8 for the tool's own use, one time (2.1 GB), and does not touch the
+  Flutter you use for other projects
+  ([details](docs/install-macos.md#2-flutter-3448)).
 
 Get the tool and the prebuilt engine, then check the setup:
 
@@ -73,7 +75,8 @@ compiles it into the same `eboot.bin` ([Available plugins](plugins/)).
 - The console needs Sony's shader compiler, `ur0:data/libshacccg.suprx`.
   [Console setup](docs/configure-console.md) says how to check for it.
 - Flutter 3.44.8, pinned. The engine is prebuilt for this version and the
-  framework must match it ([VERSIONS.md](VERSIONS.md)).
+  framework must match it ([VERSIONS.md](VERSIONS.md)). The tool downloads it
+  for itself.
 - The Vita3K emulator is not a supported target
   ([why](docs/vita3k-as-a-target.md)).
 

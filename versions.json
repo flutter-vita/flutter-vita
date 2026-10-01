@@ -3,6 +3,24 @@
   "release": "3.44.8_0.1.0",
   "flutter": "3.44.8",
   "framework_rev": "058e0af2c2b57e369d905a03ac9748b0ebf543c6",
+  "flutter_sdk": {
+    "_comment": "Google's release archives of the pinned Flutter, by host. tools/flutter-sdk.sh downloads one, checks the sha256 and unpacks it to ~/.flutter-vita/flutter/<flutter>. Hashes from releases_<os>.json under base_url.",
+    "base_url": "https://storage.googleapis.com/flutter_infra_release/releases/",
+    "hosts": {
+      "darwin-arm64": {
+        "archive": "stable/macos/flutter_macos_arm64_3.44.8-stable.zip",
+        "sha256": "c3d6fe95078f7001d947a31d42527de91d5bfe62e4cf444a1493a2e8f1fb199d"
+      },
+      "darwin-x64": {
+        "archive": "stable/macos/flutter_macos_3.44.8-stable.zip",
+        "sha256": "b2f765234217327a5859d046c9f3b167387b61da5408b5866ed448d905877c66"
+      },
+      "linux-x64": {
+        "archive": "stable/linux/flutter_linux_3.44.8-stable.tar.xz",
+        "sha256": "672089e001571a9fbb209a495c583580c0c6c73ef98999264ba07fa93ace332d"
+      }
+    }
+  },
   "engine": {
     "release": "3.44.8_0.1.0",
     "url": "https://github.com/flutter-vita/flutter/releases/download/3.44.8_0.1.0/flutter-engine-vita-3.44.8_0.1.0.tar.gz",

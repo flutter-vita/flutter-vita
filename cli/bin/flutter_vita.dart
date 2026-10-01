@@ -139,7 +139,8 @@ Future<int> _doctor(Map<String, String> opts) async {
       'the artifact was built on another host; build one here');
 
   final flutter = _flutterDir();
-  check('flutter sdk', Directory(flutter).existsSync(), 'looked in $flutter');
+  check('flutter sdk', Directory(flutter).existsSync(),
+      'looked in $flutter; run tools/flutter-sdk.sh, or set FLUTTER_ROOT');
   check(
       'flutter_patched_sdk_product',
       Directory(

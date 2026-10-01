@@ -17,12 +17,12 @@ Change both together.
 > **Corrected 2026-08-19.** The first two rows were both wrong. The framework
 > row carried the *engine* revision, and the engine row carried
 > `82bd5b7209…`, which matches nothing in any tree here. Ground truth is
-> `bin/cache/flutter.version.json` in the FVM checkout, which is also what
+> `bin/cache/flutter.version.json` in the tools' own SDK, which is also what
 > `tools/build-vita-app.sh`'s lockstep check reads — so the check was right
 > and the table it was supposed to agree with was not.
 
 ```bash
-cat ~/fvm/versions/3.44.8/bin/cache/flutter.version.json
+cat ~/.flutter-vita/flutter/3.44.8/bin/cache/flutter.version.json
 ```
 
 ## Why 3.44.8 specifically

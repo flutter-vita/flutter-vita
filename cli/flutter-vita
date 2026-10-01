@@ -1,19 +1,14 @@
 #!/usr/bin/env bash
 # Thin launcher, so the CLI is one command rather than a dart invocation.
 #
-# Uses the pinned SDK's dart when one is not on PATH -- a Flutter developer has
-# a Dart runtime, but it is usually inside the Flutter SDK rather than exported.
+# Runs on the Dart inside the tools' own Flutter SDK, which tools/flutter-sdk.sh
+# downloads the first time; FLUTTER_ROOT, when set, names another one. Exported
+# as FLUTTER_ROOT, so the CLI and every build script it starts use the same SDK.
 set -euo pipefail
 HERE="$(cd "$(dirname "$0")" && pwd)"
 ROOT="$(cd "$HERE/.." && pwd)"
 
-if command -v dart >/dev/null 2>&1; then
-  DART=dart
-else
-  PIN="$(sed -n 's/^[[:space:]]*"flutter":[[:space:]]*"\([0-9.]*\)".*/\1/p' "$ROOT/versions.json" 2>/dev/null | head -1)"
-  [ -n "$PIN" ] || PIN=3.44.8
-  DART="${FLUTTER_ROOT:-$HOME/fvm/versions/$PIN}/bin/cache/dart-sdk/bin/dart"
-  [ -x "$DART" ] || { echo "No dart found. Install Flutter or set FLUTTER_ROOT." >&2; exit 1; }
-fi
+FLUTTER_ROOT="$("$ROOT/tools/flutter-sdk.sh")" || exit 1
+export FLUTTER_ROOT
 
-exec "$DART" run "$HERE/bin/flutter_vita.dart" "$@"
+exec "$FLUTTER_ROOT/bin/cache/dart-sdk/bin/dart" run "$HERE/bin/flutter_vita.dart" "$@"

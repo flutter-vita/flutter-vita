@@ -103,7 +103,7 @@ FLUTTER_VERSION="$(sed -n 's/^[[:space:]]*"flutter":[[:space:]]*"\([0-9.]*\)".*/
 # engine are one source tree cut in half, so a framework that does not match is
 # undefined behaviour at runtime with no error at build time. Read from
 # bin/cache/flutter.version.json, the same file the consumer reads.
-FLUTTER_DIR="${FLUTTER_DIR:-$HOME/fvm/versions/$FLUTTER_VERSION}"
+[ -n "${FLUTTER_DIR:-}" ] || FLUTTER_DIR="$("$HERE/flutter-sdk.sh")" || exit 1
 VERSION_JSON="$FLUTTER_DIR/bin/cache/flutter.version.json"
 read_json() { grep -o "\"$1\": *\"[^\"]*\"" "$VERSION_JSON" | sed 's/.*: *"//; s/"$//'; }
 if [ -f "$VERSION_JSON" ]; then

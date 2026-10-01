@@ -1,6 +1,3 @@
-# FVM — the pinned Flutter version lives in .fvmrc (committed);
-# the SDK itself is a symlink into the shared ~/fvm/versions cache.
-.fvm/
 .dart_tool/
 build/
 *.dill

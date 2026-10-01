@@ -16,11 +16,14 @@ changed the decision.
 Everything here is read-only. It touches no vendored tree and needs no build.
 
 **1. Get both trees reachable from one checkout.** Flutter is a monorepo now,
-so an FVM checkout of the candidate version carries the engine source *and* the
-history back to the current pin:
+so a full clone at the candidate tag carries the engine source *and* the
+history back to the current pin. Not the tools' own SDK in
+`~/.flutter-vita/flutter/`: that one is the pinned version only.
 
 ```bash
-cd ~/fvm/versions/<candidate> && git rev-list --count <current-framework-rev>..HEAD
+git clone https://github.com/flutter/flutter.git /tmp/flutter-candidate
+cd /tmp/flutter-candidate && git checkout <candidate>
+git rev-list --count <current-framework-rev>..HEAD
 ```
 
 The Dart SDK is not in that checkout — it is a DEPS entry. The vendored trees
