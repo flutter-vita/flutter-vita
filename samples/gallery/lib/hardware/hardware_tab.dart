@@ -39,6 +39,7 @@ import 'package:record/record.dart';
 import 'package:record_vita/record_vita.dart';
 import 'package:sensors_plus/sensors_plus.dart';
 
+import '../run_fab.dart';
 import '../suites.dart'
     show
         engineStamp,
@@ -809,15 +810,9 @@ class HardwareTab extends StatelessWidget {
               const Divider(height: 1, color: Color(0xFF262B36)),
               Expanded(
                 child: ListView(
+                  padding: const EdgeInsets.only(bottom: RunFab.clearance),
                   children: [
-                    _GroupHead(
-                      title: title,
-                      hint: hint,
-                      count: rows.length,
-                      onRun: busy
-                          ? null
-                          : () => suite.runGroups([group], writeFile: true),
-                    ),
+                    _GroupHead(title: title, hint: hint, count: rows.length),
                     for (final c in rows)
                       _CheckRow(c, onRun: busy ? null : () => suite.runOne(c)),
                   ],
@@ -825,6 +820,9 @@ class HardwareTab extends StatelessWidget {
               ),
             ],
           );
+          final listWithRun = RunFab.over(list,
+              running: busy,
+              onRun: () => suite.runGroups([group], writeFile: true));
           final side = switch (group) {
             HardwareGroup.auto => null,
             HardwareGroup.camera => Column(
@@ -845,11 +843,11 @@ class HardwareTab extends StatelessWidget {
                 ),
               ),
           };
-          if (side == null) return list;
+          if (side == null) return listWithRun;
           return Row(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              Expanded(child: list),
+              Expanded(child: listWithRun),
               const VerticalDivider(width: 1),
               SizedBox(
                 width: group == HardwareGroup.camera ? 330 : 250,
@@ -877,17 +875,15 @@ class _GroupHead extends StatelessWidget {
     required this.title,
     required this.hint,
     required this.count,
-    required this.onRun,
   });
   final String title;
   final String hint;
   final int count;
-  final VoidCallback? onRun;
 
   @override
   Widget build(BuildContext context) => Container(
         color: const Color(0xFF161A23),
-        padding: const EdgeInsets.only(left: 8),
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 10),
         child: Row(
           children: [
             Text(title,
@@ -902,10 +898,6 @@ class _GroupHead extends StatelessWidget {
                   overflow: TextOverflow.ellipsis,
                   style:
                       const TextStyle(fontSize: 11, color: Color(0xFF6B7488))),
-            ),
-            TextButton(
-              onPressed: onRun,
-              child: Text(onRun == null ? '…' : 'Run'),
             ),
           ],
         ),

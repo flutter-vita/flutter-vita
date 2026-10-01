@@ -14,6 +14,7 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 
+import '../run_fab.dart';
 import '../suites.dart'
     show
         engineStamp,
@@ -245,11 +246,11 @@ class _TestsTabState extends State<TestsTab> {
     final skipped = _results.where((r) => r.outcome == Outcome.skipped).length;
     final ran = passed + failed + skipped;
 
-    return Column(
+    final tab = Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         Padding(
-          padding: const EdgeInsets.fromLTRB(10, 2, 4, 0),
+          padding: const EdgeInsets.fromLTRB(10, 8, 10, 8),
           child: Row(
             children: [
               // The logical size and device pixel ratio, because the first
@@ -282,10 +283,6 @@ class _TestsTabState extends State<TestsTab> {
                       : const Color(0xFF9AA4B8),
                 ),
               ),
-              TextButton(
-                onPressed: _running ? null : () => _runAll(writeFile: true),
-                child: Text(_running ? '…' : 'Run'),
-              ),
             ],
           ),
         ),
@@ -302,11 +299,14 @@ class _TestsTabState extends State<TestsTab> {
               itemExtent: _rowHeight,
               itemCount: _results.length,
               itemBuilder: (context, i) => _Row(_results[i]),
+              padding: const EdgeInsets.only(bottom: RunFab.clearance),
             ),
           ),
         ),
       ],
     );
+    return RunFab.over(tab,
+        running: _running, onRun: () => _runAll(writeFile: true));
   }
 }
 
