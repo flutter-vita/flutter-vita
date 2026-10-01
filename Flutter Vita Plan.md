@@ -9,7 +9,8 @@
 > inline rather than quietly edited, because several of the original claims were
 > not just stale but wrong in ways that shaped early decisions.
 >
-> Start at [`docs/HANDOFF.md`](docs/HANDOFF.md) for the current state.
+> For the current state, read "Where the project stands" in
+> [`docs/README.md`](docs/README.md). `docs/HANDOFF.md` records the state of 2026-08-08.
 
 **Goal:** Make the PS Vita (homebrew, HENkaku/h-encore) a working target platform for Flutter applications. Success criterion for v1: a standard Flutter counter app and mid-complexity UIs run on real hardware in AOT/release mode — "laggy but working" is acceptable.
 
@@ -29,7 +30,7 @@
 | 960×544 is "~2 MP" | 522,240 px ≈ **0.52 MP**. The arithmetic this justified was wrong | [ADR-0006](docs/adr/0006-performance-bar-set-from-measurement.md) |
 | 60 fps for simple UIs | **Arithmetically impossible** at native resolution — the present blit alone is 8.06 ms, 48% of the frame budget. 30 fps marginal; **720×408 reaches 68 fps** | [ADR-0006](docs/adr/0006-performance-bar-set-from-measurement.md) |
 | Docker toolchain image | VitaSDK installed natively via vdpm; no Docker | [dev-environment](docs/dev-environment.md) |
-| `psp2shell` / network logging | **No taiHEN plugin works on this device.** BGFTP for file transfer, manual launch from LiveArea, logs pulled over FTP | [HANDOFF](docs/HANDOFF.md) |
+| `psp2shell` / network logging | **No taiHEN plugin works on this device.** BGFTP for file transfer, manual launch from LiveArea, logs pulled over FTP. **[corrected]** The receiver now installs, launches and returns logs over TCP; BGFTP is out of the loop | [HANDOFF](docs/HANDOFF.md), [ADR-0016](docs/adr/0016-the-receiver-becomes-a-flutter-app.md) |
 | M1 = `app-aot-elf` snapshot that prints | `app-aot-assembly` **linked into eboot.bin**; success is a checksum, though `print()` now works too | [ADR-0005](docs/adr/0005-aot-snapshot-delivery.md) |
 
 ---
@@ -216,7 +217,7 @@ flutter-vita/
 │   ├── HANDOFF.md
 │   ├── adr/
 │   └── embedder-startup.md
-├── patches/dart-sdk/          # ordered *.patch series (0001–0008)
+├── patches/dart-sdk/          # ordered *.patch series (0001–0008); [corrected] gone, the port is commits in forks
 ├── experiments/                    # each measurement behind a script
 │   ├── b1-aot-snapshot/       # hello.dart -> kernel
 │   ├── m1-snapshot/           # kernel -> snapshot.S
@@ -234,7 +235,7 @@ vendored tree and are extracted as patch 0003.
 
 - **Ground rules**
   - Never target JIT, hot reload, or Impeller. If a task seems to require them, stop and flag it.
-  - All third-party source is vendored at pinned commits; modifications go through `patches/` as an ordered series. **Never `rsync` into `third_party/sdk`** — gclient gitlinks do not survive a file copy.
+  - All third-party source is vendored at pinned commits; modifications go through `patches/` as an ordered series. **[corrected]** Since 2026-09-23 modifications are commits on branch `vita-3.44.8` of a fork of each project ([ADR-0021](docs/adr/0021-the-port-is-commits-not-patches.md)). **Never `rsync` into `third_party/sdk`** — gclient gitlinks do not survive a file copy.
   - Real hardware is ground truth. Vita3K is advisory. **[corrected]** But do not dismiss a Vita3K failure as an emulator artifact without evidence — one such dismissal cost two rounds.
   - Prefer `sce*` native APIs over newlib emulation when both exist.
   - **[added]** Before writing embedder code, read `runtime/bin/main_impl.cc` and `dartutils.cc`. Every M1 failure past `Dart_Invoke` was a step those files perform and the harness did not.

@@ -189,7 +189,8 @@ input, and the embedder had it filed as an ADR-0004 performance concern.
 
 **Three pieces of GXM setup, and no GXM rendering.** *(Written for the dialog,
 still required by libime on the software path — that is the route
-`sceCommonDialogUpdate` takes. Under GL vitaGL does it instead.)* A common dialog is drawn by
+`sceCommonDialogUpdate` takes. Under GL the GLES2 layer does it instead, in
+`engine/gles2/src/context.c`; vitaGL did until 2026-09-14.)* A common dialog is drawn by
 the shell into the application's own frame, and it will only do that into a
 surface GXM manages: the framebuffer mapped with `sceGxmMapMemory`, a
 depth/stencil surface the descriptor requires even though nothing tests depth,

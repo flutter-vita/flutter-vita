@@ -9,10 +9,9 @@ this file is specifically *where we stopped and why*.
 > **The status below is from 2026-08-08 and is superseded.** It predates the
 > engine port, the GPU backend and the receiver becoming a Flutter app. Flutter
 > runs on hardware now; see "Where the project stands" in
-> [README.md](README.md). Two details in *The machine* are also stale: the
-> console is reached as `fluttervita.local` rather than by address, and BGFTP
-> was deliberately removed from the loop. The build pipeline and the gotchas
-> below still hold.
+> [README.md](README.md). *The machine* and *Deploying* were brought up to
+> date on 2026-10-01. The build pipeline and the gotchas below still hold,
+> except where a note says otherwise.
 
 ## One-paragraph summary
 
@@ -30,15 +29,18 @@ yet. Phase 0.5 (feasibility) is complete and the verdict was go.
 | depot_tools | `~/depot_tools` — provides `gclient`; `gn`/`ninja` come from the Dart checkout |
 | Dart SDK | `third_party/sdk` — **gclient-owned**, pinned `d684a576`, ~7.8 GB, gitignored |
 | Flutter | 3.44.8, downloaded by `tools/flutter-sdk.sh` to `~/.flutter-vita/flutter/3.44.8` |
-| Vita | `192.168.0.40`, FTP on 1337 — always on, served by **BGFTP** |
-| Title ID | `FVTA00002` (M1), `FVTA00001` (Track A probe) |
+| Vita | `fluttervita.local`, never an address. The receiver listens on 1341, a running debug app's dev server on 1339. Use `nc -4`: without it, each connect waits 5 s for an IPv6 mDNS answer |
+| Title ID | `FVTA00001` the receiver, `FVTA00002` the app slot the dev loop reuses, `FVTA00009` the updater |
 
 **Never `rsync` into `third_party/sdk`.** gclient records DEPS sub-repos with
 gitlinks that a file copy corrupts; the failures surface later as
 *"not a git repository"* on a different directory each sync. The tree is
-disposable — [`patches/dart-sdk/`](https://github.com/flutter-vita/dart-sdk/commits/vita-3.44.8) is the real
-artifact and restores the whole port with one `git apply`. That has been proven
-twice, once after a careless `reset --hard` destroyed the working tree.
+disposable: the port is commits on branch `vita-3.44.8` of
+[flutter-vita/dart-sdk](https://github.com/flutter-vita/dart-sdk/commits/vita-3.44.8),
+and the engine fork's `DEPS` names that fork, so `gclient sync` brings it back
+([ADR-0021](adr/0021-the-port-is-commits-not-patches.md)). Until 2026-09-23 the
+port was a patch series that one `git apply` restored. That was proven twice,
+once after a careless `reset --hard` destroyed the working tree.
 
 ## Build pipeline, in order
 
@@ -83,28 +85,21 @@ and the timeline, which otherwise fail to build for an unknown OS.
 
 ## Deploying
 
-The app is already installed, so **do not reinstall the vpk** — overwrite in
-place:
+The receiver on the console installs and launches the app over Wi-Fi, and
+sends its log back ([Console setup](configure-console.md)):
 
 ```bash
-unzip -o -q build/flutter_vita_m1.vpk eboot.bin -d out/staging
-curl -T out/staging/eboot.bin "ftp://192.168.0.40:1337/ux0:/app/FVTA00002/eboot.bin"
+./cli/flutter-vita run samples/gallery
+./cli/flutter-vita logs
 ```
 
-Then launch **Flutter Vita M1** from the LiveArea. Logs:
-
-```
-ux0:data/flutter-vita/m1.log     harness checkpoints
-ux0:data/flutter-vita/dart.log   VitaTrace + Dart's Syslog
-```
-
-[`experiments/m1-vpk/deploy.sh`](../experiments/m1-vpk/deploy.sh) scripts this with
-`USE_COMPANION=0`.
+In August this section overwrote `eboot.bin` with `curl` through BGFTP's FTP
+server, and the app was launched by hand from LiveArea. The receiver replaced
+both, and BGFTP is out of the loop.
 
 **Do not suggest taiHEN plugins.** vitacompanion destabilised the device (it
-loads into SceShell) and others would not load at all. BGFTP is installed and
-working; that is the whole deployment story. Launching is manual, from the
-LiveArea, and that is fine.
+loads into SceShell) and others would not load at all. Crash recovery works
+without them ([ADR-0011](adr/0011-crash-recovery-without-taihen.md)).
 
 ## M1 is met
 
@@ -244,7 +239,8 @@ impossible. What exists instead:
   `runtime/bin` normally does that and is excluded here. hello.dart returns a
   checksum (**6830**) instead. `asyncMarker()` returns 99 only if the microtask
   queue drains.
-- **BGFTP frequently resets the first connection.** `curl` reports
+- *(No longer applies: BGFTP is out of the loop.)* **BGFTP frequently resets
+  the first connection.** `curl` reports
   *"Recv failure: Connection reset by peer"* and the retry succeeds; uploads
   have taken up to 32 attempts. Loop rather than treating one failure as down.
 - `SCE_O_TRUNC` does not truncate on Vita3K — stale log tails read as current
