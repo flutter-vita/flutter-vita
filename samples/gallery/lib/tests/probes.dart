@@ -51,7 +51,7 @@ const _dataDir = 'ux0:data/flutter-vita';
 /// synchronous flush: it has to survive the crash it is measuring.
 void _mark(String s) {
   try {
-    File('ux0:data/flutter-vita/conformance.txt')
+    File('ux0:data/flutter-vita/tests.txt')
         .writeAsStringSync('     $s\n', mode: FileMode.append, flush: true);
   } on Object {
     // Best effort, exactly like the journal it writes to.

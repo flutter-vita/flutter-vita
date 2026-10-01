@@ -13,9 +13,11 @@ import 'dart:io';
 
 const String kDataDir = 'ux0:data/flutter-vita';
 
-const String kConformanceSwitchPath = '$kDataDir/conformance.on';
-const String kConformanceResultPath = '$kDataDir/conformance-result.json';
-const String kConformanceDonePath = '$kDataDir/conformance-done';
+// The Tests tab was the Conformance tab until 2026-10-01, and its files were
+// conformance.on, conformance-result.json and conformance-done.
+const String kTestsSwitchPath = '$kDataDir/tests.on';
+const String kTestsResultPath = '$kDataDir/tests-result.json';
+const String kTestsDonePath = '$kDataDir/tests-done';
 const String kHardwareSwitchPath = '$kDataDir/hardware.on';
 const String kHardwareResultPath = '$kDataDir/hardware-result.json';
 const String kHardwareDonePath = '$kDataDir/hardware-done';

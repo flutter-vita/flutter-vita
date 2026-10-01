@@ -67,9 +67,9 @@ class BenchEntry {
 /// The default manifest, used when the card has none.
 ///
 /// The benchmark app (github.com/flutter-vita/flutter-vita-bench) is the only
-/// real suite today. Conformance reports pass and fail rather than timings,
-/// and localsend's throughput bench lives in host tooling, so neither has a
-/// row yet. Being honest about that is better than listing three entries when
+/// real suite today. The gallery's Tests tab reports pass and fail rather than
+/// timings, and localsend's throughput bench lives in host tooling, so neither
+/// has a row yet. Being honest about that is better than listing three entries when
 /// there is one. Until 2026-10-01 the scenes were a tab of the gallery.
 const _builtIn = <BenchEntry>[
   BenchEntry(

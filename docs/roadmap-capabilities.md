@@ -11,9 +11,9 @@ nothing else is waiting on it.
 ## The status table
 
 **Measured, not assumed** — every row below was run on hardware. The audit was
-[2026-08-14](phase-5-capability-audit.md); the current state is the conformance
-app's own verdict, **45 probes, 45 pass, 0 fail**, in a single run on
-2026-08-15.
+[2026-08-14](phase-5-capability-audit.md); the current state is the verdict of
+the gallery's Tests tab, **77 probes, 77 pass, 0 fail**, in a single run on
+2026-10-01.
 
 That was the point of doing the audit first. `runtime/bin` was ported in Phase 2
 to make the engine *link*, and the working assumption was that little of it

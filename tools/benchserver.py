@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-# Feeds the Vita the same bytes three ways, so the conformance app's throughput
+# Feeds the Vita the same bytes three ways, so the gallery Tests tab's throughput
 # probes can tell the layers apart: raw TCP on 5301, HTTP on 5302, HTTPS on
 # 5303. Run it on the machine named by _benchHost in
-# samples/gallery/lib/probes.dart and leave it up for the run.
+# samples/gallery/lib/tests/probes.dart and leave it up for the run.
 #
 #   python3 tools/benchserver.py
 #

@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
 # Run one of the gallery's suites on the console, unattended, and print the verdict.
 #
-#   ./tools/suite.sh conformance           the probe suite, out/suite/conformance.json
+#   ./tools/suite.sh tests                 the probes of the Tests tab, out/suite/tests.json
 #   ./tools/suite.sh hardware              the hardware checks, out/suite/hardware.json
-#   ./tools/suite.sh all                   conformance, then hardware
-#   ./tools/suite.sh conformance --relaunch    reuse the installed build, skip build and deploy
-#   ./tools/suite.sh conformance --no-build    deploy what is already built
-#   ./tools/suite.sh conformance --host NAME --receiver-port N
+#   ./tools/suite.sh all                   tests, then hardware
+#   ./tools/suite.sh tests --relaunch      reuse the installed build, skip build and deploy
+#   ./tools/suite.sh tests --no-build      deploy what is already built
+#   ./tools/suite.sh tests --host NAME --receiver-port N
 #
 # Each suite is started by its own switch on the card and ends with its own
 # done marker (samples/README.md). This script arms the switch, deploys the
@@ -34,7 +34,7 @@ SUITE=""
 
 while [ $# -gt 0 ]; do
   case "$1" in
-    conformance|hardware|all) SUITE="$1"; shift ;;
+    tests|hardware|all) SUITE="$1"; shift ;;
     --host)        HOST="$2"; shift 2 ;;
     --receiver-port) LDR="$2"; shift 2 ;;
     --no-build)    BUILD=0; shift ;;
@@ -85,7 +85,7 @@ fi
 # Arm the switch, deploy (or relaunch), wait for the done marker, pull the
 # result. The first suite of a run deploys; the second relaunches the build the
 # first one installed.
-run_suite() {  # <conformance|hardware>
+run_suite() {  # <tests|hardware>
   local suite="$1"
   echo "==> $suite: arming"
   put "0" "ux0:data/flutter-vita/software.on"
@@ -122,7 +122,7 @@ import json, sys
 d = json.load(open(sys.argv[1]))
 suite = sys.argv[2]
 print(f"    {sys.argv[1]}  ({d.get('engine', 'no engine stamp')})")
-if suite == "conformance":
+if suite == "tests":
     print(f"    {d['pass']} pass  {d['fail']} fail  {d['skip']} skip")
     for p in d["probes"]:
         if p["outcome"] == "fail":
@@ -137,7 +137,7 @@ PY
 
 case "$SUITE" in
   all)
-    run_suite conformance || true
+    run_suite tests || true
     RELAUNCH=1
     run_suite hardware ;;
   *)

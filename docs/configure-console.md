@@ -71,7 +71,7 @@ shows all of it on its screen:
 | LOGS | Logs of past runs, by title and build |
 | CRASHES | Crash dumps on the card, with the thread that faulted |
 | APPS | Installed titles; launch one |
-| TESTS | The conformance and hardware results the gallery wrote |
+| TESTS | The bench app's results, and the test and hardware results the gallery wrote |
 | FILES | A file browser: images, WAV, AAC and MP3 play; a `.vpk` installs |
 
 An app you deploy goes into slot `FVTA00002` by default and listens on

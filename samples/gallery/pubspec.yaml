@@ -9,8 +9,8 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
-  # The conformance probes (the Conformance tab, apps/conformance until
-  # 2026-09-14) exercise the two non-endorsed vita implementations, listed
+  # The probes of the Tests tab (Conformance until 2026-10-01, apps/conformance
+  # until 2026-09-14) exercise the two non-endorsed vita implementations, listed
   # alongside the plugins they implement -- the edit ADR-0009 asks an app
   # author to make.
   path_provider: ^2.1.0

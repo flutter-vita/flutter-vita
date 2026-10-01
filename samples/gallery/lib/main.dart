@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:vita_debug_strip/vita_debug_strip.dart';
 
 import 'configure_tab.dart';
-import 'conformance/conformance_tab.dart';
+import 'tests/tests_tab.dart';
 import 'hardware/hardware_tab.dart';
 import 'panel_page.dart';
 import 'results_tab.dart';
@@ -11,14 +11,14 @@ import 'suites.dart';
 /// Everything this port is measured with, on one panel.
 ///
 /// Tabs on a rail down the left, the shape the receiver has. Panel is
-/// what the port looks like, judged by eye. Conformance is the probe suite
+/// what the port looks like, judged by eye. Tests is the probe suite
 /// that was its own app until 2026-09-14. Hardware asks each piece of the
 /// console to answer. Results reads the two result files back. Above all of
 /// them, the whole width, a strip with what the console is doing this second
 /// (vita_debug_strip).
 ///
 /// Two switches on the card start an unattended run on one tab and the run
-/// writes a result file and a done marker: conformance.on, hardware.on.
+/// writes a result file and a done marker: tests.on, hardware.on.
 /// tools/suite.sh writes them. The benchmark's scenes were a tab here until
 /// 2026-10-01; they are github.com/flutter-vita/flutter-vita-bench now.
 void main() async {
@@ -40,10 +40,10 @@ void main() async {
   // applied once here so the tab and the embedder start in agreement.
   await GalleryConfig.apply();
 
-  final autoConformance = switchOn(kConformanceSwitchPath);
-  final autoHardware = !autoConformance && switchOn(kHardwareSwitchPath);
+  final autoTests = switchOn(kTestsSwitchPath);
+  final autoHardware = !autoTests && switchOn(kHardwareSwitchPath);
   runApp(GalleryApp(
-    autoConformance: autoConformance,
+    autoTests: autoTests,
     autoHardware: autoHardware,
   ));
 }
@@ -51,11 +51,11 @@ void main() async {
 class GalleryApp extends StatelessWidget {
   const GalleryApp({
     super.key,
-    this.autoConformance = false,
+    this.autoTests = false,
     this.autoHardware = false,
   });
 
-  final bool autoConformance;
+  final bool autoTests;
   final bool autoHardware;
 
   @override
@@ -67,12 +67,12 @@ class GalleryApp extends StatelessWidget {
           scaffoldBackgroundColor: const Color(0xFF10131A),
         ),
         home: Shell(
-          initialTab: autoConformance
+          initialTab: autoTests
               ? 1
               : autoHardware
                   ? 2
                   : 0,
-          autoConformance: autoConformance,
+          autoTests: autoTests,
           autoHardware: autoHardware,
         ),
       );
@@ -82,12 +82,12 @@ class Shell extends StatefulWidget {
   const Shell({
     super.key,
     required this.initialTab,
-    required this.autoConformance,
+    required this.autoTests,
     required this.autoHardware,
   });
 
   final int initialTab;
-  final bool autoConformance;
+  final bool autoTests;
   final bool autoHardware;
 
   @override
@@ -96,7 +96,7 @@ class Shell extends StatefulWidget {
 
 const _tabNames = [
   'PANEL',
-  'CONFORMANCE',
+  'TESTS',
   'HARDWARE',
   'CAMERAS',
   'MANUAL',
@@ -178,7 +178,7 @@ class _ShellState extends State<Shell> {
 
   Widget _tabBody(int i) => switch (i) {
         0 => const PanelTab(),
-        1 => ConformanceTab(autoRun: widget.autoConformance),
+        1 => TestsTab(autoRun: widget.autoTests),
         2 => HardwareTab(suite: _hardware, group: HardwareGroup.auto),
         3 => HardwareTab(suite: _hardware, group: HardwareGroup.camera),
         4 => HardwareTab(suite: _hardware, group: HardwareGroup.person),

@@ -6,11 +6,11 @@ What this port looks like and what it can do, on one panel:
 
 - **Panel**: what the port *looks like*, judged by eye. A widget either looks
   right or it does not, and no app can assess that about itself.
-- **Conformance**: what this port can actually do, one probe per capability
-  (78 of them), measured on hardware rather than assumed. Its own app until
-  2026-09-14. Probes are ordered safest-first, so that a native crash still
+- **Tests**: what this port can actually do, one probe per capability
+  (77 of them), measured on hardware rather than assumed. Its own app until
+  2026-09-14, and the Conformance tab until 2026-10-01. Probes are ordered safest-first, so that a native crash still
   tells you something: everything above the first missing row passed. The
-  journal `ux0:data/flutter-vita/conformance.txt` survives the process; the
+  journal `ux0:data/flutter-vita/tests.txt` survives the process; the
   resume file skips the probe that killed the last attempt.
 - **Hardware**, **Cameras**, **Manual**: does each piece of the console
   answer, and with what. One suite of checks on three tabs. Hardware runs by
@@ -35,16 +35,16 @@ cores, GPU busy, the battery's temperature and charge, free memory from the
 embedder over `vita/stats`.
 
 Two switches on the card start an unattended run and the run writes a result
-file and a done marker the host waits for: `conformance.on`
-(`conformance-result.json`, `conformance-done`) and `hardware.on`.
-`tools/suite.sh conformance|hardware|all` writes them.
+file and a done marker the host waits for: `tests.on`
+(`tests-result.json`, `tests-done`) and `hardware.on`.
+`tools/suite.sh tests|hardware|all` writes them.
 
 The benchmark's 36 scenes were a tab here until 2026-10-01. They are an app of
 their own now, in [flutter-vita-bench](https://github.com/flutter-vita/flutter-vita-bench).
 
 ## `test-apps/` — checkouts gitignored, manifest committed
 
-Real third-party apps, cloned for bug-finding — the bugs the conformance app
+Real third-party apps, cloned for bug-finding — the bugs the Tests tab
 structurally cannot find, because it was written by the people who wrote the
 engine. Checkouts are disposable; `test-apps/manifest.txt` is not, because a bug
 found in an app you cannot name again is a bug you cannot regression-test.

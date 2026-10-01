@@ -212,7 +212,7 @@ and [flutter_manga_reader](https://github.com/flutter-vita/flutter_manga_reader)
 ## Showcases
 
 - [`samples/gallery`](samples/gallery): the panel this port is measured with. Tabs
-  for widgets, benchmark scenes, conformance probes, hardware checks.
+  for widgets, tests, hardware checks and the settings of `flutter_vita`.
 - [`samples/test-apps`](samples/test-apps): apps we did not write, run as found:
   Wonderous, LocalSend, a manga reader and a journal, pinned by commit in
   [`manifest.txt`](samples/test-apps/manifest.txt).

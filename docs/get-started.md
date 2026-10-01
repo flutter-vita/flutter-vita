@@ -18,8 +18,8 @@ with the engine; count on a minute. The install itself takes about 35
 seconds for a 15 MB app.
 
 The gallery is the port's own instrument: a strip of live numbers across
-the top, tabs for widgets, benchmark scenes, conformance probes and
-hardware checks. Tap around. When you are done, hold **L + R + START** for a
+the top, tabs for widgets, tests, hardware checks and the settings of
+`flutter_vita`. Tap around. When you are done, hold **L + R + START** for a
 second: the console goes back to the receiver.
 
 ## 2. Run your own app

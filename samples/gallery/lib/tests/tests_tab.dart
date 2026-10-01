@@ -1,10 +1,11 @@
-// The Conformance tab: what this port can actually do, probe by probe.
+// The Tests tab: what this port can actually do, probe by probe.
 //
-// This was its own application (apps/conformance) until 2026-09-14. It kept
+// Called Conformance until 2026-10-01, and its own application
+// (apps/conformance) until 2026-09-14. It kept
 // its two files: the journal, appended as probes complete so a crash leaves
 // evidence, and the resume file, so the next attempt skips the probe that
 // killed the last one. It gained what the Scenes tab had: a Run button, an
-// unattended run when the host writes conformance.on, and a result file with
+// unattended run when the host writes tests.on, and a result file with
 // a done marker the host can wait for.
 
 import 'dart:async';
@@ -16,23 +17,23 @@ import 'package:flutter/material.dart';
 import '../suites.dart'
     show
         engineStamp,
-        kConformanceDonePath,
-        kConformanceResultPath,
+        kTestsDonePath,
+        kTestsResultPath,
         kDataDir,
         writeAtomic;
 import 'probes.dart';
 
-class ConformanceTab extends StatefulWidget {
-  const ConformanceTab({super.key, this.autoRun = false});
+class TestsTab extends StatefulWidget {
+  const TestsTab({super.key, this.autoRun = false});
 
   /// Started by the host: run at once, write the result file and the marker.
   final bool autoRun;
 
   @override
-  State<ConformanceTab> createState() => _ConformanceTabState();
+  State<TestsTab> createState() => _TestsTabState();
 }
 
-class _ConformanceTabState extends State<ConformanceTab> {
+class _TestsTabState extends State<TestsTab> {
   late List<ProbeResult> _results = buildProbes().map(ProbeResult.new).toList();
   var _running = false;
   var _done = false;
@@ -145,7 +146,7 @@ class _ConformanceTabState extends State<ConformanceTab> {
     try {
       final payload = <String, Object?>{
         'schema': 1,
-        'suite': 'conformance',
+        'suite': 'tests',
         'taken': DateTime.now().toIso8601String(),
         if (engineStamp() case final String e) 'engine': e,
         'pass': _results.where((r) => r.outcome == Outcome.pass).length,
@@ -162,9 +163,9 @@ class _ConformanceTabState extends State<ConformanceTab> {
         ],
       };
       Directory(kDataDir).createSync(recursive: true);
-      writeAtomic(kConformanceResultPath,
+      writeAtomic(kTestsResultPath,
           const JsonEncoder.withIndent('  ').convert(payload));
-      File(kConformanceDonePath).writeAsStringSync('1', flush: true);
+      File(kTestsDonePath).writeAsStringSync('1', flush: true);
     } on Object {
       // The journal already has every line; the result file is the summary.
     }
@@ -174,7 +175,7 @@ class _ConformanceTabState extends State<ConformanceTab> {
   ///
   /// Best-effort by design: this is the reporting channel *and* partly the
   /// thing under test, so it must never be the reason a run fails.
-  static const _journalPath = '$kDataDir/conformance.txt';
+  static const _journalPath = '$kDataDir/tests.txt';
 
   /// Where the next attempt should pick up. One integer, separate from the
   /// journal on purpose; delete it or write a non-number to force a fresh run.
@@ -190,7 +191,7 @@ class _ConformanceTabState extends State<ConformanceTab> {
         if (n != null && n >= 0 && n <= _results.length) resumeAt = n;
       }
       File(_journalPath).writeAsStringSync(
-        '\n=== flutter-vita conformance ${DateTime.now()} '
+        '\n=== flutter-vita tests ${DateTime.now()} '
         '${resumeAt == null ? "(fresh run)" : "(resuming at probe $resumeAt)"} ===\n',
         mode: FileMode.append,
         flush: true,

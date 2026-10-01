@@ -9,7 +9,7 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 
-import 'suites.dart' show kConformanceResultPath, kHardwareResultPath;
+import 'suites.dart' show kHardwareResultPath, kTestsResultPath;
 
 class ResultsTab extends StatefulWidget {
   const ResultsTab({super.key});
@@ -18,7 +18,7 @@ class ResultsTab extends StatefulWidget {
 }
 
 class _ResultsTabState extends State<ResultsTab> {
-  Map<String, Object?>? _conformance;
+  Map<String, Object?>? _tests;
   Map<String, Object?>? _hardware;
 
   static Map<String, Object?>? _read(String path) {
@@ -33,7 +33,7 @@ class _ResultsTabState extends State<ResultsTab> {
   }
 
   void _reload() => setState(() {
-        _conformance = _read(kConformanceResultPath);
+        _tests = _read(kTestsResultPath);
         _hardware = _read(kHardwareResultPath);
       });
 
@@ -69,8 +69,8 @@ class _ResultsTabState extends State<ResultsTab> {
           child: ListView(
             padding: const EdgeInsets.all(10),
             children: [
-              Text('conformance  ${_stamp(_conformance)}', style: head),
-              Text(_conformanceSummary(), style: mono),
+              Text('tests  ${_stamp(_tests)}', style: head),
+              Text(_testsSummary(), style: mono),
               const SizedBox(height: 10),
               Text('hardware  ${_stamp(_hardware)}', style: head),
               Text(_hardwareSummary(), style: mono),
@@ -89,9 +89,9 @@ class _ResultsTabState extends State<ResultsTab> {
     return '${taken.length > 19 ? taken.substring(0, 19) : taken}  ·  $engine';
   }
 
-  String _conformanceSummary() {
-    final m = _conformance;
-    if (m == null) return 'run the Conformance tab';
+  String _testsSummary() {
+    final m = _tests;
+    if (m == null) return 'run the Tests tab';
     final failed = (m['probes'] as List? ?? const [])
         .cast<Map>()
         .where((p) => p['outcome'] == 'fail')
