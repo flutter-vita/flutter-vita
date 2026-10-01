@@ -6,8 +6,6 @@ Everything this port is measured with, on one panel, five tabs:
 
 - **Panel**: what the port *looks like*, judged by eye. A widget either looks
   right or it does not, and no app can assess that about itself.
-- **Scenes**: the benchmark of [ADR-0017](../docs/adr/0017-the-gallery-becomes-the-benchmark.md),
-  36 scenes, driven by `tools/bench.sh`.
 - **Conformance**: what this port can actually do, one probe per capability
   (78 of them), measured on hardware rather than assumed. Its own app until
   2026-09-14. Probes are ordered safest-first, so that a native crash still
@@ -34,12 +32,15 @@ Everything this port is measured with, on one panel, five tabs:
 Above every tab a strip shows what the console is doing this second: frames
 per second and UI/raster time from the framework's own `FrameTiming`; the four
 cores, GPU busy, the battery's temperature and charge, free memory from the
-embedder over `vita/stats`. The strip is not drawn while a Scene runs.
+embedder over `vita/stats`.
 
-Three switches on the card start an unattended run and the run writes a
-result file and a done marker the host waits for: `bench.on`
-(`bench-result.json`, `bench-done`), `conformance.on`, `hardware.on`.
-`tools/bench.sh --suite scenes|conformance|hardware|all` writes them.
+Two switches on the card start an unattended run and the run writes a result
+file and a done marker the host waits for: `conformance.on`
+(`conformance-result.json`, `conformance-done`) and `hardware.on`.
+`tools/suite.sh conformance|hardware|all` writes them.
+
+The benchmark's 36 scenes were a tab here until 2026-10-01. They are an app of
+their own now, in [flutter-vita-bench](https://github.com/flutter-vita/flutter-vita-bench).
 
 ## `test-apps/` — checkouts gitignored, manifest committed
 

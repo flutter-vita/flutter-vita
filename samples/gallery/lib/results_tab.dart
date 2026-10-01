@@ -1,16 +1,15 @@
 // The Results tab: the last run of each suite, read back from the card.
 //
 // The suites write their files for the host; this tab reads the same files,
-// so what a person sees on the console and what bench.sh pulls are one
-// thing. Nothing here is computed: it is the result files, summarised.
+// so what a person sees on the console and what tools/suite.sh pulls are
+// one thing. Nothing here is computed: it is the result files, summarised.
 
 import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
 
-import 'bench/runner.dart'
-    show kConformanceResultPath, kHardwareResultPath, kResultPath;
+import 'suites.dart' show kConformanceResultPath, kHardwareResultPath;
 
 class ResultsTab extends StatefulWidget {
   const ResultsTab({super.key});
@@ -19,7 +18,6 @@ class ResultsTab extends StatefulWidget {
 }
 
 class _ResultsTabState extends State<ResultsTab> {
-  Map<String, Object?>? _bench;
   Map<String, Object?>? _conformance;
   Map<String, Object?>? _hardware;
 
@@ -35,7 +33,6 @@ class _ResultsTabState extends State<ResultsTab> {
   }
 
   void _reload() => setState(() {
-        _bench = _read(kResultPath);
         _conformance = _read(kConformanceResultPath);
         _hardware = _read(kHardwareResultPath);
       });
@@ -72,9 +69,6 @@ class _ResultsTabState extends State<ResultsTab> {
           child: ListView(
             padding: const EdgeInsets.all(10),
             children: [
-              Text('scenes  ${_stamp(_bench)}', style: head),
-              Text(_benchSummary(), style: mono),
-              const SizedBox(height: 10),
               Text('conformance  ${_stamp(_conformance)}', style: head),
               Text(_conformanceSummary(), style: mono),
               const SizedBox(height: 10),
@@ -93,19 +87,6 @@ class _ResultsTabState extends State<ResultsTab> {
     final engine =
         m['engine'] == null ? 'no engine stamp' : 'engine ${m['engine']}';
     return '${taken.length > 19 ? taken.substring(0, 19) : taken}  ·  $engine';
-  }
-
-  String _benchSummary() {
-    final m = _bench;
-    if (m == null) return 'run the Scenes tab, or tools/bench.sh';
-    final scenes = (m['scenes'] as List? ?? const []).cast<Map>();
-    double sum(String k) =>
-        scenes.fold(0.0, (s, sc) => s + ((sc[k] as num?)?.toDouble() ?? 0));
-    final stalled = scenes.where((s) => s['passed'] != true).length;
-    final interrupted = scenes.where((s) => s['interrupted'] == true).length;
-    return '${scenes.length} scenes, $stalled with a stall${interrupted > 0 ? ', $interrupted interrupted' : ''}\n'
-        'worst ${sum('worst_ms').toStringAsFixed(0)} ms  stall ${sum('stall_ms').toStringAsFixed(0)} ms  '
-        'ui ${sum('build_ms').toStringAsFixed(1)} ms  raster ${sum('raster_ms').toStringAsFixed(1)} ms (sums)';
   }
 
   String _conformanceSummary() {

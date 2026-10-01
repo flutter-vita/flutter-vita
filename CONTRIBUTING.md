@@ -71,12 +71,10 @@ work that is not committed.
 arbitrary choice. It is the version that has prebuilt 32-bit ARM engine
 binaries. To move it is work with a cost. Calculate the cost first.
 
-**A number with no method is not a result.** Use `tools/bench.sh` for
-measurements, so that the next person can do them again. The gate grades
-the median frame period, build and raster of each scene inside the spread
-that scene measured for itself. When it examined the worst frame, it gave
-incorrect answers on unchanged code
-([ADR-0022](docs/adr/0022-the-bench-gate-grades-inside-each-scenes-own-spread.md)).
+**A number with no method is not a result.** Measure frame times with
+[flutter-vita-bench](https://github.com/flutter-vita/flutter-vita-bench), so
+that the next person can do the measurement again. It compares each run with
+a baseline and tells you which scenes got slower.
 
 ## Before you change something large
 

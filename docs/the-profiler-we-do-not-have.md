@@ -12,8 +12,8 @@ things inside this call is slow".
 
 | Question | Where it stopped |
 |---|---|
-| **Why does a `TextStyle` that differs from the default cost 1.8x one that does not?** ~750 us against ~400, and setting a field to the value it already had is free. A ~350 us step on **every `Text` in every Material app**. | [ADR-0017](adr/0017-the-gallery-becomes-the-benchmark.md). Two hypotheses tested and refuted; a third would be another day of guessing |
-| **Why are some route scenes bimodal?** `route_wrap` costs 27 ms on three of eight pushes and 14.5 on the other five. Dart GC is the leading explanation because the effect tracks allocation, but **nothing has observed a collection** | [samples/gallery/bench/README.md](../samples/gallery/bench/README.md) |
+| **Why does a `TextStyle` that differs from the default cost 1.8x one that does not?** ~750 us against ~400, and setting a field to the value it already had is free. A ~350 us step on **every `Text` in every Material app**. | [ADR-0017](https://github.com/flutter-vita/flutter-vita-bench/blob/master/docs/adr/0017-the-gallery-becomes-the-benchmark.md). Two hypotheses tested and refuted; a third would be another day of guessing |
+| **Why are some route scenes bimodal?** `route_wrap` costs 27 ms on three of eight pushes and 14.5 on the other five. Dart GC is the leading explanation because the effect tracks allocation, but **nothing has observed a collection** | [samples/gallery/bench/README.md](https://github.com/flutter-vita/flutter-vita-bench/blob/master/baseline/README.md) |
 | **Where does the ~190 us between `TextPainter.layout` and a `Text` widget go?** Widget inflation, element tree, render object — never separated | ADR-0017 |
 | **Why does a paragraph in localsend cost 6.9 ms when one in the gallery costs 0.26 ms?** 26x, on a real app, on ordinary-looking text. Font fallback is the leading guess and nothing has tested it | [results/localsend-gl-2026-08-25.md](results/localsend-gl-2026-08-25.md) |
 

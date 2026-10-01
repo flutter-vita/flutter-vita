@@ -1,27 +1,26 @@
 import 'package:flutter/material.dart';
 import 'package:vita_debug_strip/vita_debug_strip.dart';
 
-import 'bench/bench_page.dart';
-import 'bench/runner.dart';
 import 'configure_tab.dart';
 import 'conformance/conformance_tab.dart';
 import 'hardware/hardware_tab.dart';
 import 'panel_page.dart';
 import 'results_tab.dart';
+import 'suites.dart';
 
 /// Everything this port is measured with, on one panel.
 ///
 /// Tabs on a rail down the left, the shape the receiver has. Panel is
-/// what the port looks like, judged by eye. Scenes is the benchmark of
-/// ADR-0017. Conformance is the probe suite that was its own app until
-/// 2026-09-14. Hardware asks each piece of the console to answer. Results
-/// reads the three result files back. Above all of them, the whole width,
-/// a strip with what the console is doing this second (vita_debug_strip); it stays
-/// while a scene runs.
+/// what the port looks like, judged by eye. Conformance is the probe suite
+/// that was its own app until 2026-09-14. Hardware asks each piece of the
+/// console to answer. Results reads the two result files back. Above all of
+/// them, the whole width, a strip with what the console is doing this second
+/// (vita_debug_strip).
 ///
-/// Three switches on the card start an unattended run on one tab and the run
-/// writes a result file and a done marker: bench.on, conformance.on,
-/// hardware.on. tools/bench.sh writes them.
+/// Two switches on the card start an unattended run on one tab and the run
+/// writes a result file and a done marker: conformance.on, hardware.on.
+/// tools/suite.sh writes them. The benchmark's scenes were a tab here until
+/// 2026-10-01; they are github.com/flutter-vita/flutter-vita-bench now.
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   // A positive control for the engine's log_message_callback. Dart print had
@@ -41,12 +40,9 @@ void main() async {
   // applied once here so the tab and the embedder start in agreement.
   await GalleryConfig.apply();
 
-  final autoBench = switchOn(kSwitchPath);
-  final autoConformance = !autoBench && switchOn(kConformanceSwitchPath);
-  final autoHardware =
-      !autoBench && !autoConformance && switchOn(kHardwareSwitchPath);
+  final autoConformance = switchOn(kConformanceSwitchPath);
+  final autoHardware = !autoConformance && switchOn(kHardwareSwitchPath);
   runApp(GalleryApp(
-    autoBench: autoBench,
     autoConformance: autoConformance,
     autoHardware: autoHardware,
   ));
@@ -55,12 +51,10 @@ void main() async {
 class GalleryApp extends StatelessWidget {
   const GalleryApp({
     super.key,
-    this.autoBench = false,
     this.autoConformance = false,
     this.autoHardware = false,
   });
 
-  final bool autoBench;
   final bool autoConformance;
   final bool autoHardware;
 
@@ -73,14 +67,11 @@ class GalleryApp extends StatelessWidget {
           scaffoldBackgroundColor: const Color(0xFF10131A),
         ),
         home: Shell(
-          initialTab: autoBench
+          initialTab: autoConformance
               ? 1
-              : autoConformance
+              : autoHardware
                   ? 2
-                  : autoHardware
-                      ? 3
-                      : 0,
-          autoBench: autoBench,
+                  : 0,
           autoConformance: autoConformance,
           autoHardware: autoHardware,
         ),
@@ -91,13 +82,11 @@ class Shell extends StatefulWidget {
   const Shell({
     super.key,
     required this.initialTab,
-    required this.autoBench,
     required this.autoConformance,
     required this.autoHardware,
   });
 
   final int initialTab;
-  final bool autoBench;
   final bool autoConformance;
   final bool autoHardware;
 
@@ -107,7 +96,6 @@ class Shell extends StatefulWidget {
 
 const _tabNames = [
   'PANEL',
-  'SCENES',
   'CONFORMANCE',
   'HARDWARE',
   'CAMERAS',
@@ -116,7 +104,7 @@ const _tabNames = [
   'RESULTS',
 ];
 
-class _ShellState extends State<Shell> with TickerProviderStateMixin {
+class _ShellState extends State<Shell> {
   late int _tab = widget.initialTab;
 
   /// hud.off on the card: a strip that does nothing, for measuring what the
@@ -127,26 +115,12 @@ class _ShellState extends State<Shell> with TickerProviderStateMixin {
   /// that nothing else shows is the UI thread's time. L + R + SELECT brings
   /// the engine's own HUD up over it, as in every app.
 
-  /// The benchmark scene being measured, or null. While one is mounted it
-  /// takes the content area: the rail goes, the strip stays. The tabs stay
-  /// in the tree behind it (Offstage, so they cost no layout and no paint):
-  /// the Scenes tab owns the run, and a State that is unmounted mid-run
-  /// cannot make the next AnimationController. Build 30 did that, and every
-  /// animated scene threw "Null check operator used on a null value" from
-  /// State.context.
-  final ValueNotifier<Widget?> _stage = ValueNotifier<Widget?>(null);
-
-  /// The scene's name while one runs, for the strip.
-  final ValueNotifier<String?> _scene = ValueNotifier<String?>(null);
-
   /// The hardware checks, one suite behind three tabs.
   late final HardwareSuite _hardware =
       HardwareSuite(autoRun: widget.autoHardware);
 
   @override
   void dispose() {
-    _stage.dispose();
-    _scene.dispose();
     _hardware.dispose();
     super.dispose();
   }
@@ -157,48 +131,21 @@ class _ShellState extends State<Shell> with TickerProviderStateMixin {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              // Its own layer: the strip repaints twice a second and a
-              // scene underneath must not be repainted with it.
+              // Its own layer: the strip repaints twice a second and the tab
+              // underneath must not be repainted with it.
               RepaintBoundary(
                 child: VitaStrip(
                   frozen: _hudFrozen,
-                  leading: ValueListenableBuilder<String?>(
-                    valueListenable: _scene,
-                    builder: (context, scene, _) => _StripTitle(
-                      tab: _tabNames[_tab],
-                      scene: scene,
-                    ),
-                  ),
+                  leading: _StripTitle(tab: _tabNames[_tab]),
                 ),
               ),
               const Divider(height: 1, color: Color(0xFF262B36)),
               Expanded(
-                // A Navigator of its own, so a route a scene pushes lands
-                // here, under the strip, rather than over the whole screen.
+                // A Navigator of its own, so a route a tab pushes lands here,
+                // under the strip, rather than over the whole screen.
                 child: Navigator(
                   onGenerateRoute: (_) => MaterialPageRoute<void>(
-                    builder: (_) => ValueListenableBuilder<Widget?>(
-                      valueListenable: _stage,
-                      builder: (context, stage, tabs) => Stack(
-                        fit: StackFit.expand,
-                        children: [
-                          Offstage(offstage: stage != null, child: tabs),
-                          if (stage != null)
-                            // Material, not Scaffold. ListTile and
-                            // CircleAvatar reach for Material.of(context)!,
-                            // which in release is a null check on nothing
-                            // and takes the run down once per frame. A bare
-                            // Material is one background rect; a Scaffold
-                            // would add furniture the scene would then be
-                            // measured painting.
-                            Material(
-                              color: Theme.of(context).scaffoldBackgroundColor,
-                              child: stage,
-                            ),
-                        ],
-                      ),
-                      child: _tabs(),
-                    ),
+                    builder: (_) => _tabs(),
                   ),
                 ),
               ),
@@ -217,8 +164,7 @@ class _ShellState extends State<Shell> with TickerProviderStateMixin {
             // is looked at, and a result stays on its tab. IndexedStack keeps
             // the hidden tabs' animations going too (Visibility.maintain),
             // which is the panel's spinner drawing 60 frames a second behind
-            // whatever is shown; TickerMode stops that. The Scenes run is
-            // not affected: its controller ticks on this State's provider.
+            // whatever is shown; TickerMode stops that.
             child: IndexedStack(
               index: _tab,
               children: [
@@ -232,25 +178,18 @@ class _ShellState extends State<Shell> with TickerProviderStateMixin {
 
   Widget _tabBody(int i) => switch (i) {
         0 => const PanelTab(),
-        1 => BenchPage(
-            stage: _stage,
-            scene: _scene,
-            vsync: this,
-            autoRun: widget.autoBench,
-          ),
-        2 => ConformanceTab(autoRun: widget.autoConformance),
-        3 => HardwareTab(suite: _hardware, group: HardwareGroup.auto),
-        4 => HardwareTab(suite: _hardware, group: HardwareGroup.camera),
-        5 => HardwareTab(suite: _hardware, group: HardwareGroup.person),
-        6 => const ConfigureTab(),
+        1 => ConformanceTab(autoRun: widget.autoConformance),
+        2 => HardwareTab(suite: _hardware, group: HardwareGroup.auto),
+        3 => HardwareTab(suite: _hardware, group: HardwareGroup.camera),
+        4 => HardwareTab(suite: _hardware, group: HardwareGroup.person),
+        5 => const ConfigureTab(),
         _ => const ResultsTab(),
       };
 }
 
 class _StripTitle extends StatelessWidget {
-  const _StripTitle({required this.tab, required this.scene});
+  const _StripTitle({required this.tab});
   final String tab;
-  final String? scene;
 
   @override
   Widget build(BuildContext context) => Padding(
@@ -261,7 +200,7 @@ class _StripTitle extends StatelessWidget {
             const SizedBox(width: 8),
             Flexible(
               child: Text(
-                scene == null ? tab : '$tab  ·  $scene',
+                tab,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 style: const TextStyle(

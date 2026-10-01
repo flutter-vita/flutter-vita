@@ -43,7 +43,7 @@ than the CLI exposes, and each has its usage at the top of the file.
 | `tools/build-receiver.sh` | Build the receiver. `--scratch` builds a second one, `FVTA00004` on port 1342, to try a receiver change without touching the one that deploys. |
 | `tools/bootstrap-receiver.sh <address>` | Put the receiver on a console that has none, over VitaShell's FTP. Once. |
 | `tools/selfupdate-receiver.sh` | Replace the receiver on the console through the updater title. |
-| `tools/bench.sh` | Run the gallery's benchmark scenes unattended and write the report. |
+| `tools/suite.sh conformance\|hardware\|all` | Run the gallery's conformance probes or hardware checks unattended and print the verdict. The benchmark is [flutter-vita-bench](https://github.com/flutter-vita/flutter-vita-bench), with its own `tool/bench.sh`. |
 | `tools/panel.sh` | Drive the receiver's screen from the host: `tab files`, `shot out.png`, `select`, `back`. |
 | `tools/engine-tree.sh --apply\|--verify\|--list` | The engine tree, for engine builds: `--apply` puts the fork's branch into it, `--verify` checks the tree and the five dependency forks, `--list` prints their commits. |
 | `tools/package-engine.sh` | Turn an engine build into the artifact tarball. |

@@ -101,7 +101,7 @@ user code and nothing releases the GXM context. **The receiver is the component
 that recovers from crashes, so it is the last one permitted to cause an
 unrecoverable one.** The cost is real and accepted, and grew when the app
 default flipped: the window into the Flutter world now shows the slower of the
-two rasterisers, by margins [ADR-0017](0017-the-gallery-becomes-the-benchmark.md)
+two rasterisers, by margins [ADR-0017](https://github.com/flutter-vita/flutter-vita-bench/blob/master/docs/adr/0017-the-gallery-becomes-the-benchmark.md)
 puts between 5× and 17× on the scenes that move. The receiver draws a logo, an
 address and a log — none of which are those scenes.
 

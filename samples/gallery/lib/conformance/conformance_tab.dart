@@ -3,7 +3,7 @@
 // This was its own application (apps/conformance) until 2026-09-14. It kept
 // its two files: the journal, appended as probes complete so a crash leaves
 // evidence, and the resume file, so the next attempt skips the probe that
-// killed the last one. It gained what the Scenes tab has: a Run button, an
+// killed the last one. It gained what the Scenes tab had: a Run button, an
 // unattended run when the host writes conformance.on, and a result file with
 // a done marker the host can wait for.
 
@@ -13,7 +13,7 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 
-import '../bench/runner.dart'
+import '../suites.dart'
     show
         engineStamp,
         kConformanceDonePath,

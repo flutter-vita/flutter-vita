@@ -1,9 +1,9 @@
 # Writing Flutter that runs on a Vita
 
 Everything here is measured on hardware by
-[the gallery's benchmark](../samples/gallery/lib/bench), on the GPU path, and
+[the benchmark](https://github.com/flutter-vita/flutter-vita-bench/blob/master/lib), on the GPU path, and
 every claim names the scene it came from so you can re-run it. See
-[ADR-0017](adr/0017-the-gallery-becomes-the-benchmark.md) for how the suite
+[ADR-0017](https://github.com/flutter-vita/flutter-vita-bench/blob/master/docs/adr/0017-the-gallery-becomes-the-benchmark.md) for how the suite
 works and [ADR-0019](adr/0019-gles2-over-gxm-written-here.md) for the renderer.
 
 The frame budget is **16.67 ms**. The console is a 444 MHz Cortex-A9.
@@ -192,7 +192,7 @@ every run.
 
 ## Where these numbers come from, and where they stop
 
-Every figure above is from the gallery's benchmark scenes, which are synthetic
+Every figure above is from the benchmark's scenes, which are synthetic
 by design (ADR-0017 decision 1): they isolate one cost each, which is what
 makes them attributable and also what makes them unrepresentative.
 

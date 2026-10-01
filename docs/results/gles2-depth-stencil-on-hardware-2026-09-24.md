@@ -63,7 +63,7 @@ after the fixes. The report named six regressions against the baseline of
 2026-09-23, three of them raster.
 
 **None of them are the layer's.** The gallery was built again with
-`engine/gles2` at `3299ab5`, the state before any of this work, and benched on
+`gles2` at `3299ab5`, the state before any of this work, and benched on
 the same console in the same sitting. It regresses on the same scenes at the
 same sizes, and on two more that the new layer did not touch:
 

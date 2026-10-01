@@ -39,7 +39,7 @@ import 'package:record/record.dart';
 import 'package:record_vita/record_vita.dart';
 import 'package:sensors_plus/sensors_plus.dart';
 
-import '../bench/runner.dart'
+import '../suites.dart'
     show
         engineStamp,
         kDataDir,

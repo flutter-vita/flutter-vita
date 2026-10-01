@@ -26,8 +26,9 @@ import 'device.dart';
 /// tab.
 const benchDir = '$dataDir/bench';
 
-/// What gallery has always written. Read as well as the directory above, so the
-/// the TESTS tab is useful before any app has been changed.
+/// What the scenes have always written: the gallery until 2026-10-01, the
+/// bench app since. Read as well as the directory above, so the TESTS tab is
+/// useful before any app has been changed.
 const legacyResultPath = '$dataDir/bench-result.json';
 
 /// The list of suites, on the memory card rather than compiled in here.
@@ -65,16 +66,17 @@ class BenchEntry {
 
 /// The default manifest, used when the card has none.
 ///
-/// Gallery is the only real suite today. Conformance reports pass and fail
-/// rather than timings, and localsend's throughput bench lives in host tooling,
-/// so neither has a row yet. Being honest about that is better than listing
-/// three entries when there is one.
+/// The benchmark app (github.com/flutter-vita/flutter-vita-bench) is the only
+/// real suite today. Conformance reports pass and fail rather than timings,
+/// and localsend's throughput bench lives in host tooling, so neither has a
+/// row yet. Being honest about that is better than listing three entries when
+/// there is one. Until 2026-10-01 the scenes were a tab of the gallery.
 const _builtIn = <BenchEntry>[
   BenchEntry(
-    titleId: 'FVTA00002',
-    suite: 'gallery',
+    titleId: 'FVTA00006',
+    suite: 'bench',
     switchPath: '$dataDir/bench.on',
-    label: 'gallery scenes — transitions, motion, routes',
+    label: 'bench scenes — transitions, motion, routes',
   ),
 ];
 
@@ -82,7 +84,7 @@ const _builtIn = <BenchEntry>[
 ///
 /// Format is one entry per line, pipe-separated, `#` for comments:
 ///
-///     FVTA00002|gallery|ux0:data/flutter-vita/bench.on|gallery scenes
+///     FVTA00006|bench|ux0:data/flutter-vita/bench.on|bench scenes
 List<BenchEntry> readManifest() {
   try {
     final f = File(manifestPath);
@@ -260,7 +262,7 @@ bool startRun(BenchEntry entry) {
     // not hand back, which is why this is a separate file rather than a flag.
     File('$dataDir/bench.from-receiver').writeAsStringSync('1', flush: true);
     // Cleared so a marker left by the previous run cannot be mistaken for this
-    // one finishing. Same reason tools/bench.sh clears it.
+    // one finishing. Same reason the bench app's tool/bench.sh clears it.
     File('$dataDir/bench-done').writeAsStringSync('0', flush: true);
     // Always written, even empty: the receiver can put a file and cannot delete
     // one, so a subset left from a host-driven run would silently restrict this
