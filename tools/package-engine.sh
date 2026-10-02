@@ -7,9 +7,10 @@
 #
 # Usage:  ./tools/package-engine.sh [--release X.Y.Z] [output-dir]
 #
-# --release names the tarball for a release of the fork,
-# flutter-engine-vita-<flutter>_<X.Y.Z>.tar.gz, and stamps the same string
-# into MANIFEST.txt as `release`. The unpacked directory keeps its plain name
+# --release names the tarball for a release of the fork after its tag,
+# <flutter>-vita.<X.Y.Z> (3.44.8-vita.1.0.0; 0.1.0 was 3.44.8_0.1.0):
+# flutter-engine-<flutter>-vita.<X.Y.Z>.tar.gz, and stamps the tag into
+# MANIFEST.txt as `release`. The unpacked directory keeps its plain name
 # (flutter-engine-vita-<flutter>), which is what the tools look for.
 set -euo pipefail
 
@@ -253,7 +254,7 @@ else
 fi
 
 RELEASE_LINE=""
-[ -n "$RELEASE" ] && RELEASE_LINE="release          ${FLUTTER_VERSION}_${RELEASE}
+[ -n "$RELEASE" ] && RELEASE_LINE="release          ${FLUTTER_VERSION}-vita.${RELEASE}
 "
 cat > "$STAGE/MANIFEST.txt" <<EOF
 flutter-engine-vita
@@ -296,7 +297,11 @@ EOF
 
 echo "==> tarball"
 mkdir -p "$OUT"
-TARBALL="$OUT/flutter-engine-vita-$FLUTTER_VERSION${RELEASE:+_$RELEASE}.tar.gz"
+if [ -n "$RELEASE" ]; then
+  TARBALL="$OUT/flutter-engine-${FLUTTER_VERSION}-vita.${RELEASE}.tar.gz"
+else
+  TARBALL="$OUT/flutter-engine-vita-$FLUTTER_VERSION.tar.gz"
+fi
 tar -czf "$TARBALL" -C "$OUT" "$(basename "$STAGE")"
 
 echo
