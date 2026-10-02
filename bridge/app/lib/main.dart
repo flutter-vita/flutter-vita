@@ -231,12 +231,13 @@ class _Header extends StatelessWidget {
             const SizedBox(width: 12),
             _Status(status: badge),
             // Only with no network: the one state where the console cannot be
-            // fixed from the host, and the fix is three taps deep in Settings.
+            // fixed from the host. Settings opens at the top; the status line
+            // below names the two taps to the Wi-Fi page.
             if (badge == 'No network') ...[
               const SizedBox(width: 12),
               const Btn(
-                text: 'WI-FI',
-                onTap: requestWifiSettings,
+                text: 'SETTINGS',
+                onTap: requestSettings,
                 colour: danger,
               ),
             ],

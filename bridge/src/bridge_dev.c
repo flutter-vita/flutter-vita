@@ -1565,31 +1565,25 @@ static int handle(int sock, const char* line, int* stop) {
 // simply never arrives.
 //
 // One line -- `delete <titleid>`, `launch <titleid>`, `install <vpk path>`,
-// `wifi` -- removed before it is acted on so a crash in the middle cannot replay it on
+// `settings` -- removed before it is acted on so a crash in the middle cannot replay it on
 // the next boot.
 #define REQUEST_PATH DATA_DIR "/bridge-request.txt"
 
-// The panel's WI-FI button, shown while there is no network.
+// The panel's SETTINGS button, shown while there is no network.
 //
-// Fixed URIs only, never text from the request file: anything can `put` that
+// One fixed URI, never text from the request file: anything can `put` that
 // file, and settings_dlg: has a page that formats the memory card
 // (settings_dlg:reset::format_mc_for_promote).
 //
-// settings_dlg:wifi is a guess from the pages that are known
-// (settings_dlg:wifi::wps, settings_dlg:wifi::manual), so a refusal falls back
-// to the top of Settings. 0x20000 opens Settings over this process, the way
-// vita-uriCaller calls these URIs; the bridge stays alive behind it and comes
-// back with the PS button.
-static void open_wifi_settings(void) {
-  int rc = sceAppMgrLaunchAppByUri(0x20000, "settings_dlg:wifi");
-  if (rc < 0) {
-    const int first = rc;
-    rc = sceAppMgrLaunchAppByUri(0x20000, "settings_dlg:");
-    if (rc < 0) {
-      note("Settings did not open: 0x%08X, then 0x%08X", (unsigned)first,
-           (unsigned)rc);
-    }
-  }
+// The top of Settings, not the Wi-Fi page. No known URI opens the list of
+// networks: settings_dlg:wifi::wps and ::manual are the two Wi-Fi pages known,
+// and settings_dlg:wifi opened the top of Settings when tried on 2026-10-02.
+// The page names are not in the plugin's .rco files, which keep hashed ids.
+// 0x20000 opens Settings over this process, the way vita-uriCaller calls these
+// URIs; the bridge stays alive behind it and comes back with the PS button.
+static void open_settings(void) {
+  const int rc = sceAppMgrLaunchAppByUri(0x20000, "settings_dlg:");
+  if (rc < 0) note("Settings did not open: 0x%08X", (unsigned)rc);
 }
 
 static void serve_request(void) {
@@ -1634,8 +1628,8 @@ static void serve_request(void) {
       note("install refused: %s", why);
       install_progress("failed", why, 0, 0);
     }
-  } else if (strcmp(buf, "wifi") == 0) {
-    open_wifi_settings();
+  } else if (strcmp(buf, "settings") == 0) {
+    open_settings();
   } else {
     note("unknown panel request: %s", buf);
   }
@@ -1672,7 +1666,7 @@ static int watcher(SceSize args, void* argp) {
     } else if (last[0] != '\0' || g_status[0] == 'S' /* Starting */) {
       last[0] = '\0';
       g_ip[0] = '\0';
-      set_status("No network", "tap WI-FI to open the Wi-Fi settings");
+      set_status("No network", "tap SETTINGS, then Network > Wi-Fi Settings");
     }
     serve_request();
 
