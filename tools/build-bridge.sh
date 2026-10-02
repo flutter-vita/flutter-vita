@@ -50,15 +50,39 @@ done
 # it "the pinned tree" is just a directory someone could have rsynced over.
 [ -f "$PIN" ] || {
   echo "No $PIN. Run tools/pin-bridge-engine.sh." >&2; exit 1; }
-[ -d "$ENGINE" ] || {
-  echo "No pinned engine at $ENGINE." >&2
-  echo "  It is gitignored, so a fresh checkout has to pin one:" >&2
-  echo "    ./tools/pin-bridge-engine.sh --reason 'restoring the pin'" >&2
-  echo "  Check it produces the sha in $PIN before trusting the result." >&2
-  exit 1
-}
 
 WANT="$(grep -m1 '^archive_sha256 ' "$PIN" | awk '{print $2}')"
+WANT_EMBEDDER="$(grep -m1 '^embedder_sha256 ' "$PIN" | awk '{print $2}')"
+
+embedder_sha() {
+  (cd "$1" && find CMakeLists.txt src include -type f | LC_ALL=C sort \
+     | xargs shasum -a 256 | shasum -a 256 | cut -d' ' -f1)
+}
+
+# The pinned tree is gitignored, so a fresh clone has none. When the engine
+# `flutter-vita precache` downloaded and the embedder submodule are exactly
+# what the pin names, the tree is a copy of the two and nothing has to be
+# decided: copy them, and leave the pin file as it is. Anything else is a real
+# bump, which stays a deliberate run of the pin script.
+if [ ! -d "$ENGINE" ]; then
+  FROM="$ROOT/out/artifacts/flutter-engine-vita-$(grep -m1 '^flutter ' "$PIN" | awk '{print $2}')"
+  EMB="$ROOT/embedder"
+  if [ -f "$FROM/lib/libflutter_engine_vita.a" ] && [ -f "$EMB/CMakeLists.txt" ] &&
+     [ "$(shasum -a 256 "$FROM/lib/libflutter_engine_vita.a" | cut -d' ' -f1)" = "$WANT" ] &&
+     [ "$(embedder_sha "$EMB")" = "$WANT_EMBEDDER" ]; then
+    echo "==> restoring the pinned engine from ${FROM#"$ROOT/"} and embedder/ (both match the pin)"
+    cp -R "$FROM" "$ENGINE"
+    mkdir -p "$ENGINE/embedder"
+    cp "$EMB/CMakeLists.txt" "$ENGINE/embedder/"
+    cp -R "$EMB/src" "$EMB/include" "$ENGINE/embedder/"
+  else
+    echo "No pinned engine at $ENGINE, and nothing here matches the pin:" >&2
+    echo "  ${FROM#"$ROOT/"} and embedder/ must hash to what $PIN names." >&2
+    echo "  Run 'flutter-vita precache' and 'git submodule update --init', or" >&2
+    echo "  bump the pin on purpose: ./tools/pin-bridge-engine.sh --reason '...'" >&2
+    exit 1
+  fi
+fi
 HAVE="$(shasum -a 256 "$ENGINE/lib/libflutter_engine_vita.a" | cut -d' ' -f1)"
 if [ "$WANT" != "$HAVE" ]; then
   echo "!! the pinned engine does not match the pin." >&2
@@ -70,13 +94,11 @@ if [ "$WANT" != "$HAVE" ]; then
   exit 1
 fi
 # The embedder pinned beside it, checked the same way (see the pin script).
-WANT_EMBEDDER="$(grep -m1 '^embedder_sha256 ' "$PIN" | awk '{print $2}')"
 [ -d "$ENGINE/embedder" ] || {
   echo "!! the pinned tree has no embedder/. Re-pin: ./tools/pin-bridge-engine.sh --reason '...'" >&2
   exit 1
 }
-HAVE_EMBEDDER="$(cd "$ENGINE/embedder" && find CMakeLists.txt src include -type f | LC_ALL=C sort \
-  | xargs shasum -a 256 | shasum -a 256 | cut -d' ' -f1)"
+HAVE_EMBEDDER="$(embedder_sha "$ENGINE/embedder")"
 if [ "$WANT_EMBEDDER" != "$HAVE_EMBEDDER" ]; then
   echo "!! the pinned embedder does not match the pin." >&2
   echo "   $PIN says  $WANT_EMBEDDER" >&2
