@@ -1569,21 +1569,27 @@ static int handle(int sock, const char* line, int* stop) {
 // the next boot.
 #define REQUEST_PATH DATA_DIR "/bridge-request.txt"
 
-// The panel's SETTINGS button, shown while there is no network.
+// The panel's "Go to Settings" button, shown while there is no network.
 //
-// One fixed URI, never text from the request file: anything can `put` that
-// file, and settings_dlg: has a page that formats the memory card
+// The Settings app itself, NPXS10015, launched by title id: it opens as its
+// own app. settings_dlg: opens the same pages inside this one, which is the
+// fallback when the shell refuses the launch.
+//
+// Fixed strings only, never text from the request file: anything can `put`
+// that file, and settings_dlg: has a page that formats the memory card
 // (settings_dlg:reset::format_mc_for_promote).
 //
-// The top of Settings, not the Wi-Fi page. No known URI opens the list of
-// networks: settings_dlg:wifi::wps and ::manual are the two Wi-Fi pages known,
-// and settings_dlg:wifi opened the top of Settings when tried on 2026-10-02.
-// The page names are not in the plugin's .rco files, which keep hashed ids.
-// 0x20000 opens Settings over this process, the way vita-uriCaller calls these
-// URIs; the bridge stays alive behind it and comes back with the PS button.
+// The top of Settings either way. No known URI opens the list of networks:
+// settings_dlg:wifi::wps and ::manual are the two Wi-Fi pages known, and
+// settings_dlg:wifi opened the top of Settings when tried on 2026-10-02. The
+// page names are not in the plugin's .rco files, which keep hashed ids.
 static void open_settings(void) {
-  const int rc = sceAppMgrLaunchAppByUri(0x20000, "settings_dlg:");
-  if (rc < 0) note("Settings did not open: 0x%08X", (unsigned)rc);
+  const int by_name = sceAppMgrLaunchAppByName(0x60000, "NPXS10015", NULL);
+  if (by_name >= 0) return;
+  // 0x20000 is the open flag vita-uriCaller uses for these URIs.
+  const int by_uri = sceAppMgrLaunchAppByUri(0x20000, "settings_dlg:");
+  note("Settings by title id: 0x%08X; inside the bridge: 0x%08X",
+       (unsigned)by_name, (unsigned)by_uri);
 }
 
 static void serve_request(void) {
@@ -1666,7 +1672,7 @@ static int watcher(SceSize args, void* argp) {
     } else if (last[0] != '\0' || g_status[0] == 'S' /* Starting */) {
       last[0] = '\0';
       g_ip[0] = '\0';
-      set_status("No network", "tap SETTINGS, then Network > Wi-Fi Settings");
+      set_status("No network", NULL);
     }
     serve_request();
 

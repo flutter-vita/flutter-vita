@@ -126,6 +126,10 @@ class _BridgeAppState extends State<BridgeApp> {
                   children: [
                     _Header(state: s, mdns: _mdns),
                     const SizedBox(height: 10),
+                    if (_offline(s)) ...[
+                      const _NoWifi(),
+                      const SizedBox(height: 10),
+                    ],
                     Expanded(child: _body(s)),
                     const SizedBox(height: 6),
                     _Footer(state: s),
@@ -173,8 +177,8 @@ class _Header extends StatelessWidget {
   ///
   /// Only "Waiting" is overridden. A transfer in flight says what it is doing.
   String get _badge {
+    if (_offline(state)) return 'No network';
     if (state.status != 'Waiting') return state.status;
-    if (state.ip.isEmpty) return 'No network';
     if (mdns.announced == 0 || (mdns.announced > 0 && !mdns.joined)) {
       return 'Name off';
     }
@@ -230,17 +234,6 @@ class _Header extends StatelessWidget {
             ),
             const SizedBox(width: 12),
             _Status(status: badge),
-            // Only with no network: the one state where the console cannot be
-            // fixed from the host. Settings opens at the top; the status line
-            // below names the two taps to the Wi-Fi page.
-            if (badge == 'No network') ...[
-              const SizedBox(width: 12),
-              const Btn(
-                text: 'SETTINGS',
-                onTap: requestSettings,
-                colour: danger,
-              ),
-            ],
           ],
         ),
         Text(
@@ -259,6 +252,105 @@ class _Header extends StatelessWidget {
       ],
     );
   }
+}
+
+/// No address: C says so, or it still says Waiting with no address yet.
+bool _offline(BridgeState s) =>
+    s.status == 'No network' || (s.status == 'Waiting' && s.ip.isEmpty);
+
+/// The one state the host cannot fix: the console has no network, so nothing
+/// can reach it. The way out is Settings, and the button is the largest thing
+/// on the screen while it lasts.
+class _NoWifi extends StatefulWidget {
+  const _NoWifi();
+
+  @override
+  State<_NoWifi> createState() => _NoWifiState();
+}
+
+class _NoWifiState extends State<_NoWifi> {
+  /// Set by a tap, cleared [_lockout] later.
+  ///
+  /// A second tap used to open Settings a second time. Measured 2026-10-02: the
+  /// user tapped twice, the first request opened Settings, the second arrived
+  /// before the shell paused the bridge, waited in the request file, and opened
+  /// Settings again the moment the user came back.
+  bool _opening = false;
+  Timer? _timer;
+
+  static const _lockout = Duration(seconds: 5);
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    super.dispose();
+  }
+
+  void _open() {
+    if (_opening) return;
+    setState(() => _opening = true);
+    requestSettings();
+    _timer = Timer(_lockout, () {
+      if (mounted) setState(() => _opening = false);
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) => Outlined(
+    expand: true,
+    colour: danger,
+    fill: danger.withValues(alpha: 0.12),
+    radius: 8,
+    width: 1.5,
+    padding: const EdgeInsets.fromLTRB(18, 14, 14, 14),
+    child: Row(
+      children: [
+        const Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                'No Wi-Fi connection',
+                style: TextStyle(
+                  fontSize: 18,
+                  height: 1.2,
+                  fontWeight: FontWeight.w700,
+                  color: fg,
+                ),
+              ),
+              SizedBox(height: 4),
+              Text(
+                'Your computer cannot connect to this console. '
+                'Turn on Wi-Fi in Settings > Network > Wi-Fi Settings.',
+                style: TextStyle(fontSize: 13, height: 1.35, color: dim),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(width: 16),
+        GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTap: _opening ? null : _open,
+          child: Outlined(
+            colour: danger,
+            fill: _opening ? danger.withValues(alpha: 0.35) : danger,
+            radius: 7,
+            padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 14),
+            child: Text(
+              _opening ? 'Opening Settings' : 'Go to Settings',
+              style: const TextStyle(
+                fontSize: 17,
+                height: 1.0,
+                fontWeight: FontWeight.w700,
+                color: fg,
+              ),
+            ),
+          ),
+        ),
+      ],
+    ),
+  );
 }
 
 /// The five states of ADR-0016's status model, plus the moment before the

@@ -557,9 +557,8 @@ void requestDelete(String titleId) => _request('delete $titleId');
 /// on the Dart side runs.
 void requestLaunch(String titleId) => _request('launch $titleId');
 
-/// Open the console's Settings over the bridge, at the top: no known URI opens
-/// the Wi-Fi page. The C side picks the URI; the bridge stays behind Settings
-/// and comes back with the PS button.
+/// Open the console's Settings app, at the top: nothing known opens the Wi-Fi
+/// page. The C side picks how; the bridge comes back with the PS button.
 void requestSettings() => _request('settings');
 
 /// Install a vpk that is on the card. The C side unpacks, signs a header,
