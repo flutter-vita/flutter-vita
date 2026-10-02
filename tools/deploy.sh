@@ -98,9 +98,7 @@ alive() {
   # of that "cold" was the 5 s AAAA lookup above; the retries stay, because a
   # bridge that has just started is a real case too.)
   for _ in 1 2 3 4 5 6; do
-    # A pattern: "bridge|receiver" matches the bridge's "pong bridge <slot>
-    # <port>" and the "pong receiver ..." of a bridge from before 2026-10-01.
-    say "$port" ping 6 | grep -q -E "$want" && return 0
+    say "$port" ping 6 | grep -q "$want" && return 0
     sleep 1
   done
   return 1
@@ -120,25 +118,25 @@ fi
 echo "==> $(basename "$VPK")"
 
 # 1. Get to the bridge, by whatever route needs the least of the human.
-if alive "$LDR" 'bridge|receiver'; then
+if alive "$LDR" bridge; then
   echo "    bridge already up"
 elif alive "$DEV" pong; then
   echo "    app is up — handing off to the bridge"
   say "$DEV" handoff 20 >/dev/null
   for i in $(seq 1 20); do
-    alive "$LDR" 'bridge|receiver' && break
+    alive "$LDR" bridge && break
     sleep 3
   done
-  alive "$LDR" 'bridge|receiver' || { echo "!! handoff did not bring the bridge up" >&2; exit 1; }
+  alive "$LDR" bridge || { echo "!! handoff did not bring the bridge up" >&2; exit 1; }
   echo "    bridge up, no tap needed"
 else
   echo "    nothing is answering — a hard crash, so this one needs a tap"
   echo "    >>> open Flutter Vita Bridge; waiting up to 10 min"
   for i in $(seq 1 200); do
-    alive "$LDR" 'bridge|receiver' && break
+    alive "$LDR" bridge && break
     sleep 3
   done
-  alive "$LDR" 'bridge|receiver' || { echo "!! bridge never appeared" >&2; exit 1; }
+  alive "$LDR" bridge || { echo "!! bridge never appeared" >&2; exit 1; }
 fi
 
 WORK="$(mktemp -d)"

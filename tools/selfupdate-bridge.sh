@@ -20,12 +20,12 @@
 # that is protected. The bridge is therefore the one thing the bridge
 # cannot install, and four steps go around it:
 #
-#   1. put the files that changed into ux0:data/flutter-vita/receiver-update
+#   1. put the files that changed into ux0:data/flutter-vita/bridge-update
 #   2. launch FVTA00009, a 50 KB app with no engine whose only job is to copy
 #      that tree over ux0:app/<target> and launch the target back
 #   3. wait for the new bridge
 #
-# The updater keeps the eboot it replaces in receiver-backup. If the new build
+# The updater keeps the eboot it replaces in bridge-backup. If the new build
 # boots into nothing, launch "Flutter Bridge Updater" holding L to restore
 # it.
 set -euo pipefail
@@ -83,9 +83,7 @@ while [ $# -gt 0 ]; do
   esac
 done
 
-# Still receiver-update: the updater already on the console looks there, and
-# the bridge was the receiver until 2026-10-01.
-STAGE="ux0:data/flutter-vita/receiver-update"
+STAGE="ux0:data/flutter-vita/bridge-update"
 # Not inside ux0:app/$TITLE_ID. That is the running bridge's own slot, the
 # read-only app0: mount this whole script exists to work around, and putting
 # the manifest there failed with ERR open on the first run that tried it.
@@ -136,7 +134,7 @@ fi
 # eboot into whatever answered.
 PONG="$(say "$PORT" ping 15 || true)"
 case "$PONG" in
-  pong\ bridge*|pong\ receiver*) ;;
+  pong\ bridge*) ;;
   *) echo "!! no bridge on $HOST:$PORT (got '${PONG:-nothing}')" >&2
      echo "   open the bridge, or pass --port" >&2; exit 1 ;;
 esac
@@ -267,7 +265,7 @@ BACK=""
 for _ in $(seq 1 40); do
   sleep 2
   BACK="$(say "$WAIT_PORT" ping 5 2>/dev/null || true)"
-  case "$BACK" in pong\ bridge*|pong\ receiver*) break ;; *) BACK="" ;; esac
+  case "$BACK" in pong\ bridge*) break ;; *) BACK="" ;; esac
 done
 [ -n "$BACK" ] || {
   echo "!! it never came back." >&2
@@ -320,7 +318,7 @@ for _ in $(seq 1 20); do
   sleep 2
   BACK="$(say "$PORT" ping 5 2>/dev/null || true)"
   case "$BACK" in
-    pong\ bridge*|pong\ receiver*)
+    pong\ bridge*)
       if say "$PORT" "exist $UPDATER" 20 | grep -q "res=3"; then continue; fi
       echo "    $BACK"
       echo

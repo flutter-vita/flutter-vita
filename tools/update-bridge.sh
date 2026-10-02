@@ -62,12 +62,11 @@ done
   echo "     ./tools/deploy.sh samples/gallery --bridge-port 1342" >&2
   exit 1; }
 
-# The bridge answers "pong bridge <slot> <port>" ("pong receiver" before
-# 2026-10-01) and an app answers a bare
+# The bridge answers "pong bridge <slot> <port>" and an app answers a bare
 # "pong". Refusing the bridge here is not pedantry: it is the one process on the
 # console that cannot do this job, and its failure mode is a bare EACCES that
 # reads like a full memory card.
-if say "$PORT" ping 8 | grep -q -E '^pong (bridge|receiver)'; then
+if say "$PORT" ping 8 | grep -q '^pong bridge'; then
   echo "!! that is a bridge on $HOST:$PORT, and a bridge cannot install itself." >&2
   echo "   Deploy an app through it first, then run this again." >&2
   exit 1

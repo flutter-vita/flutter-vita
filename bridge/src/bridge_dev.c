@@ -1423,8 +1423,6 @@ static int handle(int sock, const char* line, int* stop) {
   // that read three fields still read three fields.
   if (strcmp(line, "ping") == 0) {
     char m[80];
-    // "pong bridge" since 2026-10-01, "pong receiver" before. The tools
-    // accept both, so a console with the old app still answers to them.
     snprintf(m, sizeof m, "pong bridge %s %d %s\n", TARGET_TITLEID,
              BRIDGE_PORT, SELF_TITLEID);
     dev_server_send(sock, m);

@@ -31,7 +31,7 @@ The console was up. The app was not.
 
 ## Why the app was gone
 
-`ux0:data/flutter-vita/receiver-state.txt`:
+`ux0:data/flutter-vita/bridge-state.txt`:
 
     log 09-01 16:45:22 ---- bridge FVTA00001 up ----
     log 09-01 16:45:22 - left FVTA00002

@@ -35,14 +35,10 @@
 // reads it. Duplicated rather than shared: this runs after something has
 // already gone wrong, so it depends on nothing but sceIo. Returns a static
 // buffer.
-//
-// bridge.titleid first, then receiver.titleid, its name until 2026-10-01.
 static const char* bridge_titleid(void) {
   static char id[16];
-  SceUID fd =
+  const SceUID fd =
       sceIoOpen("ux0:data/flutter-vita/bridge.titleid", SCE_O_RDONLY, 0777);
-  if (fd < 0)
-    fd = sceIoOpen("ux0:data/flutter-vita/receiver.titleid", SCE_O_RDONLY, 0777);
   if (fd < 0) return VITA_LOADER_TITLEID;
   char buf[16];
   const int n = sceIoRead(fd, buf, sizeof buf - 1);

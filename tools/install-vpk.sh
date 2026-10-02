@@ -81,7 +81,7 @@ say() { printf '%s\n' "$2" | nc -4 -w "${3:-30}" "$HOST" "$1"; }
 # `ls` on the same port a second later.
 alive=0
 for _ in 1 2 3; do
-  if say "$PORT" ping 8 2>/dev/null | grep -q -E "bridge|receiver"; then alive=1; break; fi
+  if say "$PORT" ping 8 2>/dev/null | grep -q bridge; then alive=1; break; fi
   sleep 2
 done
 [ "$alive" -eq 1 ] || {

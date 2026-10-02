@@ -186,10 +186,9 @@ class VitaDevice {
       // The bridge answers "pong bridge" and the app answers "pong". Checking
       // the reply rather than just the open port matters: something else on
       // the network could hold 1339, and installing into it would be worse
-      // than finding nothing. "receiver" is the bridge's reply from before
-      // 2026-10-01, and a console may still run that build.
+      // than finding nothing.
       final ok = role == VitaRole.bridge
-          ? reply.contains('bridge') || reply.contains('receiver')
+          ? reply.contains('bridge')
           : reply.contains('pong');
       return ok ? VitaDevice(host, role) : null;
     } on Exception {

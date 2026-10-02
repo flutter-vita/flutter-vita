@@ -10,13 +10,13 @@
 //
 // eboot.bin is written last, after every asset, because a half-written eboot is
 // the one file that cannot be recovered from the console itself. The eboot it
-// replaces is copied to ux0:data/flutter-vita/receiver-backup first, so a build
+// replaces is copied to ux0:data/flutter-vita/bridge-backup first, so a build
 // that boots into nothing is one L-trigger away from the build that worked.
 //
 // The staging directory:
 //
-//   ux0:data/flutter-vita/receiver-update/manifest.txt   target + file list
-//   ux0:data/flutter-vita/receiver-update/files/<rel>    the payload
+//   ux0:data/flutter-vita/bridge-update/manifest.txt   target + file list
+//   ux0:data/flutter-vita/bridge-update/files/<rel>    the payload
 
 #include <psp2/appmgr.h>
 #include <psp2/ctrl.h>
@@ -33,14 +33,10 @@
 
 #define printf psvDebugScreenPrintf
 
-// receiver-update, not bridge-update: the bridge was the receiver until
-// 2026-10-01, and an updater built before then looks here.
-#define STAGE_DIR "ux0:data/flutter-vita/receiver-update"
+#define STAGE_DIR "ux0:data/flutter-vita/bridge-update"
 #define MANIFEST STAGE_DIR "/manifest.txt"
 #define PAYLOAD STAGE_DIR "/files"
-// receiver-backup, like receiver-update: the names from before 2026-10-01,
-// when the bridge was the receiver, so a backup taken then can still be restored.
-#define BACKUP_DIR "ux0:data/flutter-vita/receiver-backup"
+#define BACKUP_DIR "ux0:data/flutter-vita/bridge-backup"
 
 #define SELF_TITLEID "FVTA00009"
 #define LOADER_TITLEID "FVTA00001"

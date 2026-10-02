@@ -75,7 +75,7 @@ below, the one-frame screenshot copy, and links `fvita_gles2` with
    pushed and launched the gallery through it, exit 0.
 2. `tools/selfupdate-bridge.sh` staged the 16 files of the FVTA00001 build
    (12.6 MB `eboot.bin` in 18 s), handed the console to the updater
-   FVTA00009, and the new bridge answered `pong receiver FVTA00002 1341
+   FVTA00009, and the new bridge answered `pong bridge FVTA00002 1341
    FVTA00001` 15 s later. Its panel renders (`shotinfo`: `match=fvita_gles2
    … copy=20499 us`), its log shows eight programs linked and no error past
    the two expected resource-context lines.

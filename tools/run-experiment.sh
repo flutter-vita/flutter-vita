@@ -32,7 +32,7 @@ ldr() { printf '%s\n' "$1" | nc -4 -w 3 "$HOST" "$LDR" 2>/dev/null; }
 wait_bridge() {
   local until=$((SECONDS + $1))
   while [ $SECONDS -lt $until ]; do
-    ldr ping | grep -q -E "bridge|receiver" && return 0
+    ldr ping | grep -q bridge && return 0
   done
   return 1
 }
