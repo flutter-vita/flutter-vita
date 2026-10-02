@@ -131,7 +131,7 @@ elif alive "$DEV" pong; then
   echo "    bridge up, no tap needed"
 else
   echo "    nothing is answering — a hard crash, so this one needs a tap"
-  echo "    >>> open Flutter Vita Bridge; waiting up to 10 min"
+  echo "    >>> open Flutter Bridge; waiting up to 10 min"
   for i in $(seq 1 200); do
     alive "$LDR" bridge && break
     sleep 3

@@ -26,7 +26,7 @@
 # The app configures itself in pubspec.yaml:
 #
 #   vita:
-#     title_id: FVTA00003        # optional; derived from the package name
+#     title_id: MYAP00001        # optional; derived from the package name
 #     hardware_checks: true      # optional; the gallery's Hardware tab (hardware.c)
 #     name: My App               # optional; defaults to the package name
 #     livearea: vita/livearea    # optional; the app's own art, relative to the app

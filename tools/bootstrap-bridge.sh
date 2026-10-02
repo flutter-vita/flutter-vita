@@ -47,7 +47,7 @@ cat <<MSG
     On the console, in VitaShell:
       1. go to ux0:/
       2. open flutter_vita_bridge.vpk and confirm the install
-      3. open Flutter Vita Bridge from the LiveArea
+      3. open Flutter Bridge from the LiveArea
 
 ==> waiting for $NAME to answer on 1341
 MSG

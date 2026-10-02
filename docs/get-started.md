@@ -32,14 +32,19 @@ flutter-vita run ~/projects/my_app
 
 Three things are worth knowing before the first run.
 
-**The title id.** Every Vita title has a nine-character id. Without one in
-`pubspec.yaml`, the app goes into the bridge's app slot, `FVTA00002`, and
-replaces whatever was there. To give the app a slot of its own, add a
-`vita:` block:
+**The title id.** Every Vita title has a nine-character id: four capital
+letters and five digits. The id sets the app's slot on the console:
+
+- With no `vita:` block, the app goes into the bridge's app slot,
+  `FVTA00002`, and replaces whatever was there.
+- With a `vita:` block and no `title_id`, the build makes an id from the
+  package name. The app goes into the same slot of its own every time.
+- With a `title_id`, use four letters of your own. Do not use `FVTA`: the
+  toolchain uses it for its own titles, and `FVTA00001` is the bridge.
 
 ```yaml
 vita:
-  title_id: FVTA00003
+  title_id: MYAP00001
   name: My App          # the LiveArea name; defaults to the package name
 ```
 

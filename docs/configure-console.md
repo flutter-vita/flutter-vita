@@ -45,10 +45,12 @@ server and shows its address. Then, from the repository:
 
 The script sends `bridge/app/build/vita/flutter_vita_bridge.vpk` to
 `ux0:/` over that FTP server. Install it from VitaShell (open the file,
-confirm), then start **Flutter Vita Bridge** from the LiveArea. The
+confirm), then start **Flutter Bridge** from the LiveArea. The
 [releases](https://github.com/flutter-vita/flutter-vita/releases) carry
-the same file as `flutter-vita-bridge-<version>.vpk`, for a console set
-up before the toolchain.
+the same file, for a console set up before the toolchain. Its name is
+`flutter-vita-bridge-<version>.vpk`. In release 0.1.0 it is
+`flutter-vita-receiver-3.44.8_0.1.0.vpk`, from before the bridge had its
+current name.
 
 From now on the console announces itself as `fluttervita.local` whenever
 the bridge or an app built with this toolchain runs, and no tool asks for

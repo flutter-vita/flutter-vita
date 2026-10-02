@@ -256,7 +256,7 @@ app configures itself in the app:
 
 ```yaml
 vita:
-  title_id: FVTA00003        # optional
+  title_id: MYAP00001        # optional
   name: My App               # optional, LiveArea tile
 ```
 
