@@ -1564,10 +1564,33 @@ static int handle(int sock, const char* line, int* stop) {
 // pointed the other way, and a request that arrives while Flutter is dead
 // simply never arrives.
 //
-// One line -- `delete <titleid>`, `launch <titleid>`, `install <vpk path>` --
-// removed before it is acted on so a crash in the middle cannot replay it on
+// One line -- `delete <titleid>`, `launch <titleid>`, `install <vpk path>`,
+// `wifi` -- removed before it is acted on so a crash in the middle cannot replay it on
 // the next boot.
 #define REQUEST_PATH DATA_DIR "/bridge-request.txt"
+
+// The panel's WI-FI button, shown while there is no network.
+//
+// Fixed URIs only, never text from the request file: anything can `put` that
+// file, and settings_dlg: has a page that formats the memory card
+// (settings_dlg:reset::format_mc_for_promote).
+//
+// settings_dlg:wifi is a guess from the pages that are known
+// (settings_dlg:wifi::wps, settings_dlg:wifi::manual), so a refusal falls back
+// to the top of Settings. 0x20000 opens Settings over this process, the way
+// vita-uriCaller calls these URIs; the bridge stays alive behind it and comes
+// back with the PS button.
+static void open_wifi_settings(void) {
+  int rc = sceAppMgrLaunchAppByUri(0x20000, "settings_dlg:wifi");
+  if (rc < 0) {
+    const int first = rc;
+    rc = sceAppMgrLaunchAppByUri(0x20000, "settings_dlg:");
+    if (rc < 0) {
+      note("Settings did not open: 0x%08X, then 0x%08X", (unsigned)first,
+           (unsigned)rc);
+    }
+  }
+}
 
 static void serve_request(void) {
   const SceUID fd = sceIoOpen(REQUEST_PATH, SCE_O_RDONLY, 0777);
@@ -1611,6 +1634,8 @@ static void serve_request(void) {
       note("install refused: %s", why);
       install_progress("failed", why, 0, 0);
     }
+  } else if (strcmp(buf, "wifi") == 0) {
+    open_wifi_settings();
   } else {
     note("unknown panel request: %s", buf);
   }
@@ -1647,7 +1672,7 @@ static int watcher(SceSize args, void* argp) {
     } else if (last[0] != '\0' || g_status[0] == 'S' /* Starting */) {
       last[0] = '\0';
       g_ip[0] = '\0';
-      set_status("No network", "check Wi-Fi on the console");
+      set_status("No network", "tap WI-FI to open the Wi-Fi settings");
     }
     serve_request();
 

@@ -10,8 +10,8 @@ framework_rev    058e0af2c2b57e369d905a03ac9748b0ebf543c6
 engine           058e0af2c2b57e369d905a03ac9748b0ebf543c6
 dart             d684a576a6aa954ae107a03b2b4e1d61c3bebe93
 archive_sha256   297ea6299e2d81fac4e51579bce5ab97ff3e72c4491c7974e356c05634cac17f
-embedder         9b7eebf7b70b
-embedder_sha256  c582964aecced93a87947b6eb93cd4f543342514260a5f30b603fe2fbd26b7b7
-pinned_at        2026-09-18T08:45:45Z
-pinned_from      out/artifacts/flutter-engine-vita-3.44.8
-reason           embedder 9b7eebf: mDNS name fluttervita.local
+embedder         b43d13746d8e
+embedder_sha256  49329ed7d03a7e4db2c49e5e7ae2406f85077478e12585e6b61cb25554ec1fc9
+pinned_at        2026-10-02T06:28:09Z
+pinned_from      out/artifacts/flutter-engine-vita-3.44.8_0.1.0
+reason           embedder b43d137: bridge.titleid only, mDNS rejoin after a Wi-Fi drop; same engine (the 0.1.0 archive)

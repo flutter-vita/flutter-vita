@@ -557,6 +557,10 @@ void requestDelete(String titleId) => _request('delete $titleId');
 /// on the Dart side runs.
 void requestLaunch(String titleId) => _request('launch $titleId');
 
+/// Open the console's Wi-Fi settings over the bridge. The C side picks the URI;
+/// the bridge stays behind Settings and comes back with the PS button.
+void requestWifiSettings() => _request('wifi');
+
 /// Install a vpk that is on the card. The C side unpacks, signs a header,
 /// promotes, and reports through [installProgressPath]: one line,
 /// `<phase> <done> <total> <name>`, where the phase ends as `done <titleid>`

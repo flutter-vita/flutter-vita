@@ -230,6 +230,16 @@ class _Header extends StatelessWidget {
             ),
             const SizedBox(width: 12),
             _Status(status: badge),
+            // Only with no network: the one state where the console cannot be
+            // fixed from the host, and the fix is three taps deep in Settings.
+            if (badge == 'No network') ...[
+              const SizedBox(width: 12),
+              const Btn(
+                text: 'WI-FI',
+                onTap: requestWifiSettings,
+                colour: danger,
+              ),
+            ],
           ],
         ),
         Text(
