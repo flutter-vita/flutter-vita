@@ -18,7 +18,11 @@ out/
 eboot.bin
 *.vpk
 
+# macOS
 .DS_Store
+._*
+.AppleDouble
+.LSOverride
 
 bridge/app/lib/build_info.dart
 
