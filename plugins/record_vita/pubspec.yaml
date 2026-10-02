@@ -1,7 +1,7 @@
 name: record_vita
 description: PlayStation Vita implementation of record. Non-endorsed.
 version: 0.1.0
-repository: https://github.com/flutter-vita/flutter-vita/tree/master/plugins/record_vita
+repository: https://github.com/flutter-vita/flutter-vita/tree/main/plugins/record_vita
 issue_tracker: https://github.com/flutter-vita/flutter-vita/issues
 publish_to: none
 

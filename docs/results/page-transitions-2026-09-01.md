@@ -109,7 +109,7 @@ it lives.
 **`route_bare`'s own worst frame is unstable across runs** — 16.7 ms when the
 run began with a deploy, 133.3 ms when it began with a relaunch, first scene in
 both. Unexplained, and the same shape as the bimodality
-[apps/gallery/bench/README.md](https://github.com/flutter-vita/flutter-vita-bench/blob/master/baseline/README.md) records for
+[apps/gallery/bench/README.md](https://github.com/flutter-vita/flutter-vita-bench/blob/main/baseline/README.md) records for
 `route_wrap`.
 
 ## Zoom's timing is bimodal too

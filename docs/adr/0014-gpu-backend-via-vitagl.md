@@ -577,7 +577,7 @@ alone would suggest: `gl.on` selected the GPU, software otherwise.
 
 #### The default flipped on 2026-08-24
 
-[ADR-0017](https://github.com/flutter-vita/flutter-vita-bench/blob/master/docs/adr/0017-the-gallery-becomes-the-benchmark.md) replaced the impression
+[ADR-0017](https://github.com/flutter-vita/flutter-vita-bench/blob/main/docs/adr/0017-the-gallery-becomes-the-benchmark.md) replaced the impression
 that GL is faster with twelve measured scenes, and the margin turned out to be
 larger than the crash cost:
 

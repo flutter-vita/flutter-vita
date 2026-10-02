@@ -31,7 +31,7 @@ void main() async {
 ```
 
 The package README lists each argument and its values:
-[flutter_vita/README.md](https://github.com/flutter-vita/flutter-vita-packages/blob/master/flutter_vita/README.md).
+[flutter_vita/README.md](https://github.com/flutter-vita/flutter-vita-packages/blob/main/flutter_vita/README.md).
 
 On a desktop or a phone the call does nothing. Keep one `main`.
 
