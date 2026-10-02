@@ -1,7 +1,7 @@
 name: url_launcher_vita
 description: PlayStation Vita implementation of url_launcher. Non-endorsed.
 version: 0.1.0
-repository: https://github.com/flutter-vita/flutter-vita/tree/main/plugins/url_launcher_vita
+repository: https://github.com/flutter-vita/flutter-vita/tree/master/plugins/url_launcher_vita
 issue_tracker: https://github.com/flutter-vita/flutter-vita/issues
 publish_to: none
 

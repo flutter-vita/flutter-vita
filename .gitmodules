@@ -1,8 +1,8 @@
 [submodule "embedder"]
 	path = embedder
 	url = https://github.com/flutter-vita/flutter-vita-embedder.git
-	branch = main
+	branch = master
 [submodule "packages"]
 	path = packages
 	url = https://github.com/flutter-vita/flutter-vita-packages.git
-	branch = main
+	branch = master

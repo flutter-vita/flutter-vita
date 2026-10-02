@@ -107,9 +107,9 @@ cost to find out.
 Tell us what you changed, and how you know that it operates.
 
 Use the right branch. Our own repositories (the tool, the embedder, the
-packages and the bench) have one branch, `main`. Each fork has one branch for
+packages and the bench) have one branch, `master`. Each fork has one branch for
 each Flutter version, now `vita-3.44.8`. A Flutter upgrade adds a new fork
-branch, `vita-<version>`, and changes `versions.json` on `main`. A release is a
+branch, `vita-<version>`, and changes `versions.json` on `master`. A release is a
 tag, `<flutter>_<ours>`, and not a branch.
 
 If your change touches the console, tell us which console and which firmware. If

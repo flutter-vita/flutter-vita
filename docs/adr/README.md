@@ -30,12 +30,12 @@ ADR-0001 through ADR-0004 are back-filled from §1 of `docs/plan.md`
 | [0014](0014-gpu-backend-via-vitagl.md) | The raster pass is the bottleneck, so the GPU becomes the target | Accepted — raster is 97% of a frame; the GPU stays the target. The vitaGL under it was replaced by `gles2/` on 2026-09-14 (0019) |
 | [0015](0015-four-products-one-audience.md) | The toolchain is four products with one audience | Accepted — the product boundary ends at the `.vpk` |
 | [0016](0016-the-bridge-becomes-a-flutter-app.md) | The bridge becomes a Flutter app, and stops being invisible | Accepted — pinned engine, software rendering, C layer holds the port |
-| [0017](https://github.com/flutter-vita/flutter-vita-bench/blob/main/docs/adr/0017-the-gallery-becomes-the-benchmark.md) | The gallery becomes the benchmark, and a scene is the unit | Accepted. In flutter-vita-bench since 2026-10-01 |
+| [0017](https://github.com/flutter-vita/flutter-vita-bench/blob/master/docs/adr/0017-the-gallery-becomes-the-benchmark.md) | The gallery becomes the benchmark, and a scene is the unit | Accepted. In flutter-vita-bench since 2026-10-01 |
 | [0018](0018-the-lgpl-obligation-in-every-vpk.md) | vitaGL is LGPL, and the obligation lands on every developer who ships | Accepted — our own GLES2 over sceGxm; no LGPL in the vpk, none required on the console. Done 2026-09-14: vitaGL and vitashark are out of the tree |
 | [0019](0019-gles2-over-gxm-written-here.md) | GLES2 over sceGxm, written here | Accepted — 114 names, shaders via SceShaccCg, clean room. The only GL in the tree since 2026-09-14 (M5); progress in `docs/gles2-progress.md` |
 | [0020](0020-native-halves-inside-vita-packages.md) | A Vita package carries its own C, and the set grows to ten | Accepted — `vita/plugin.cmake` compiled into the app, one `vita/<name>` channel each; amends 0009's pinned set |
 | [0021](0021-the-port-is-commits-not-patches.md) | The port is commits in six repositories, not a patch series | Accepted — six forks, no patch files; amends 0002's "an ordered series in `patches/engine/`" |
-| [0022](https://github.com/flutter-vita/flutter-vita-bench/blob/main/docs/adr/0022-the-bench-gate-grades-inside-each-scenes-own-spread.md) | The bench gate grades each scene inside its own measured spread | Accepted. In flutter-vita-bench since 2026-10-01 |
+| [0022](https://github.com/flutter-vita/flutter-vita-bench/blob/master/docs/adr/0022-the-bench-gate-grades-inside-each-scenes-own-spread.md) | The bench gate grades each scene inside its own measured spread | Accepted. In flutter-vita-bench since 2026-10-01 |
 
 ## Open questions not yet decided
 
