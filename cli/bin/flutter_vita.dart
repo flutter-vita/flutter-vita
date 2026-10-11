@@ -35,7 +35,10 @@ Options
   --release                 none of those; the build you ship
 ''';
 
-Future<int> main(List<String> argv) async {
+// Dart drops what main returns; only exitCode reaches the shell.
+Future<void> main(List<String> argv) async => exitCode = await _run(argv);
+
+Future<int> _run(List<String> argv) async {
   final args = <String>[];
   final opts = <String, String>{};
   for (var i = 0; i < argv.length; i++) {
