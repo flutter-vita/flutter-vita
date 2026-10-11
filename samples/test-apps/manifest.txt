@@ -34,12 +34,13 @@ flutter-vita/flutter-wonderous-app  abb00d7572f47e18d316d68ad16f2715d340a287  # 
 # --- breadth is channel-shaped rather than FFI-shaped. Pinned to origin/master:
 # --- the working copy on this machine is one unpushed commit ahead, and a pin
 # --- nobody else can fetch is not a pin.
-# --- Our fork: six commits on vita-3.47.7, on upstream's d3e02ac9. The first
+# --- Our fork: seven commits on vita-3.47.7, on upstream's d3e02ac9. The first
 # --- four replace five of the six patch files. The sixth commit is the
-# --- emoji font (patch 0004 until 2026-09-23): it bundles Noto Color Emoji
-# --- 2.002, and the app's own textTheme names it, because Flutter's Linux
-# --- typography brings a fallback list that replaces the theme's.
-flutter-vita/keklist_flutter        bed8a5a489b9c2b6f1d26075096fb7c4210af972  # branch vita-3.47.7
+# --- emoji font (patch 0004 until 2026-09-23), and the seventh moves it to
+# --- Noto Color Emoji 2.057. The app's own textTheme names it, because
+# --- Flutter's Linux typography brings a fallback list that replaces the
+# --- theme's.
+flutter-vita/keklist_flutter        90512a3827f672c4ebb0721d688905c77c4a0167  # branch vita-3.47.7
     entry lib/main.dart
 
 # --- Networking. The one app with an await before runApp, wrapped in a

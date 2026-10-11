@@ -69,19 +69,21 @@ Linux typography. Each Linux text style has its own fallback list (`Ubuntu`,
 `ThemeData().textTheme`, that list replaces your `fontFamilyFallback`. Use
 `textTheme.apply(fontFamilyFallback: [...])`.
 
-keklist is the worked example, commit `bed8a5a` on `vita-3.47.7` of
+keklist is the worked example, commits `bed8a5a` and `90512a3` on
+`vita-3.47.7` of
 [flutter-vita/keklist_flutter](https://github.com/flutter-vita/keklist_flutter):
-Noto Color Emoji 2.002 (7.2 MB, SIL OFL 1.1, Skia's copy) under `fonts:`,
-named in both themes and in their `textTheme`. The `.vpk` grows from 18 MB
-to 24 MB. The 4.7 MB copy in the engine tree is version 1.39, from before
-Emoji 5.0, so it has no 🧙. Colour works: the font is CBDT/CBLC (PNG bitmaps,
+Noto Color Emoji 2.057 (10.7 MB, Emoji 18, SIL OFL 1.1, from
+googlefonts/noto-emoji) under `fonts:`, named in both themes and in their
+`textTheme`. The `.vpk` grows from 18 MB to 27 MB. Do not use the 4.7 MB copy
+in the engine tree: it is version 1.39, from before Emoji 5.0, so it has no
+🧙. Colour works: the font is CBDT/CBLC (PNG bitmaps,
 no outlines), and the engine's FreeType is built with
 `FT_CONFIG_OPTION_USE_PNG`, `TT_CONFIG_OPTION_EMBEDDED_BITMAPS` and
 `TT_CONFIG_OPTION_COLOR_LAYERS`.
 
 An emoji font in `app0:/fonts` would give emoji to every app with no app
 change, because the engine search would find it. The cost is 7 MB or more in
-each `.vpk`. Not done.
+each `.vpk` (10.7 MB for the current font). Not done.
 
 ### Bluetooth is blocked, and not by effort
 
