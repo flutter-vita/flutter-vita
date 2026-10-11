@@ -54,7 +54,10 @@ except OSError:
   echo "   answers while neither is up. Open the bridge on the console." >&2
   echo "   If one is running, read ux0:data/flutter-vita/mdns.txt: a zero" >&2
   echo "   'joined' means the console never hears a query, and a rising" >&2
-  echo "   'sendfail' means its announcements are not leaving." >&2
+  echo "   'sendfail' means its announcements are not leaving. 'joined 1'" >&2
+  echo "   with 'queries 0' means no multicast reaches it: is this Mac on" >&2
+  echo "   5 GHz? The Vita has 2.4 GHz only, and many routers drop multicast" >&2
+  echo "   between the two radios (docs/configure-console.md)." >&2
   exit 1
 }
 wait_for_name

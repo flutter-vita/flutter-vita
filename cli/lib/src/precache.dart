@@ -90,11 +90,22 @@ Future<int> precache({bool force = false, String? host}) async {
         line.isEmpty ? 'an unreleased build' : line.split(RegExp(r'\s+')).last;
     stdout.writeln('  engine ${release.unpacksTo} is already there ($have)');
     stdout.writeln('  ${target.path}');
-    if (have != release.release && have != 'an unreleased build') {
+    if (release.release.isNotEmpty &&
+        have != release.release &&
+        have != 'an unreleased build') {
       stdout.writeln('  versions.json names ${release.release}; '
           'run  flutter-vita precache --force  to replace it');
     }
     return 0;
+  }
+
+  // Between a Flutter upgrade and its first release, master pins a Flutter
+  // that no published engine matches.
+  if (release.url.isEmpty) {
+    stderr.writeln('!! No engine release for Flutter ${flutterPin()} yet.');
+    stderr.writeln('   Build the engine and package it (docs/engine.md):');
+    stderr.writeln('   tools/package-engine.sh puts it in ${target.path}');
+    return 1;
   }
 
   if (host != null &&

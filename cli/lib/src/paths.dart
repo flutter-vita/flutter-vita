@@ -107,7 +107,7 @@ late final String Function() flutterPin = () {
       }
     }
 
-    return cached = '3.44.8';
+    return cached = '3.47.7';
   };
 }();
 

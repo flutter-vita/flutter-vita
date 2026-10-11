@@ -365,7 +365,9 @@ int _version() {
   final engine = v['engine'] as Map<String, dynamic>? ?? const {};
   final embedder = v['embedder'] as Map<String, dynamic>? ?? const {};
   stdout.writeln('flutter-vita $release$described');
-  stdout.writeln('  flutter ${v['flutter']}  engine ${engine['release']}'
+  final engineRelease = engine['release'] as String? ?? '';
+  stdout.writeln('  flutter ${v['flutter']}'
+      '  engine ${engineRelease.isEmpty ? 'unreleased' : engineRelease}'
       '  embedder ${embedder['release']}');
   return 0;
 }

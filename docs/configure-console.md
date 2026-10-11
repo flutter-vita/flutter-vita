@@ -60,6 +60,14 @@ an address again.
 flutter-vita doctor      # ends with the console it found
 ```
 
+**If the name does not resolve** while the bridge is on the screen, the Mac
+gets no multicast from the console. The Vita has a 2.4 GHz radio only. Many
+routers do not send multicast between their 2.4 GHz and 5 GHz radios, so a
+Mac on 5 GHz cannot find the console by name, although it can connect to the
+console's address. Put the Mac on 2.4 GHz, or turn off IGMP snooping or
+"multicast enhancement" on the router. `ux0:data/flutter-vita/mdns.txt` on the
+card shows this case: `joined 1` and a rising `announced`, but `queries 0`.
+
 ## 5. What the bridge is
 
 The bridge is title `FVTA00001`, listening on port 1341. It installs

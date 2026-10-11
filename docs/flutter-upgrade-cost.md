@@ -66,6 +66,52 @@ carry their own patch and each moves independently of Flutter.
 
 ---
 
+## Done: 3.44.8 → 3.47.7 (2026-10-11)
+
+3.47.7 was the newest stable Flutter on that day. Two of the three reasons
+against 3.47.0 were gone: it is stable, and ardera ships arm32 binaries for
+its engine. The procedure above priced it in a few minutes, and then the
+upgrade was done the same day.
+
+| | 3.44.8 | 3.47.7 |
+|---|---|---|
+| Framework | `058e0af2` | `abaf9c52` |
+| Engine | `0cd61071` | `deb28748` |
+| Dart | `d684a576` (3.12.2) | `04bcd103` (3.13.5) |
+| Skia | `e9ed4fc9` | `8df24be6` |
+| BoringSSL | `b0ae229f` | `2e508c97` |
+| abseil, zlib | `564023aa`, `7eda07b1` | the same |
+
+**The price.** Of the 53 files the engine commits own, 12 changed upstream
+(+183 / −108). Of the 11 Dart commits, 8 own files that changed. `embedder.h`
+got the same 17 additive lines as 3.47.0. abseil and zlib did not move, so
+their forks needed nothing.
+
+**What it cost.** Each fork got a new branch, `vita-3.47.7`, on the new
+upstream revision, and the commits moved onto it one at a time.
+
+| Where | What broke | The fix |
+|---|---|---|
+| Engine | One conflict: `embedder_external_texture_gl.cc` | Keep upstream's check for a null context, inside our Impeller guard |
+| Dart | Four conflicts: `ffi_dynamic_library.cc`, `file_linux.cc`, `secure_socket.dart`, `runtime/bin/BUILD.gn` | A new `DynamicLibrary::New` signature, file times in microseconds, a reformat, and the root certificates (next row) |
+| Dart | Upstream removed the compiled-in root certificates | The Vita has no other trust store, so every HTTPS request would fail. A new commit keeps the bundle, for the Vita only |
+| Dart | `InterfaceSocketAddress` has a 4th parameter, the prefix length | The pricing of 3.47.0 predicted it. The Vita reads the netmask from `sceNetCtl` |
+| Dart | `VirtualMemory::AllocateAligned` lost `is_compressed`, and the flag `write_protect_vm_isolate` is gone | Remove both from the Vita files |
+| Skia | `SkMalloc.h` moved from `include/private/base/` to `include/private/` | One include |
+| Dart | The VM took its SDK hash from git HEAD. In a fork that is our commit, and the VM would refuse every app | A new commit: the VM takes `dart_sdk_verification_hash` from GN, and `tools/gn` sets it to `dart_revision` from `DEPS` |
+| Embedder | One snapshot for the VM and the isolate: `_kDartSnapshotData` and `_kDartSnapshotText`, not four symbols | Pass the same two symbols for both, as the engine's `dart_snapshot.cc` does |
+
+The upgrade also found two old faults. Our `tools/gn` turned TLS off for the
+Vita, and the 3.44.8 build had TLS only because its `args.gn` was edited by
+hand. And `vita_link_check` had not linked since 2026-08-10: two symbols that
+only an app supplies were missing. Both are fixed, so the build command in
+[engine.md](engine.md) gives the right engine, and an undefined symbol stops
+the build.
+
+**Time.** The dependency sync took 5 minutes, and the engine build took 27
+minutes on ten cores. From the first fetch to a built gallery took about an
+hour.
+
 ## Priced: 3.44.8 → 3.47.0 (measured 2026-08-19)
 
 | | Current pin | Candidate |

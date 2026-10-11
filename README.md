@@ -26,9 +26,9 @@ You need:
 - VitaSDK, CMake, and Python 3 with Pillow
   ([Install on macOS](docs/install-macos.md)).
 - No Flutter install. The first `flutter-vita` command downloads Flutter
-  3.44.8 for the tool's own use, one time (2.1 GB), and does not touch the
+  3.47.7 for the tool's own use, one time (2.1 GB), and does not touch the
   Flutter you use for other projects
-  ([details](docs/install-macos.md#2-flutter-3448)).
+  ([details](docs/install-macos.md#2-flutter-3477)).
 
 Get the tool and the prebuilt engine, then check the setup:
 
@@ -74,7 +74,7 @@ compiles it into the same `eboot.bin` ([Available plugins](plugins/)).
   h-encore²), firmware 3.60 to 3.74.
 - The console needs Sony's shader compiler, `ur0:data/libshacccg.suprx`.
   [Console setup](docs/configure-console.md) says how to check for it.
-- Flutter 3.44.8, pinned. The engine is prebuilt for this version and the
+- Flutter 3.47.7, pinned. The engine is prebuilt for this version and the
   framework must match it ([docs/versions.md](docs/versions.md)). The tool downloads it
   for itself.
 - The Vita3K emulator is not a supported target
@@ -118,7 +118,7 @@ See [Commands](docs/commands.md) for the full list, and
 | Repository | What it is | Why it exists |
 | --- | --- | --- |
 | [flutter-vita](https://github.com/flutter-vita/flutter-vita) (this one) | The `flutter-vita` command, the app template, the bridge, the GLES2 layer, the Vita implementations of twelve plugins (`plugins/`), the samples and the docs. | This is the part you use. You build, install, run and debug your app from here. |
-| [flutter](https://github.com/flutter-vita/flutter) | Our fork of Flutter, branch `vita-3.44.8`. The engine's Vita changes are commits on the `3.44.8` tag. Its releases carry the prebuilt engine; [`versions.json`](versions.json) names the one this tool uses. | The engine does not run on the console without these changes. The prebuilt engine saves you a 12 GB checkout and a long build. |
+| [flutter](https://github.com/flutter-vita/flutter) | Our fork of Flutter, branch `vita-3.47.7`. The engine's Vita changes are commits on the `3.47.7` tag. Its releases carry the prebuilt engine; [`versions.json`](versions.json) names the one this tool uses. | The engine does not run on the console without these changes. The prebuilt engine saves you a 12 GB checkout and a long build. |
 | [flutter-vita-embedder](https://github.com/flutter-vita/flutter-vita-embedder) | The embedder, the `main()` of every app. It starts the engine, reads touch and buttons, and puts each frame on the screen. A submodule here at `embedder`. | Each Flutter platform has an embedder, and this is the one for the Vita. Every app build compiles it from source, so a fix in it needs no new engine. |
 | [flutter-vita-packages](https://github.com/flutter-vita/flutter-vita-packages) | Our pub packages: `flutter_vita`, `vita_debug_strip`, `vita_file_browser`. A submodule here at `packages/`. | Your app adds them to `pubspec.yaml` like any other package. `flutter_vita` sets up the app for the console with one call in `main()`. |
 | [flutter-vita-bench](https://github.com/flutter-vita/flutter-vita-bench) | The benchmark: a Flutter app with 36 scenes, and a script that compares each run with a baseline. Not a submodule. | When you change the engine, the GLES2 layer or the embedder, it tells you which scenes got slower. It builds with `flutter-vita` like any other app. |
@@ -142,12 +142,12 @@ docs/        guides, decisions (ADRs) and records
 ### The changes this port makes to other projects
 
 Every one is a commit in a fork of the project it changes, on branch
-`vita-3.44.8`. There are no patch files anywhere
+`vita-3.47.7`. There are no patch files anywhere
 ([ADR-0021](docs/adr/0021-the-port-is-commits-not-patches.md)).
 
 | Fork | Of | What we change |
 | --- | --- | --- |
-| [dart-sdk](https://github.com/flutter-vita/dart-sdk) | `dart-lang/sdk` | The Vita OS layer for the Dart VM: the platform, the toolchain, `dart:vita`, emulated TLS, `dart:io`, the TLS record layer |
+| [dart-sdk](https://github.com/flutter-vita/dart-sdk) | `dart-lang/sdk` | The Vita OS layer for the Dart VM: the platform, the toolchain, `dart:vita`, emulated TLS, `dart:io`, the TLS record layer, the root certificates |
 | [skia](https://github.com/flutter-vita/skia) | `google/skia` | Platform detection, and a file reader in place of `mmap` |
 | [abseil-cpp](https://github.com/flutter-vita/abseil-cpp) | `abseil/abseil-cpp` | No ELF introspection, no `tm_gmtoff`, `memalign` in place of `mmap` |
 | [boringssl](https://github.com/flutter-vita/boringssl) | `google/boringssl` | An entropy source on the console's kernel RNG |

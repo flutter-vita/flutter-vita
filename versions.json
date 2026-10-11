@@ -1,31 +1,32 @@
 {
   "_comment": "What flutter-vita builds against, and its own release. Read by the CLI (precache, doctor, --version) and the build scripts; edited by hand when a release moves.",
   "release": "3.44.8_0.1.0",
-  "flutter": "3.44.8",
-  "framework_rev": "058e0af2c2b57e369d905a03ac9748b0ebf543c6",
+  "flutter": "3.47.7",
+  "framework_rev": "abaf9c523780a608bd46686fd5e53740a07077f8",
   "flutter_sdk": {
     "_comment": "Google's release archives of the pinned Flutter, by host. tools/flutter-sdk.sh downloads one, checks the sha256 and unpacks it to ~/.flutter-vita/flutter/<flutter>. Hashes from releases_<os>.json under base_url.",
     "base_url": "https://storage.googleapis.com/flutter_infra_release/releases/",
     "hosts": {
       "darwin-arm64": {
-        "archive": "stable/macos/flutter_macos_arm64_3.44.8-stable.zip",
-        "sha256": "c3d6fe95078f7001d947a31d42527de91d5bfe62e4cf444a1493a2e8f1fb199d"
+        "archive": "stable/macos/flutter_macos_arm64_3.47.7-stable.zip",
+        "sha256": "dd9da574c3168460550117eb0e8dd0313ae934fabf64a82a6d557fff5fd1422e"
       },
       "darwin-x64": {
-        "archive": "stable/macos/flutter_macos_3.44.8-stable.zip",
-        "sha256": "b2f765234217327a5859d046c9f3b167387b61da5408b5866ed448d905877c66"
+        "archive": "stable/macos/flutter_macos_3.47.7-stable.zip",
+        "sha256": "17d39b000a5d0681e3f7b61a105a36f6f31dd41ab9073f625fd466f38035f901"
       },
       "linux-x64": {
-        "archive": "stable/linux/flutter_linux_3.44.8-stable.tar.xz",
-        "sha256": "672089e001571a9fbb209a495c583580c0c6c73ef98999264ba07fa93ace332d"
+        "archive": "stable/linux/flutter_linux_3.47.7-stable.tar.xz",
+        "sha256": "af7455f540df951184c7953fbe3cf884766e7541dacf8571f9f582db03dd6230"
       }
     }
   },
   "engine": {
-    "release": "3.44.8_0.1.0",
-    "url": "https://github.com/flutter-vita/flutter/releases/download/3.44.8_0.1.0/flutter-engine-vita-3.44.8_0.1.0.tar.gz",
-    "sha256": "179cb746dcf4e8f8b925337f710adcb1f938f3d65c0f479f9aeed802aaeac869",
-    "unpacks_to": "flutter-engine-vita-3.44.8",
+    "_comment": "No engine release for this Flutter yet: release, url and sha256 are empty until /ps-vita-publish fills them. Build the engine and package it into out/artifacts/ (docs/engine.md).",
+    "release": "",
+    "url": "",
+    "sha256": "",
+    "unpacks_to": "flutter-engine-vita-3.47.7",
     "hosts": [
       "darwin-arm64"
     ]

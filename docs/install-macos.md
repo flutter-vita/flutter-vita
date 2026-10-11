@@ -2,7 +2,7 @@
 
 What you need on the Mac: VitaSDK (the `arm-vita-eabi` compiler and the
 Vita's headers and stubs), CMake, Python 3 with Pillow, and this repository.
-Flutter 3.44.8 is not on the list: the tool downloads its own. Rebuilding the Flutter engine
+Flutter 3.47.7 is not on the list: the tool downloads its own. Rebuilding the Flutter engine
 itself is not part of this page; the engine comes prebuilt.
 
 ## 1. VitaSDK
@@ -31,28 +31,28 @@ Check:
 arm-vita-eabi-gcc --version
 ```
 
-## 2. Flutter 3.44.8
+## 2. Flutter 3.47.7
 
 Nothing to install. The first `flutter-vita` command downloads Google's
-release archive of Flutter 3.44.8 (2.1 GB, one time), checks it against the
+release archive of Flutter 3.47.7 (2.1 GB, one time), checks it against the
 sha256 in [`versions.json`](../versions.json), and unpacks it to
-`~/.flutter-vita/flutter/3.44.8`. `tools/flutter-sdk.sh` does this, and you
+`~/.flutter-vita/flutter/3.47.7`. `tools/flutter-sdk.sh` does this, and you
 can run it on its own. The Flutter you use for other projects is not read
 and not changed.
 
-The prebuilt engine is compiled for exactly 3.44.8, so the framework must be
+The prebuilt engine is compiled for exactly 3.47.7, so the framework must be
 the same version. The tool owns its copy so that nobody has to manage that
 by hand.
 
 **Why not our fork of Flutter?** The fork,
 [flutter-vita/flutter](https://github.com/flutter-vita/flutter), changes
 only the engine: `engine/src` and `DEPS`. Its framework and its `flutter`
-command are the same as in the 3.44.8 release, and the engine comes
+command are the same as in the 3.47.7 release, and the engine comes
 prebuilt (step 5). An app build uses the Flutter SDK on the Mac only:
 `flutter pub get`, `flutter build bundle` for the assets, and the Dart
 compiler front end.
 
-To use a Flutter 3.44.8 that you already have, export `FLUTTER_ROOT`. The
+To use a Flutter 3.47.7 that you already have, export `FLUTTER_ROOT`. The
 build refuses an SDK at another revision.
 
 ## 3. Python
@@ -87,7 +87,7 @@ The prebuilt engine is a release of the fork,
 [flutter-vita/flutter](https://github.com/flutter-vita/flutter/releases).
 `precache` reads [`versions.json`](../versions.json), downloads the
 tarball it names (25 MB), checks its sha256 and unpacks it to
-`out/artifacts/flutter-engine-vita-3.44.8/`: the engine archive,
+`out/artifacts/flutter-engine-vita-3.47.7/`: the engine archive,
 `gen_snapshot` for this host, the headers the embedder includes and the
 data files. The first `flutter-vita build` does the same on its own when
 the artifact is missing.

@@ -60,16 +60,17 @@ console.
 
 **The engine tree is the fork's branch.** `third_party/flutter` is
 [flutter-vita/flutter](https://github.com/flutter-vita/flutter) on branch
-`vita-3.44.8`, so an engine change is a commit there, and `git log` and
+`vita-3.47.7`, so an engine change is a commit there, and `git log` and
 `git blame` answer for it. The five dependencies that also change are forks
 of the same kind, named in `DEPS`. There are no patch files. Use
 `tools/engine-tree.sh --verify` to check the tree and the five. Do not do `git checkout` of another revision in `third_party/`:
 the other trees there come from other projects, and a checkout removes
 work that is not committed.
 
-**A version change is a project, not maintenance.** Flutter 3.44.8 is not an
-arbitrary choice. It is the version that has prebuilt 32-bit ARM engine
-binaries. To move it is work with a cost. Calculate the cost first.
+**A version change is a project, not maintenance.** Flutter 3.47.7 is not an
+arbitrary choice. ardera publishes 32-bit ARM engine binaries for it, and we
+compare our build with them. To move it is work with a cost. Calculate the cost
+first ([docs/flutter-upgrade-cost.md](docs/flutter-upgrade-cost.md)).
 
 **A number with no method is not a result.** Measure frame times with
 [flutter-vita-bench](https://github.com/flutter-vita/flutter-vita-bench), so
@@ -108,9 +109,9 @@ Tell us what you changed, and how you know that it operates.
 
 Use the right branch. Our own repositories (the tool, the embedder, the
 packages and the bench) have one branch, `master`. Each fork has one branch for
-each Flutter version, now `vita-3.44.8`. A Flutter upgrade adds a new fork
+each Flutter version, now `vita-3.47.7`. A Flutter upgrade adds a new fork
 branch, `vita-<version>`, and changes `versions.json` on `master`. A release is a
-tag, `<flutter>-vita.<ours>` (for example `3.44.8-vita.1.0.0`), and not a
+tag, `<flutter>-vita.<ours>` (for example `3.47.7-vita.1.0.0`), and not a
 branch.
 
 If your change touches the console, tell us which console and which firmware. If

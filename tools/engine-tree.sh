@@ -10,10 +10,11 @@
 #
 # In the repository that owns each file, as commits. There are no patch files.
 #
-#   flutter-vita/flutter      13 commits on vita-3.44.8. third_party/flutter is
-#                             this branch, so `git log` and `git blame` answer
-#                             for the engine. An engine change is a commit.
-#   flutter-vita/dart-sdk     11 commits: the Vita OS layer for the Dart VM
+#   flutter-vita/flutter      the engine's commits on vita-<flutter>, above the
+#                             tag <flutter>. third_party/flutter is this branch,
+#                             so `git log` and `git blame` answer for the
+#                             engine. An engine change is a commit.
+#   flutter-vita/dart-sdk     the Vita OS layer for the Dart VM
 #   flutter-vita/skia         1 commit: platform detection, and a file reader
 #                             in place of mmap
 #   flutter-vita/abseil-cpp   1 commit: no ELF introspection, no tm_gmtoff,
@@ -36,7 +37,8 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
 
 TREE="third_party/flutter"
-BRANCH="vita-$(sed -n 's/^[[:space:]]*"flutter":[[:space:]]*"\([0-9.]*\)".*/\1/p' versions.json | head -1)"
+FLUTTER="$(sed -n 's/^[[:space:]]*"flutter":[[:space:]]*"\([0-9.]*\)".*/\1/p' versions.json | head -1)"
+BRANCH="vita-$FLUTTER"
 
 pass=0; fail=0; skipped=0
 ok()   { printf '  \033[32mok\033[0m    %s\n' "$*"; pass=$((pass+1)); }
@@ -66,7 +68,7 @@ PY
 # --------------------------------------------------------------------- --list
 if [ "${1:---verify}" = "--list" ]; then
   echo "engine: commits on $BRANCH in $TREE"
-  git -C "$TREE" log --oneline --no-decorate "3.44.8..$BRANCH" 2>/dev/null | sed 's/^/  /'
+  git -C "$TREE" log --oneline --no-decorate "$FLUTTER..$BRANCH" 2>/dev/null | sed 's/^/  /'
   echo
   echo "dependencies: forks named in DEPS"
   ours | while read -r path url rev; do
@@ -125,8 +127,8 @@ else
     printf '        %s\n' $dirty
   fi
 
-  n="$(git -C "$TREE" log --oneline "3.44.8..HEAD" 2>/dev/null | wc -l | tr -d ' ')"
-  [ "$n" -gt 0 ] && ok "$n commits above the tag 3.44.8" ||
+  n="$(git -C "$TREE" log --oneline "$FLUTTER..HEAD" 2>/dev/null | wc -l | tr -d ' ')"
+  [ "$n" -gt 0 ] && ok "$n commits above the tag $FLUTTER" ||
     bad "no commits above the tag; this tree carries no port"
 
   if git -C "$TREE" rev-parse --verify --quiet "fork/$BRANCH" >/dev/null; then

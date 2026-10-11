@@ -9,9 +9,9 @@ Change both together.
 
 | Component | Version | Commit |
 |---|---|---|
-| Flutter (framework) | **3.44.8** | `058e0af2c2b57e369d905a03ac9748b0ebf543c6` |
-| Flutter engine | matching 3.44.8 | `0cd610717bde95fd88343c64f81c11ba4e5c0010` |
-| Dart SDK | matching 3.44.8 (3.12.2) | `d684a576a6aa954ae107a03b2b4e1d61c3bebe93` |
+| Flutter (framework) | **3.47.7** | `abaf9c523780a608bd46686fd5e53740a07077f8` |
+| Flutter engine | matching 3.47.7 | `deb287481e3ce9468f3434937ced4240a70539ca` |
+| Dart SDK | matching 3.47.7 (3.13.5) | `04bcd1036cdc799ac6564988f159ee454d42c822` |
 | VitaSDK | *TBD — pin at Phase 0* | |
 
 > **Corrected 2026-08-19.** The first two rows were both wrong. The framework
@@ -22,15 +22,16 @@ Change both together.
 > and the table it was supposed to agree with was not.
 
 ```bash
-cat ~/.flutter-vita/flutter/3.44.8/bin/cache/flutter.version.json
+cat ~/.flutter-vita/flutter/3.47.7/bin/cache/flutter.version.json
 ```
 
-## Why 3.44.8 specifically
+## Why 3.47.7 specifically
 
-These are not arbitrary. They are the **exact commits
+3.47.7 was the newest stable Flutter on 2026-10-11, the day of the upgrade.
 [`ardera/flutter-engine-binaries-for-arm`](https://github.com/ardera/flutter-engine-binaries-for-arm)
-ships prebuilt 32-bit ARM engine binaries for**, as of its 2026-07-24 update.
-Matching that pin buys four concrete things:
+ships prebuilt 32-bit ARM engine binaries for its engine revision, `deb28748`
+(the tag `engine_deb287481e3c…`). 3.44.8 had the same property, and it was the
+reason for that pin. Matching ardera buys four concrete things:
 
 1. **Proof that the engine builds for armv7 at this commit.** A third party has
    already done it. That converts "will the engine cross-compile to 32-bit ARM?"
@@ -63,7 +64,7 @@ Skia support is being removed. Three checks say that is over-conservative:
 - **Impeller has no software backend.** So the `kSoftware` embedder path is
   necessarily Skia-backed. Skia cannot be removed from the engine while that
   path exists — and it is still vendored in the current DEPS.
-- **32-bit ARM is not dead.** ardera updated arm32 binaries to 3.44.8 last month.
+- **32-bit ARM is not dead.** ardera ships arm32 binaries for 3.47.7.
   What *was* dropped is 32-bit **iOS** (Flutter 3.3), which is unrelated.
 
 The removal that would actually hurt this project is not "Skia is removed" but
@@ -80,24 +81,14 @@ compatibility.
   armv7 AOT snapshot immediately, and attack the Vita runtime port with a real
   artifact in hand rather than a hypothetical one.
 
-## Do not chase 3.47
+## The move from 3.44.8 to 3.47.7
 
-Flutter 3.47 targets August 2026 (branch cutoff 2026-07-07). ardera has not
-shipped arm32 binaries for it. The value of this pin is the prebuilt arm32
-reference; moving ahead of it discards the main reason to be here.
-**Revisit when ardera's `arm/` directory moves, not when Flutter stable moves.**
-
-**Priced, 2026-08-19, and the answer is still no** — for a better reason than
-the one above. See
-[docs/flutter-upgrade-cost.md](flutter-upgrade-cost.md) for the full
-measurement and the procedure to redo it. In short: 3.47.0 is a release
-candidate (`[user-branch]`, no changelog); the engine patch series survives it
-almost untouched (6 of 44 files, all GN); the Dart series does not (24 of 67
-files, eight of ten patches, plus one guaranteed compile break in
-`InterfaceSocketAddress`); and **nothing in the 1,358-commit range addresses
-the measured bottleneck.** Upstream's engine work in that window went to
-Impeller — 336 files, +13,110 lines — while the Skia software path this port
-executes got 5 insertions across 2 files.
+On 2026-08-19 the answer for 3.47 was no: 3.47.0 was a release candidate,
+ardera had no arm32 binaries for it, and nothing in the range touched the
+measured bottleneck. On 2026-10-11 the first two reasons were gone: 3.47.7 is
+stable, and ardera has binaries for its engine. The upgrade was done that day.
+[docs/flutter-upgrade-cost.md](flutter-upgrade-cost.md) has the price and what
+it cost.
 
 ## Incidental finding: the blit may be free
 

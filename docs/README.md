@@ -7,7 +7,7 @@ meets them.
 
 | Page | What it is |
 |---|---|
-| [install-macos.md](install-macos.md), [install-linux.md](install-linux.md) | The toolchain: VitaSDK, Flutter 3.44.8, the engine artifact |
+| [install-macos.md](install-macos.md), [install-linux.md](install-linux.md) | The toolchain: VitaSDK, Flutter 3.47.7, the engine artifact |
 | [configure-console.md](configure-console.md) | Homebrew, the shader compiler, the network, the bridge, the two button chords |
 | [get-started.md](get-started.md) | The first run: the gallery, then your own app |
 | [commands.md](commands.md) | `flutter-vita`, the scripts under it, the app's own port |
@@ -35,7 +35,7 @@ meets them.
 | [open-sourcing.md](open-sourcing.md) | What stands between this tree and a public one, audited against the repository rather than remembered |
 | [dev-environment.md](dev-environment.md) | Toolchain and IDE setup, including the three-index clangd arrangement |
 | [vita3k-as-a-target.md](vita3k-as-a-target.md) | What the emulator can and cannot be trusted for |
-| [versions.md](versions.md) | Pinned commits and why 3.44.8 |
+| [versions.md](versions.md) | Pinned commits and why 3.47.7 |
 | [../tools/engine-tree.sh](../tools/engine-tree.sh) | `--apply` puts the fork's branch into the engine tree; `--verify` checks the port is in place, in the tree and in the five dependency forks |
 | [platform-identity-options.md](platform-identity-options.md) | Which OS the Vita should claim to be: all six candidates priced, linux vs android measured, and why a real `vita` platform stays rejected |
 | [flutter-upgrade-cost.md](flutter-upgrade-cost.md) | How to price a Flutter/Dart upgrade before committing to it, and the priced answer for 3.47.0 |
@@ -69,7 +69,7 @@ said 60 fps at 960x544 was impossible. That was true of a CPU `memcpy` into
 CDRAM at 8.06 ms per present, and it is not true of the GPU path. Keep the
 measurement, drop the conclusion.
 
-Measured against the pinned Flutter 3.44.8:
+Measured on Flutter 3.44.8:
 
 | Measurement | Value |
 |---|---|
