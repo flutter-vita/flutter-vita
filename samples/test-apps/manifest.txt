@@ -25,8 +25,8 @@ flutter/samples                     0c5ca75d2985ddeca92417bb1235f361d8643e7b  # 
 # ---
 # --- Pinned to 747b945, upstream's own Flutter 3.41.9 update. The older
 # --- 123f4749 cannot be built with the pinned Flutter at all.
-# --- Our fork: one commit on vita-3.44.8, on upstream's 747b945a.
-flutter-vita/flutter-wonderous-app  c4d816617201b659caf6408aa87cb6309d225d6b  # branch vita-3.44.8
+# --- Our fork: two commits on vita-3.47.7, on upstream's 747b945a.
+flutter-vita/flutter-wonderous-app  abb00d7572f47e18d316d68ad16f2715d340a287  # branch vita-3.47.7
     entry lib/main.dart
 
 # --- Local storage, long lists, and dependency breadth: ~60 packages, of which
@@ -34,10 +34,11 @@ flutter-vita/flutter-wonderous-app  c4d816617201b659caf6408aa87cb6309d225d6b  # 
 # --- breadth is channel-shaped rather than FFI-shaped. Pinned to origin/master:
 # --- the working copy on this machine is one unpushed commit ahead, and a pin
 # --- nobody else can fetch is not a pin.
-# --- Our fork: four commits on vita-3.44.8, on upstream's d3e02ac9. They were
-# --- six patch files. The emoji-font one is not among them: it no longer
-# --- applied and was not in the checkout either. See the patches README.
-flutter-vita/keklist_flutter        df2a1dc37e629ba4eb35396db3ff7d29749bb65f  # branch vita-3.44.8
+# --- Our fork: five commits on vita-3.47.7, on upstream's d3e02ac9. The first
+# --- four replace six patch files. The emoji-font patch is not among them: it
+# --- no longer applied and was not in the checkout either. See the patches
+# --- README.
+flutter-vita/keklist_flutter        6860250f51a4ccf401b72b9e8208061066642eff  # branch vita-3.47.7
     entry lib/main.dart
 
 # --- Networking. The one app with an await before runApp, wrapped in a
@@ -50,17 +51,17 @@ flutter-vita/keklist_flutter        df2a1dc37e629ba4eb35396db3ff7d29749bb65f  # 
 # --- tokio, hyper, reqwest, rustls and ring, and tokio's I/O driver wants
 # --- epoll, which this console does not have.
 # ---
-# --- Our fork: two commits on vita-3.44.8, on upstream's fd8140b6 (v1.15.4).
-# --- They were two patch files until 2026-09-23.
-flutter-vita/localsend              97f65f8b9f03bdbc98da543e4a643a04b68e9503  # branch vita-3.44.8
+# --- Our fork: three commits on vita-3.47.7, on upstream's fd8140b6 (v1.15.4).
+# --- Two were patch files until 2026-09-23.
+flutter-vita/localsend              76b84ce642565d80ee2355dc54eb59bd473a71f9  # branch vita-3.47.7
     entry app/lib/main.dart
 
 # --- Remote content, code generation, and deferred FFI. Chosen over spotube
 # --- (see ADR-0013): its sqlite3 is opened lazily, so FFI fails *after* first
 # --- frame instead of preventing one, and both of its pre-frame blockers are
 # --- plugins we already implement.
-# --- Our fork: one commit on vita-3.44.8, on upstream's ee55f6db.
-flutter-vita/flutter_manga_reader   85ec71e260bd56d1f29adfde119c1f569a368f1f  # branch vita-3.44.8
+# --- Our fork: two commits on vita-3.47.7, on upstream's ee55f6db.
+flutter-vita/flutter_manga_reader   61460565a4fc90513a806c1d668e4cd3016118fe  # branch vita-3.47.7
     entry lib/main_prod.dart
 
 # --- Considered and rejected -----------------------------------------------

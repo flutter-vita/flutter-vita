@@ -128,6 +128,13 @@ the same day and the same network:
 3.47.7 is not slower. The network was slower: on 2026-10-01 the Mac was on
 5 GHz, and on 2026-10-11 the Mac and the Vita shared one 2.4 GHz radio.
 
+**The test apps.** The control app and the four forks in
+[samples/test-apps/manifest.txt](../samples/test-apps/manifest.txt) build
+on 3.47.7 with no source change, and each one runs on the console as it did
+on 2026-09-13. Each fork got a branch `vita-3.47.7` with one more commit:
+the lock file from `pub get`, and the analyzer excludes that the project
+migration of Flutter 3.47 writes on each build.
+
 ## Priced: 3.44.8 → 3.47.0 (measured 2026-08-19)
 
 | | Current pin | Candidate |
