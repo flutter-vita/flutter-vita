@@ -135,6 +135,14 @@ on 2026-09-13. Each fork got a branch `vita-3.47.7` with one more commit:
 the lock file from `pub get`, and the analyzer excludes that the project
 migration of Flutter 3.47 writes on each build.
 
+**Graphics.** The Tests tab and the hardware checks do not test drawing.
+The GPU pixel test (`gles2/test`, M0 to M6) passes on the console with a
+corpus of 75 shaders. 28 of them come from a capture of what the 3.47.7
+Skia compiles in the gallery and the five test apps. Three of those use
+`struct`, which the translator refused until 2026-10-11, so keklist drew no
+shadows under its buttons and cards. The 3.44.8 Skia has the same mesh
+shaders, so the gap is older than the upgrade.
+
 ## Priced: 3.44.8 → 3.47.0 (measured 2026-08-19)
 
 | | Current pin | Candidate |

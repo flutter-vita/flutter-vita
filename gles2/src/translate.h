@@ -22,11 +22,14 @@ typedef enum FvglBase {
   FVGL_T_FLOAT,
   FVGL_T_SAMPLER2D,
   FVGL_T_SAMPLERCUBE,
+  FVGL_T_STRUCT,  // only inside a shader: never a uniform, attribute or varying
 } FvglBase;
 
-// cols is the vector length, or the matrix dimension when rows > 0.
+// cols is the vector length, or the matrix dimension when rows > 0; 0 for a
+// struct, which is neither scalar nor vector.
 typedef struct FvglType {
   unsigned char base, cols, rows;
+  unsigned char strct;  // FVGL_T_STRUCT: 1 + the struct's index in its shader
   int array;  // element count, 0 when not an array
 } FvglType;
 

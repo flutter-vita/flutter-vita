@@ -6,11 +6,47 @@
 // glLinkProgram, because a varying's TEXCOORD index has to be the same in both
 // shaders and only the link sees both. So a Cg compiler error is a link
 // error, which GL allows and Skia checks for.
+#include <psp2/io/fcntl.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
 #include "fvgl_internal.h"
+
+// Shader capture, for growing gles2/corpus from what an app really compiles.
+// Off unless the switch file exists. Each distinct source is appended once
+// per run, refused ones included: Skia retries a refused shader on every
+// draw that needs it, and those are the ones the corpus most needs.
+#define FVGL_CAPTURE_SWITCH "ux0:data/flutter-vita/gles2-capture.on"
+#define FVGL_CAPTURE_FILE "ux0:data/flutter-vita/gles2-shaders.glsl"
+
+static void capture_shader(const FvglShader* s, bool accepted) {
+  static int on = -1;
+  static unsigned seen[1024];
+  static int nseen;
+  if (on < 0) {
+    const SceUID probe = sceIoOpen(FVGL_CAPTURE_SWITCH, SCE_O_RDONLY, 0);
+    on = probe >= 0;
+    if (probe >= 0) sceIoClose(probe);
+    if (on) fvgl_log("shader capture on: %s", FVGL_CAPTURE_FILE);
+  }
+  if (!on) return;
+  unsigned h = 2166136261u;  // FNV-1a
+  for (const char* p = s->source; *p; p++) h = (h ^ (unsigned char)*p) * 16777619u;
+  for (int i = 0; i < nseen; i++) {
+    if (seen[i] == h) return;
+  }
+  if (nseen < (int)(sizeof seen / sizeof seen[0])) seen[nseen++] = h;
+  const SceUID fd = sceIoOpen(FVGL_CAPTURE_FILE, SCE_O_WRONLY | SCE_O_CREAT | SCE_O_APPEND, 0777);
+  if (fd < 0) return;
+  char head[96];
+  const int n = snprintf(head, sizeof head, "//// fvgl-shader %s %s %08x\n",
+                         s->type == GL_FRAGMENT_SHADER ? "frag" : "vert", accepted ? "accepted" : "refused", h);
+  sceIoWrite(fd, head, (SceSize)n);
+  sceIoWrite(fd, s->source, strlen(s->source));
+  sceIoWrite(fd, "\n", 1);
+  sceIoClose(fd);
+}
 
 static FvglShader* shader_get(GLuint name, const char* who) {
   FvglShader* s = fvgl_table_get(&fvgl.shaders, name);
@@ -89,6 +125,7 @@ GL_APICALL void GL_APIENTRY glCompileShader(GLuint shader) {
   const int r = fvgl_translate(s->source, s->type == GL_FRAGMENT_SHADER, NULL, NULL, &s->info, s->log, sizeof s->log);
   s->compiled = r == 0;
   if (!s->compiled) fvgl_log("shader %u refused: %s", shader, s->log);
+  capture_shader(s, s->compiled);
 }
 
 GL_APICALL void GL_APIENTRY glGetShaderiv(GLuint shader, GLenum pname, GLint* params) {

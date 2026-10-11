@@ -3,9 +3,10 @@
 // The language accepted is the one measured in gles2/corpus: scalar, vector
 // and matrix types, uniforms (arrays included), attributes, varyings, one
 // `main`, user functions defined before their first call (Skia's child
-// effects come as one), blocks, `if`, `for`, `while`, `do`, assignments, the
-// arithmetic operators, swizzles, constructors, and the built-in functions in
-// the table below. Anything else stops with an error that names it, so a new
+// effects come as one), structs at file scope (Skia's mesh shaders carry
+// their attributes and varyings in two), blocks, `if`, `for`, `while`, `do`,
+// assignments, the arithmetic operators, swizzles, constructors, and the
+// built-in functions in the table below. Anything else stops with an error that names it, so a new
 // app's shader turns into a line in a log and then a line in this file.
 //
 // What the translation has to get right, beyond spelling:
@@ -113,6 +114,27 @@ typedef struct Func {
   struct Func* next;
 } Func;
 
+// A struct. Cg declares one the way GLSL does, so the definition is copied
+// with Cg field types. What Cg lacks is GLSL's struct constructor; a call to
+// one becomes a helper function, emitted only for the structs that need it.
+#define FVGL_MAX_STRUCTS 32
+#define FVGL_MAX_FIELDS 32
+
+typedef struct StructField {
+  const char* name;
+  int namelen;
+  FvglType type;
+} StructField;
+
+typedef struct StructDef {
+  const char* name;
+  int namelen;
+  char cgname[FVGL_NAME_MAX];
+  StructField* fields;
+  int nfields;
+  bool needs_ctor;
+} StructDef;
+
 typedef enum StmtKind {
   S_BLOCK,
   S_DECL,
@@ -178,6 +200,8 @@ struct Tx {
   Decl* varyings;
   Stmt* main_body;
   Func* funcs;      // in definition order
+  StructDef structs[FVGL_MAX_STRUCTS];  // in definition order
+  int nstructs;
   bool in_func;     // parsing a function body: `return x;` is allowed
   Func* cur_func;   // emitting one: return types and visibility are its
   bool uses_fragcoord, uses_pointsize, uses_fragcolor;
@@ -399,14 +423,14 @@ static const char* intern(Tx* tx, const char* s, int n) {
 // ---- types -----------------------------------------------------------------
 
 static FvglType type_make(FvglBase base, int cols, int rows) {
-  FvglType t = {(unsigned char)base, (unsigned char)cols, (unsigned char)rows, 0};
+  FvglType t = {(unsigned char)base, (unsigned char)cols, (unsigned char)rows, 0, 0};
   return t;
 }
 static bool type_is_scalar(FvglType t) { return t.cols == 1 && t.rows == 0 && t.array == 0; }
 static bool type_is_vector(FvglType t) { return t.cols > 1 && t.rows == 0 && t.array == 0; }
 static bool type_is_matrix(FvglType t) { return t.rows > 0 && t.array == 0; }
 static bool type_same(FvglType a, FvglType b) {
-  return a.base == b.base && a.cols == b.cols && a.rows == b.rows && a.array == b.array;
+  return a.base == b.base && a.cols == b.cols && a.rows == b.rows && a.strct == b.strct && a.array == b.array;
 }
 
 int fvgl_type_components(FvglType t) {
@@ -438,6 +462,29 @@ static bool type_by_name(const Token* t, FvglType* out) {
   return false;
 }
 
+// A built-in type or a struct defined above, by name.
+static bool type_lookup(Tx* tx, const Token* t, FvglType* out) {
+  if (type_by_name(t, out)) return true;
+  if (t->kind != TK_IDENT) return false;
+  for (int i = 0; i < tx->nstructs; i++) {
+    const StructDef* sd = &tx->structs[i];
+    if (sd->namelen == t->len && strncmp(sd->name, t->s, (size_t)t->len) == 0) {
+      *out = type_make(FVGL_T_STRUCT, 0, 0);
+      out->strct = (unsigned char)(i + 1);
+      return true;
+    }
+  }
+  return false;
+}
+
+static const StructField* struct_field(const StructDef* sd, const char* name, int namelen) {
+  for (int i = 0; i < sd->nfields; i++) {
+    const StructField* f = &sd->fields[i];
+    if (f->namelen == namelen && strncmp(f->name, name, (size_t)namelen) == 0) return f;
+  }
+  return NULL;
+}
+
 static const char* cg_type_name(Tx* tx, FvglType t, int line) {
   static const char* const f[] = {"", "float", "float2", "float3", "float4"};
   static const char* const i[] = {"", "int", "int2", "int3", "int4"};
@@ -450,6 +497,7 @@ static const char* cg_type_name(Tx* tx, FvglType t, int line) {
     case FVGL_T_BOOL: return b[t.cols];
     case FVGL_T_INT: return i[t.cols];
     case FVGL_T_FLOAT: return t.rows ? m[t.cols] : f[t.cols];
+    case FVGL_T_STRUCT: return tx->structs[t.strct - 1].cgname;
   }
   fail(tx, line, "type has no Cg spelling");
 }
@@ -759,7 +807,7 @@ static bool starts_declaration(Tx* tx) {
   Token* t = peek(tx);
   if (tok_is(t, "const") || tok_is(t, "highp") || tok_is(t, "mediump") || tok_is(t, "lowp")) return true;
   FvglType tmp;
-  if (!type_by_name(t, &tmp)) return false;
+  if (!type_lookup(tx, t, &tmp)) return false;
   return peek2(tx)->kind == TK_IDENT;
 }
 
@@ -771,7 +819,7 @@ static Stmt* parse_declaration_statement(Tx* tx) {
     fail(tx, start->line, "attribute, uniform and varying belong at file scope");
   FvglType type;
   Token* t = peek(tx);
-  if (!type_by_name(t, &type)) fail(tx, t->line, "expected a type, found '%.*s'", t->len, t->s);
+  if (!type_lookup(tx, t, &type)) fail(tx, t->line, "expected a type, found '%.*s'", t->len, t->s);
   next(tx);
   Stmt* s = stmt_new(tx, S_DECL, start->line);
   s->decls = parse_declarators(tx, type, q.is_const, q.is_const ? SYM_CONST : SYM_LOCAL);
@@ -857,7 +905,7 @@ static Stmt* parse_statement(Tx* tx) {
     expect(tx, ";");
     return stmt_new(tx, S_CONTINUE, t->line);
   }
-  if (tok_is(t, "struct")) fail(tx, t->line, "struct is not supported");
+  if (tok_is(t, "struct")) fail(tx, t->line, "struct inside a function is not supported; define it at file scope");
   if (tok_is(t, "precision")) {
     while (!accept(tx, ";")) next(tx);
     return stmt_new(tx, S_EMPTY, t->line);
@@ -917,7 +965,7 @@ static void parse_function(Tx* tx, FvglType ret, Token* name) {
       }
       Token* tt = peek(tx);
       FvglType type;
-      if (!type_by_name(tt, &type)) fail(tx, tt->line, "expected a parameter type, found '%.*s'", tt->len, tt->s);
+      if (!type_lookup(tx, tt, &type)) fail(tx, tt->line, "expected a parameter type, found '%.*s'", tt->len, tt->s);
       if (type.base == FVGL_T_VOID) fail(tx, tt->line, "a parameter of type void");
       next(tx);
       Token* pn = expect_ident(tx);
@@ -945,6 +993,60 @@ static void parse_function(Tx* tx, FvglType ret, Token* name) {
   *ft = f;
 }
 
+// `struct Name { type field; ... };` at file scope. A precision on a field is
+// dropped like any other. A variable declared together with its struct
+// (`struct S { ... } s;`) is refused: Skia declares the variable on its own.
+static void parse_struct(Tx* tx) {
+  expect(tx, "struct");
+  Token* name = expect_ident(tx);
+  FvglType existing;
+  if (type_lookup(tx, name, &existing)) fail(tx, name->line, "type '%.*s' is defined twice", name->len, name->s);
+  if (sym_find(tx, name->s, name->len) || func_find(tx, name->s, name->len))
+    fail(tx, name->line, "struct '%.*s' has the name of a variable or function", name->len, name->s);
+  if (tx->nstructs == FVGL_MAX_STRUCTS) fail(tx, name->line, "more than %d structs", FVGL_MAX_STRUCTS);
+  if (name->len >= FVGL_NAME_MAX) fail(tx, name->line, "struct name longer than %d characters", FVGL_NAME_MAX - 1);
+  // Filled in here and counted only when complete, so a struct cannot hold itself.
+  StructDef* sd = &tx->structs[tx->nstructs];
+  sd->name = intern(tx, name->s, name->len);
+  sd->namelen = name->len;
+  fvgl_cg_name(sd->name, sd->cgname);
+  expect(tx, "{");
+  StructField fields[FVGL_MAX_FIELDS];
+  int n = 0;
+  while (!accept(tx, "}")) {
+    if (peek(tx)->kind == TK_EOF) fail(tx, name->line, "struct '%s' is not closed", sd->name);
+    while (tok_is(peek(tx), "highp") || tok_is(peek(tx), "mediump") || tok_is(peek(tx), "lowp")) next(tx);
+    Token* tt = peek(tx);
+    FvglType ft;
+    if (!type_lookup(tx, tt, &ft)) fail(tx, tt->line, "expected a field type, found '%.*s'", tt->len, tt->s);
+    if (ft.base == FVGL_T_VOID || ft.base == FVGL_T_SAMPLER2D || ft.base == FVGL_T_SAMPLERCUBE)
+      fail(tx, tt->line, "a '%.*s' field is not supported", tt->len, tt->s);
+    next(tx);
+    do {
+      Token* fn = expect_ident(tx);
+      for (int i = 0; i < n; i++) {
+        if (fields[i].namelen == fn->len && strncmp(fields[i].name, fn->s, (size_t)fn->len) == 0)
+          fail(tx, fn->line, "struct '%s' has two fields named '%.*s'", sd->name, fn->len, fn->s);
+      }
+      if (n == FVGL_MAX_FIELDS) fail(tx, fn->line, "struct '%s' has more than %d fields", sd->name, FVGL_MAX_FIELDS);
+      fields[n].name = intern(tx, fn->s, fn->len);
+      fields[n].namelen = fn->len;
+      fields[n].type = ft;
+      fields[n].type.array = parse_array_size(tx);
+      n++;
+    } while (accept(tx, ","));
+    expect(tx, ";");
+  }
+  if (n == 0) fail(tx, name->line, "struct '%s' has no fields", sd->name);
+  if (!tok_is(peek(tx), ";"))
+    fail(tx, peek(tx)->line, "a variable declared with struct '%s' is not supported; declare it on its own", sd->name);
+  expect(tx, ";");
+  sd->fields = tx_alloc(tx, sizeof(StructField) * (size_t)n);
+  memcpy(sd->fields, fields, sizeof(StructField) * (size_t)n);
+  sd->nfields = n;
+  tx->nstructs++;
+}
+
 static void parse_unit(Tx* tx) {
   Decl** gtail = &tx->globals;
   Decl** atail = &tx->attributes;
@@ -958,7 +1060,10 @@ static void parse_unit(Tx* tx) {
       }
       continue;
     }
-    if (tok_is(t, "struct")) fail(tx, t->line, "struct is not supported");
+    if (tok_is(t, "struct")) {
+      parse_struct(tx);
+      continue;
+    }
     if (tok_is(t, "invariant") && peek2(tx)->kind == TK_IDENT && !tok_is(peek2(tx), "varying")) {
       // `invariant gl_Position;`
       next(tx);
@@ -970,8 +1075,14 @@ static void parse_unit(Tx* tx) {
     parse_qualifiers(tx, &q);
     FvglType type;
     Token* tt = peek(tx);
-    if (!type_by_name(tt, &type)) fail(tx, tt->line, "expected a declaration, found '%.*s'", tt->len, tt->s);
+    if (!type_lookup(tx, tt, &type)) fail(tx, tt->line, "expected a declaration, found '%.*s'", tt->len, tt->s);
     next(tx);
+    // A struct's fields have no place in the attribute, varying and uniform
+    // tables the link step builds, and a global const would need a constant
+    // constructor Cg does not have. Skia uses structs only inside functions.
+    if (type.base == FVGL_T_STRUCT && (q.is_attribute || q.is_varying || q.is_uniform || q.is_const))
+      fail(tx, tt->line, "a %s of struct type is not supported",
+           q.is_attribute ? "attribute" : q.is_varying ? "varying" : q.is_uniform ? "uniform" : "global const");
     // Function definition?
     if (peek(tx)->kind == TK_IDENT && tok_is(peek2(tx), "(")) {
       Token* name = next(tx);
@@ -1093,6 +1204,20 @@ static const char* swizzle_letter(char c) {
 static FvglType emit_field(Tx* tx, Expr* e, Buf* out) {
   Buf inner = {0};
   FvglType t = emit_expr(tx, e->a, &inner);
+  // A swizzle on a scalar or a compound expression needs parentheses in Cg.
+  const bool simple = e->a->kind == E_IDENT || e->a->kind == E_INDEX || e->a->kind == E_FIELD || e->a->kind == E_CALL;
+  if (t.base == FVGL_T_STRUCT && !t.array) {
+    const StructDef* sd = &tx->structs[t.strct - 1];
+    const StructField* f = struct_field(sd, e->name, e->namelen);
+    if (!f) fail(tx, e->line, "struct '%s' has no field '%s'", sd->name, e->name);
+    if (!simple) buf_str(tx, out, "(");
+    buf_put(tx, out, inner.s, inner.len);
+    if (!simple) buf_str(tx, out, ")");
+    buf_str(tx, out, ".");
+    emit_name(tx, out, f->name);
+    free(inner.s);
+    return f->type;
+  }
   if (!type_is_vector(t) && !type_is_scalar(t))
     fail(tx, e->line, "'.%s' on something that is not a vector", e->name);
   if (e->namelen < 1 || e->namelen > 4) fail(tx, e->line, "bad swizzle '.%s'", e->name);
@@ -1104,8 +1229,6 @@ static FvglType emit_field(Tx* tx, Expr* e, Buf* out) {
     if (idx >= t.cols) fail(tx, e->line, "swizzle '.%s' reaches past a %d-component vector", e->name, t.cols);
     sw[i] = l[0];
   }
-  // A swizzle on a scalar or a compound expression needs parentheses in Cg.
-  const bool simple = e->a->kind == E_IDENT || e->a->kind == E_INDEX || e->a->kind == E_FIELD || e->a->kind == E_CALL;
   if (!simple) buf_str(tx, out, "(");
   buf_put(tx, out, inner.s, inner.len);
   if (!simple) buf_str(tx, out, ")");
@@ -1279,6 +1402,29 @@ static FvglType emit_call(Tx* tx, Expr* e, Buf* out) {
     return ctor;
   }
 
+  if (type_lookup(tx, &fake, &ctor)) {
+    // A struct constructor: one argument per field, of the field's type, as
+    // GLSL ES 1.00 requires. Cg has none, so it calls a helper.
+    StructDef* sd = &tx->structs[ctor.strct - 1];
+    if (e->nargs != sd->nfields)
+      fail(tx, e->line, "constructor %s takes %d arguments, got %d", sd->name, sd->nfields, e->nargs);
+    for (int i = 0; i < e->nargs; i++) {
+      const StructField* fld = &sd->fields[i];
+      if (fld->type.array) fail(tx, e->line, "constructor %s: field '%s' is an array", sd->name, fld->name);
+      if (!type_same(types[i], fld->type))
+        fail(tx, e->line, "argument %d of %s is not a %s", i + 1, sd->name, cg_type_name(tx, fld->type, e->line));
+    }
+    sd->needs_ctor = true;
+    buf_fmt(tx, out, "fvgl_make_%s(", sd->cgname);
+    for (int i = 0; i < e->nargs; i++) {
+      if (i) buf_str(tx, out, ", ");
+      buf_put(tx, out, args[i].s, args[i].len);
+      free(args[i].s);
+    }
+    buf_str(tx, out, ")");
+    return ctor;
+  }
+
   Func* f = func_find(tx, e->name, e->namelen);
   if (f) {
     if (e->nargs != f->nparams) fail(tx, e->line, "%s takes %d arguments, got %d", e->name, f->nparams, e->nargs);
@@ -1385,6 +1531,7 @@ static FvglType emit_call(Tx* tx, Expr* e, Buf* out) {
 static FvglType arith_type(Tx* tx, int line, const char* op, FvglType a, FvglType b, bool* matrix_product) {
   *matrix_product = false;
   if (a.array || b.array) fail(tx, line, "arithmetic on a whole array");
+  if (a.base == FVGL_T_STRUCT || b.base == FVGL_T_STRUCT) fail(tx, line, "arithmetic on a struct");
   if (a.base == FVGL_T_SAMPLER2D || b.base == FVGL_T_SAMPLER2D) fail(tx, line, "arithmetic on a sampler");
   if (op[0] == '*') {
     if (type_is_matrix(a) && type_is_vector(b)) {
@@ -1428,6 +1575,7 @@ static FvglType emit_binary(Tx* tx, Expr* e, Buf* out) {
     buf_str(tx, out, ")");
   } else if (strcmp(op, "==") == 0 || strcmp(op, "!=") == 0) {
     r = type_make(FVGL_T_BOOL, 1, 0);
+    if (ta.base == FVGL_T_STRUCT || tb.base == FVGL_T_STRUCT) fail(tx, e->line, "'%s' between structs is not supported", op);
     if (!type_same(ta, tb) && !(type_is_scalar(ta) && type_is_scalar(tb)))
       fail(tx, e->line, "'%s' between different types", op);
     if (type_is_scalar(ta)) {
@@ -1494,6 +1642,8 @@ static FvglType emit_assign(Tx* tx, Expr* e, Buf* out) {
   const FvglType ta = emit_expr(tx, e->a, &a);
   const FvglType tb = emit_expr(tx, e->b, &b);
   if (strcmp(e->op, "=") == 0) {
+    if ((ta.base == FVGL_T_STRUCT || tb.base == FVGL_T_STRUCT) && !type_same(ta, tb))
+      fail(tx, e->line, "assignment of a %s to a %s", cg_type_name(tx, tb, e->line), cg_type_name(tx, ta, e->line));
     if (!type_same(ta, tb) && !(type_is_scalar(ta) && type_is_scalar(tb)) &&
         !(fvgl_type_components(ta) == fvgl_type_components(tb) && ta.rows == tb.rows))
       fail(tx, e->line, "assignment of a %d-component value to a %d-component variable",
@@ -1540,6 +1690,7 @@ static FvglType emit_expr(Tx* tx, Expr* e, Buf* out) {
       if (e->op[0] == '-' && e->oplen == 2) check_lvalue(tx, e->a);
       Buf a = {0};
       const FvglType t = emit_expr(tx, e->a, &a);
+      if (t.base == FVGL_T_STRUCT) fail(tx, e->line, "'%s' on a struct", e->op);
       if (e->op[0] == '!' && t.base != FVGL_T_BOOL) fail(tx, e->line, "'!' on something that is not a bool");
       buf_fmt(tx, out, "(%s", e->op);
       buf_put(tx, out, a.s, a.len);
@@ -1551,6 +1702,7 @@ static FvglType emit_expr(Tx* tx, Expr* e, Buf* out) {
       check_lvalue(tx, e->a);
       Buf a = {0};
       const FvglType t = emit_expr(tx, e->a, &a);
+      if (t.base == FVGL_T_STRUCT) fail(tx, e->line, "'%s' on a struct", e->op);
       buf_str(tx, out, "(");
       buf_put(tx, out, a.s, a.len);
       buf_fmt(tx, out, "%s)", e->op);
@@ -1564,6 +1716,7 @@ static FvglType emit_expr(Tx* tx, Expr* e, Buf* out) {
       const FvglType tc = emit_expr(tx, e->c, &c);
       if (!type_is_scalar(ta) || ta.base != FVGL_T_BOOL) fail(tx, e->line, "'?:' condition is not a bool");
       if (!type_same(tb, tc)) fail(tx, e->line, "'?:' branches have different types");
+      if (tb.base == FVGL_T_STRUCT) fail(tx, e->line, "'?:' between structs is not supported");
       buf_str(tx, out, "(");
       buf_put(tx, out, a.s, a.len);
       buf_str(tx, out, " ? ");
@@ -1831,6 +1984,37 @@ static const char kPrelude[] =
     "float3 fvgl_mod(float3 x, float y) { return x - y * floor(x / y); }\n"
     "float4 fvgl_mod(float4 x, float y) { return x - y * floor(x / y); }\n";
 
+// The structs in definition order, so one may hold another defined above it,
+// then a constructor helper for each struct the shader constructs.
+static void emit_structs(Tx* tx, Buf* out) {
+  for (int i = 0; i < tx->nstructs; i++) {
+    const StructDef* sd = &tx->structs[i];
+    buf_fmt(tx, out, "struct %s {\n", sd->cgname);
+    for (int k = 0; k < sd->nfields; k++) {
+      const StructField* f = &sd->fields[k];
+      buf_fmt(tx, out, "  %s ", cg_type_name(tx, f->type, 0));
+      emit_name(tx, out, f->name);
+      if (f->type.array) buf_fmt(tx, out, "[%d]", f->type.array);
+      buf_str(tx, out, ";\n");
+    }
+    buf_str(tx, out, "};\n");
+  }
+  for (int i = 0; i < tx->nstructs; i++) {
+    const StructDef* sd = &tx->structs[i];
+    if (!sd->needs_ctor) continue;
+    buf_fmt(tx, out, "%s fvgl_make_%s(", sd->cgname, sd->cgname);
+    for (int k = 0; k < sd->nfields; k++)
+      buf_fmt(tx, out, "%s%s a%d", k ? ", " : "", cg_type_name(tx, sd->fields[k].type, 0), k);
+    buf_fmt(tx, out, ") {\n  %s s;\n", sd->cgname);
+    for (int k = 0; k < sd->nfields; k++) {
+      buf_str(tx, out, "  s.");
+      emit_name(tx, out, sd->fields[k].name);
+      buf_fmt(tx, out, " = a%d;\n", k);
+    }
+    buf_str(tx, out, "  return s;\n}\n");
+  }
+}
+
 static void emit_unit(Tx* tx, Buf* out) {
   // The body first, into its own buffer: it tells us which built-ins are used.
   Buf body = {0};
@@ -1862,6 +2046,7 @@ static void emit_unit(Tx* tx, Buf* out) {
   tx->cur_func = NULL;
 
   buf_str(tx, out, kPrelude);
+  emit_structs(tx, out);
   if (tx->uses_fragcoord) buf_str(tx, out, "uniform float2 fvgl_fc;\n");
   for (Decl* d = tx->globals; d; d = d->next) {
     if (!d->is_const) buf_str(tx, out, "uniform ");
