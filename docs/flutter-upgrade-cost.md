@@ -143,6 +143,30 @@ Skia compiles in the gallery and the five test apps. Three of those use
 shadows under its buttons and cards. The 3.44.8 Skia has the same mesh
 shaders, so the gap is older than the upgrade.
 
+**Bench.** We ran the 36 scenes of
+[flutter-vita-bench](https://github.com/flutter-vita/flutter-vita-bench)
+four times on 2026-10-11, in this sequence: 3.47.7, 3.47.7, 3.44.8, 3.47.7.
+The 3.44.8 run used the old tree, built again, and its result names engine
+`ff08f75c` and Dart 3.12.2. Each scene runs three repetitions per run.
+
+| Scene | Measure | 3.44.8 | 3.47.7 |
+|---|---|---|---|
+| text_slide | build | 5.30–5.60 ms | 5.94–6.19 ms |
+| opacity_fade | build | 9.06–9.34 ms | 9.97–10.20 ms |
+| route_push | p95 frame | 16.67 ms in 12 of 12 repetitions | 33.33 ms in 7 of 9 repetitions |
+
+The 3.44.8 column includes the baseline from 2026-10-01. In these scenes,
+3.47.7 takes 0.7 ms more to build a frame. The frame stays at 16.67 ms, so
+the app still shows 60 fps. In route_push, about one more frame per push
+takes two vsyncs. The median frame and the worst frame do not change. No
+other scene is different in all three 3.47.7 runs. Both versions stall on
+blur_backdrop, list_churn and scroll_fling.
+
+The gate failed two of the three 3.47.7 runs, each time on different
+scenes. text_slide build is 8 to 13% above the 3.44.8 baseline, and the
+band is 10%, so the result changes from run to run. A baseline taken on
+3.47.7 makes the gate useful again.
+
 ## Priced: 3.44.8 → 3.47.0 (measured 2026-08-19)
 
 | | Current pin | Candidate |
