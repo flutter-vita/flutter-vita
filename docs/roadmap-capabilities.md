@@ -25,7 +25,7 @@ before the measurement.
 |---|---|---|
 | Front touch | **works** | M3, on hardware |
 | Rendering, text, assets | **works** | M3 |
-| Emoji, font fallback | **app must bundle it** | `app0:/fonts` holds one file (Roboto, 896 codepoints) and `SkFontMgr_Custom` has no character fallback, so emoji are tofu unless the app bundles a font *and names it* — see below. Colour emoji do render: CBDT decodes, verified in keklist 2026-08-28 |
+| Emoji, font fallback | **app must bundle it** | `app0:/fonts` has Roboto and Roboto Mono, and the engine's per-character fallback searches only that folder. So an app bundles an emoji font *and names it*, in its own `textTheme` too — see below. Colour emoji render: keklist, 2026-10-11 |
 | `dart:io` File / Directory | **works** | [audited on hardware](phase-5-capability-audit.md) — read, stat, mkdir, write, append, list, rename, delete |
 | `dart:io` Socket / HttpClient | **works** | audited — DNS, TCP, and `HTTP 200` from the open internet |
 | TLS / HTTPS | **works** | [Phase 7](phase-7-tls.md) — real handshake, verified chain, `HTTPS 200` on hardware |
@@ -40,45 +40,48 @@ before the measurement.
 | **Bluetooth** | **blocked** | see below |
 | Motion, camera, mic, GPS | **not started** | headers exist |
 
-### Fonts: one family, and no automatic fallback
+### Fonts: what the console has, and how an app gets emoji
 
-Two facts that compound, found on 2026-08-28 when every emoji in keklist came
-out as `.notdef`:
+Found on 2026-08-28, when each emoji in keklist was a box. Updated on
+2026-10-11.
 
-**The system font pool is one file.** `package-engine.sh` ships
-`Roboto-Regular.ttf` into `app0:/fonts` and nothing else. It carries 896
-codepoints, tops out at U+FFFD, and has no codepoint at or above U+1F000 — good
-for Latin, Greek and Cyrillic, and empty of emoji, CJK and everything else.
+**Each app gets two font files.** `templates/fonts` puts
+`Roboto-Regular.ttf` and `RobotoMono-Regular.ttf` into `app0:/fonts`. Roboto
+has 896 codepoints and stops at U+FFFD: Latin, Greek and Cyrillic, but no
+emoji and no CJK.
 
-**There is no per-character fallback to rescue it.**
-`SkFontMgr_Custom::onMatchFamilyStyleCharacter` returns `nullptr`, and that is
-the hook Skia calls when the current family has no glyph for a codepoint. On
-Android or a desktop the platform font manager answers it and the user never
-learns the primary font was incomplete. Here nothing answers, so the missing
-glyph is final.
+**The engine finds a font per character, but only in `app0:/fonts`.**
+Skia's directory font manager does not do this
+(`SkFontMgr_Custom::onMatchFamilyStyleCharacter` returns `nullptr`). Since
+2026-09-17 the engine wraps it (`txt/src/txt/platform_vita.cc`) and searches
+each font in `app0:/fonts` for the codepoint. That folder has no emoji font,
+so for an emoji the search finds nothing. The fonts an app declares in
+`pubspec.yaml` are in `flutter_assets`, and the search does not look there.
 
-The consequence is worth stating plainly, because it looks like an app bug:
-**dropping more fonts into `app0:/fonts` does not fix missing glyphs.** It makes
-them available *by name*, which is a different thing. An application that wants
-a codepoint Roboto lacks must bundle a font that has it and name that family —
-`fontFamilyFallback` in `ThemeData`, or `fontFamily` on the specific style.
+**So an app bundles the font and names it.** Declare it under `fonts:` in
+`pubspec.yaml`. Name the family in `fontFamilyFallback`, or in `fontFamily`
+on one style.
 
-keklist was the worked example: `NotoColorEmoji.ttf` (4.7 MB, already in the
-engine checkout beside Roboto) declared in `pubspec.yaml` and named in both
-themes, which takes its `.vpk` from 18 MB to 22 MB. **It is not in
-[flutter-vita/keklist_flutter](https://github.com/flutter-vita/keklist_flutter)**:
-when the app moved from a patch series to a fork on 2026-09-23 that patch no
-longer applied, and the checkout did not have it either. The measurement below
-stands; the app change has to be made again to see it. Colour survives the trip — the font is
-CBDT/CBLC, PNG bitmaps with no outlines, and the engine's FreeType is built with
+**Name it in your own `textTheme` too.** The console reports its OS as
+`linux` (the Dart fork, `runtime/platform/globals.h`), so Flutter uses its
+Linux typography. Each Linux text style has its own fallback list (`Ubuntu`,
+`Adwaita Sans`, ...). If you give `ThemeData` a `textTheme` made from
+`ThemeData().textTheme`, that list replaces your `fontFamilyFallback`. Use
+`textTheme.apply(fontFamilyFallback: [...])`.
+
+keklist is the worked example, commit `bed8a5a` on `vita-3.47.7` of
+[flutter-vita/keklist_flutter](https://github.com/flutter-vita/keklist_flutter):
+Noto Color Emoji 2.002 (7.2 MB, SIL OFL 1.1, Skia's copy) under `fonts:`,
+named in both themes and in their `textTheme`. The `.vpk` grows from 18 MB
+to 24 MB. The 4.7 MB copy in the engine tree is version 1.39, from before
+Emoji 5.0, so it has no 🧙. Colour works: the font is CBDT/CBLC (PNG bitmaps,
+no outlines), and the engine's FreeType is built with
 `FT_CONFIG_OPTION_USE_PNG`, `TT_CONFIG_OPTION_EMBEDDED_BITMAPS` and
-`TT_CONFIG_OPTION_COLOR_LAYERS`, so the emoji picker renders in full colour with
-skin-tone variants on hardware.
+`TT_CONFIG_OPTION_COLOR_LAYERS`.
 
-Implementing `onMatchFamilyStyleCharacter` over the `app0:/fonts` directory
-would make this automatic for every app, at the cost of shipping the fallback
-fonts with the engine rather than the application. Not done, and the reason to
-consider it is that every app hits this, not just the ones using emoji.
+An emoji font in `app0:/fonts` would give emoji to every app with no app
+change, because the engine search would find it. The cost is 7 MB or more in
+each `.vpk`. Not done.
 
 ### Bluetooth is blocked, and not by effort
 

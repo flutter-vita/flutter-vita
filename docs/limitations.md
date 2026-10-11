@@ -22,6 +22,12 @@ Mono` are in every app; anything else, emoji included, is declared under
 `fonts:` in `pubspec.yaml`, as on every other Flutter target. Roboto stops
 at U+FFFD, so an emoji without a font draws an empty box.
 
+Name an emoji font in `fontFamilyFallback`. If you give `ThemeData` your own
+`textTheme`, name it there too, with `textTheme.apply(fontFamilyFallback:
+[...])`. The console reports its OS as `linux`, and Flutter's Linux text
+styles bring their own fallback list, which replaces yours
+([details](roadmap-capabilities.md#fonts-what-the-console-has-and-how-an-app-gets-emoji)).
+
 ## Plugins
 
 A plugin with native code needs a Vita implementation. The ones in
