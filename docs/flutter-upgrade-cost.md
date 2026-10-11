@@ -112,6 +112,22 @@ the build.
 minutes on ten cores. From the first fetch to a built gallery took about an
 hour.
 
+**On the console.** The gallery runs at 60 fps. The test suite passes 77 of
+77 and the hardware suite 12 of 12. The network numbers were lower than the
+record from 2026-10-01, so we ran the suite of the 3.44.8 gallery again, on
+the same day and the same network:
+
+| Probe | 3.44.8 | 3.47.7 |
+|---|---|---|
+| raw TCP 4MB | 25 KB/s | 150 KB/s |
+| HTTP 1MB | 8 KB/s | 19 KB/s |
+| HTTPS 1MB | 123 KB/s | 185 KB/s |
+| HTTPS 4MB | 95 KB/s | 227 KB/s |
+| TLS handshake x3 | 2953 / 1971 / 761 ms | 183 / 64 / 61 ms |
+
+3.47.7 is not slower. The network was slower: on 2026-10-01 the Mac was on
+5 GHz, and on 2026-10-11 the Mac and the Vita shared one 2.4 GHz radio.
+
 ## Priced: 3.44.8 → 3.47.0 (measured 2026-08-19)
 
 | | Current pin | Candidate |

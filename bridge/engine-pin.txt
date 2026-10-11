@@ -5,13 +5,13 @@
 # running the pin script, never by editing this file: the sha is what makes
 # the check mean anything.
 
-flutter          3.44.8
-framework_rev    058e0af2c2b57e369d905a03ac9748b0ebf543c6
-engine           058e0af2c2b57e369d905a03ac9748b0ebf543c6
-dart             d684a576a6aa954ae107a03b2b4e1d61c3bebe93
-archive_sha256   297ea6299e2d81fac4e51579bce5ab97ff3e72c4491c7974e356c05634cac17f
-embedder         2ed18ff75995
-embedder_sha256  d6f3182439c4a92b3c443bbadae67cc260ec2bd7062713ea70b641a0abaf2e41
-pinned_at        2026-10-02T08:41:14Z
-pinned_from      out/artifacts/flutter-engine-vita-3.44.8_0.1.0
-reason           embedder 2ed18ff: listen again after a Wi-Fi drop; same engine (the 0.1.0 archive)
+flutter          3.47.7
+framework_rev    abaf9c523780a608bd46686fd5e53740a07077f8
+engine           059e116853617579295f38cd40cc94ee260fa76c
+dart             dde9ec8a905f3e2310eb1eae476f610f59e0fd59
+archive_sha256   2f3a6b3f9887b34589e79ac44ae161c83e68fca26112aa0f5d7cd102dbb6b219
+embedder         9d758f2b1204
+embedder_sha256  e510cf68efe4c186a33eb221a29fb4e7ec8905a5b5b7561e2212df8152434667
+pinned_at        2026-10-11T11:19:06Z
+pinned_from      out/artifacts/flutter-engine-vita-3.47.7
+reason           Flutter 3.47.7: the engine from vita-3.47.7 and the embedder with Dart 3.13's single snapshot
