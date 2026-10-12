@@ -23,9 +23,9 @@
   },
   "engine": {
     "_comment": "The engine release on flutter-vita/flutter. Its tag is the engine commit's first eight characters. tools/publish-engine.sh publishes it and then writes release, url and sha256 here; after a Flutter upgrade they stay empty until it runs (docs/release.md).",
-    "release": "",
-    "url": "",
-    "sha256": "",
+    "release": "059e1168",
+    "url": "https://github.com/flutter-vita/flutter/releases/download/059e1168/flutter-engine-vita-3.47.7-059e1168.tar.gz",
+    "sha256": "46fa6f782a7ebef0e6bf62a1386953a25e1d17df60ccfdb952f25d49a4c30082",
     "unpacks_to": "flutter-engine-vita-3.47.7",
     "hosts": [
       "darwin-arm64"
