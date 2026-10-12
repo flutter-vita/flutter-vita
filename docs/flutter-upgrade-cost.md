@@ -164,8 +164,9 @@ blur_backdrop, list_churn and scroll_fling.
 
 The gate failed two of the three 3.47.7 runs, each time on different
 scenes. text_slide build is 8 to 13% above the 3.44.8 baseline, and the
-band is 10%, so the result changes from run to run. A baseline taken on
-3.47.7 makes the gate useful again.
+band is 10%, so the result changes from run to run. On 2026-10-12 we took
+a new baseline on 3.47.7 over three launches. A fourth run passed the gate,
+with 88 of 108 values graded.
 
 ## Priced: 3.44.8 → 3.47.0 (measured 2026-08-19)
 
