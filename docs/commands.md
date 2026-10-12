@@ -47,6 +47,8 @@ than the CLI exposes, and each has its usage at the top of the file.
 | `tools/panel.sh` | Drive the bridge's screen from the host: `tab files`, `shot out.png`, `select`, `back`. |
 | `tools/engine-tree.sh --apply\|--verify\|--list` | The engine tree, for engine builds: `--apply` puts the fork's branch into it, `--verify` checks the tree and the five dependency forks, `--list` prints their commits. |
 | `tools/package-engine.sh` | Turn an engine build into the artifact tarball. |
+| `tools/publish-engine.sh [--dry-run\|--check]` | Publish the engine build as an **engine release** and pin it in `versions.json`. `--check` downloads the pinned engine as `precache` does. [release.md](release.md) |
+| `tools/publish-release.sh <tag> [--dry-run]` | Publish a **tool release**: the tag, the Bridge `.vpk`, and the embedder tag when it moved. [release.md](release.md) |
 
 ## The app's own port
 

@@ -36,6 +36,7 @@ meets them.
 | [dev-environment.md](dev-environment.md) | Toolchain and IDE setup, including the three-index clangd arrangement |
 | [vita3k-as-a-target.md](vita3k-as-a-target.md) | What the emulator can and cannot be trusted for |
 | [versions.md](versions.md) | Pinned commits and why 3.47.7 |
+| [release.md](release.md) | How to publish an engine release and a tool release, and the checks on the console before each |
 | [../tools/engine-tree.sh](../tools/engine-tree.sh) | `--apply` puts the fork's branch into the engine tree; `--verify` checks the port is in place, in the tree and in the five dependency forks |
 | [platform-identity-options.md](platform-identity-options.md) | Which OS the Vita should claim to be: all six candidates priced, linux vs android measured, and why a real `vita` platform stays rejected |
 | [flutter-upgrade-cost.md](flutter-upgrade-cost.md) | How to price a Flutter/Dart upgrade before committing to it, and the priced answer for 3.47.0 |
