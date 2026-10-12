@@ -19,7 +19,7 @@ You need the GitHub CLI (`gh`), signed in with write access to the
 | Release | Repository | Tag | File | Script |
 |---|---|---|---|---|
 | **Engine release** | [flutter-vita/flutter](https://github.com/flutter-vita/flutter/releases) | The first eight characters of the engine commit, for example `059e1168` | `flutter-engine-vita-<flutter>-<tag>.tar.gz` | `publish-engine.sh` |
-| **Tool release** | [flutter-vita/flutter-vita](https://github.com/flutter-vita/flutter-vita/releases) | `<flutter>-vita.<X.Y.Z>`, for example `3.47.7-vita.0.2.0` | `flutter-vita-bridge-<tag>.vpk` | `publish-release.sh` |
+| **Tool release** | [flutter-vita/flutter-vita](https://github.com/flutter-vita/flutter-vita/releases) | `<flutter>-vita.<X.Y.Z>`, for example `3.47.7-vita.1.0.0` | `flutter-vita-bridge-<tag>.vpk` | `publish-release.sh` |
 | Embedder tag | [flutter-vita/flutter-vita-embedder](https://github.com/flutter-vita/flutter-vita-embedder/releases) | The same tag as the tool release | None. Apps compile the embedder from source | `publish-release.sh`, only when the submodule moved |
 | Packages | [flutter-vita/flutter-vita-packages](https://github.com/flutter-vita/flutter-vita-packages) | `<name>-v<semver>` | Published on pub.dev | None. Each package goes to pub.dev on its own |
 
@@ -37,11 +37,19 @@ each engine commit, and the tool repository pins the commit in
 - **An engine release has no version number.** Its tag is the commit. You can
   have many engine releases for one Flutter version.
 - **A tool release has the tag `<flutter>-vita.<X.Y.Z>`.** `<flutter>` is the
-  `flutter` value in `versions.json`. `X.Y.Z` is our own
-  [semver](https://semver.org). It does not go back to 0 when Flutter changes.
-  The script refuses a tag of another form.
+  `flutter` value in `versions.json`. The script refuses a tag of another
+  form.
+- **`X.Y.Z` starts at `1.0.0` for each Flutter version**, as in flutter-tizen.
+  The first release on Flutter 3.47.7 is `3.47.7-vita.1.0.0`, and the first
+  release on the next Flutter version is `<flutter>-vita.1.0.0` again.
+- Increase `Z` for a fix (`1.0.1`) and `Y` for a new feature (`1.1.0`).
+  Increase `X` only for a change that stops existing apps or CLI commands from
+  working.
+- **`1.0.0` does not mean stable.** It means the first release on that Flutter
+  version. A release that is not ready for general use gets the GitHub
+  pre-release mark: run `publish-release.sh` with `--prerelease`.
 - Release 0.1.0 used an older form: `3.44.8_0.1.0`, on all three
-  repositories.
+  repositories. The first release in the current form is `3.47.7-vita.1.0.0`.
 
 ## When the engine changes
 
@@ -96,9 +104,12 @@ pinned engine. See [The Bridge and its engine](#the-bridge-and-its-engine).
 2. Publish:
 
    ```sh
-   ./tools/publish-release.sh 3.47.7-vita.0.2.0 --dry-run
-   ./tools/publish-release.sh 3.47.7-vita.0.2.0
+   ./tools/publish-release.sh 3.47.7-vita.1.0.1 --dry-run
+   ./tools/publish-release.sh 3.47.7-vita.1.0.1
    ```
+
+   Add `--prerelease` to both commands for a release that is not ready for
+   general use.
 
 Read the plan and the release notes from the dry run before you publish.
 
@@ -116,7 +127,8 @@ The script does these steps:
    tag, and pushes that tag.
 6. It pushes `master` and the tag together, in one atomic push.
 7. It makes the GitHub releases: the embedder release, then the tool release
-   with `flutter-vita-bridge-<tag>.vpk`.
+   with `flutter-vita-bridge-<tag>.vpk`. With `--prerelease`, both releases
+   get the pre-release mark.
 
 The release notes list the parts with links, the install pages at the tag,
 and the commit subjects since the last tag, in groups by their `area:`

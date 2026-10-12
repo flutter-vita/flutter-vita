@@ -1,11 +1,13 @@
 #!/usr/bin/env bash
 # Publish a release of the tool: a tag on this repository and the Bridge.
 #
-#   ./tools/publish-release.sh <tag>            check, build the Bridge, tag, publish
-#   ./tools/publish-release.sh <tag> --dry-run  check, print the plan and the notes
+#   ./tools/publish-release.sh <tag>               check, build the Bridge, tag, publish
+#   ./tools/publish-release.sh <tag> --dry-run     check, print the plan and the notes
+#   ./tools/publish-release.sh <tag> --prerelease  mark the GitHub releases as pre-releases
 #
-# <tag> is <flutter>-vita.<X.Y.Z>, for example 3.47.7-vita.0.2.0. X.Y.Z is our
-# own semver, and it does not restart when Flutter moves.
+# <tag> is <flutter>-vita.<X.Y.Z>, for example 3.47.7-vita.1.0.0. X.Y.Z starts
+# at 1.0.0 on each Flutter version, as flutter-tizen's does: Z for a fix, Y for
+# a feature. 1.0.0 does not mean stable; --prerelease says not ready.
 #
 # A tool release publishes no engine. versions.json must already name an engine
 # release (tools/publish-engine.sh), and this downloads it the way a toolchain
@@ -25,15 +27,17 @@ TOOL_REPO="flutter-vita/flutter-vita"
 EMB_REPO="flutter-vita/flutter-vita-embedder"
 TAG=""
 DRY=0
+PRE=""
 while [ $# -gt 0 ]; do
   case "$1" in
     --dry-run) DRY=1; shift ;;
-    -h|--help) sed -n '2,19p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    --prerelease) PRE="--prerelease"; shift ;;
+    -h|--help) sed -n '2,21p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
     -*) echo "unknown option: $1" >&2; exit 2 ;;
     *) [ -z "$TAG" ] || { echo "one tag only" >&2; exit 2; }; TAG="$1"; shift ;;
   esac
 done
-[ -n "$TAG" ] || { sed -n '2,19p' "$0" | sed 's/^# \{0,1\}//'; exit 2; }
+[ -n "$TAG" ] || { sed -n '2,21p' "$0" | sed 's/^# \{0,1\}//'; exit 2; }
 
 die() { echo "!! $*" >&2; exit 1; }
 field() {  # a Python expression over v, the parsed versions.json
@@ -41,7 +45,7 @@ field() {  # a Python expression over v, the parsed versions.json
 }
 FLUTTER="$(field "v['flutter']")"
 re="^${FLUTTER//./\\.}-vita\\.[0-9]+\\.[0-9]+\\.[0-9]+\$"
-[[ "$TAG" =~ $re ]] || die "the tag is $FLUTTER-vita.X.Y.Z, for example $FLUTTER-vita.0.2.0"
+[[ "$TAG" =~ $re ]] || die "the tag is $FLUTTER-vita.X.Y.Z, for example $FLUTTER-vita.1.0.0"
 command -v gh >/dev/null || die "needs the GitHub CLI (gh), signed in"
 WORK="$(mktemp -d "${TMPDIR:-/tmp}/fv-publish-release.XXXXXX")"
 
@@ -150,7 +154,7 @@ cat <<EOF
     build     the Bridge, footer $TAG, engine $PINNED (bridge/engine-pin.txt)
     embedder  $([ "$TAG_EMBEDDER" = 1 ] && echo "tag $TAG at ${EMB_HEAD:0:12}, after ${EMB_PREV:-no earlier tag}" || echo "no tag; $EMB_PREV is current")
     push      master and $TAG to origin, in one atomic push
-    release   $TOOL_REPO $TAG with $(basename "$VPK")
+    release   $TOOL_REPO $TAG with $(basename "$VPK")${PRE:+, marked pre-release}
 EOF
 [ "$PINNED" = "$ENGINE" ] \
   || echo "    note: the Bridge links engine $PINNED and the tool pins $ENGINE (ADR-0016)"
@@ -208,14 +212,14 @@ trap 'rm -rf "$WORK"' EXIT  # pushed: nothing to undo now
 # the one command that finishes the job.
 if [ "$TAG_EMBEDDER" = 1 ]; then
   echo "==> $EMB_REPO release $TAG"
-  gh release create "$TAG" --repo "$EMB_REPO" --verify-tag \
+  gh release create "$TAG" --repo "$EMB_REPO" --verify-tag $PRE \
     --title "Embedder $TAG" --notes-file "$EMB_NOTES" \
-    || die "tag pushed, release not made. Run: gh release create $TAG --repo $EMB_REPO --verify-tag --title 'Embedder $TAG' --generate-notes"
+    || die "tag pushed, release not made. Run: gh release create $TAG --repo $EMB_REPO --verify-tag $PRE --title 'Embedder $TAG' --generate-notes"
 fi
 echo "==> $TOOL_REPO release $TAG"
-gh release create "$TAG" --repo "$TOOL_REPO" --verify-tag \
+gh release create "$TAG" --repo "$TOOL_REPO" --verify-tag $PRE \
   --title "flutter-vita $TAG" --notes-file "$NOTES" "$VPK" \
-  || die "tag pushed, release not made. Run: gh release create $TAG --repo $TOOL_REPO --verify-tag --title 'flutter-vita $TAG' --generate-notes $VPK"
+  || die "tag pushed, release not made. Run: gh release create $TAG --repo $TOOL_REPO --verify-tag $PRE --title 'flutter-vita $TAG' --generate-notes $VPK"
 
 echo
 echo "  https://github.com/$TOOL_REPO/releases/tag/$TAG"
