@@ -154,6 +154,58 @@ If the engine changed, take a new benchmark baseline after the release (three
 launches, see the baseline README in flutter-vita-bench). Before that, the
 benchmark compares the new engine with the old baseline.
 
+## After a tool release
+
+The checks before a release use your local builds. This test uses only the
+published files: the Bridge `.vpk` from the GitHub release, a new clone at the
+tag, and the engine that `precache` downloads. Do it after each tool release.
+The examples use `3.47.7-vita.1.0.0`.
+
+1. Start the Bridge on the console. If an app is open, send it `handoff`:
+
+   ```sh
+   echo handoff | nc -4 -w 5 fluttervita.local 1339
+   ```
+
+2. Install the published Bridge:
+
+   ```sh
+   D="$(mktemp -d)"
+   gh release download 3.47.7-vita.1.0.0 --repo flutter-vita/flutter-vita --pattern '*.vpk' --dir "$D"
+   ./tools/selfupdate-bridge.sh "$D/flutter-vita-bridge-3.47.7-vita.1.0.0.vpk" --no-build
+   ./tools/panel.sh shot "$D/bridge.png"
+   ```
+
+3. Clone the tag into an empty folder, then download the engine and install
+   the gallery from that clone:
+
+   ```sh
+   git clone --branch 3.47.7-vita.1.0.0 --recurse-submodules https://github.com/flutter-vita/flutter-vita "$D/clone"
+   cd "$D/clone"
+   ./cli/flutter-vita --version
+   ./cli/flutter-vita precache
+   ./cli/flutter-vita install samples/gallery
+   ./cli/flutter-vita screenshot "$D/gallery.png"
+   echo log | nc -4 -w 5 fluttervita.local 1339 | grep -E 'refused|link failed' | grep -v -E 'regs refused|tiled render targets refused'
+   ```
+
+   `git clone --branch` shows the warning "is not a commit" for an annotated
+   tag. You can ignore it if `git describe --tags` shows the tag.
+
+The test passes when all of these are true:
+
+| Check | Pass |
+|---|---|
+| The Bridge footer (`bridge.png`) | `flutter-vita <tag>`, and the engine that `versions.json` names |
+| `--version` in the clone | `flutter-vita <tag>`, with the engine release and the embedder tag |
+| `precache` in the clone | The download completes and the sha256 is `ok` |
+| `install samples/gallery` | The gallery builds, installs and opens on the console |
+| `gallery.png` | The gallery draws, and the strip shows 60 fps |
+| The last command, the log search | No output: no shader was refused |
+
+If one check fails, make a fix release with a higher `Z`. Do not change the
+published release.
+
 ## The Bridge and its engine
 
 The Bridge links a pinned engine, not the engine in the tree
