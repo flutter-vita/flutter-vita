@@ -5,13 +5,14 @@
 # and ~30 minutes. This turns a finished build into a tarball an app developer
 # can unpack and link against.
 #
-# Usage:  ./tools/package-engine.sh [--release X.Y.Z] [output-dir]
+# Usage:  ./tools/package-engine.sh [--release TAG] [output-dir]
 #
-# --release names the tarball for a release of the fork after its tag,
-# <flutter>-vita.<X.Y.Z> (3.44.8-vita.1.0.0; 0.1.0 was 3.44.8_0.1.0):
-# flutter-engine-<flutter>-vita.<X.Y.Z>.tar.gz, and stamps the tag into
-# MANIFEST.txt as `release`. The unpacked directory keeps its plain name
-# (flutter-engine-vita-<flutter>), which is what the tools look for.
+# --release names the tarball for the fork's release TAG, which is the engine
+# commit's first eight characters (docs/release.md):
+# flutter-engine-vita-<flutter>-<TAG>.tar.gz, and stamps TAG into
+# MANIFEST.txt as `release`. tools/publish-engine.sh passes it. The unpacked
+# directory keeps its plain name (flutter-engine-vita-<flutter>), which is
+# what the tools look for.
 set -euo pipefail
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
@@ -23,7 +24,7 @@ RELEASE=""
 while [ $# -gt 0 ]; do
   case "$1" in
     --release) RELEASE="$2"; shift 2 ;;
-    -h|--help) sed -n '2,13p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    -h|--help) sed -n '2,15p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
     *) OUT="$1"; shift ;;
   esac
 done
@@ -60,7 +61,8 @@ if [ "${SKIP_FRESHNESS:-0}" != "1" ]; then
   # to run. Without it `ninja -n` cannot resolve the host toolchain's generator
   # rules and reports 3096 pending steps on a tree it has just declared up to
   # date, which turns this guard into a wall.
-  PENDING="$( (cd "$ENGINE_SRC" && PATH="$HOME/depot_tools:$PATH" ninja -C out/vita_release -n "$SHIP_TARGET" 2>/dev/null | grep -c '^\[') || echo 0)"
+  # grep -c prints 0 and exits 1 on no match, so `|| true`, not `|| echo 0`.
+  PENDING="$( (cd "$ENGINE_SRC" && PATH="$HOME/depot_tools:$PATH" ninja -C out/vita_release -n "$SHIP_TARGET" 2>/dev/null | grep -c '^\[') || true)"
   if [ "${PENDING:-0}" -gt 0 ]; then
     echo "!! $PENDING build steps are still pending in $ENGINE_OUT" >&2
     echo "   Packaging now would archive stale objects, and stale objects link" >&2
@@ -254,7 +256,7 @@ else
 fi
 
 RELEASE_LINE=""
-[ -n "$RELEASE" ] && RELEASE_LINE="release          ${FLUTTER_VERSION}-vita.${RELEASE}
+[ -n "$RELEASE" ] && RELEASE_LINE="release          ${RELEASE}
 "
 cat > "$STAGE/MANIFEST.txt" <<EOF
 flutter-engine-vita
@@ -298,7 +300,7 @@ EOF
 echo "==> tarball"
 mkdir -p "$OUT"
 if [ -n "$RELEASE" ]; then
-  TARBALL="$OUT/flutter-engine-${FLUTTER_VERSION}-vita.${RELEASE}.tar.gz"
+  TARBALL="$OUT/flutter-engine-vita-${FLUTTER_VERSION}-${RELEASE}.tar.gz"
 else
   TARBALL="$OUT/flutter-engine-vita-$FLUTTER_VERSION.tar.gz"
 fi
