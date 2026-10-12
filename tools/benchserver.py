@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 # Feeds the Vita the same bytes three ways, so the gallery Tests tab's throughput
 # probes can tell the layers apart: raw TCP on 5301, HTTP on 5302, HTTPS on
-# 5303. Run it on the machine named by _benchHost in
-# samples/gallery/lib/tests/probes.dart and leave it up for the run.
+# 5303. Run it on the Mac that deploys to the console, and leave it up for the
+# run: the console writes that Mac's address to ux0:data/flutter-vita/host.addr
+# when it connects, and the probes connect back to it.
 #
 #   python3 tools/benchserver.py
 #
@@ -57,7 +58,7 @@ def http_server(port, tls):
         if not os.path.exists(crt):
             subprocess.run(["openssl", "req", "-x509", "-newkey", "rsa:2048", "-nodes",
                             "-keyout", key, "-out", crt, "-days", "30",
-                            "-subj", "/CN=192.168.0.30"], check=True,
+                            "-subj", "/CN=flutter-vita-bench"], check=True,
                            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER); ctx.load_cert_chain(crt, key)
         forced = os.environ.get("BENCH_CIPHER")

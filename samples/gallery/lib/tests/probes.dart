@@ -60,31 +60,23 @@ void _mark(String s) {
 
 /// The machine running tools/benchserver.py. See the throughput probes.
 ///
-/// Read from the memory card rather than compiled in, because the host's lease
-/// moves and a compiled-in address means a 15 MB rebuild to chase it. Fifteen
-/// probes failed a whole run with `errno = 61`, ECONNREFUSED, because the bench
-/// machine came back on .26 instead of .30 -- which reads like a broken socket
-/// layer and is a DHCP lease.
+/// The embedder's dev server learns it: it writes the address of whichever
+/// machine last connected to it into host.addr, and the Mac that deploys and
+/// starts the run is the one running benchserver.py. No address is typed
+/// anywhere. Until 2026-10-12 this read a bench.host written by hand, with a
+/// compiled-in fallback, and after a Wi-Fi change every network probe timed
+/// out against the old address.
 ///
-/// The dev server writes it without a rebuild:
-///
-///   printf 'put 12 ux0:data/flutter-vita/bench.host\n192.168.0.26' \
-///     | nc <vita> 1339
-///
-/// The constant stays as the fallback so a card with no file still runs.
-final String _benchHost = _readBenchHost();
-
-String _readBenchHost() {
+/// Read on each use, so a host whose address moves mid-session is followed.
+String get _benchHost {
   try {
-    final file = File('ux0:data/flutter-vita/bench.host');
-    if (file.existsSync()) {
-      final text = file.readAsStringSync().trim();
-      if (text.isNotEmpty) return text;
-    }
-  } on Object {
-    // A missing or unreadable file is the normal case on a fresh card.
+    final text = File('ux0:data/flutter-vita/host.addr').readAsStringSync().trim();
+    if (text.isNotEmpty) return text;
+  } on FileSystemException {
+    // Falls through: no host has connected since this card was set up.
   }
-  return '192.168.0.30';
+  throw StateError('no host address yet: the console writes '
+      'ux0:data/flutter-vita/host.addr when the Mac first connects to it');
 }
 
 /// Bytes and elapsed time as a rate, in the one format every throughput probe
