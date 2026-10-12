@@ -84,7 +84,9 @@ if [ -z "$DUMP" ]; then
     echo "==> $NAME already here"
   else
     echo "==> fetching $NAME  ($(date -r "$TS" '+%Y-%m-%d %H:%M:%S'))"
-    say "$PORT" "get ux0:data/$NAME" 300 > "$DUMP"
+    # pull.sh, not a bare get: a Wi-Fi drop used to leave a dump with a hole in
+    # it and no error, and the stacks read from it were wrong.
+    "$HERE/pull.sh" "$PORT" "ux0:data/$NAME" "$DUMP" --host "$HOST" --wait 300 || exit 1
     [ -s "$DUMP" ] || { rm -f "$DUMP"; echo "!! empty transfer" >&2; exit 1; }
     printf '    %s B\n' "$(wc -c <"$DUMP" | tr -d ' ')"
   fi

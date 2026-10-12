@@ -39,6 +39,7 @@ than the CLI exposes, and each has its usage at the top of the file.
 | `tools/build-vita-app.sh <app>` | The build: Dart to kernel, kernel to an AOT snapshot, snapshot plus engine to an ELF, ELF to a `.vpk`. `--extra-source`, `--define`, `--entry-point`, `--flutter DIR`, `--engine DIR`. |
 | `tools/deploy.sh <app>` | Build, install, launch through the bridge, with a progress readout. `--no-build` reuses the last `.vpk`. |
 | `tools/install-vpk.sh <vpk>` | Install one `.vpk` through the bridge. |
+| `tools/pull.sh <port> <path> <file>` | Copy one file from the card, compare it with its size, and copy again when it is short. The scripts pull results and crash dumps with it. |
 | `tools/analyse-crash.sh <elf>` | Pull the newest crash dump and symbolicate it against the app's ELF. [Debug an app](debug-app.md#crashes). |
 | `tools/build-bridge.sh` | Build the bridge. `--scratch` builds a second one, `FVTA00004` on port 1342, to try a bridge change without touching the one that deploys. |
 | `tools/bootstrap-bridge.sh <address>` | Put the bridge on a console that has none, over VitaShell's FTP. Once. |
@@ -68,6 +69,7 @@ printf 'ping\n' | nc -4 -w 5 fluttervita.local 1339
 | `tap <x> <y>`, `swipe <x0> <y0> <x1> <y1> <steps>` | A touch, a drag |
 | `overlay on\|off` | Show or hide the debug strip |
 | `get <path>`, `put <size> <path>`, `ls <dir>`, `rm <path>` | Files on the card |
+| `stat <path>` | The size of one file: `<bytes> file`. `tools/pull.sh` compares a `get` with it |
 | `diag` | Memory, threads, the display, in one page |
 | `handoff [titleid]` | Launch the bridge (or another title) and exit |
 | `relaunch` | Exit and start again |

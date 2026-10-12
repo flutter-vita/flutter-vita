@@ -10,8 +10,8 @@ framework_rev    abaf9c523780a608bd46686fd5e53740a07077f8
 engine           059e116853617579295f38cd40cc94ee260fa76c
 dart             dde9ec8a905f3e2310eb1eae476f610f59e0fd59
 archive_sha256   2f3a6b3f9887b34589e79ac44ae161c83e68fca26112aa0f5d7cd102dbb6b219
-embedder         9d758f2b1204
-embedder_sha256  e510cf68efe4c186a33eb221a29fb4e7ec8905a5b5b7561e2212df8152434667
-pinned_at        2026-10-11T11:19:06Z
+embedder         e69edeee8e8c
+embedder_sha256  1e6f7216967738a78f5bb8e8081d0db337a4b340d4b962edf48330d6f5f815cd
+pinned_at        2026-10-12T15:05:19Z
 pinned_from      out/artifacts/flutter-engine-vita-3.47.7
-reason           Flutter 3.47.7: the engine from vita-3.47.7 and the embedder with Dart 3.13's single snapshot
+reason           embedder e69edee: get stops at a failed send, and stat

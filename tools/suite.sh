@@ -116,7 +116,8 @@ run_suite() {  # <tests|hardware>
   done
   put "0" "ux0:data/flutter-vita/$suite.on"
   [ "$done" -eq 1 ] || { echo "!! $suite: the run never finished" >&2; return 1; }
-  say "$DEV" "get ux0:data/flutter-vita/$suite-result.json" 30 > "$OUT_DIR/$suite.json"
+  "$HERE/pull.sh" "$DEV" "ux0:data/flutter-vita/$suite-result.json" "$OUT_DIR/$suite.json" \
+    --host "$HOST" --wait 30 || return 1
   python3 - "$OUT_DIR/$suite.json" "$suite" <<'PY' || return 1
 import json, sys
 d = json.load(open(sys.argv[1]))
