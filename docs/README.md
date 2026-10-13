@@ -32,7 +32,6 @@ meets them.
 | [adr/](adr/README.md) | Architecture decision records, with an index and the open questions |
 | [plan.md](plan.md) | The original plan, reconciled against measurement. Intent and phases 2–5; `docs/` wins on anything measured |
 | [glossary.md](glossary.md) | Shared vocabulary across the Vita homebrew and Flutter halves |
-| [open-sourcing.md](open-sourcing.md) | What stands between this tree and a public one, audited against the repository rather than remembered |
 | [dev-environment.md](dev-environment.md) | Toolchain and IDE setup, including the three-index clangd arrangement |
 | [vita3k-as-a-target.md](vita3k-as-a-target.md) | What the emulator can and cannot be trusted for |
 | [versions.md](versions.md) | Pinned commits and why 3.47.7 |

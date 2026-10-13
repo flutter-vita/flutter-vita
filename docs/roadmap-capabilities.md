@@ -304,8 +304,13 @@ costs two taps; nothing user-mode can catch a data abort.
   That ranking is what should reorder the phases below.
   [ADR-0012](adr/0012-test-apps-as-measurement-instrument.md),
   [ADR-0013](adr/0013-ffi-needs-static-linking.md).
-- **Open-sourcing** — deferred, with
-  [a cost recorded in the ADR index](adr/README.md).
+- **Open-sourcing** — **done 2026-10-12.** Every repository in the
+  `flutter-vita` organisation is public. Before that, a scan of the full
+  history of the six private repositories found no keys or tokens. The history
+  stays as it is. One task is still open: a build on a machine that has never
+  built this project. All builds so far ran on one Mac. The two faults found
+  on 2026-08-29 are fixed: `VITASDK` must be set, and `--engine` is made
+  absolute.
 - **Hardware-free verification** — still nothing. Every gate is "deploy and
   look."
 

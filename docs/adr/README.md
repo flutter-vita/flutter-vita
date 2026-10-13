@@ -118,7 +118,8 @@ Nothing here needs a rebuild to decide.
   code, all BSD-3, whose binary-distribution clause requires the notice to
   accompany the binary. This is a live obligation the moment a `.vpk` is shared,
   independent of when the repo opens. Cheapest item on this list.
-- **Open-sourcing: deferred to the end, with a cost that is now named.** Not an
+- ~~**Open-sourcing: deferred to the end, with a cost that is now named.**~~ — **done 2026-10-12:**
+  every repository is public, with the history as it was. Not an
   open question — a decision, made 2026-08-14: *"decided later, when all steps
   are done."* Recorded here because the cost is worth seeing when the deferral
   is revisited. The stated blocker is scrubbing "dangerous data" from history,
