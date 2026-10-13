@@ -114,7 +114,14 @@ Nothing here needs a rebuild to decide.
   Candidates: build-only CI (historically catches most breakage, which has been
   link errors), Vita3K as an advisory smoke test, golden-image diffing against
   the dev server's `shot`.
-- **No `LICENSE` or `NOTICE`.** A `.vpk` statically links Skia, Dart and engine
+- ~~**No `LICENSE` or `NOTICE`.**~~ — **done 2026-08-14** (`7ad4192`): `LICENSE`
+  (BSD-3-Clause) is at the root of each repository, and `NOTICE` is at the
+  root of this one. Each `.vpk`
+  carries the notices with it: `flutter_assets/NOTICES.Z` holds the licences
+  of the engine, Skia, Dart, ICU and HarfBuzz, and `fonts/OFL.txt` holds the
+  font licence. Our own notice gets into the `.vpk` only through a
+  `flutter_vita` package, so an app without one does not carry it.
+  A `.vpk` statically links Skia, Dart and engine
   code, all BSD-3, whose binary-distribution clause requires the notice to
   accompany the binary. This is a live obligation the moment a `.vpk` is shared,
   independent of when the repo opens. Cheapest item on this list.
