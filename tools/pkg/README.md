@@ -8,7 +8,7 @@ carries.
 **This file came off this console**, copied from
 `ux0:app/FVTA00002/sce_sys/package/head.bin` after an ordinary install. The
 promoter wrote it. It is not VitaShell's embedded resource, which is GPLv3
-against this repo's BSD-3-Clause, and none of that project's code or data is
+against this repo's zlib licence, and none of that project's code or data is
 here. The format was read from their source as fact -- byte offsets and a
 digest algorithm -- and implemented independently.
 

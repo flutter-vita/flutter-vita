@@ -235,5 +235,6 @@ record.
 
 ## License
 
-BSD 3-Clause, see [LICENSE](LICENSE). [NOTICE](NOTICE) lists the components
-that come from other projects and their licenses.
+zlib, see [LICENSE](LICENSE). An app that you build with flutter-vita does
+not have to carry our notice. [NOTICE](NOTICE) lists the components that come
+from other projects and their licenses.

@@ -36,6 +36,7 @@ ADR-0001 through ADR-0004 are back-filled from §1 of `docs/plan.md`
 | [0020](0020-native-halves-inside-vita-packages.md) | A Vita package carries its own C, and the set grows to ten | Accepted — `vita/plugin.cmake` compiled into the app, one `vita/<name>` channel each; amends 0009's pinned set |
 | [0021](0021-the-port-is-commits-not-patches.md) | The port is commits in six repositories, not a patch series | Accepted — six forks, no patch files; amends 0002's "an ordered series in `patches/engine/`" |
 | [0022](https://github.com/flutter-vita/flutter-vita-bench/blob/master/docs/adr/0022-the-bench-gate-grades-inside-each-scenes-own-spread.md) | The bench gate grades each scene inside its own measured spread | Accepted. In flutter-vita-bench since 2026-10-01 |
+| [0023](0023-our-code-is-under-the-zlib-licence.md) | Our code is under the zlib licence | Accepted — flutter-vita, the embedder and the packages; a developer who shares a `.vpk` has no duty from our code. Replaces the BSD-3 choice of 2026-09-09 |
 
 ## Open questions not yet decided
 
@@ -115,12 +116,11 @@ Nothing here needs a rebuild to decide.
   link errors), Vita3K as an advisory smoke test, golden-image diffing against
   the dev server's `shot`.
 - ~~**No `LICENSE` or `NOTICE`.**~~ — **done 2026-08-14** (`7ad4192`): `LICENSE`
-  (BSD-3-Clause) is at the root of each repository, and `NOTICE` is at the
-  root of this one. Each `.vpk`
-  carries the notices with it: `flutter_assets/NOTICES.Z` holds the licences
-  of the engine, Skia, Dart, ICU and HarfBuzz, and `fonts/OFL.txt` holds the
-  font licence. Our own notice gets into the `.vpk` only through a
-  `flutter_vita` package, so an app without one does not carry it.
+  is at the root of each repository, and `NOTICE` is at the root of this one.
+  Each `.vpk` carries the notices with it: `flutter_assets/NOTICES.Z` holds
+  the licences of the engine, Skia, Dart, ICU and HarfBuzz, and
+  `fonts/OFL.txt` holds the font licence. Our own code needs no notice in a
+  `.vpk`: it is under the zlib licence since 2026-10-14 ([0023](0023-our-code-is-under-the-zlib-licence.md)).
   A `.vpk` statically links Skia, Dart and engine
   code, all BSD-3, whose binary-distribution clause requires the notice to
   accompany the binary. This is a live obligation the moment a `.vpk` is shared,

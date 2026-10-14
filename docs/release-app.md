@@ -79,9 +79,11 @@ and a starting point for your own.
 
 The `.vpk` contains the Flutter engine, Skia, ICU, the Dart runtime and
 the libraries they bring. Their licenses are BSD, MIT, Apache 2.0 and the
-ICU license; [NOTICE](../NOTICE) lists them with their texts, and a
-released app should carry that file or its contents where the user can
-read it (an About screen, the download page). Nothing in the binary is
+ICU license. You do not have to add their texts: `flutter build` puts them
+into the `.vpk` as `flutter_assets/NOTICES.Z`, and `showLicensePage()` shows
+them in the app (an About screen is a good place). The code of flutter-vita
+is under the zlib licence, which asks nothing of your `.vpk`
+([ADR-0023](adr/0023-our-code-is-under-the-zlib-licence.md)). Nothing in the binary is
 LGPL: the GLES2 layer under Skia is this project's own
 ([ADR-0018](adr/0018-the-lgpl-obligation-in-every-vpk.md)), and the shader
 compiler is Sony's module on the console, not in your `.vpk`.

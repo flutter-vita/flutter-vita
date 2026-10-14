@@ -244,8 +244,9 @@ fi
 # into a .vpk and the .vpk is the binary distribution BSD-3 clause 2 is about.
 # LICENSE.engine is Flutter's own generated aggregate of every third-party
 # licence in the engine -- upstream's tooling produced it from these same
-# sources, which is why it is copied rather than composed here.
-cp "$ROOT/LICENSE" "$STAGE/LICENSE"
+# sources, which is why it is copied rather than composed here. LICENSE is the
+# fork's own, BSD-3: the engine is Flutter's code, not ours (ADR-0023).
+cp "$ROOT/third_party/flutter/LICENSE" "$STAGE/LICENSE"
 cp "$ROOT/NOTICE" "$STAGE/NOTICE"
 SKY_LICENSE="$FLUTTER_DIR/bin/cache/pkg/sky_engine/LICENSE"
 if [ -f "$SKY_LICENSE" ]; then

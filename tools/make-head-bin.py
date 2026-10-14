@@ -36,7 +36,7 @@ computes the same function over the same public bytes.
 ## Where the template came from, and why it is not VitaShell's
 
 VitaShell does this too and ships a head.bin as an embedded resource. It is
-GPLv3 and this repo is BSD-3-Clause, so none of it is here. What is here is a
+GPLv3 and this repo is zlib-licensed, so none of it is here. What is here is a
 header **this console wrote**, lifted from ux0:app/FVTA00002/sce_sys/package
 after an ordinary install, with only the four fields above rewritten. The format
 above was read from VitaShell's source as fact -- offsets and an algorithm, not

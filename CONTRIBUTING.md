@@ -121,7 +121,7 @@ A small and complete change is better than a large and almost complete change. A
 pull request that corrects one plugin is more useful than one that moves the
 tree around.
 
-We accept your contribution under BSD-3-Clause, the licence in
+We accept your contribution under the zlib licence, the licence in
 [LICENSE](LICENSE). A change to the engine or to one of its dependencies is
 different: it is a derivative of that project and it keeps that project's
 licence. It belongs in the fork, not here. [NOTICE](NOTICE) says which is
