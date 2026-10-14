@@ -36,7 +36,7 @@ ADR-0001 through ADR-0004 are back-filled from §1 of `docs/plan.md`
 | [0020](0020-native-halves-inside-vita-packages.md) | A Vita package carries its own C, and the set grows to ten | Accepted — `vita/plugin.cmake` compiled into the app, one `vita/<name>` channel each; amends 0009's pinned set |
 | [0021](0021-the-port-is-commits-not-patches.md) | The port is commits in six repositories, not a patch series | Accepted — six forks, no patch files; amends 0002's "an ordered series in `patches/engine/`" |
 | [0022](https://github.com/flutter-vita/flutter-vita-bench/blob/master/docs/adr/0022-the-bench-gate-grades-inside-each-scenes-own-spread.md) | The bench gate grades each scene inside its own measured spread | Accepted. In flutter-vita-bench since 2026-10-01 |
-| [0023](0023-our-code-is-under-the-zlib-licence.md) | Our code is under the zlib licence | Accepted — flutter-vita, the embedder and the packages; a developer who shares a `.vpk` has no duty from our code. Replaces the BSD-3 choice of 2026-09-09 |
+| [0023](0023-our-code-is-under-the-zlib-licence.md) | Our code is under the zlib licence | Accepted — flutter-vita, the embedder, the packages and the bench; a developer who shares a `.vpk` has no duty from our code. Replaces the BSD-3 choice of 2026-09-09 |
 
 ## Open questions not yet decided
 

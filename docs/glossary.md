@@ -147,7 +147,7 @@ never published an expansion, the entry says so instead of inventing one.
 | **ADR** | Architecture Decision Record | `docs/adr/`. One decision, its context and its consequences per file. |
 | **LGPL**, **GPL** | GNU Lesser General Public License; GNU General Public License | vitaGL and vitashark are LGPL-3.0-or-later. LGPL §4 obliges whoever ships a statically linked binary to supply what a recipient needs to relink it. That duty is why `gles2/` exists ([ADR-0018](adr/0018-the-lgpl-obligation-in-every-vpk.md)); since 2026-09-14 nothing LGPL is in a vpk. |
 | **BSD-3-Clause** | Berkeley Software Distribution licence, the three-clause form | The licence of Flutter, Dart, Skia and their forks. Clause 2 says that the notice must go with each binary. This repository's licence until 2026-10-14. |
-| **zlib** | The licence of the zlib library | This repository's licence since 2026-10-14, also of the embedder and the packages ([ADR-0023](adr/0023-our-code-is-under-the-zlib-licence.md)). It has no condition for a binary. |
+| **zlib** | The licence of the zlib library | This repository's licence since 2026-10-14, also of the embedder, the packages and the bench ([ADR-0023](adr/0023-our-code-is-under-the-zlib-licence.md)). It has no condition for a binary. |
 | **MIT** | Massachusetts Institute of Technology licence, also called Expat | Khronos's `GLES2/gl2.h`, used from the SDK. |
 | **OFL** | SIL Open Font License, version 1.1 | Roboto and Roboto Mono. The licence text ships in every vpk as `fonts/OFL.txt`. |
 | **SDK** | Software Development Kit | VitaSDK, the community toolchain. |

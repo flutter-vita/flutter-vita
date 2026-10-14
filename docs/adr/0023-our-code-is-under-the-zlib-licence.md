@@ -47,6 +47,10 @@ agree.
 is under the zlib licence.** Each repository has the zlib text in `LICENSE`,
 and each package in flutter-vita-packages has its own copy.
 
+flutter-vita-bench changed to zlib on the same day. Its code goes only into
+the benchmark's own `.vpk`, so it gave no duty to other developers. The change
+gives all repositories of the organisation one licence for our own code.
+
 The zlib licence has three conditions:
 
 1. Do not say that you wrote the original software.
@@ -68,8 +72,6 @@ It has no condition for a binary.
     2026-10-14 the gallery's `NOTICES.Z` contained all 1,594 licence texts of
     `LICENSE.engine`.
   - The template puts `fonts/OFL.txt` beside the two fonts.
-- flutter-vita-bench stays BSD-3-Clause. Its code goes only into the
-  benchmark's own `.vpk`.
 
 ## Consequences
 
