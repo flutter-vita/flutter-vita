@@ -1,4 +1,4 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="880" height="626" viewBox="0 0 880 626" role="img" aria-labelledby="t d">
+<svg xmlns="http://www.w3.org/2000/svg" width="880" height="590" viewBox="0 0 880 590" role="img" aria-labelledby="t d">
 <title id="t">How Flutter runs on the PS Vita</title>
 <desc id="d">Seven layers from top to bottom: your app, the Flutter framework, the Flutter engine, the Vita embedder, the GLES2 layer, sceGxm with libshacccg, and the PowerVR GPU. Each layer is tagged with where it comes from.</desc>
 <style>
@@ -10,7 +10,6 @@
 .arrow{stroke:#8c959f;stroke-width:1.5;fill:none}
 .head{fill:#8c959f}
 .tag{font:12px ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
-.leg{font:12px -apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,Arial,sans-serif;fill:#59636e}
 .s-yours{fill:#6e7781}.p-yours{fill:#eaeef2}.t-yours{fill:#424a53}
 .s-stock{fill:#0969da}.p-stock{fill:#ddf4ff}.t-stock{fill:#0550ae}
 .s-fork{fill:#8250df}.p-fork{fill:#fbefff}.t-fork{fill:#6639ba}
@@ -19,7 +18,7 @@
 @media (prefers-color-scheme: dark){
 .card{fill:#0d1117;stroke:#30363d}
 .bar{fill:#161b22;stroke:#30363d}
-.name{fill:#e6edf3}.desc,.link,.leg{fill:#9198a1}
+.name{fill:#e6edf3}.desc,.link{fill:#9198a1}
 .arrow{stroke:#6e7681}.head{fill:#6e7681}
 .s-yours{fill:#8b949e}.p-yours{fill:#21262d}.t-yours{fill:#c9d1d9}
 .s-stock{fill:#4493f8}.p-stock{fill:#0c2d6b}.t-stock{fill:#a5d6ff}
@@ -28,7 +27,7 @@
 .s-sony{fill:#db6d28}.p-sony{fill:#3d1e0a}.t-sony{fill:#ffc680}
 }
 </style>
-<rect class="card" x="0.5" y="0.5" width="879" height="625" rx="12"/>
+<rect class="card" x="0.5" y="0.5" width="879" height="589" rx="12"/>
 <rect class="bar" x="40" y="28" width="800" height="54" rx="8"/>
 <rect class="s-yours" x="40" y="28" width="6" height="54" rx="3"/>
 <text class="name" x="62" y="50">Your app</text>
@@ -43,7 +42,7 @@
 <text class="name" x="62" y="130">Flutter framework</text>
 <text class="desc" x="62" y="149">Widgets, layout, animation. Compiled with your app to ARMv7 code on your Mac.</text>
 <rect class="p-stock" x="624" y="123" width="202" height="24" rx="12"/>
-<text class="tag t-stock" x="725.0" y="139" text-anchor="middle">Flutter 3.44.8, unchanged</text>
+<text class="tag t-stock" x="725.0" y="139" text-anchor="middle">Flutter 3.47.7, unchanged</text>
 <line class="arrow" x1="100" y1="165" x2="100" y2="180"/>
 <path class="head" d="M96,179 L104,179 L100,185 Z"/>
 <text class="link" x="114" y="179.0">dart:ui</text>
@@ -89,14 +88,4 @@
 <text class="desc" x="62" y="549">The GPU of the PS Vita.</text>
 <rect class="p-sony" x="748" y="523" width="78" height="24" rx="12"/>
 <text class="tag t-sony" x="787.0" y="539" text-anchor="middle">hardware</text>
-<rect class="s-yours" x="40.0" y="587" width="10" height="10" rx="2"/>
-<text class="leg" x="56.0" y="596">your code</text>
-<rect class="s-stock" x="200.0" y="587" width="10" height="10" rx="2"/>
-<text class="leg" x="216.0" y="596">Flutter, unchanged</text>
-<rect class="s-fork" x="360.0" y="587" width="10" height="10" rx="2"/>
-<text class="leg" x="376.0" y="596">fork of Flutter</text>
-<rect class="s-ours" x="520.0" y="587" width="10" height="10" rx="2"/>
-<text class="leg" x="536.0" y="596">written for this port</text>
-<rect class="s-sony" x="680.0" y="587" width="10" height="10" rx="2"/>
-<text class="leg" x="696.0" y="596">Sony, on the console</text>
 </svg>
