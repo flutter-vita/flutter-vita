@@ -88,6 +88,25 @@ JIT, one static binary and not shared libraries: each has a record, and each
 record names the measurement that closed it. If you disagree with a decision,
 disagree with its ADR. That is what they are for.
 
+## The folders
+
+```text
+cli/         the flutter-vita command
+embedder/    submodule: flutter-vita-embedder
+packages/    submodule: flutter-vita-packages
+gles2/       the GLES2 layer (fvita_gles2)
+plugins/     the Vita implementations of twelve plugins
+bridge/      the bridge, FVTA00001
+templates/   the app template, and the fonts every app gets
+samples/     the gallery, and the list of test apps
+tools/       the scripts that the command runs
+docs/        guides, decisions (ADRs) and records
+```
+
+Clone with `--recurse-submodules`, or run `git submodule update --init` after
+a plain clone. The forks of the engine and its libraries are in
+[docs/engine.md](docs/engine.md).
+
 ## Code
 
 Write in the style of the file you change. The C is C11. The Dart is clean under
