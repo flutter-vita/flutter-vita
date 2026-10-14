@@ -503,6 +503,7 @@ cmake -S "${FLUTTER_VITA_TEMPLATE:-$ROOT/templates/vita-app}" -B "$OUT_DIR/cmake
   -DGLES2_DIR="$ROOT/gles2" \
   -DEMBEDDER_DIR="$EMBEDDER_DIR" \
   ${LIVEAREA_DIR:+-DLIVEAREA_DIR="$LIVEAREA_DIR"} \
+  -DFONTS_DIR="$ROOT/templates/fonts" \
   -DTOOLS_DIR="$ROOT/tools" >/dev/null
 cmake --build "$OUT_DIR/cmake" -j"$(getconf _NPROCESSORS_ONLN 2>/dev/null || echo 4)"
 

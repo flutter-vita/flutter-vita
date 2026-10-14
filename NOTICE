@@ -24,7 +24,7 @@ because the toolchain does it:
   `showLicensePage()` shows its contents in the app. It contains each licence
   text of `LICENSE.engine`: on 2026-10-14 the gallery's `NOTICES.Z` had all
   1,594 of them.
-- The template puts `fonts/OFL.txt` beside the two fonts. See below.
+- The template puts each font's own `OFL.txt` beside it. See below.
 
 `LICENSE.engine` is in the engine artifact
 (`flutter-engine-vita-<version>/LICENSE.engine`). It is Flutter's own
@@ -46,36 +46,34 @@ project's own, over `sceGxm` and Sony's `libshacccg` on the console. No
 vitaGL, no vitaShaRK, no taiHEN in the link. The history is in the two ADRs
 and in git; nothing about it applies to a `.vpk` built from this tree.
 
-## The two fonts, and what still has to be done about them
+## The two fonts
 
-Both are under the **SIL Open Font License 1.1**, and every `.vpk` carries
-both in `app0:/fonts`. An earlier version of this file called Roboto and
-Roboto Mono Apache-2.0. That was wrong: `google/fonts` holds both under
-`ofl/`, not `apache/`.
+Both are under the **SIL Open Font License 1.1**, and each `.vpk` carries
+both in `app0:/fonts`. Since 2026-10-14 both files come from
+[google/fonts](https://github.com/google/fonts) at commit `e9678a538532`,
+byte for byte:
 
-The OFL permits exactly what this project does. Bundling a font with software,
-redistributing it, and selling the result are all allowed, and no part of the
-port has to change licence because of them. Two conditions apply and one of
-them we now meet:
+| File in the `.vpk` | File in google/fonts | Version |
+|---|---|---|
+| `fonts/Roboto.ttf` | `ofl/roboto/Roboto[wdth,wght].ttf` | 3.015 |
+| `fonts/RobotoMono.ttf` | `ofl/robotomono/RobotoMono[wght].ttf` | 3.001 |
+| `fonts/Roboto-OFL.txt` | `ofl/roboto/OFL.txt` | |
+| `fonts/RobotoMono-OFL.txt` | `ofl/robotomono/OFL.txt` | |
 
-- **The copyright notice and the licence must accompany every copy.** They now
-  ship as `app0:/fonts/OFL.txt`, inside the `.vpk`. Before 2026-09-09 they did
-  not, which made every `.vpk` built by this toolchain non-compliant.
-- **The fonts may not be sold on their own**, and the Reserved Font Names may
-  not be used on a modified version. Nothing here modifies or resells them.
+The OFL permits what this project does. You can bundle a font with software,
+share it and sell the result. Two conditions apply:
 
-**Provenance is the open item.** The Roboto copy is Flutter's unit-test
-fixture: `txt/BUILD.gn` lists it under `test_fixtures("txt_fixtures")`, inside
-`if (enable_unittests)`. That is why `LICENSE.engine` does not mention Roboto
-at all — upstream's licence tooling excludes test fixtures, correctly, because
-upstream does not ship them. We do ship it. The Roboto Mono copy came from the
-DevTools bundle inside a Dart SDK prebuilt, which carries no licence file
-either.
+- **The copyright notice and the licence must go with each copy.** Each
+  family's own `OFL.txt` goes into the `.vpk` beside the font, with the
+  family's own copyright line.
+- **You must not sell the fonts alone**, and a changed version must not use a
+  Reserved Font Name. We do not change or sell them. Neither file names a
+  Reserved Font Name.
 
-Both should be re-taken from `google/fonts` (`ofl/roboto`, `ofl/robotomono`)
-with each family's own `OFL.txt` beside it. The licence is not in doubt; where
-our particular binaries came from is, and a font shipped in every `.vpk`
-deserves a source that ships its own licence.
+Before 2026-10-14 the two files had no clear source. The Roboto copy was a
+Flutter unit-test file, and the Roboto Mono copy came from the DevTools files
+in a Dart SDK prebuilt. Neither had its own licence file, and the one
+`OFL.txt` beside them had the copyright line of Noto Emoji.
 
 ## Our changes to other projects keep their licences
 
@@ -100,8 +98,8 @@ fork of the project it changes, under the licence that fork already carries
 |---|---|
 | Flutter engine, framework, Dart SDK, Skia | BSD-3-Clause |
 | Everything vendored beneath them | see `LICENSE.engine` |
-| Roboto (`Roboto-Regular.ttf`) | SIL Open Font License 1.1 |
-| Roboto Mono (`RobotoMono-Regular.ttf`) | SIL Open Font License 1.1 |
+| Roboto (`Roboto.ttf`) | SIL Open Font License 1.1 |
+| Roboto Mono (`RobotoMono.ttf`) | SIL Open Font License 1.1 |
 | VitaSDK headers and stub libraries | see the VitaSDK distribution; not redistributed here |
 | This project's code: the embedder, `gles2/` (fvita_gles2), `templates/`, `plugins/`, the packages | zlib ([LICENSE](LICENSE)) |
 

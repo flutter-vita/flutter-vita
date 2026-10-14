@@ -48,6 +48,8 @@ set(LIVEAREA_DIR "${CMAKE_CURRENT_SOURCE_DIR}/livearea" CACHE PATH
 find_program(PYTHON3 python3 REQUIRED)
 set(TOOLS_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../../tools" CACHE PATH
     "The repo's tools/; build-vita-app.sh passes it, a copied template needs it set")
+set(FONTS_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../fonts" CACHE PATH
+    "The repo's templates/fonts; build-vita-app.sh passes it, a copied template needs it set")
 execute_process(
   COMMAND "${PYTHON3}" "${TOOLS_DIR}/check-livearea-art.py" "${LIVEAREA_DIR}"
   RESULT_VARIABLE LIVEAREA_ART_BAD)
@@ -315,21 +317,19 @@ set(VPK_FILES
   # turned out to come from an engine predating the switch they measured.
   FILE "${ENGINE_DIR}/MANIFEST.txt" engine.txt
   FILE "${ENGINE_DIR}/data/icudtl.dat" icudtl.dat
-  # The system font, scanned from app0:/fonts. Deliberately not inside
+  # The system fonts, scanned from app0:/fonts. Deliberately not inside
   # flutter_assets: that holds icon fonts looked up by asset key, and offering
   # MaterialIcons as a body-text fallback renders paragraphs in icons.
-  FILE "${ENGINE_DIR}/data/Roboto-Regular.ttf" fonts/Roboto-Regular.ttf
-  # Emoji. Everything in app0:/fonts is a fallback candidate for every codepoint
-  # (see platform_vita.cc). Monochrome, 1.9 MB; the colour font was tried and is
-  # documented in templates/fonts/README.md.
-  # 109 KB, and it is what "monospace" resolves to. app0:/fonts is matched by
-  # the family name inside each file, so the alias table in platform_vita.cc
-  # needs this present or it points at nothing.
-  FILE "${ENGINE_DIR}/data/RobotoMono-Regular.ttf" fonts/RobotoMono-Regular.ttf
-  # Not optional and not decoration. The SIL OFL says the notice and the
-  # licence go with every copy of the font, and both fonts above are under
-  # it. See NOTICE.
-  FILE "${ENGINE_DIR}/data/OFL.txt" fonts/OFL.txt
+  # app0:/fonts is matched by the family name inside each file: Roboto is the
+  # default family, and the alias table in platform_vita.cc points "monospace"
+  # at Roboto Mono. Both are google/fonts' variable files, so Bold and the other
+  # named weights are real faces. See templates/fonts/README.md.
+  FILE "${FONTS_DIR}/Roboto.ttf" fonts/Roboto.ttf
+  FILE "${FONTS_DIR}/RobotoMono.ttf" fonts/RobotoMono.ttf
+  # Not optional. The SIL OFL says the notice and the licence go with every
+  # copy of a font: each family's own file, with its own copyright line.
+  FILE "${FONTS_DIR}/Roboto-OFL.txt" fonts/Roboto-OFL.txt
+  FILE "${FONTS_DIR}/RobotoMono-OFL.txt" fonts/RobotoMono-OFL.txt
   # LiveArea art. Without it the system draws a blank placeholder that looks
   # like a corrupt install. LIVEAREA_DIR lets an app ship its own set.
   FILE "${LIVEAREA_DIR}/icon0.png" sce_sys/icon0.png

@@ -71,7 +71,7 @@ It has no condition for a binary.
   - `flutter build` writes `flutter_assets/NOTICES.Z` into each app. On
     2026-10-14 the gallery's `NOTICES.Z` contained all 1,594 licence texts of
     `LICENSE.engine`.
-  - The template puts `fonts/OFL.txt` beside the two fonts.
+  - The template puts each font's own `OFL.txt` beside it.
 
 ## Consequences
 

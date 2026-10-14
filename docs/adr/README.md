@@ -119,7 +119,7 @@ Nothing here needs a rebuild to decide.
   is at the root of each repository, and `NOTICE` is at the root of this one.
   Each `.vpk` carries the notices with it: `flutter_assets/NOTICES.Z` holds
   the licences of the engine, Skia, Dart, ICU and HarfBuzz, and
-  `fonts/OFL.txt` holds the font licence. Our own code needs no notice in a
+  the `fonts/*-OFL.txt` files hold the font licences. Our own code needs no notice in a
   `.vpk`: it is under the zlib licence since 2026-10-14 ([0023](0023-our-code-is-under-the-zlib-licence.md)).
   A `.vpk` statically links Skia, Dart and engine
   code, all BSD-3, whose binary-distribution clause requires the notice to

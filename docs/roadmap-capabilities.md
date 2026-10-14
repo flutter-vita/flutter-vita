@@ -46,9 +46,9 @@ Found on 2026-08-28, when each emoji in keklist was a box. Updated on
 2026-10-11.
 
 **Each app gets two font files.** `templates/fonts` puts
-`Roboto-Regular.ttf` and `RobotoMono-Regular.ttf` into `app0:/fonts`. Roboto
-has 896 codepoints and stops at U+FFFD: Latin, Greek and Cyrillic, but no
-emoji and no CJK.
+`Roboto.ttf` and `RobotoMono.ttf` into `app0:/fonts`, google/fonts' variable
+files since 2026-10-14. Roboto has 927 codepoints and stops at U+FFFD: Latin,
+Greek and Cyrillic, but no emoji and no CJK.
 
 **The engine finds a font per character, but only in `app0:/fonts`.**
 Skia's directory font manager does not do this

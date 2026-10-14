@@ -191,22 +191,9 @@ cat > "$STAGE/include/engine_version.h" <<EOF
 #endif  // FLUTTER_VITA_ENGINE_VERSION_H_
 EOF
 cp "$ENGINE_SRC/flutter/third_party/icu/flutter/icudtl.dat" "$STAGE/data/"
-# Roboto out of the repository, not out of the engine checkout.
-#
-# The checkout's copy lives under txt/third_party/fonts, which txt/BUILD.gn
-# lists in test_fixtures inside `if (enable_unittests)`. It is a unit-test
-# asset. That is why LICENSE.engine has no mention of Roboto: upstream's
-# licence tooling excludes fixtures, correctly, because upstream does not ship
-# them. This port does ship it, so it is tracked here with its licence.
-cp "$ROOT/templates/fonts/Roboto-Regular.ttf" "$STAGE/data/"
-# Roboto Mono, so that fontFamily: 'monospace' has something to resolve to.
-# Without it the alias table in platform_vita.cc names a family nobody shipped
-# and every fixed-pitch request falls back to Roboto, which is proportional.
-cp "$ROOT/templates/fonts/RobotoMono-Regular.ttf" "$STAGE/data/"
-# The OFL requires the notice and the licence to travel with every copy of the
-# font. Both fonts above are under it and neither carried it until 2026-09-09,
-# so every vpk built before then was out of compliance.
-cp "$ROOT/templates/fonts/OFL.txt" "$STAGE/data/"
+# No fonts. An app takes Roboto and Roboto Mono from templates/fonts in the
+# tool repo (templates/vita-app/CMakeLists.txt), so a font change does not
+# wait for an engine release. Until 2026-10-14 they travelled in data/ here.
 
 # No emoji font ships. It used to, and it was 1.9 MB in every vpk for one test
 # app. Emoji coverage is an application's choice, not a platform guarantee:
