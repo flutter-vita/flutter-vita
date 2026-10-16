@@ -1,7 +1,8 @@
 # Install the toolchain on macOS
 
 What you need on the Mac: VitaSDK (the `arm-vita-eabi` compiler and the
-Vita's headers and stubs), CMake, Python 3 with Pillow, and this repository.
+Vita's headers and stubs), CMake, Python 3, and the tool. The Homebrew cask
+(step 4) installs CMake, Python 3 and the tool with one command.
 Flutter 3.47.7 is not on the list: the tool downloads its own. Rebuilding the Flutter engine
 itself is not part of this page; the engine comes prebuilt.
 
@@ -57,14 +58,29 @@ build refuses an SDK at another revision.
 
 ## 3. Python
 
-`python3` with Pillow, for the LiveArea art check and the screenshot
-converter:
+`python3`, for the LiveArea art check and the screenshot converter. Both use
+only the Python standard library. The Homebrew cask installs Python 3.
+
+You need Pillow only to draw the template's LiveArea art again with
+`tools/make-livearea.py`:
 
 ```sh
 python3 -m pip install pillow
 ```
 
-## 4. This repository
+## 4. The tool
+
+With Homebrew:
+
+```sh
+brew install --cask flutter-vita/tap/flutter-vita
+```
+
+The cask puts `flutter-vita` on your `PATH`. The tool keeps the engine, the
+Flutter SDK and its other files in `~/.flutter-vita`. `brew upgrade --cask
+flutter-vita` installs the next release.
+
+To change the tool, clone the repository:
 
 ```sh
 git clone --recurse-submodules https://github.com/flutter-vita/flutter-vita
@@ -85,9 +101,12 @@ into `third_party/flutter`, and `--verify` checks the port is in place.
 
 The prebuilt engine is a release of the fork,
 [flutter-vita/flutter](https://github.com/flutter-vita/flutter/releases).
+With Homebrew, the command is `flutter-vita precache`.
+
 `precache` reads [`versions.json`](../versions.json), downloads the
 tarball it names (25 MB), checks its sha256 and unpacks it to
-`out/artifacts/flutter-engine-vita-3.47.7/`: the engine archive,
+`out/artifacts/flutter-engine-vita-3.47.7/` in a clone, or to
+`~/.flutter-vita/engines/flutter-engine-vita-3.47.7/` with Homebrew: the engine archive,
 `gen_snapshot` for this host, the headers the embedder includes and the
 data files. The first `flutter-vita build` does the same on its own when
 the artifact is missing.
@@ -107,7 +126,8 @@ at an artifact somewhere else.
 `gen_snapshot` for this host, the Flutter SDK and its patched product SDK,
 and then looks for a console on the network. Every line it prints as `--` comes with the fix.
 
-Put `cli/` on your `PATH` to call it as `flutter-vita`. Installation with
+In a clone, put `cli/` on your `PATH` to call it as `flutter-vita`. With
+Homebrew, it is on your `PATH` already. Installation with
 `pub global activate` is planned and not there yet.
 
 Next: [Console setup](configure-console.md).

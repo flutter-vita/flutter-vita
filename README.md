@@ -22,12 +22,22 @@ This project is not affiliated with or endorsed by Sony.*
   prebuilt engine has `gen_snapshot` for macOS only.
 - Windows is not supported yet.
 
-You need VitaSDK, CMake, and Python 3 with Pillow. You do not install
-Flutter. The first `flutter-vita` command downloads Flutter 3.47.7 for the
-tool's own use, one time (2.1 GB), and does not touch the Flutter you use for
-other projects ([details](docs/install-macos.md#2-flutter-3477)). The version
-is pinned, because the prebuilt engine is built for it
+You need VitaSDK, CMake, and Python 3. You do not install Flutter. The first
+`flutter-vita` command downloads Flutter 3.47.7 for the tool's own use, one
+time (2.1 GB), and does not touch the Flutter you use for other projects
+([details](docs/install-macos.md#2-flutter-3477)). The version is pinned,
+because the prebuilt engine is built for it
 ([docs/versions.md](docs/versions.md)).
+
+On macOS, install the tool with Homebrew. The cask also installs CMake and
+Python 3. Homebrew does not have VitaSDK, so you install it yourself
+([macOS, step 1](docs/install-macos.md#1-vitasdk)).
+
+```sh
+brew install --cask flutter-vita/tap/flutter-vita
+```
+
+On Linux, or to change the tool, clone the repository:
 
 ```sh
 git clone --recurse-submodules https://github.com/flutter-vita/flutter-vita

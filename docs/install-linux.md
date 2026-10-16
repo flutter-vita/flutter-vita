@@ -1,6 +1,6 @@
 # Install the toolchain on Linux
 
-The same pieces as on macOS: VitaSDK, CMake, Python 3 with Pillow, and
+The same pieces as on macOS: VitaSDK, CMake, Python 3, and
 this repository with the engine artifact. The tool downloads its own Flutter
 3.47.7. The maintainer
 builds on macOS; the scripts are plain bash and CMake and have nothing
@@ -31,6 +31,10 @@ unpacks it to `~/.flutter-vita/flutter/3.47.7`
 3.47.7 you already have.
 
 ## 3. Python
+
+`python3`, from your distribution. The tools use only the Python standard
+library. You need Pillow only to draw the template's LiveArea art again
+with `tools/make-livearea.py`:
 
 ```sh
 python3 -m pip install pillow
