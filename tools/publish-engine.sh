@@ -50,7 +50,10 @@ check() {
     || die "versions.json names no engine release; run tools/publish-engine.sh"
   mkdir -p "$s/tools"
   cp "$ROOT/versions.json" "$s/"
-  touch "$s/tools/build-vita-app.sh"  # what the CLI takes for a checkout
+  # What the CLI takes for a git checkout, so precache unpacks into $s/out and
+  # not into ~/.flutter-vita/engines, where an older copy would hide a fault.
+  touch "$s/tools/build-vita-app.sh"
+  mkdir "$s/.git"
   echo "==> precache of engine $tag into an empty root"
   FLUTTER_VITA_ROOT="$s" "$ROOT/cli/flutter-vita" precache \
     || die "precache failed for $url"
