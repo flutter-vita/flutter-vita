@@ -3,14 +3,6 @@
 An unofficial port of Flutter to the PS Vita. It adds the PS Vita to Flutter
 as a new platform. Flutter draws each frame with Skia on the console's GPU.
 
-## Supported devices
-
-- **PS Vita 1000 and PS Vita 2000**: firmware 3.60 to 3.74, with HENkaku or
-  h-encore².
-- **Sony's shader compiler** on the card, `ur0:data/libshacccg.suprx`.
-  [Console setup](docs/configure-console.md) says how to check for it.
-- **The Vita3K emulator**: not supported ([why](docs/vita3k-as-a-target.md)).
-
 ## Installation
 
 You need VitaSDK, CMake, and Python 3. You do not install Flutter. The first
