@@ -485,7 +485,10 @@ else
 fi
 
 echo "==> link and package"
-cmake -S "${FLUTTER_VITA_TEMPLATE:-$ROOT/templates/vita-app}" -B "$OUT_DIR/cmake" \
+TEMPLATE="${FLUTTER_VITA_TEMPLATE:-$ROOT/templates/vita-app}"
+# LIVEAREA_DIR goes every time: a cached value from one --livearea build
+# would otherwise stay for each build after it.
+cmake -S "$TEMPLATE" -B "$OUT_DIR/cmake" \
   -DCMAKE_BUILD_TYPE=Release \
   -DAPP_NAME="$APP_NAME" \
   -DTITLE_ID="$TITLE_ID" \
@@ -502,7 +505,7 @@ cmake -S "${FLUTTER_VITA_TEMPLATE:-$ROOT/templates/vita-app}" -B "$OUT_DIR/cmake
   -DVITA_PLUGINS="$VITA_PLUGINS" \
   -DGLES2_DIR="$ROOT/gles2" \
   -DEMBEDDER_DIR="$EMBEDDER_DIR" \
-  ${LIVEAREA_DIR:+-DLIVEAREA_DIR="$LIVEAREA_DIR"} \
+  -DLIVEAREA_DIR="${LIVEAREA_DIR:-$TEMPLATE/livearea}" \
   -DFONTS_DIR="$ROOT/templates/fonts" \
   -DTOOLS_DIR="$ROOT/tools" >/dev/null
 cmake --build "$OUT_DIR/cmake" -j"$(getconf _NPROCESSORS_ONLN 2>/dev/null || echo 4)"
