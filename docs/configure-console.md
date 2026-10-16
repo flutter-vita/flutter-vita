@@ -21,7 +21,10 @@ Flutter. No kernel plugin is needed at any point: this port uses none
 Every app draws through the GPU, and the GPU wants Sony's shader compiler,
 `libshacccg.suprx`, at `ur0:data/libshacccg.suprx`. It is not part of the
 firmware and not in this repository; the community extracts it from the
-PlayStation Mobile runtime (the usual tool is ShaRKF00D). Without it an app
+PlayStation Mobile runtime (the usual tool is
+[ShaRKF00D](https://github.com/Rinnegatamante/ShaRKF00D)). ShaRKF00D needs
+the runtime with its 2.01 update installed first. It shows no screen and
+closes when it has written the file. Without the file an app
 starts, logs that the compiler is missing, and shows nothing.
 `bootstrap-bridge.sh` below checks for the file and says so.
 

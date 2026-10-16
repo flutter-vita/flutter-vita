@@ -55,15 +55,25 @@ You build the engine one time, because the prebuilt engine has
 
 Windows is not supported yet.
 
-### Console
+## Console setup
 
 You do these steps one time. [Console setup](docs/configure-console.md)
 tells more about each step.
 
 1. Make the console ready for homebrew: HENkaku, Enso or h-encore², and
    VitaShell.
-2. Put the shader compiler at `ur0:data/libshacccg.suprx`. Without it, an
-   app shows nothing.
+2. Install the shader compiler plugin, `libshacccg.suprx`. Each app draws
+   through the GPU, and the GPU needs this Sony plugin to compile its
+   shaders. The firmware does not have it, and this repository cannot
+   include it. Without it, an app starts but shows nothing. To get it:
+   - Install the PlayStation Mobile Runtime with its 2.01 update.
+   - Install [ShaRKF00D](https://github.com/Rinnegatamante/ShaRKF00D) with
+     VitaShell, and start it. It shows no screen, and it closes when it is
+     done.
+   - In VitaShell, make sure that `ur0:data/libshacccg.suprx` is there.
+
+   The plugin is a user module. It is not a kernel plugin, and you do not
+   change the taiHEN configuration.
 3. Connect the console to the same Wi-Fi network as your computer. In
    **Settings > Power Save Settings**, turn off automatic standby.
 4. Download `flutter-vita-bridge-<version>.vpk` from the
