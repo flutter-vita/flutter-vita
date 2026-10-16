@@ -144,7 +144,7 @@ check_archive() {  # <.tar.gz>
   mkdir "$dir/home"
   tar -xzf "$1" -C "$dir"
   [ ! -e "$dir/flutter-vita/.git" ] || die "the archive has a .git"
-  for sub in cli/flutter-vita versions.json embedder/CMakeLists.txt packages/flutter_vita/pubspec.yaml templates/fonts/Roboto.ttf; do
+  for sub in cli/flutter-vita versions.json embedder/CMakeLists.txt packages/flutter_vita/pubspec.yaml templates/vita-app/CMakeLists.txt; do
     [ -e "$dir/flutter-vita/$sub" ] || die "the archive has no $sub"
   done
   FLUTTER_VITA_HOME="$dir/home" "$dir/flutter-vita/cli/flutter-vita" --version | head -1
@@ -208,7 +208,8 @@ EOF
 if [ "$DRY" = 1 ]; then
   echo "==> archive of HEAD, as a test of the packing"
   pack HEAD "$WORK/test.tar.gz"
-  echo "    $(du -h "$WORK/test.tar.gz" | cut -f1 | tr -d ' '), and the unpacked tool says: $(check_archive "$WORK/test.tar.gz")"
+  said="$(check_archive "$WORK/test.tar.gz")"  # an assignment, so a die stops the script
+  echo "    $(du -h "$WORK/test.tar.gz" | cut -f1 | tr -d ' '); the unpacked tool says: $said"
   printf '\n--- release notes ---\n'; cat "$NOTES"
   if [ "$TAG_EMBEDDER" = 1 ]; then printf -- '--- embedder notes ---\n'; cat "$EMB_NOTES"; fi
   printf -- '---\n\ndry run: nothing published\n'
