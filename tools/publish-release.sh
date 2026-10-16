@@ -16,8 +16,11 @@
 #
 # What it publishes:
 #   flutter-vita/flutter-vita           tag <tag>, a release with the Bridge .vpk
+#                                       and flutter-vita-<tag>.tar.gz
 #   flutter-vita/flutter-vita-embedder  tag <tag> and a release, when the
 #                                       submodule moved since its last tag
+#   flutter-vita/homebrew-tap           the cask at <tag>, when the repository
+#                                       exists and this is not a pre-release
 # The packages go to pub.dev on their own, never from here.
 set -euo pipefail
 
@@ -25,6 +28,7 @@ HERE="$(cd "$(dirname "$0")" && pwd)"
 ROOT="$(cd "$HERE/.." && pwd)"
 TOOL_REPO="flutter-vita/flutter-vita"
 EMB_REPO="flutter-vita/flutter-vita-embedder"
+TAP_REPO="flutter-vita/homebrew-tap"
 TAG=""
 DRY=0
 PRE=""
@@ -32,12 +36,12 @@ while [ $# -gt 0 ]; do
   case "$1" in
     --dry-run) DRY=1; shift ;;
     --prerelease) PRE="--prerelease"; shift ;;
-    -h|--help) sed -n '2,21p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    -h|--help) sed -n '2,24p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
     -*) echo "unknown option: $1" >&2; exit 2 ;;
     *) [ -z "$TAG" ] || { echo "one tag only" >&2; exit 2; }; TAG="$1"; shift ;;
   esac
 done
-[ -n "$TAG" ] || { sed -n '2,21p' "$0" | sed 's/^# \{0,1\}//'; exit 2; }
+[ -n "$TAG" ] || { sed -n '2,24p' "$0" | sed 's/^# \{0,1\}//'; exit 2; }
 
 die() { echo "!! $*" >&2; exit 1; }
 field() {  # a Python expression over v, the parsed versions.json
@@ -116,6 +120,37 @@ for area in sorted(groups, key=lambda a: (-len(groups[a]), a)):
 '
 }
 
+# The tree that a Homebrew user installs: the tool at <rev> and each submodule
+# at the commit that <rev> records, under flutter-vita/, with no .git, so the
+# installed tool writes into ~/.flutter-vita and never into its own folder.
+# GitHub's source archives leave the submodules out, so we make our own.
+# Each makes its own folder in $WORK, which the script removes when it ends.
+pack() {  # <rev> <out .tar.gz>
+  local stage sub
+  stage="$(mktemp -d "$WORK/pack.XXXXXX")"
+  git -C "$ROOT" archive --prefix=flutter-vita/ "$1" | tar -x -C "$stage"
+  for sub in embedder packages; do
+    git -C "$ROOT/$sub" archive --prefix="flutter-vita/$sub/" "$(git -C "$ROOT" rev-parse "$1:$sub")" \
+      | tar -x -C "$stage"
+  done
+  # COPYFILE_DISABLE: macOS's tar would add ._ files for extended attributes.
+  COPYFILE_DISABLE=1 tar -czf "$2" -C "$stage" flutter-vita
+}
+# Unpack the archive as Homebrew does and run the installed tool's first
+# command: --version, which needs no Flutter. Prints its first line.
+check_archive() {  # <.tar.gz>
+  local dir sub
+  dir="$(mktemp -d "$WORK/check.XXXXXX")"
+  mkdir "$dir/home"
+  tar -xzf "$1" -C "$dir"
+  [ ! -e "$dir/flutter-vita/.git" ] || die "the archive has a .git"
+  for sub in cli/flutter-vita versions.json embedder/CMakeLists.txt packages/flutter_vita/pubspec.yaml templates/fonts/Roboto.ttf; do
+    [ -e "$dir/flutter-vita/$sub" ] || die "the archive has no $sub"
+  done
+  FLUTTER_VITA_HOME="$dir/home" "$dir/flutter-vita/cli/flutter-vita" --version | head -1
+  [ -z "$(ls -A "$dir/home")" ] || die "--version from the archive wrote into the flutter-vita home"
+}
+
 # Files, not $(cat <<EOF): bash 3.2, the one macOS ships, misreads an
 # apostrophe in a here-document inside a command substitution.
 BLOB="https://github.com/$TOOL_REPO/blob/$TAG"
@@ -133,6 +168,8 @@ Install the toolchain with [install-macos.md]($BLOB/docs/install-macos.md) or [i
 
 \`flutter-vita-bridge-$TAG.vpk\` is the Bridge, the app on the console that installs and starts your apps. Install it once with VitaShell: [configure-console.md]($BLOB/docs/configure-console.md).
 
+\`flutter-vita-$TAG.tar.gz\` is the tool with the embedder and the packages: the file that the Homebrew cask installs.
+
 ## Changes${PREV:+ since $PREV}
 
 $(changes "$ROOT" "$RANGE")
@@ -147,18 +184,31 @@ $(changes "$ROOT/embedder" "${EMB_PREV:+$EMB_PREV..}HEAD")
 EOF
 
 VPK="$ROOT/out/flutter-vita-bridge-$TAG.vpk"
+ARCHIVE="$ROOT/out/flutter-vita-$TAG.tar.gz"
+if [ -n "$PRE" ]; then
+  CASK="not updated: a pre-release"
+elif gh repo view "$TAP_REPO" >/dev/null 2>&1; then
+  CASK="$TAP_REPO Casks/flutter-vita.rb to $TAG"
+else
+  CASK="not updated: no $TAP_REPO repository"
+fi
 cat <<EOF
 ==> plan
     commit    "release: $TAG": versions.json release $TAG, embedder $EMB_TAG
     tag       $TAG on master, after ${PREV:-no earlier tag}
     build     the Bridge, footer $TAG, engine $PINNED (bridge/engine-pin.txt)
+    archive   $(basename "$ARCHIVE"): the tool, embedder and packages at $TAG
     embedder  $([ "$TAG_EMBEDDER" = 1 ] && echo "tag $TAG at ${EMB_HEAD:0:12}, after ${EMB_PREV:-no earlier tag}" || echo "no tag; $EMB_PREV is current")
     push      master and $TAG to origin, in one atomic push
-    release   $TOOL_REPO $TAG with $(basename "$VPK")${PRE:+, marked pre-release}
+    release   $TOOL_REPO $TAG with $(basename "$VPK") and $(basename "$ARCHIVE")${PRE:+, marked pre-release}
+    cask      $CASK
 EOF
 [ "$PINNED" = "$ENGINE" ] \
   || echo "    note: the Bridge links engine $PINNED and the tool pins $ENGINE (ADR-0016)"
 if [ "$DRY" = 1 ]; then
+  echo "==> archive of HEAD, as a test of the packing"
+  pack HEAD "$WORK/test.tar.gz"
+  echo "    $(du -h "$WORK/test.tar.gz" | cut -f1 | tr -d ' '), and the unpacked tool says: $(check_archive "$WORK/test.tar.gz")"
   printf '\n--- release notes ---\n'; cat "$NOTES"
   if [ "$TAG_EMBEDDER" = 1 ]; then printf -- '--- embedder notes ---\n'; cat "$EMB_NOTES"; fi
   printf -- '---\n\ndry run: nothing published\n'
@@ -197,6 +247,12 @@ grep -q "kToolBuild = '$TAG';" "$ROOT/bridge/app/lib/build_info.dart" \
   || die "the Bridge's build_info.dart does not name $TAG"
 cp "$ROOT/bridge/app/build/vita/flutter_vita_bridge.vpk" "$VPK"
 
+echo "==> archive $(basename "$ARCHIVE")"
+pack "$TAG" "$ARCHIVE"
+said="$(check_archive "$ARCHIVE")"
+[ "$said" = "flutter-vita $TAG" ] || die "the unpacked tool says '$said', not 'flutter-vita $TAG'"
+echo "    $(du -h "$ARCHIVE" | cut -f1 | tr -d ' '); the unpacked tool says: $said"
+
 if [ "$TAG_EMBEDDER" = 1 ] && [ "$EMB_PUSHED" = 0 ]; then
   echo "==> embedder tag $TAG"
   git -C "$ROOT/embedder" tag -a "$TAG" -m "Embedder $TAG"
@@ -218,8 +274,31 @@ if [ "$TAG_EMBEDDER" = 1 ]; then
 fi
 echo "==> $TOOL_REPO release $TAG"
 gh release create "$TAG" --repo "$TOOL_REPO" --verify-tag $PRE \
-  --title "flutter-vita $TAG" --notes-file "$NOTES" "$VPK" \
-  || die "tag pushed, release not made. Run: gh release create $TAG --repo $TOOL_REPO --verify-tag $PRE --title 'flutter-vita $TAG' --generate-notes $VPK"
+  --title "flutter-vita $TAG" --notes-file "$NOTES" "$VPK" "$ARCHIVE" \
+  || die "tag pushed, release not made. Run: gh release create $TAG --repo $TOOL_REPO --verify-tag $PRE --title 'flutter-vita $TAG' --generate-notes $VPK $ARCHIVE"
+
+# After the release, because the cask downloads the archive from it.
+case "$CASK" in
+  "$TAP_REPO"*)
+    echo "==> cask $TAG in $TAP_REPO"
+    SHA="$(shasum -a 256 "$ARCHIVE" | cut -d' ' -f1)"
+    gh repo clone "$TAP_REPO" "$WORK/tap" -- -q
+    python3 - "$WORK/tap/Casks/flutter-vita.rb" "$TAG" "$SHA" <<'EOF'
+import re, sys
+path, tag, sha = sys.argv[1:]
+s = open(path).read()
+s, a = re.subn(r'^(  version )"[^"]*"', rf'\1"{tag}"', s, count=1, flags=re.M)
+s, b = re.subn(r'^(  sha256 )"[^"]*"', rf'\1"{sha}"', s, count=1, flags=re.M)
+if (a, b) != (1, 1):
+    sys.exit(f"no version or sha256 line in {path}")
+open(path, "w").write(s)
+EOF
+    git -C "$WORK/tap" commit -q -am "flutter-vita $TAG"
+    git -C "$WORK/tap" push -q origin HEAD \
+      || die "release made, cask not pushed. Set version \"$TAG\" and sha256 \"$SHA\" in $TAP_REPO Casks/flutter-vita.rb"
+    ;;
+  *) echo "==> cask $CASK" ;;
+esac
 
 echo
 echo "  https://github.com/$TOOL_REPO/releases/tag/$TAG"

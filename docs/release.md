@@ -19,9 +19,10 @@ You need the GitHub CLI (`gh`), signed in with write access to the
 | Release | Repository | Tag | File | Script |
 |---|---|---|---|---|
 | **Engine release** | [flutter-vita/flutter](https://github.com/flutter-vita/flutter/releases) | The first eight characters of the engine commit, for example `059e1168` | `flutter-engine-vita-<flutter>-<tag>.tar.gz` | `publish-engine.sh` |
-| **Tool release** | [flutter-vita/flutter-vita](https://github.com/flutter-vita/flutter-vita/releases) | `<flutter>-vita.<X.Y.Z>`, for example `3.47.7-vita.1.0.0` | `flutter-vita-bridge-<tag>.vpk` | `publish-release.sh` |
+| **Tool release** | [flutter-vita/flutter-vita](https://github.com/flutter-vita/flutter-vita/releases) | `<flutter>-vita.<X.Y.Z>`, for example `3.47.7-vita.1.0.0` | `flutter-vita-bridge-<tag>.vpk` and `flutter-vita-<tag>.tar.gz` | `publish-release.sh` |
 | Embedder tag | [flutter-vita/flutter-vita-embedder](https://github.com/flutter-vita/flutter-vita-embedder/releases) | The same tag as the tool release | None. Apps compile the embedder from source | `publish-release.sh`, only when the submodule moved |
 | Packages | [flutter-vita/flutter-vita-packages](https://github.com/flutter-vita/flutter-vita-packages) | `<name>-v<semver>` | Published on pub.dev | None. Each package goes to pub.dev on its own |
+| Homebrew cask | [flutter-vita/homebrew-tap](https://github.com/flutter-vita/homebrew-tap) | None. A commit sets the version and the sha256 | `Casks/flutter-vita.rb` | `publish-release.sh`, after each tool release that is not a pre-release |
 
 **The engine release always comes first.** `versions.json` names an engine
 release only after that release exists. Thus a clone of `master` can always
@@ -123,12 +124,21 @@ The script does these steps:
 3. It writes the tag into `versions.json` (`release`, and `embedder.release`
    when the embedder gets the tag), commits `release: <tag>` and adds the tag.
 4. It builds the Bridge. The Bridge shows the tag in its footer.
-5. It tags the embedder, if the submodule moved since the embedder's last
+5. It packs `flutter-vita-<tag>.tar.gz`: the tool, the embedder and the
+   packages at the tag, without `.git`. Then it unpacks the archive and runs
+   `flutter-vita --version` from it. The command must show the tag and write
+   nothing.
+6. It tags the embedder, if the submodule moved since the embedder's last
    tag, and pushes that tag.
-6. It pushes `master` and the tag together, in one atomic push.
-7. It makes the GitHub releases: the embedder release, then the tool release
-   with `flutter-vita-bridge-<tag>.vpk`. With `--prerelease`, both releases
-   get the pre-release mark.
+7. It pushes `master` and the tag together, in one atomic push.
+8. It makes the GitHub releases: the embedder release, then the tool release
+   with `flutter-vita-bridge-<tag>.vpk` and `flutter-vita-<tag>.tar.gz`. With
+   `--prerelease`, both releases get the pre-release mark.
+9. It sets the tag and the sha256 of the archive in the cask, and pushes
+   flutter-vita/homebrew-tap. It does not do this step for a pre-release, or
+   when the repository does not exist. See [The Homebrew cask](#the-homebrew-cask).
+
+The dry run also packs `HEAD` and runs the same check on that archive.
 
 The release notes list the parts with links, the install pages at the tag,
 and the commit subjects since the last tag, in groups by their `area:`
@@ -192,6 +202,14 @@ The examples use `3.47.7-vita.1.0.0`.
    `git clone --branch` shows the warning "is not a commit" for an annotated
    tag. You can ignore it if `git describe --tags` shows the tag.
 
+4. If the script updated the cask, install the tool with Homebrew too:
+
+   ```sh
+   brew install --cask flutter-vita/tap/flutter-vita
+   flutter-vita --version
+   brew uninstall --cask flutter-vita
+   ```
+
 The test passes when all of these are true:
 
 | Check | Pass |
@@ -202,9 +220,35 @@ The test passes when all of these are true:
 | `install samples/gallery` | The gallery builds, installs and opens on the console |
 | `gallery.png` | The gallery draws, and the strip shows 60 fps |
 | The last command, the log search | No output: no shader was refused |
+| `flutter-vita --version` from Homebrew | `flutter-vita <tag>` |
 
 If one check fails, make a fix release with a higher `Z`. Do not change the
 published release.
+
+## The Homebrew cask
+
+A user on a Mac can install the tool with one command:
+
+```sh
+brew install --cask flutter-vita/tap/flutter-vita
+```
+
+The cask is `Casks/flutter-vita.rb` in
+[flutter-vita/homebrew-tap](https://github.com/flutter-vita/homebrew-tap). It
+downloads `flutter-vita-<tag>.tar.gz` from the tool release, and it links
+`flutter-vita/cli/flutter-vita` into Homebrew's `bin`. It depends on `cmake`
+and `python@3.15`. VitaSDK is not in Homebrew, so the cask tells the user to
+install it.
+
+It is a cask, not a formula. Homebrew does not install a formula without a
+prebuilt bottle while the selected Xcode is older than the current one. Our
+tool compiles nothing, but Homebrew does that check for each formula. A cask
+has no build step and no Xcode check. We tested both on 2026-10-16: the
+formula stopped at the Xcode check, and the cask installed and built an app.
+
+The archive has no `.git`, so the installed tool writes into
+`~/.flutter-vita` and never into Homebrew's folder. A git checkout writes into
+`out/`, as before.
 
 ## The Bridge and its engine
 
@@ -223,6 +267,7 @@ are different, the release plan shows a note. That is permitted.
 | `publish-release.sh`, before the push | The script removes its local commit and tag. Repair the cause and run it again |
 | `publish-release.sh`, after the embedder tag, before the tool push | Run it again. It accepts the embedder tag when the tag is on the same commit |
 | `publish-release.sh`, after the push, before the GitHub release | The script prints the `gh release create` command that makes the release |
+| `publish-release.sh`, after the GitHub release, before the cask push | The script prints the version and the sha256. Set them in `Casks/flutter-vita.rb` in flutter-vita/homebrew-tap |
 
 Do not move or delete a tag after you push it. If a release has a fault, make
 a new release with a higher number.
