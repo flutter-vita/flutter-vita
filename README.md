@@ -1,8 +1,7 @@
 # Flutter for the PlayStation Vita
 
-Flutter apps on the PS Vita. This is the Flutter engine and the Flutter
-framework, compiled for `arm-vita-eabi` and drawing through the console's
-GPU. Your `main.dart` does not change.
+An unofficial port of Flutter to the PS Vita. It adds the PS Vita to Flutter
+as a new platform. Flutter draws each frame with Skia on the console's GPU.
 
 *PlayStation and PS Vita are trademarks of Sony Interactive Entertainment.
 This project is not affiliated with or endorsed by Sony.*
