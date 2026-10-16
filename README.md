@@ -77,24 +77,14 @@ tells more about each step.
    **Settings > Power Save Settings**, turn off automatic standby.
 4. Download `flutter-vita-bridge-<version>.vpk` from the
    [latest release](https://github.com/flutter-vita/flutter-vita/releases/latest).
-5. In VitaShell, press **SELECT** to start its FTP server. Send the VPK to
-   `ux0:/`, with the address that VitaShell shows:
-
-   ```sh
-   curl -T flutter-vita-bridge-*.vpk ftp://<address>:1337/ux0:/
-   ```
-
-6. In VitaShell, open the VPK in `ux0:/` and confirm the installation.
-7. Start **Flutter Bridge** from the LiveArea. Then check the connection:
+   Copy it to the console with VitaShell (FTP or USB), and install it.
+5. Start **Flutter Bridge**, and check the connection:
 
    ```sh
    flutter-vita doctor
    ```
 
-   The `device` line shows the console that the tool found.
-
-After that, all installs go over Wi-Fi. The bridge installs and starts your
-apps, and you do not use VitaShell again.
+After that, the tool installs each app over Wi-Fi, through the bridge.
 
 ## Usage
 
