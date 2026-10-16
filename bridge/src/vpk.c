@@ -537,7 +537,7 @@ static void sha1(const unsigned char* p, size_t n, unsigned char out[20]) {
   sha1_final(&s, out);
 }
 
-// The keyless digest of make-head-bin.py: SHA-1 of the region, a fixed
+// The keyless digest of make-head-bin.dart: SHA-1 of the region, a fixed
 // rearrangement of those twenty bytes into a 64-byte block, SHA-1 of that,
 // first sixteen bytes. The console computes the same function over the same
 // public bytes; there is no secret in it.

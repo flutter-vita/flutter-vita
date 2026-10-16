@@ -41,21 +41,19 @@ flutter_vita_sdk() (
   case "$(uname -s)" in Darwin) host=darwin ;; Linux) host=linux ;; *) host=unknown ;; esac
   case "$(uname -m)" in arm64 | aarch64) host="$host-arm64" ;; x86_64) host="$host-x64" ;; esac
 
-  # versions.json is nested, so not sed. Python 3 is already a requirement.
-  local pin
-  pin="$(python3 - "$versions" "$host" <<'PY'
-import json, sys
-v = json.load(open(sys.argv[1]))
-sdk = v.get("flutter_sdk", {})
-entry = sdk.get("hosts", {}).get(sys.argv[2])
-if not entry:
-    sys.exit(f"!! versions.json has no Flutter SDK for {sys.argv[2]}; "
-             f"set FLUTTER_ROOT to a Flutter {v.get('flutter')}")
-print(v["flutter"], v["framework_rev"], sdk["base_url"] + entry["archive"], entry["sha256"])
-PY
-)" || return 1
-  local version rev url sha
-  read -r version rev url sha <<<"$pin"
+  # versions.json is nested, so not sed. No Dart exists yet: this downloads it.
+  get() { awk -v want="$1" -f "$here/json-get.awk" "$versions"; }
+  local version rev url sha archive
+  version="$(get flutter)" && rev="$(get framework_rev)" || {
+    echo "!! $versions has no flutter or framework_rev" >&2
+    return 1
+  }
+  archive="$(get "flutter_sdk.hosts.$host.archive")" &&
+    sha="$(get "flutter_sdk.hosts.$host.sha256")" || {
+    echo "!! versions.json has no Flutter SDK for $host; set FLUTTER_ROOT to a Flutter $version" >&2
+    return 1
+  }
+  url="$(get flutter_sdk.base_url)$archive"
 
   local home dest marker
   home="${FLUTTER_VITA_HOME:-$HOME/.flutter-vita}"

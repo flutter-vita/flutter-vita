@@ -62,7 +62,7 @@ vita:
 ```
 
 (or `--livearea DIR` on `tools/build-vita-app.sh`). The build checks the
-three files with `tools/check-livearea-art.py` and stops on a wrong size or
+three files with `tools/check-livearea-art.dart` and stops on a wrong size or
 format; `tools/make-livearea.py` is the script that drew the default set
 and a starting point for your own.
 

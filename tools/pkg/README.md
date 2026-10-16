@@ -1,7 +1,7 @@
 # head-template.bin
 
 The package header `scePromoterUtilityPromotePkgWithRif` requires, with four
-fields rewritten per install by [`../make-head-bin.py`](../make-head-bin.py):
+fields rewritten per install by [`../make-head-bin.dart`](../make-head-bin.dart):
 the content id at `0x30` and three digests whose offsets the header itself
 carries.
 

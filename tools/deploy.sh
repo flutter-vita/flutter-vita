@@ -38,15 +38,16 @@ wait_for_name() {
     *) echo "!! $HOST is an address. This tool addresses the console by name." >&2
        exit 2 ;;
   esac
-  local i
-  for i in 1 2 3 4 5 6 7 8 9 10; do
-    if python3 -c "import socket,sys
-try:
-    socket.gethostbyname(sys.argv[1])
-except OSError:
-    raise SystemExit(1)" "$HOST" 2>/dev/null; then
-      return 0
+  # The system resolver: mDNSResponder on macOS, nss-mdns on Linux. A miss
+  # costs dscacheutil 10 s, so the limit is in seconds, not attempts.
+  local deadline=$((SECONDS + 20))
+  while :; do
+    if command -v getent >/dev/null 2>&1; then
+      getent ahostsv4 "$HOST" >/dev/null 2>&1 && return 0
+    else
+      dscacheutil -q host -a name "$HOST" 2>/dev/null | grep -q '^ip_address:' && return 0
     fi
+    [ "$SECONDS" -lt "$deadline" ] || break
     sleep 2
   done
   echo "!! $HOST does not resolve after 20 s." >&2

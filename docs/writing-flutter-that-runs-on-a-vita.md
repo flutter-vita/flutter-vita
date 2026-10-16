@@ -164,9 +164,9 @@ is what every image editor exports by default, fails the install with
 nothing about images. The bridge's own first install on a fresh console
 failed this way on 2026-09-11; re-encoding the three files was the whole fix.
 
-The build checks the art at configure time (`tools/check-livearea-art.py`) and
-refuses to produce a vpk it knows the console will refuse, with the one-line
-re-encode in the message. `pngquant` does it, and so does Pillow's
+The build checks the art at configure time (`tools/check-livearea-art.dart`)
+and refuses to produce a vpk it knows the console will refuse, with the
+one-line re-encode in the message. `pngquant` does it, and so does Pillow's
 `quantize(256)`.
 
 ## Two of these numbers moved on 2026-08-25, and why

@@ -9,7 +9,7 @@
 // through a callback.
 //
 // Built for the host too (tools/test-vpk.sh compiles it with the system
-// zlib and checks it against unzip and make-head-bin.py), which is why the
+// zlib and checks it against unzip and make-head-bin.dart), which is why the
 // file I/O sits behind six small functions.
 #ifndef FVITA_VPK_H
 #define FVITA_VPK_H
@@ -51,7 +51,7 @@ int vpk_title_id(const char* sfo, char* out, size_t cap);
 // from the header at `tmpl`: any head.bin the promoter itself wrote will do,
 // this bridge's own app0:sce_sys/package/head.bin included. Rewrites the
 // content id at 0x30 and the three keyless digests whose offsets the header
-// carries (tools/make-head-bin.py describes the format and where the
+// carries (tools/make-head-bin.dart describes the format and where the
 // template came from). Returns 0, or a negative number with `err` filled.
 int vpk_write_head(const char* tmpl, const char* dst, const char* titleid,
                    char* err, size_t errcap);

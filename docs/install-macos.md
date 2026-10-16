@@ -1,8 +1,9 @@
 # Install the toolchain on macOS
 
 What you need on the Mac: VitaSDK (the `arm-vita-eabi` compiler and the
-Vita's headers and stubs), CMake, Python 3, and the tool. The Homebrew cask
-(step 4) installs CMake, Python 3 and the tool with one command.
+Vita's headers and stubs), CMake, and the tool. The Homebrew cask (step 3)
+installs CMake and the tool with one command. The tool needs no Python: its
+scripts are bash and Dart, and Dart comes with the Flutter SDK of step 2.
 Flutter 3.47.7 is not on the list: the tool downloads its own. Rebuilding the Flutter engine
 itself is not part of this page; the engine comes prebuilt.
 
@@ -49,26 +50,14 @@ by hand.
 [flutter-vita/flutter](https://github.com/flutter-vita/flutter), changes
 only the engine: `engine/src` and `DEPS`. Its framework and its `flutter`
 command are the same as in the 3.47.7 release, and the engine comes
-prebuilt (step 5). An app build uses the Flutter SDK on the Mac only:
+prebuilt (step 4). An app build uses the Flutter SDK on the Mac only:
 `flutter pub get`, `flutter build bundle` for the assets, and the Dart
 compiler front end.
 
 To use a Flutter 3.47.7 that you already have, export `FLUTTER_ROOT`. The
 build refuses an SDK at another revision.
 
-## 3. Python
-
-`python3`, for the LiveArea art check and the screenshot converter. Both use
-only the Python standard library. The Homebrew cask installs Python 3.
-
-You need Pillow only to draw the template's LiveArea art again with
-`tools/make-livearea.py`:
-
-```sh
-python3 -m pip install pillow
-```
-
-## 4. The tool
+## 3. The tool
 
 With Homebrew:
 
@@ -93,7 +82,7 @@ does the same. Building apps needs no engine checkout. Only an engine
 rebuild does; `./tools/engine-tree.sh --apply` puts the fork's branch
 into `third_party/flutter`, and `--verify` checks the port is in place.
 
-## 5. The engine artifact
+## 4. The engine artifact
 
 ```sh
 ./cli/flutter-vita precache
@@ -116,7 +105,7 @@ the engine once with [dev-environment.md](dev-environment.md) (a 12 GB
 checkout and about thirty minutes). `FLUTTER_VITA_ENGINE` points the tools
 at an artifact somewhere else.
 
-## 6. Check
+## 5. Check
 
 ```sh
 ./cli/flutter-vita doctor

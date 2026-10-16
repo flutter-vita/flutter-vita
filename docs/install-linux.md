@@ -1,6 +1,6 @@
 # Install the toolchain on Linux
 
-The same pieces as on macOS: VitaSDK, CMake, Python 3, and
+The same pieces as on macOS: VitaSDK, CMake, and
 this repository with the engine artifact. The tool downloads its own Flutter
 3.47.7. The maintainer
 builds on macOS; the scripts are plain bash and CMake and have nothing
@@ -10,7 +10,7 @@ step fails for you, open an issue with the output.
 ## 1. VitaSDK
 
 ```sh
-sudo apt install cmake git python3 python3-pip curl   # or your distribution's names
+sudo apt install cmake git curl   # or your distribution's names
 git clone https://github.com/vitasdk/vdpm ~/vdpm
 cd ~/vdpm
 export VITASDK="$HOME/vitasdk"
@@ -30,17 +30,7 @@ unpacks it to `~/.flutter-vita/flutter/3.47.7`
 ([details](install-macos.md#2-flutter-3477)). `FLUTTER_ROOT` names a Flutter
 3.47.7 you already have.
 
-## 3. Python
-
-`python3`, from your distribution. The tools use only the Python standard
-library. You need Pillow only to draw the template's LiveArea art again
-with `tools/make-livearea.py`:
-
-```sh
-python3 -m pip install pillow
-```
-
-## 4. This repository and the engine
+## 3. This repository and the engine
 
 ```sh
 git clone --recurse-submodules https://github.com/flutter-vita/flutter-vita
@@ -55,7 +45,7 @@ has it for `darwin-arm64` only; `doctor` says whether one
 exists for yours. Without one, [dev-environment.md](dev-environment.md)
 describes the engine build, which produces it.
 
-## 5. Check
+## 4. Check
 
 ```sh
 ./cli/flutter-vita doctor

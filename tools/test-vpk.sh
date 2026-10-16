@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Check bridge/src/vpk.c on the host, against unzip and make-head-bin.py.
+# Check bridge/src/vpk.c on the host, against unzip and make-head-bin.dart.
 #
 #   ./tools/test-vpk.sh <vpk> [<vpk>...]
 #
@@ -10,6 +10,7 @@
 # same mistake on the console costs a redeploy and a promoter error code.
 set -euo pipefail
 HERE="$(cd "$(dirname "$0")" && pwd)"
+DART="$("$HERE/flutter-sdk.sh")/bin/cache/dart-sdk/bin/dart"
 ROOT="$(cd "$HERE/.." && pwd)"
 [ $# -ge 1 ] || { sed -n '2,10p' "$0" | sed 's/^# \{0,1\}//'; exit 2; }
 
@@ -85,13 +86,13 @@ for vpk in "$@"; do
   [ "$id" = "$want_id" ] || { echo "!! title id: got '$id', strings says '$want_id'"; fail=1; }
   echo "    title id $id"
   "$WORK/vpk" head "$ROOT/tools/pkg/head-template.bin" "$WORK/head-c.bin" "$id"
-  "$HERE/make-head-bin.py" "$id" --template "$ROOT/tools/pkg/head-template.bin" -o "$WORK/head-py.bin" >/dev/null
-  if cmp -s "$WORK/head-c.bin" "$WORK/head-py.bin"; then
-    echo "    head.bin: identical to make-head-bin.py's"
+  "$DART" "$HERE/make-head-bin.dart" "$id" --template "$ROOT/tools/pkg/head-template.bin" -o "$WORK/head-dart.bin" >/dev/null
+  if cmp -s "$WORK/head-c.bin" "$WORK/head-dart.bin"; then
+    echo "    head.bin: identical to make-head-bin.dart's"
   else
-    echo "!! head.bin differs from make-head-bin.py's"; fail=1
+    echo "!! head.bin differs from make-head-bin.dart's"; fail=1
   fi
-  "$HERE/make-head-bin.py" --verify "$WORK/head-c.bin" | sed 's/^/    /'
+  "$DART" "$HERE/make-head-bin.dart" --verify "$WORK/head-c.bin" | sed 's/^/    /'
   echo "    progress lines: $(wc -l < "$WORK/progress.txt" | tr -d ' ')"
 done
 [ "$fail" -eq 0 ] && echo "==> ok" || { echo "==> FAILED"; exit 1; }

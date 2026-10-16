@@ -9,8 +9,7 @@ as a new platform. Flutter draws each frame with Skia on the console's GPU.
 
 On a Mac with Apple silicon:
 
-1. Install the tool with Homebrew. The cask also installs CMake and
-   Python 3.
+1. Install the tool with Homebrew. The cask also installs CMake.
 
    ```sh
    brew install --cask flutter-vita/tap/flutter-vita
@@ -42,10 +41,10 @@ To change the tool, clone the repository as on Linux. All steps:
 
 ### Linux
 
-1. Install CMake, Git, Python 3 and VitaSDK:
+1. Install CMake, Git and VitaSDK:
 
    ```sh
-   sudo apt install cmake git python3 curl   # or your distribution's names
+   sudo apt install cmake git curl   # or your distribution's names
    git clone https://github.com/vitasdk/vdpm ~/vdpm
    cd ~/vdpm
    export VITASDK="$HOME/vitasdk"

@@ -28,7 +28,7 @@
 #   returns 0x8010111C from anywhere else.
 #
 #   sce_sys/package/head.bin must exist and carry the right content id with
-#   valid digests. tools/make-head-bin.py writes one; no key is involved.
+#   valid digests. tools/make-head-bin.dart writes one; no key is involved.
 set -euo pipefail
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
@@ -131,7 +131,8 @@ else
   # has to be this title's. A header signed for another id gets as far as NpDrm
   # and is refused with 0x80870005.
   mkdir -p "$WORK/sce_sys/package"
-  "$HERE/make-head-bin.py" "$TITLE_ID" -o "$WORK/sce_sys/package/head.bin" \
+  DART="$("$HERE/flutter-sdk.sh")/bin/cache/dart-sdk/bin/dart"
+  "$DART" "$HERE/make-head-bin.dart" "$TITLE_ID" -o "$WORK/sce_sys/package/head.bin" \
     | sed 's/^/    /'
 
   # Cleared first. The promoter reads the whole staging directory, so a file
@@ -145,7 +146,7 @@ else
   # when they are not 8-bit indexed. On 2026-08-31 ours were 32-bit RGBA, so
   # staging them failed and leaving them out passed, and this file blamed the
   # header for it. On 2026-09-11 VitaShell, with its own header, refused the
-  # same art and accepted it re-encoded (tools/check-livearea-art.py now
+  # same art and accepted it re-encoded (tools/check-livearea-art.dart now
   # refuses RGBA at build time). Staging the art with a valid encoding has not
   # been measured on this path yet, so it still goes in afterwards, which works
   # either way: the shell reads it out of ux0:app/<id>/sce_sys, not out of the

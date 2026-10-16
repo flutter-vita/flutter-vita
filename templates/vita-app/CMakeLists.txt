@@ -44,14 +44,15 @@ set(LIVEAREA_DIR "${CMAKE_CURRENT_SOURCE_DIR}/livearea" CACHE PATH
     "Directory holding icon0.png, template.xml, bg0.png and startup.png")
 # The promoter takes these PNGs only as 8-bit indexed at their fixed sizes and
 # answers anything else with 0x8010113D, from VitaShell as much as from our own
-# install path. Checked here so the reason reaches the build log.
-find_program(PYTHON3 python3 REQUIRED)
+# install path. Checked here so the reason reaches the build log, by a Dart
+# script: build-vita-app.sh passes the Dart of the Flutter SDK it builds with.
+find_program(DART dart REQUIRED)
 set(TOOLS_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../../tools" CACHE PATH
     "The repo's tools/; build-vita-app.sh passes it, a copied template needs it set")
 set(FONTS_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../fonts" CACHE PATH
     "The repo's templates/fonts; build-vita-app.sh passes it, a copied template needs it set")
 execute_process(
-  COMMAND "${PYTHON3}" "${TOOLS_DIR}/check-livearea-art.py" "${LIVEAREA_DIR}"
+  COMMAND "${DART}" "${TOOLS_DIR}/check-livearea-art.dart" "${LIVEAREA_DIR}"
   RESULT_VARIABLE LIVEAREA_ART_BAD)
 if(LIVEAREA_ART_BAD)
   message(FATAL_ERROR "LiveArea art in ${LIVEAREA_DIR} will not install; see above.")

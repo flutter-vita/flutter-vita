@@ -46,4 +46,4 @@ RAW="$(mktemp)"
 trap 'rm -f "$RAW"' EXIT
 printf 'shot\n' | nc -4 -w 120 "$HOST" "$PORT" > "$RAW"
 [ -s "$RAW" ] || { echo "!! empty framebuffer" >&2; exit 1; }
-"$HERE/rgba2png.py" "$RAW" "$OUT"
+"$("$HERE/flutter-sdk.sh")/bin/cache/dart-sdk/bin/dart" "$HERE/rgba2png.dart" "$RAW" "$OUT"

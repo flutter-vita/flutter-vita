@@ -31,20 +31,17 @@ if [ "${1:-}" = version ] || printf '%s\n' "$@" | grep -qx -- --version; then
   if [ "$CHECKOUT" = 1 ]; then
     described="$(git -C "$ROOT" describe --tags --always --dirty 2>/dev/null || true)"
   fi
-  exec python3 - "$ROOT/versions.json" "$described" <<'EOF'
-import json, sys
-try:
-    v = json.load(open(sys.argv[1]))
-except OSError:
-    sys.exit(f"no versions.json in {sys.argv[1].rsplit('/', 1)[0]}")
-release = v.get("release") or "unreleased"
-described = sys.argv[2]
-extra = f" ({described})" if described and described != release else ""
-engine = (v.get("engine") or {}).get("release") or "unreleased"
-embedder = (v.get("embedder") or {}).get("release")
-print(f"flutter-vita {release}{extra}")
-print(f"  flutter {v.get('flutter')}  engine {engine}  embedder {embedder}")
-EOF
+  versions="$ROOT/versions.json"
+  [ -f "$versions" ] || { echo "no versions.json in $ROOT" >&2; exit 1; }
+  get() { awk -v want="$1" -f "$ROOT/tools/json-get.awk" "$versions" || true; }
+  release="$(get release)"; release="${release:-unreleased}"
+  engine="$(get engine.release)"; engine="${engine:-unreleased}"
+  embedder="$(get embedder.release)"; embedder="${embedder:-unreleased}"
+  extra=""
+  if [ -n "$described" ] && [ "$described" != "$release" ]; then extra=" ($described)"; fi
+  echo "flutter-vita $release$extra"
+  echo "  flutter $(get flutter)  engine $engine  embedder $embedder"
+  exit 0
 fi
 
 FLUTTER_ROOT="$("$ROOT/tools/flutter-sdk.sh")" || exit 1
