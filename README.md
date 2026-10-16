@@ -3,9 +3,6 @@
 An unofficial port of Flutter to the PS Vita. It adds the PS Vita to Flutter
 as a new platform. Flutter draws each frame with Skia on the console's GPU.
 
-*PlayStation and PS Vita are trademarks of Sony Interactive Entertainment.
-This project is not affiliated with or endorsed by Sony.*
-
 ## Supported devices
 
 - **PS Vita 1000 and PS Vita 2000**: firmware 3.60 to 3.74, with HENkaku or
@@ -217,3 +214,6 @@ record.
 zlib, see [LICENSE](LICENSE). An app that you build with flutter-vita does
 not have to carry our notice. [NOTICE](NOTICE) lists the components that come
 from other projects and their licenses.
+
+*PlayStation and PS Vita are trademarks of Sony Interactive Entertainment.
+This project is not affiliated with or endorsed by Sony.*
