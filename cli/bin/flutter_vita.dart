@@ -54,9 +54,6 @@ Future<int> _run(List<String> argv) async {
     }
   }
 
-  if (opts.containsKey('version')) {
-    return _version();
-  }
   if (args.isEmpty || opts.containsKey('help')) {
     stdout.write(usage);
     return args.isEmpty ? 2 : 0;
@@ -64,8 +61,6 @@ Future<int> _run(List<String> argv) async {
 
   try {
     switch (args.first) {
-      case 'version':
-        return _version();
       case 'doctor':
         return await _doctor(opts);
       case 'precache':
@@ -337,41 +332,6 @@ Future<int> _tap(List<String> args, Map<String, String> opts) async {
   final device = await _findDevice(opts, role: VitaRole.app);
   if (device == null) return 1;
   stdout.write(await device.tap(int.parse(args[1]), int.parse(args[2])));
-  return 0;
-}
-
-/// The tool's release (versions.json), the git description when this is a
-/// checkout with commits after the tag, and the pins it builds against.
-int _version() {
-  final v = loadVersions();
-  if (v == null) {
-    stderr.writeln('no versions.json: not a checkout, and nothing in the '
-        'flutter-vita home');
-    return 1;
-  }
-  final release = v['release'] as String? ?? 'unreleased';
-  var described = '';
-  final root = devRoot;
-  if (root != null) {
-    try {
-      final r = Process.runSync(
-          'git', ['describe', '--tags', '--always', '--dirty'],
-          workingDirectory: root);
-      final out = (r.stdout as String).trim();
-      if (r.exitCode == 0 && out.isNotEmpty && out != release) {
-        described = ' ($out)';
-      }
-    } on ProcessException {
-      // No git: the release string is all there is.
-    }
-  }
-  final engine = v['engine'] as Map<String, dynamic>? ?? const {};
-  final embedder = v['embedder'] as Map<String, dynamic>? ?? const {};
-  stdout.writeln('flutter-vita $release$described');
-  final engineRelease = engine['release'] as String? ?? '';
-  stdout.writeln('  flutter ${v['flutter']}'
-      '  engine ${engineRelease.isEmpty ? 'unreleased' : engineRelease}'
-      '  embedder ${embedder['release']}');
   return 0;
 }
 

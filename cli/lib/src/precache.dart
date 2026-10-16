@@ -64,12 +64,10 @@ class EngineRelease {
   }
 }
 
-/// Where the artifact goes: beside the checkout's other outputs when there is
-/// one, else in the user's flutter-vita home.
-String artifactsDir() {
-  final root = devRoot;
-  return root != null ? '$root/out/artifacts' : '$flutterVitaHome/engines';
-}
+/// Where the artifact goes: beside a git checkout's other outputs, else in the
+/// user's flutter-vita home.
+String artifactsDir() =>
+    isCheckout ? '$devRoot/out/artifacts' : '$flutterVitaHome/engines';
 
 /// Download, verify and unpack the engine named by versions.json.
 ///

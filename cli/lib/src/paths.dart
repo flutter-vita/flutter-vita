@@ -66,6 +66,14 @@ late final String? devRoot = () {
   return null;
 }();
 
+/// Whether [devRoot] is a git checkout, which writes its outputs beside itself.
+///
+/// A tree without `.git` is an install that a package manager owns and deletes
+/// on its next upgrade, so it writes into [flutterVitaHome] instead. Checked at
+/// the root only: Homebrew's prefix is itself a git repository.
+late final bool isCheckout = devRoot != null &&
+    FileSystemEntity.typeSync('$devRoot/.git') != FileSystemEntityType.notFound;
+
 /// The Flutter SDK the build uses.
 ///
 /// FLUTTER_ROOT, which the launcher sets: to the SDK tools/flutter-sdk.sh
@@ -130,7 +138,7 @@ String engineDir() {
   if (override != null) return override;
 
   final candidates = <String>[
-    if (devRoot != null) '$devRoot/out/artifacts/$_artifactName',
+    if (isCheckout) '$devRoot/out/artifacts/$_artifactName',
     '$flutterVitaHome/engines/$_artifactName',
   ];
   for (final c in candidates) {

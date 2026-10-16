@@ -17,6 +17,10 @@ set -euo pipefail
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
 ROOT="$(cd "$HERE/.." && pwd)"
+# Outputs go beside a git checkout, else into the flutter-vita home: a tree
+# without .git is an install that its package manager deletes on upgrade.
+OUT_BASE="$ROOT/out"
+[ -e "$ROOT/.git" ] || OUT_BASE="${FLUTTER_VITA_HOME:-$HOME/.flutter-vita}/out"
 HOST="${VITA_HOST:-fluttervita.local}"
 PORT="${BRIDGE_PORT:-1341}"
 REQ="ux0:data/flutter-vita/panel-request.txt"
@@ -24,7 +28,7 @@ REQ="ux0:data/flutter-vita/panel-request.txt"
 [ $# -gt 0 ] || { sed -n '2,16p' "$0" | sed 's/^# \{0,1\}//'; exit 2; }
 
 if [ "$1" = "shot" ]; then
-  OUT="${2:-$ROOT/out/panel.png}"
+  OUT="${2:-$OUT_BASE/panel.png}"
 else
   LINE="$*"
   # The panel removes the file after reading it, so a request that is never
@@ -34,7 +38,7 @@ else
     || { echo "!! the bridge did not take '$LINE'" >&2; exit 1; }
   # Two poll ticks: one to read the request, one to rebuild and present.
   sleep 2
-  OUT="$ROOT/out/panel.png"
+  OUT="$OUT_BASE/panel.png"
 fi
 
 mkdir -p "$(dirname "$OUT")"

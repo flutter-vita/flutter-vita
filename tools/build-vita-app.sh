@@ -49,7 +49,11 @@ FLUTTER_PIN="${FLUTTER_VITA_PIN:-$(sed -n 's/^[[:space:]]*"flutter":[[:space:]]*
 APP_DIR=""
 TITLE_ID=""
 APP_NAME=""
-ENGINE_DIR="${FLUTTER_VITA_ENGINE:-$ROOT/out/artifacts/flutter-engine-vita-$FLUTTER_PIN}"
+# Where precache puts the engine: beside a git checkout, else in the
+# flutter-vita home. The CLI passes FLUTTER_VITA_ENGINE; this is for a direct run.
+ENGINES="$ROOT/out/artifacts"
+[ -e "$ROOT/.git" ] || ENGINES="${FLUTTER_VITA_HOME:-$HOME/.flutter-vita}/engines"
+ENGINE_DIR="${FLUTTER_VITA_ENGINE:-$ENGINES/flutter-engine-vita-$FLUTTER_PIN}"
 # The embedder, compiled into every app: the flutter-vita-embedder submodule.
 EMBEDDER_DIR="${FLUTTER_VITA_EMBEDDER:-$ROOT/embedder}"
 FLUTTER_DIR=""

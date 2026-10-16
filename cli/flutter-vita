@@ -5,10 +5,65 @@
 # downloads the first time; FLUTTER_ROOT, when set, names another one. Exported
 # as FLUTTER_ROOT, so the CLI and every build script it starts use the same SDK.
 set -euo pipefail
-HERE="$(cd "$(dirname "$0")" && pwd)"
+
+# Follow symlinks to the real file: a package manager links this script into
+# its bin/, and ROOT is the tree around the script, not around the link.
+SELF="$0"
+while [ -L "$SELF" ]; do
+  dir="$(cd -P "$(dirname "$SELF")" && pwd)"
+  SELF="$(readlink "$SELF")"
+  case "$SELF" in /*) ;; *) SELF="$dir/$SELF" ;; esac
+done
+HERE="$(cd -P "$(dirname "$SELF")" && pwd)"
 ROOT="$(cd "$HERE/.." && pwd)"
+
+# A git checkout writes beside itself. A copy without .git is an install that a
+# package manager owns and deletes on its next upgrade, so it writes nothing
+# into its own tree. Checked at ROOT only: Homebrew's prefix is itself a git
+# repository, and asking git from inside it answers for Homebrew.
+CHECKOUT=0
+[ -e "$ROOT/.git" ] && CHECKOUT=1
+
+# --version needs no Flutter, so it answers before the download below, which is
+# 2.1 GB the first time. A package manager's install test runs exactly this.
+if [ "${1:-}" = version ] || printf '%s\n' "$@" | grep -qx -- --version; then
+  described=""
+  if [ "$CHECKOUT" = 1 ]; then
+    described="$(git -C "$ROOT" describe --tags --always --dirty 2>/dev/null || true)"
+  fi
+  exec python3 - "$ROOT/versions.json" "$described" <<'EOF'
+import json, sys
+try:
+    v = json.load(open(sys.argv[1]))
+except OSError:
+    sys.exit(f"no versions.json in {sys.argv[1].rsplit('/', 1)[0]}")
+release = v.get("release") or "unreleased"
+described = sys.argv[2]
+extra = f" ({described})" if described and described != release else ""
+engine = (v.get("engine") or {}).get("release") or "unreleased"
+embedder = (v.get("embedder") or {}).get("release")
+print(f"flutter-vita {release}{extra}")
+print(f"  flutter {v.get('flutter')}  engine {engine}  embedder {embedder}")
+EOF
+fi
 
 FLUTTER_ROOT="$("$ROOT/tools/flutter-sdk.sh")" || exit 1
 export FLUTTER_ROOT
+DART="$FLUTTER_ROOT/bin/cache/dart-sdk/bin/dart"
 
-exec "$FLUTTER_ROOT/bin/cache/dart-sdk/bin/dart" run "$HERE/bin/flutter_vita.dart" "$@"
+if [ "$CHECKOUT" = 1 ]; then
+  exec "$DART" run "$HERE/bin/flutter_vita.dart" "$@"
+fi
+
+# `dart run` would write cli/.dart_tool into the install. The CLI has no
+# dependencies, so its package config is one entry, kept in the flutter-vita
+# home and written again only when the install moves.
+home="${FLUTTER_VITA_HOME:-$HOME/.flutter-vita}"
+lang="$(sed -n 's/^  sdk: *\^\{0,1\}\([0-9]*\.[0-9]*\).*/\1/p' "$HERE/pubspec.yaml")"
+config="$home/cli/package_config.json"
+want="{\"configVersion\":2,\"packages\":[{\"name\":\"flutter_vita_cli\",\"rootUri\":\"file://${HERE// /%20}/\",\"packageUri\":\"lib/\",\"languageVersion\":\"$lang\"}]}"
+if [ "$(cat "$config" 2>/dev/null || true)" != "$want" ]; then
+  mkdir -p "$home/cli"
+  printf '%s\n' "$want" > "$config.tmp" && mv "$config.tmp" "$config"
+fi
+exec "$DART" --packages="$config" "$HERE/bin/flutter_vita.dart" "$@"

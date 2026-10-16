@@ -28,13 +28,17 @@ set -euo pipefail
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
 ROOT="$(cd "$HERE/.." && pwd)"
+# Outputs go beside a git checkout, else into the flutter-vita home: a tree
+# without .git is an install that its package manager deletes on upgrade.
+OUT_BASE="$ROOT/out"
+[ -e "$ROOT/.git" ] || OUT_BASE="${FLUTTER_VITA_HOME:-$HOME/.flutter-vita}/out"
 HOST="${VITA_HOST:-fluttervita.local}"
 PORT="${DEV_PORT:-1339}"
-TOOL="$ROOT/out/vita-parse-core"
+TOOL="$OUT_BASE/vita-parse-core"
 # vita-parse-core imports elftools.common.py3compat, which pyelftools dropped.
 # Pinned rather than patched: the tool is vendored from a third party and a
 # local edit to it is a local edit nobody will remember making.
-VENV="${VPC_VENV:-$ROOT/out/vpc-venv}"
+VENV="${VPC_VENV:-$OUT_BASE/vpc-venv}"
 PYELFTOOLS=0.29
 
 ELF=""
@@ -78,8 +82,8 @@ fi
 if [ -z "$DUMP" ]; then
   read -r TS NAME < <(dumps | head -1)
   [ -n "${NAME:-}" ] || { echo "!! no dumps on the card" >&2; exit 1; }
-  mkdir -p "$ROOT/out/dumps"
-  DUMP="$ROOT/out/dumps/$NAME"
+  mkdir -p "$OUT_BASE/dumps"
+  DUMP="$OUT_BASE/dumps/$NAME"
   if [ -s "$DUMP" ]; then
     echo "==> $NAME already here"
   else
