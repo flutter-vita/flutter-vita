@@ -5,39 +5,77 @@ as a new platform. Flutter draws each frame with Skia on the console's GPU.
 
 ## Installation
 
-You need VitaSDK, CMake, and Python 3. You do not install Flutter. The first
-`flutter-vita` command downloads Flutter 3.47.7 for the tool's own use, one
-time (2.1 GB), and does not touch the Flutter you use for other projects
-([details](docs/install-macos.md#2-flutter-3477)). The version is pinned,
-because the prebuilt engine is built for it
-([docs/versions.md](docs/versions.md)).
-
 ### macOS
 
-On a Mac with Apple silicon, install the tool with Homebrew. The cask also
-installs CMake and Python 3. Homebrew does not have VitaSDK, so you install
-it yourself ([step 1](docs/install-macos.md#1-vitasdk)).
+On a Mac with Apple silicon:
 
-```sh
-brew install --cask flutter-vita/tap/flutter-vita
-```
+1. Install the tool with Homebrew. The cask also installs CMake and
+   Python 3.
 
-To change the tool, clone the repository, as on Linux. All steps:
+   ```sh
+   brew install --cask flutter-vita/tap/flutter-vita
+   ```
+
+2. Install VitaSDK. Homebrew does not have it.
+
+   ```sh
+   git clone https://github.com/vitasdk/vdpm ~/vdpm
+   cd ~/vdpm
+   export VITASDK="$HOME/vitasdk"
+   export PATH="$VITASDK/bin:$PATH"
+   export CMAKE_POLICY_VERSION_MINIMUM=3.5
+   ./bootstrap-vitasdk.sh
+   ./install-all.sh
+   ```
+
+   Add the `VITASDK` and `PATH` lines to your shell profile.
+
+3. Check the setup. The first run downloads Flutter 3.47.7 for the tool's
+   own use (2.1 GB).
+
+   ```sh
+   flutter-vita doctor
+   ```
+
+To change the tool, clone the repository as on Linux. All steps:
 [Install on macOS](docs/install-macos.md).
 
 ### Linux
 
-Clone the repository:
+1. Install CMake, Git, Python 3 and VitaSDK:
 
-```sh
-git clone --recurse-submodules https://github.com/flutter-vita/flutter-vita
-cd flutter-vita
-export PATH="$PWD/cli:$PATH"
-```
+   ```sh
+   sudo apt install cmake git python3 curl   # or your distribution's names
+   git clone https://github.com/vitasdk/vdpm ~/vdpm
+   cd ~/vdpm
+   export VITASDK="$HOME/vitasdk"
+   export PATH="$VITASDK/bin:$PATH"
+   export CMAKE_POLICY_VERSION_MINIMUM=3.5
+   ./bootstrap-vitasdk.sh
+   ./install-all.sh
+   ```
 
-You build the engine one time, because the prebuilt engine has
-`gen_snapshot` for macOS only. All steps:
-[Install on Linux](docs/install-linux.md).
+   Add the `VITASDK` and `PATH` lines to your shell profile.
+
+2. Clone the tool:
+
+   ```sh
+   git clone --recurse-submodules https://github.com/flutter-vita/flutter-vita
+   cd flutter-vita
+   export PATH="$PWD/cli:$PATH"
+   ```
+
+3. Build the engine one time, because the prebuilt engine has
+   `gen_snapshot` for macOS only ([Engine build](docs/dev-environment.md)).
+
+4. Check the setup. The first run downloads Flutter 3.47.7 for the tool's
+   own use (1.5 GB).
+
+   ```sh
+   flutter-vita doctor
+   ```
+
+All steps: [Install on Linux](docs/install-linux.md).
 
 ### Windows
 
