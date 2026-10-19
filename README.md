@@ -1,3 +1,5 @@
+<p align="center"><img src="docs/images/readme-banner.png" alt="flutter-vita" width="600"></p>
+
 # Flutter for the PlayStation Vita
 
 An unofficial port of Flutter to the PS Vita. It adds the PS Vita to Flutter

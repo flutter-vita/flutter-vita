@@ -23,6 +23,9 @@ dependencies:
 vita:
   title_id: FVTA00003
   name: Flutter Bridge
+  # The flutter-vita mark (docs/images/flutter-vita-mark.svg) as the bubble,
+  # the gate and the LiveArea background; apps keep the template's art.
+  livearea: vita/livearea
 
 flutter:
   uses-material-design: false
