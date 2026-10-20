@@ -146,20 +146,13 @@ static int next_entry(const unsigned char* cd, size_t cdlen, size_t* pos,
   return *pos <= cdlen ? 1 : -1;
 }
 
-static int has_prefix(const Entry* e, const char* prefix) {
-  const size_t n = strlen(prefix);
-  return e->name_len >= n && memcmp(e->name, prefix, n) == 0;
-}
 static int is_name(const Entry* e, const char* name) {
   const size_t n = strlen(name);
   return e->name_len == n && memcmp(e->name, name, n) == 0;
 }
 
-static int picked(const Entry* e, VpkPick pick) {
+static int picked(const Entry* e) {
   if (e->name_len == 0 || e->name[e->name_len - 1] == '/') return 0;  // a directory
-  const int art = is_name(e, "sce_sys/icon0.png") || has_prefix(e, "sce_sys/livearea/");
-  if (pick == VPK_ART) return art;
-  if (art) return 0;
   return !is_name(e, "eboot2.bin") && !is_name(e, "sce_sys/param2.sfo");
 }
 
@@ -358,8 +351,8 @@ static int extract_one(Extract* x, const Entry* e, char* dest, char* err,
   return rc;
 }
 
-int vpk_extract(const char* vpk, const char* root, VpkPick pick,
-                VpkProgress progress, void* ctx, char* err, size_t errcap) {
+int vpk_extract(const char* vpk, const char* root, VpkProgress progress,
+                void* ctx, char* err, size_t errcap) {
   if (err != NULL && errcap) err[0] = '\0';
   Extract x;
   memset(&x, 0, sizeof x);
@@ -381,7 +374,7 @@ int vpk_extract(const char* vpk, const char* root, VpkPick pick,
   size_t pos = 0;
   int r;
   while ((r = next_entry(cd, cdlen, &pos, &e)) == 1) {
-    if (picked(&e, pick)) x.total += e.usize;
+    if (picked(&e)) x.total += e.usize;
   }
   if (r < 0) {
     err_set(err, errcap, "bad central directory");
@@ -395,7 +388,7 @@ int vpk_extract(const char* vpk, const char* root, VpkPick pick,
   }
   pos = 0;
   while (rc == 0 && next_entry(cd, cdlen, &pos, &e) == 1) {
-    if (!picked(&e, pick)) continue;
+    if (!picked(&e)) continue;
     if (!safe_name(&e)) {
       err_set(err, errcap, "refusing entry name %.*s", (int)e.name_len, e.name);
       rc = -1;

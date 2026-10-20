@@ -140,17 +140,23 @@ else
   # `rmtree` is confined to ux0:data on the bridge side; see cmd_rmtree.
   say "$PORT" "rmtree $STAGE" 120 | sed 's/^/    /'
 
-  # The LiveArea art is staged nowhere and copied in after the promote.
+  # The LiveArea art goes into the package. The shell takes the bubble and the
+  # LiveArea out of the package at the promote; a copy into
+  # ux0:app/<id>/sce_sys afterwards changes nothing on screen. Measured
+  # 2026-10-20: the bridge's new art, copied in that way, left the old bubble
+  # and the default LiveArea (a white circle on the stock background), and so
+  # had every app installed by this script until then.
   #
-  # The promoter validates the three PNGs in sce_sys and answers 0x8010113D
-  # when they are not 8-bit indexed. On 2026-08-31 ours were 32-bit RGBA, so
-  # staging them failed and leaving them out passed, and this file blamed the
-  # header for it. On 2026-09-11 VitaShell, with its own header, refused the
-  # same art and accepted it re-encoded (tools/check-livearea-art.dart now
-  # refuses RGBA at build time). Staging the art with a valid encoding has not
-  # been measured on this path yet, so it still goes in afterwards, which works
-  # either way: the shell reads it out of ux0:app/<id>/sce_sys, not out of the
-  # package.
+  # Only the first promote of a title counts. A promote over an installed
+  # title keeps the LiveArea it had: the gallery got its row in tbl_livearea
+  # of ur0:shell/db/app.db only after a delete and a new install. A title
+  # installed before this change keeps the default until then.
+  # scePromoterUtilityUpdateLiveArea answered 0x80010015 to each layout tried.
+  #
+  # The promoter validates the three PNGs and answers 0x8010113D when they are
+  # not 8-bit indexed. On 2026-08-31 ours were 32-bit RGBA, so staging them
+  # failed and leaving them out passed, and this file blamed the header for it.
+  # tools/check-livearea-art.dart refuses RGBA at build time now.
   # The supervisor pair stays out too. PromotePkgWithRif answers 0x80101104
   # to a package that carries eboot2.bin and sce_sys/param2.sfo, and 0 to the
   # same package without them; measured 2026-09-11 on a fresh console, the
@@ -159,8 +165,7 @@ else
   # because FVTA00002 there predates the pair and only ever got `--replace`.
   echo "==> staging into $STAGE"
   ( cd "$WORK" && find . -type f | sed 's|^\./||' \
-      | grep -v -e '^sce_sys/icon0\.png$' -e '^sce_sys/livearea/' \
-                -e '^eboot2\.bin$' -e '^sce_sys/param2\.sfo$' | sort ) \
+      | grep -v -e '^eboot2\.bin$' -e '^sce_sys/param2\.sfo$' | sort ) \
     | while read -r rel; do put "$WORK/$rel" "$STAGE/$rel"; done
   say "$PORT" "ls $STAGE" 30 | sed 's/^/    /'
 
@@ -179,15 +184,6 @@ else
        exit 1 ;;
   esac
   say "$PORT" "exist $TITLE_ID" 30 | sed 's/^/    /'
-
-  ART="$( cd "$WORK" && find . -type f \
-      \( -name icon0.png -o -path './sce_sys/livearea/*' \) \
-      | sed 's|^\./||' | sort )"
-  if [ -n "$ART" ]; then
-    echo "==> livearea"
-    printf '%s\n' "$ART" \
-      | while read -r rel; do put "$WORK/$rel" "ux0:app/$TITLE_ID/$rel"; done
-  fi
 fi
 
 if [ "$LAUNCH" -eq 1 ]; then

@@ -1303,8 +1303,7 @@ static void install_run(void) {
   int removed = 0;
   rmtree(STAGE_DIR, 0, &removed);
   sceIoMkdir(STAGE_DIR, 0777);
-  if (vpk_extract(vpk, STAGE_DIR, VPK_STAGE, on_unpack, "unpacking", err,
-                  sizeof err) < 0) {
+  if (vpk_extract(vpk, STAGE_DIR, on_unpack, "unpacking", err, sizeof err) < 0) {
     install_failed("%s", err);
     g_install_busy = 0;
     return;
@@ -1347,15 +1346,6 @@ static void install_run(void) {
     install_failed("promote %s: 0x%08X", titleid, (unsigned)res);
     g_install_busy = 0;
     return;
-  }
-  // The shell reads the art out of ux0:app/<id>/sce_sys, not out of the
-  // package, so it goes in after. A failure here leaves a working title
-  // with a blank bubble, which is worth a note and not a failure.
-  char appdir[64];
-  snprintf(appdir, sizeof appdir, "ux0:app/%s", titleid);
-  set_status("Installing", "art for %s", titleid);
-  if (vpk_extract(vpk, appdir, VPK_ART, on_unpack, "art", err, sizeof err) < 0) {
-    note("livearea art: %s", err);
   }
   note("installed %s from %s", titleid, base);
   set_status("Waiting", NULL);

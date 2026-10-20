@@ -27,9 +27,8 @@ static void progress(void* ctx, const char* name, uint64_t done, uint64_t total)
 }
 int main(int argc, char** argv) {
   char err[160] = "";
-  if (argc == 5 && strcmp(argv[1], "extract") == 0) {
-    const int r = vpk_extract(argv[2], argv[3], strcmp(argv[4], "art") == 0 ? VPK_ART : VPK_STAGE,
-                              progress, NULL, err, sizeof err);
+  if (argc == 4 && strcmp(argv[1], "extract") == 0) {
+    const int r = vpk_extract(argv[2], argv[3], progress, NULL, err, sizeof err);
     if (r < 0) fprintf(stderr, "!! %s\n", err);
     return r < 0;
   }
@@ -44,7 +43,7 @@ int main(int argc, char** argv) {
     if (r < 0) fprintf(stderr, "!! %s\n", err);
     return r < 0;
   }
-  fprintf(stderr, "usage: extract <vpk> <dir> stage|art | titleid <sfo> | head <tmpl> <dst> <id>\n");
+  fprintf(stderr, "usage: extract <vpk> <dir> | titleid <sfo> | head <tmpl> <dst> <id>\n");
   return 2;
 }
 C
@@ -58,20 +57,15 @@ cc -std=gnu11 -Wall -Wextra -O1 ${SYSROOT:+-isysroot "$SYSROOT"} \
 fail=0
 for vpk in "$@"; do
   echo "==> $(basename "$vpk")"
-  rm -rf "$WORK/ref" "$WORK/stage" "$WORK/art"
+  rm -rf "$WORK/ref" "$WORK/stage"
   mkdir -p "$WORK/ref"
   unzip -q "$vpk" -d "$WORK/ref"
-  "$WORK/vpk" extract "$vpk" "$WORK/stage" stage 2>"$WORK/progress.txt"
-  "$WORK/vpk" extract "$vpk" "$WORK/art" art 2>/dev/null
-  # What install-vpk.sh stages, and what it copies in afterwards.
+  "$WORK/vpk" extract "$vpk" "$WORK/stage" 2>"$WORK/progress.txt"
+  # What install-vpk.sh stages: all but the supervisor pair, art included.
   ( cd "$WORK/ref" && find . -type f | sed 's|^\./||' \
-      | grep -v -e '^sce_sys/icon0\.png$' -e '^sce_sys/livearea/' \
-                -e '^eboot2\.bin$' -e '^sce_sys/param2\.sfo$' | sort ) > "$WORK/want-stage.txt"
-  ( cd "$WORK/ref" && find . -type f \( -path './sce_sys/icon0.png' -o -path './sce_sys/livearea/*' \) \
-      | sed 's|^\./||' | sort ) > "$WORK/want-art.txt"
+      | grep -v -e '^eboot2\.bin$' -e '^sce_sys/param2\.sfo$' | sort ) > "$WORK/want-stage.txt"
   ( cd "$WORK/stage" && find . -type f | sed 's|^\./||' | sort ) > "$WORK/got-stage.txt"
-  ( cd "$WORK/art" 2>/dev/null && find . -type f | sed 's|^\./||' | sort ) > "$WORK/got-art.txt" || true
-  for which in stage art; do
+  for which in stage; do
     if ! diff -q "$WORK/want-$which.txt" "$WORK/got-$which.txt" >/dev/null; then
       echo "!! $which: the file list differs from unzip's"; diff "$WORK/want-$which.txt" "$WORK/got-$which.txt" | head; fail=1
     fi
