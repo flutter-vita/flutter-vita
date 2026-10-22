@@ -14,8 +14,7 @@ dependencies:
     sdk: flutter
   cross_file: ^0.3.3
   file_selector_platform_interface: ^2.6.0
-  vita_file_browser:
-    path: ../../packages/vita_file_browser
+  vita_file_browser: ^0.1.0
 
 # The Vita implementation, declared the way every Dart platform implementation
 # is. flutter-vita build reads `platforms.vita.dartPluginClass` from each
