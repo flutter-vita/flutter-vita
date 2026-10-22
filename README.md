@@ -207,7 +207,7 @@ dependencies:
     git:
       url: https://github.com/flutter-vita/flutter-vita.git
       path: plugins/path_provider_vita
-      ref: 3.47.7-vita.1.0.3
+      ref: 3.47.7-vita.1.0.4
 ```
 
 ## Console setup
