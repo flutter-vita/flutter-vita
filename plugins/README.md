@@ -28,14 +28,16 @@ generates the plugin registrant from the package's
 An app outside this repository takes a package from git, with the tool's
 release as `ref`. See
 [Add the PS Vita to your app](../README.md#add-the-ps-vita-to-your-app). The
-samples use path dependencies, `../../plugins/<name>`. Two limits:
+samples use path dependencies, `../../plugins/<name>`.
 
-- `file_picker_vita` and `file_selector_vita` work only as path
-  dependencies. They need `vita_file_browser` from the `packages/`
-  submodule, and pub does not get submodules from git.
-- With 3.47.7-vita.1.0.3, do not add `path_provider_vita` beside
-  `shared_preferences_vita`. `shared_preferences_vita` brings it, and pub
-  refuses the second copy. Later releases accept both.
+Two limits apply to `ref: 3.47.7-vita.1.0.3`. Later releases do not have
+them:
+
+- `file_picker_vita` and `file_selector_vita` do not resolve from git. They
+  take `vita_file_browser` from the `packages/` submodule, and pub does not
+  get submodules. Later releases take it from pub.dev.
+- Do not add `path_provider_vita` beside `shared_preferences_vita`.
+  `shared_preferences_vita` brings it, and pub refuses the second copy.
 
 Publication to pub.dev is planned. The names stay.
 
