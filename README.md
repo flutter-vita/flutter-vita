@@ -110,16 +110,15 @@ Windows is not supported yet.
 
    Each app needs its own title id. The tool uses `FVTA` for its own titles.
 
-2. Add `flutter_vita` to `pubspec.yaml`, and call `FlutterVita.configure`
-   before `runApp`. The call sets how the app works on the console. Each
-   argument is optional. On other platforms the call does nothing.
+2. Add the `flutter_vita` package, and call `FlutterVita.configure` before
+   `runApp`. The call sets how the app works on the console. Each argument
+   is optional. On other platforms the call does nothing.
 
-   ```yaml
-   dependencies:
-     flutter_vita:
-       git:
-         url: https://github.com/flutter-vita/flutter-vita-packages.git
-         path: flutter_vita
+   ```sh
+   # Go to the app folder.
+   cd my_app
+   # Add flutter_vita from pub.dev.
+   flutter pub add flutter_vita
    ```
 
    ```dart
@@ -148,8 +147,8 @@ Windows is not supported yet.
    }
    ```
 
-   [flutter_vita](https://github.com/flutter-vita/flutter-vita-packages/tree/master/flutter_vita)
-   gives all the values of each argument.
+   [flutter_vita on pub.dev](https://pub.dev/packages/flutter_vita) gives
+   all the values of each argument.
 
 3. Check for the console in your code. The console runs Dart's Linux build,
    so `Platform.isLinux` is true there too. Check `FlutterVita.isPSVita`

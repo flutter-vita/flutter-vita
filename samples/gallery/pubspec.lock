@@ -918,7 +918,7 @@ packages:
     source: path
     version: "0.1.0"
   vita_file_browser:
-    dependency: transitive
+    dependency: "direct overridden"
     description:
       path: "../../packages/vita_file_browser"
       relative: true

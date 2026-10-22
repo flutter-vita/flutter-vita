@@ -9,10 +9,7 @@ D-pad, two sticks, a rear touch panel and no other app to share with. The
 ```yaml
 # pubspec.yaml
 dependencies:
-  flutter_vita:
-    git:
-      url: https://github.com/flutter-vita/flutter-vita-packages.git
-      path: flutter_vita
+  flutter_vita: ^0.1.0
 ```
 
 ```dart

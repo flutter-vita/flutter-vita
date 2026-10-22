@@ -78,3 +78,9 @@ flutter:
     # The same three seconds with a black 320x240 video track, in case the
     # player wants a video track before it plays anything.
     - assets/hardware/tone.mp4
+
+# flutter_vita takes vita_file_browser from pub.dev. The gallery tests the
+# packages in this tree, so it takes the local copy.
+dependency_overrides:
+  vita_file_browser:
+    path: ../../packages/vita_file_browser
