@@ -51,6 +51,8 @@ FLUTTER="$(field "v['flutter']")"
 re="^${FLUTTER//./\\.}-vita\\.[0-9]+\\.[0-9]+\\.[0-9]+\$"
 [[ "$TAG" =~ $re ]] || die "the tag is $FLUTTER-vita.X.Y.Z, for example $FLUTTER-vita.1.0.0"
 command -v gh >/dev/null || die "needs the GitHub CLI (gh), signed in"
+# The Bridge build comes after the tag: without VitaSDK it stops there.
+[ -n "${VITASDK:-}" ] || die "the Bridge build needs VITASDK. See docs/dev-environment.md"
 WORK="$(mktemp -d "${TMPDIR:-/tmp}/fv-publish-release.XXXXXX")"
 
 echo "==> checks"

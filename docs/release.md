@@ -238,9 +238,15 @@ The cask is `Casks/flutter-vita.rb` in
 [flutter-vita/homebrew-tap](https://github.com/flutter-vita/homebrew-tap). It
 downloads `flutter-vita-<tag>.tar.gz` from the tool release, and it links
 `flutter-vita/cli/flutter-vita` into Homebrew's `bin`. It depends on
-`cmake`. Release 3.47.7-vita.1.0.2 also needed `python@3.15`; the tool needs
-no Python since `99cc13a`, so the next release removes that dependency. VitaSDK
-is not in Homebrew, so the cask tells the user to install it.
+`cmake`. Release 3.47.7-vita.1.0.2 also needed `python@3.15`. The tool needs
+no Python since `99cc13a`, and the cask has no Python dependency since
+3.47.7-vita.1.0.3. VitaSDK is not in Homebrew, so the cask tells the user to
+install it.
+
+Homebrew 7 loads a cask from a tap only when you trust the cask. An install by
+the full name `flutter-vita/tap/flutter-vita` adds the cask to the trusted
+list, so a later `brew upgrade` finds it. We tested this on 2026-10-22 with
+Homebrew 7.0.10.
 
 It is a cask, not a formula. Homebrew does not install a formula without a
 prebuilt bottle while the selected Xcode is older than the current one. Our
