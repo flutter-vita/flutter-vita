@@ -160,11 +160,22 @@ fi
 #
 # `|| true` is load-bearing: grep exits 1 on no match and `set -o pipefail`
 # propagates that, so without it a pubspec lacking `title_id` kills the script.
+#
+# A value in quotes ends at its closing quote. Outside quotes, ` #` starts a
+# comment, as in YAML: `title_id: MYAP00001 # my id` is MYAP00001.
+yaml_value() {  # <raw text after the colon>
+  local v="$1"
+  case "$v" in
+    \"*) v="${v#\"}"; v="${v%%\"*}" ;;
+    \'*) v="${v#\'}"; v="${v%%\'*}" ;;
+    *) v="$(printf '%s' "$v" | sed 's/[[:space:]]\{1,\}#.*//')" ;;
+  esac
+  printf '%s' "$v" | sed 's/[[:space:]]*$//' | tr -d "\"'"
+}
 vita_key() {
-  sed -n '/^vita:[[:space:]]*$/,/^[^[:space:]#]/p' "$APP_DIR/pubspec.yaml" \
+  yaml_value "$(sed -n '/^vita:[[:space:]]*$/,/^[^[:space:]#]/p' "$APP_DIR/pubspec.yaml" \
     | grep -m1 "^[[:space:]]\+$1:" \
-    | sed "s/^[[:space:]]*$1:[[:space:]]*//; s/[[:space:]]*$//" \
-    | tr -d "\"'" || true
+    | sed "s/^[[:space:]]*$1:[[:space:]]*//" || true)"
 }
 HAS_VITA_BLOCK=0
 if grep -q '^vita:[[:space:]]*$' "$APP_DIR/pubspec.yaml"; then HAS_VITA_BLOCK=1; fi
@@ -185,7 +196,7 @@ fi
 # The package name and the display name are different things and only one of
 # them is safe in a path. `vita.name: Counter Demo` is correct as a LiveArea
 # title and produces "Counter Demo.vpk" if it also names the file.
-PKG_NAME="$(grep -m1 '^name:' "$APP_DIR/pubspec.yaml" | sed 's/^name: *//' | tr -d "\"'")"
+PKG_NAME="$(yaml_value "$(grep -m1 '^name:' "$APP_DIR/pubspec.yaml" | sed 's/^name: *//')")"
 
 # Derive a title id from the package name when the app opted in but did not pick
 # one. Deterministic, so the same app always lands in the same slot and
