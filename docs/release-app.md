@@ -63,8 +63,12 @@ vita:
 
 (or `--livearea DIR` on `tools/build-vita-app.sh`). The build checks the
 three files with `tools/check-livearea-art.dart` and stops on a wrong size or
-format; `tools/make-livearea.py` is the script that drew the default set
-and a starting point for your own.
+format. The default set is the flutter-vita mark
+([docs/images/flutter-vita-mark.svg](images/flutter-vita-mark.svg)).
+
+The shell takes the three files out of the package at the first install of a
+title only. To see new art on a title that is already installed, delete the
+title on the console and install it again.
 
 ## 4. What the user needs
 
