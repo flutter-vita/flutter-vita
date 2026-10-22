@@ -292,6 +292,8 @@ s, a = re.subn(r'^(  version )"[^"]*"', rf'\1"{tag}"', s, count=1, flags=re.M)
 s, b = re.subn(r'^(  sha256 )"[^"]*"', rf'\1"{sha}"', s, count=1, flags=re.M)
 if (a, b) != (1, 1):
     sys.exit(f"no version or sha256 line in {path}")
+# The tool needs no Python since 99cc13a, so the cask stops installing one.
+s = re.sub(r'^  depends_on formula: "python@[^"]*"\n', "", s, flags=re.M)
 open(path, "w").write(s)
 EOF
     git -C "$WORK/tap" commit -q -am "flutter-vita $TAG"

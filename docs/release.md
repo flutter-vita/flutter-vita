@@ -134,7 +134,8 @@ The script does these steps:
 8. It makes the GitHub releases: the embedder release, then the tool release
    with `flutter-vita-bridge-<tag>.vpk` and `flutter-vita-<tag>.tar.gz`. With
    `--prerelease`, both releases get the pre-release mark.
-9. It sets the tag and the sha256 of the archive in the cask, and pushes
+9. It sets the tag and the sha256 of the archive in the cask, removes a
+   `python@` dependency if one is still there, and pushes
    flutter-vita/homebrew-tap. It does not do this step for a pre-release, or
    when the repository does not exist. See [The Homebrew cask](#the-homebrew-cask).
 
@@ -236,9 +237,10 @@ brew install --cask flutter-vita/tap/flutter-vita
 The cask is `Casks/flutter-vita.rb` in
 [flutter-vita/homebrew-tap](https://github.com/flutter-vita/homebrew-tap). It
 downloads `flutter-vita-<tag>.tar.gz` from the tool release, and it links
-`flutter-vita/cli/flutter-vita` into Homebrew's `bin`. It depends on `cmake`
-and `python@3.15`. VitaSDK is not in Homebrew, so the cask tells the user to
-install it.
+`flutter-vita/cli/flutter-vita` into Homebrew's `bin`. It depends on
+`cmake`. Release 3.47.7-vita.1.0.2 also needed `python@3.15`; the tool needs
+no Python since `99cc13a`, so the next release removes that dependency. VitaSDK
+is not in Homebrew, so the cask tells the user to install it.
 
 It is a cask, not a formula. Homebrew does not install a formula without a
 prebuilt bottle while the selected Xcode is older than the current one. Our
