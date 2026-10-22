@@ -13,8 +13,6 @@ dependencies:
   flutter:
     sdk: flutter
   shared_preferences_platform_interface: ^2.4.0
-  path_provider_vita:
-    path: ../path_provider_vita
 
 # The Vita implementation, declared the way every Dart platform implementation
 # is. flutter-vita build reads `platforms.vita.dartPluginClass` from each

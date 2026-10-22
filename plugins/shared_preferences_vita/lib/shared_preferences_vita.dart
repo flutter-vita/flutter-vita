@@ -1,7 +1,6 @@
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:path_provider_vita/path_provider_vita.dart';
 import 'package:shared_preferences_platform_interface/shared_preferences_platform_interface.dart';
 
 /// The Vita implementation of [SharedPreferencesStorePlatform].
@@ -27,9 +26,18 @@ class SharedPreferencesVita extends SharedPreferencesStorePlatform {
   Map<String, Object>? _cache;
   File? _file;
 
+  /// The same folder as path_provider_vita's `getApplicationSupportPath`:
+  /// `ux0:data/<TITLEID>/support`. Computed here, not imported, so an app can
+  /// take both plugins from git: pub refuses a plugin that one package
+  /// requests by tag and another by relative path.
   Future<File> _storeFile() async {
-    final support = await PathProviderVita().getApplicationSupportPath();
-    return _file ??= File('$support/$_fileName');
+    if (_file != null) return _file!;
+    final temp = Directory.systemTemp.path; // ux0:data/<TITLEID>/tmp
+    final slash = temp.lastIndexOf('/');
+    final root = slash > 0 ? temp.substring(0, slash) : 'ux0:data/FLUTTER';
+    final support = Directory('$root/support');
+    if (!support.existsSync()) await support.create(recursive: true);
+    return _file = File('${support.path}/$_fileName');
   }
 
   /// Read once, then serve from memory.
