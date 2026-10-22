@@ -89,36 +89,30 @@ Windows is not supported yet.
 
 ## Add the PS Vita to your app
 
-1. Add a `vita:` block to `pubspec.yaml`:
+1. Add a `vita:` block to `pubspec.yaml`. Put it at the top level, as
+   `dependencies:` and `flutter:` are:
 
    ```yaml
-   vita:
-     title_id: MYAP00001
-     name: My App
-   ```
+   name: my_app
 
-   The title id is four capital letters and five digits. Each app needs its
-   own id. Do not use `FVTA`: the tool uses it for its own titles.
-
-2. For each plugin with native code, add its Vita package. Set `ref` to the
-   release of your tool, which `flutter-vita --version` shows:
-
-   ```yaml
    dependencies:
-     path_provider: ^2.1.0
-     path_provider_vita:
-       git:
-         url: https://github.com/flutter-vita/flutter-vita.git
-         path: plugins/path_provider_vita
-         ref: 3.47.7-vita.1.0.3
+     flutter:
+       sdk: flutter
+
+   flutter:
+     uses-material-design: true
+
+   # Add this block. It has no indent.
+   vita:
+     title_id: MYAP00001 # Four capital letters and five digits. Do not use FVTA.
+     name: My App        # The name under the app's bubble.
    ```
 
-   [plugins/](plugins/README.md) lists the Vita packages. A package with
-   only Dart code needs nothing.
+   Each app needs its own title id. The tool uses `FVTA` for its own titles.
 
-3. Optional: connect the D-pad and the rear touch panel. Add `flutter_vita`,
-   and call `FlutterVita.configure` before `runApp`. On other platforms the
-   call does nothing.
+2. Add `flutter_vita` to `pubspec.yaml`, and call `FlutterVita.configure`
+   before `runApp`. The call sets how the app works on the console. Each
+   argument is optional. On other platforms the call does nothing.
 
    ```yaml
    dependencies:
@@ -129,12 +123,47 @@ Windows is not supported yet.
    ```
 
    ```dart
+   import 'package:flutter/material.dart';
    import 'package:flutter_vita/flutter_vita.dart';
 
    void main() async {
      WidgetsFlutterBinding.ensureInitialized();
-     await FlutterVita.configure(pad: PadMode.focus, rearTouch: RearTouch.scroll);
+     await FlutterVita.configure(
+       pad: PadMode.focus,              // The D-pad and the left stick move the focus. X presses.
+       rearTouch: RearTouch.scroll,     // A finger on the rear panel scrolls.
+       pixelRatio: 1.5,                 // Larger text and buttons. 0.5 to 3.0, default 1.0.
+       cpuClock: CpuClock.normal,       // high: 444 MHz. More frames, less battery.
+       keepAwake: true,                 // The screen does not dim, and the console does not sleep.
+       watchdog: true,                  // After a long stall, the console goes back to the Bridge.
+       debugStrip: DebugStrip.shortcut, // The debug strip. L+R+SELECT shows it. Debug builds only.
+       onExit: ExitBehaviour.auto,      // What SystemNavigator.pop() does.
+       psButton: PsButton.system,       // locked: the PS button does nothing while the app runs.
+       fallbacks: {                     // Answers for phone plugins that have no Vita side.
+         Fallback.share,                // share_plus: saves to ux0:data/<title id>/shared/.
+         Fallback.urlLauncher,          // url_launcher: opens the console's browser.
+         Fallback.imagePicker,          // image_picker: opens a file browser.
+       },
+     );
      runApp(const MyApp());
+   }
+   ```
+
+   [flutter_vita](https://github.com/flutter-vita/flutter-vita-packages/tree/master/flutter_vita)
+   gives all the values of each argument.
+
+3. Check for the console in your code. The console runs Dart's Linux build,
+   so `Platform.isLinux` is true there too. Check `FlutterVita.isPSVita`
+   first:
+
+   ```dart
+   import 'dart:io';
+
+   import 'package:flutter_vita/flutter_vita.dart';
+
+   String platformName() {
+     if (FlutterVita.isPSVita) return 'PS Vita'; // Check this before isLinux.
+     if (Platform.isLinux) return 'Linux';
+     return Platform.operatingSystem;
    }
    ```
 
@@ -142,22 +171,45 @@ Windows is not supported yet.
    system fonts, and the tool adds only Roboto and Roboto Mono. If no font
    has a character, for example an emoji, the app shows an empty box.
 
-5. Start the Bridge on the console (see [Console setup](#console-setup)).
-   Then run the app from its folder:
+5. Start Flutter Bridge on the console (see [Console setup](#console-setup)).
+   Then run the app:
 
    ```sh
+   # Go to the app folder.
+   cd my_app
+   # Build the app, install it on the console and start it. The log follows.
    flutter-vita run .
    ```
 
 6. Build the release `.vpk`:
 
    ```sh
+   # Go to the app folder.
+   cd my_app
+   # Build the release file: build/vita/my_app.vpk.
    flutter-vita build . --release
    ```
 
-   The file is `build/vita/<package name>.vpk`. Users install it with
-   VitaShell. For your own LiveArea art, see
-   [Release an app](docs/release-app.md).
+   Copy the `.vpk` to the console, and install it with VitaShell. For your
+   own LiveArea art, see [Release an app](docs/release-app.md).
+
+### Plugins with native code
+
+A plugin with native code needs its Vita package beside it. A package with
+only Dart code needs nothing. [plugins/](plugins/README.md) lists the Vita
+packages.
+
+```yaml
+dependencies:
+  path_provider: ^2.1.0
+  # The Vita side of path_provider. Set ref to your tool's release:
+  # flutter-vita --version shows it.
+  path_provider_vita:
+    git:
+      url: https://github.com/flutter-vita/flutter-vita.git
+      path: plugins/path_provider_vita
+      ref: 3.47.7-vita.1.0.3
+```
 
 ## Console setup
 
