@@ -25,7 +25,18 @@ generates the plugin registrant from the package's
 | `shared_preferences_vita` | `shared_preferences` | Dart only: a file under the app's data directory |
 | `url_launcher_vita` | `url_launcher` | The embedder's `vita/browser` channel: the console's browser |
 
-These are path dependencies today: `../../plugins/<name>` from a sample.
+An app outside this repository takes a package from git, with the tool's
+release as `ref`. See
+[Add the PS Vita to your app](../README.md#add-the-ps-vita-to-your-app). The
+samples use path dependencies, `../../plugins/<name>`. Two limits:
+
+- `file_picker_vita` and `file_selector_vita` work only as path
+  dependencies. They need `vita_file_browser` from the `packages/`
+  submodule, and pub does not get submodules from git.
+- With 3.47.7-vita.1.0.3, do not add `path_provider_vita` beside
+  `shared_preferences_vita`. `shared_preferences_vita` brings it, and pub
+  refuses the second copy. Later releases accept both.
+
 Publication to pub.dev is planned. The names stay.
 
 The project's own packages, with an API of their own, are in

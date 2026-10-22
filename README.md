@@ -82,6 +82,78 @@ All steps: [Install on Linux](docs/install-linux.md).
 
 Windows is not supported yet.
 
+## Add the PS Vita to your app
+
+1. Add a `vita:` block to `pubspec.yaml`:
+
+   ```yaml
+   vita:
+     title_id: MYAP00001
+     name: My App
+   ```
+
+   The title id is four capital letters and five digits. Each app needs its
+   own id. Do not use `FVTA`: the tool uses it for its own titles.
+
+2. For each plugin with native code, add its Vita package. Set `ref` to the
+   release of your tool, which `flutter-vita --version` shows:
+
+   ```yaml
+   dependencies:
+     path_provider: ^2.1.0
+     path_provider_vita:
+       git:
+         url: https://github.com/flutter-vita/flutter-vita.git
+         path: plugins/path_provider_vita
+         ref: 3.47.7-vita.1.0.3
+   ```
+
+   [plugins/](plugins/README.md) lists the Vita packages. A package with
+   only Dart code needs nothing.
+
+3. Optional: connect the D-pad and the rear touch panel. Add `flutter_vita`,
+   and call `FlutterVita.configure` before `runApp`. On other platforms the
+   call does nothing.
+
+   ```yaml
+   dependencies:
+     flutter_vita:
+       git:
+         url: https://github.com/flutter-vita/flutter-vita-packages.git
+         path: flutter_vita
+   ```
+
+   ```dart
+   import 'package:flutter_vita/flutter_vita.dart';
+
+   void main() async {
+     WidgetsFlutterBinding.ensureInitialized();
+     await FlutterVita.configure(pad: PadMode.focus, rearTouch: RearTouch.scroll);
+     runApp(const MyApp());
+   }
+   ```
+
+4. Add your fonts under `fonts:` in `pubspec.yaml`. The console has no
+   system fonts, and the tool adds only Roboto and Roboto Mono. If no font
+   has a character, for example an emoji, the app shows an empty box.
+
+5. Start the Bridge on the console (see [Console setup](#console-setup)).
+   Then run the app from its folder:
+
+   ```sh
+   flutter-vita run .
+   ```
+
+6. Build the release `.vpk`:
+
+   ```sh
+   flutter-vita build . --release
+   ```
+
+   The file is `build/vita/<package name>.vpk`. Users install it with
+   VitaShell. For your own LiveArea art, see
+   [Release an app](docs/release-app.md).
+
 ## Console setup
 
 You do these steps one time. [Console setup](docs/configure-console.md)
@@ -140,9 +212,7 @@ flutter-vita tap 480 272
 ```
 
 - See [Commands](docs/commands.md) for all commands.
-- See [Get started](docs/get-started.md) for the first run. Before you run
-  your own app, read its [three notes](docs/get-started.md#2-run-your-own-app):
-  the title id, fonts and plugins.
+- See [Get started](docs/get-started.md) for the first run.
 - The first build takes about a minute.
 
 ## How it works
