@@ -32,6 +32,20 @@ The package README lists each argument and its values:
 
 On a desktop or a phone the call does nothing. Keep one `main`.
 
+## Is this the console?
+
+The console runs Dart's Linux build. `Platform.isLinux` and
+`TargetPlatform.linux` are true there too. Check `FlutterVita.isPSVita`
+before you take a Linux path:
+
+```dart
+if (FlutterVita.isPSVita) {
+  // The PS Vita.
+} else if (Platform.isLinux) {
+  // A Linux desktop.
+}
+```
+
 ## What the call controls, and what the build controls
 
 | Decided by `FlutterVita.configure` at run time | Decided by the build |

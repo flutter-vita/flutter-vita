@@ -30,7 +30,7 @@ Any Flutter app directory works:
 flutter-vita run ~/projects/my_app
 ```
 
-Three things are worth knowing before the first run.
+Four things are worth knowing before the first run.
 
 **The title id.** Every Vita title has a nine-character id: four capital
 letters and five digits. The id sets the app's slot on the console:
@@ -52,6 +52,13 @@ vita:
 `Roboto Mono` ship with every app; anything else, emoji included, goes
 under `fonts:` in `pubspec.yaml`, as on every other Flutter target. An app
 that shows an emoji without a font for it draws an empty box.
+
+**flutter_vita.** Add the [flutter_vita](https://pub.dev/packages/flutter_vita)
+package from pub.dev with `flutter pub add flutter_vita`. One call to
+`FlutterVita.configure` before `runApp` sets the pad, the rear touch panel
+and the pixel ratio ([Configure the app](configure-app.md)). The console
+runs Dart's Linux build, so `Platform.isLinux` is true there too. Check
+`FlutterVita.isPSVita` first.
 
 **Plugins.** A plugin with native code needs a Vita implementation. The
 ones in [`plugins/`](../plugins) cover `path_provider`,
