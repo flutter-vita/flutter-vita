@@ -21,7 +21,8 @@
 #                                       submodule moved since its last tag
 #   flutter-vita/homebrew-tap           the cask at <tag>, when the repository
 #                                       exists and this is not a pre-release
-# The packages go to pub.dev on their own, never from here.
+# The packages go to pub.dev with `dart pub publish`, never from here:
+# docs/release.md, "A package release".
 set -euo pipefail
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
@@ -36,12 +37,12 @@ while [ $# -gt 0 ]; do
   case "$1" in
     --dry-run) DRY=1; shift ;;
     --prerelease) PRE="--prerelease"; shift ;;
-    -h|--help) sed -n '2,24p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    -h|--help) sed -n '2,25p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
     -*) echo "unknown option: $1" >&2; exit 2 ;;
     *) [ -z "$TAG" ] || { echo "one tag only" >&2; exit 2; }; TAG="$1"; shift ;;
   esac
 done
-[ -n "$TAG" ] || { sed -n '2,24p' "$0" | sed 's/^# \{0,1\}//'; exit 2; }
+[ -n "$TAG" ] || { sed -n '2,25p' "$0" | sed 's/^# \{0,1\}//'; exit 2; }
 
 die() { echo "!! $*" >&2; exit 1; }
 field() {  # a Python expression over v, the parsed versions.json

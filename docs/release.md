@@ -21,7 +21,7 @@ You need the GitHub CLI (`gh`), signed in with write access to the
 | **Engine release** | [flutter-vita/flutter](https://github.com/flutter-vita/flutter/releases) | The first eight characters of the engine commit, for example `059e1168` | `flutter-engine-vita-<flutter>-<tag>.tar.gz` | `publish-engine.sh` |
 | **Tool release** | [flutter-vita/flutter-vita](https://github.com/flutter-vita/flutter-vita/releases) | `<flutter>-vita.<X.Y.Z>`, for example `3.47.7-vita.1.0.0` | `flutter-vita-bridge-<tag>.vpk` and `flutter-vita-<tag>.tar.gz` | `publish-release.sh` |
 | Embedder tag | [flutter-vita/flutter-vita-embedder](https://github.com/flutter-vita/flutter-vita-embedder/releases) | The same tag as the tool release | None. Apps compile the embedder from source | `publish-release.sh`, only when the submodule moved |
-| Packages | [flutter-vita/flutter-vita-packages](https://github.com/flutter-vita/flutter-vita-packages) | `<name>-v<semver>` | Published on pub.dev | None. Each package goes to pub.dev on its own |
+| Packages | [flutter-vita/flutter-vita-packages](https://github.com/flutter-vita/flutter-vita-packages) | `<name>-v<semver>`, for example `flutter_vita-v0.1.1` | The package on pub.dev | None. `dart pub publish`, see [A package release](#a-package-release) |
 | Homebrew cask | [flutter-vita/homebrew-tap](https://github.com/flutter-vita/homebrew-tap) | None. A commit sets the version and the sha256 | `Casks/flutter-vita.rb` | `publish-release.sh`, after each tool release that is not a pre-release |
 
 **The engine release always comes first.** `versions.json` names an engine
@@ -225,6 +225,57 @@ The test passes when all of these are true:
 
 If one check fails, make a fix release with a higher `Z`. Do not change the
 published release.
+
+## A package release
+
+Two packages are on pub.dev: [flutter_vita](https://pub.dev/packages/flutter_vita)
+and [vita_file_browser](https://pub.dev/packages/vita_file_browser). The
+other packages and the plugins in `plugins/` are not published. Publish a
+package only when the owner asks for that package and that version.
+
+1. Sign in to pub.dev one time on this computer:
+
+   ```sh
+   dart pub login
+   ```
+
+   The browser opens the Google sign-in. The uploader is that Google
+   account.
+
+2. In `packages/` (flutter-vita-packages), set the new version in
+   `<name>/pubspec.yaml`, and add a section to `<name>/CHANGELOG.md`.
+   Increase Z for a fix or a text change, and Y for a new API. Commit and
+   push.
+
+3. Do a dry run from a clean tree. It must show 0 warnings:
+
+   ```sh
+   cd packages/flutter_vita
+   dart pub publish --dry-run
+   ```
+
+4. Publish. Then tag the commit, and push the tag:
+
+   ```sh
+   dart pub publish
+   git tag -a flutter_vita-v0.1.1 -m "flutter_vita 0.1.1"
+   git push origin flutter_vita-v0.1.1
+   ```
+
+5. In this repository, commit the new submodule commit, for example
+   `packages: flutter_vita 0.1.1`.
+
+`flutter_vita` takes `vita_file_browser` from pub.dev. If a change in
+`flutter_vita` needs a new `vita_file_browser`, publish `vita_file_browser`
+first. Then raise the constraint in `flutter_vita`.
+
+pub.dev does not delete a version. You can only mark a package as
+discontinued, or retract a version in its first seven days. Thus do the dry
+run first, and read its file list.
+
+In this tree, the gallery takes `vita_file_browser` from `packages/` with
+`dependency_overrides`, so it tests the local copy. `flutter_vita`,
+`file_picker_vita` and `file_selector_vita` take it from pub.dev.
 
 ## The Homebrew cask
 
