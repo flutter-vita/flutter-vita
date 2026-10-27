@@ -66,7 +66,8 @@ check() {
 
 if [ "$MODE" = check ]; then check; exit 0; fi
 
-: "${VITASDK:?Define VITASDK. See docs/dev-environment.md}"
+VITASDK="$("$HERE/vitasdk.sh")" || exit 1
+export VITASDK
 command -v gh >/dev/null || die "needs the GitHub CLI (gh), signed in"
 
 # What is published is the fork's HEAD, and only once that commit is on the

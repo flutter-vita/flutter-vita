@@ -82,8 +82,9 @@ sample() {
 
 echo
 echo "== resolved"
-NM="${VITASDK:-$HOME/vitasdk}/bin/arm-vita-eabi-nm"
-A2L="${VITASDK:-$HOME/vitasdk}/bin/arm-vita-eabi-addr2line"
+SDK_DIR="$("$(dirname "$0")/vitasdk.sh" --find)"
+NM="$SDK_DIR/bin/arm-vita-eabi-nm"
+A2L="$SDK_DIR/bin/arm-vita-eabi-addr2line"
 ELF_ANCHOR="$("$NM" "$ELF" | grep -i 'BuildDiag' | head -1 | awk '{print $1}')"
 [ -n "$ELF_ANCHOR" ] || { echo "!! no BuildDiag in $ELF -- wrong binary?" >&2; exit 1; }
 

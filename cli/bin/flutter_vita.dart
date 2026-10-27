@@ -110,9 +110,12 @@ Future<int> _doctor(Map<String, String> opts) async {
     ok = ok && passed;
   }
 
-  final vitasdk = Platform.environment['VITASDK'];
-  check('VITASDK', vitasdk != null && Directory(vitasdk).existsSync(),
-      'export VITASDK=\$HOME/vitasdk — see docs/dev-environment.md');
+  // VITASDK, or the VitaSDK that tools/vitasdk.sh finds. On the first run it
+  // installs the release in versions.json, as the launcher does with Flutter.
+  final vitasdk = await _vitasdk();
+  check('VitaSDK', vitasdk != null,
+      'install it from https://vitasdk.org, and set VITASDK to its folder');
+  if (vitasdk != null) stdout.writeln('       $vitasdk');
 
   final engine = _engineDir();
   check(
@@ -412,6 +415,22 @@ Future<bool> _localNetworkBlocked() async {
   // The router is the one LAN host almost certain to exist and answer.
   return !await reachable('$subnet.1', 80) &&
       !await reachable('$subnet.1', 443);
+}
+
+/// VitaSDK's folder from tools/vitasdk.sh, which installs it when no VitaSDK
+/// is found. Its progress goes straight to the terminal.
+Future<String?> _vitasdk() async {
+  final String script;
+  try {
+    script = requireScript('vitasdk.sh');
+  } on MissingDependency {
+    return null;
+  }
+  final p = await Process.start('bash', [script]);
+  final done = p.stderr.listen(stderr.add).asFuture<void>();
+  final out = (await p.stdout.transform(utf8.decoder).join()).trim();
+  await done;
+  return await p.exitCode == 0 && out.isNotEmpty ? out : null;
 }
 
 String _engineDir() => engineDir();

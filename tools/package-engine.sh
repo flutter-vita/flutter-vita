@@ -29,8 +29,8 @@ while [ $# -gt 0 ]; do
   esac
 done
 
-: "${VITASDK:?Define VITASDK. See docs/dev-environment.md}"
-export PATH="$VITASDK/bin:$PATH"
+VITASDK="$("$HERE/vitasdk.sh")" || exit 1
+export VITASDK PATH="$VITASDK/bin:$PATH"
 
 [ -d "$ENGINE_OUT/obj" ] || { echo "No engine build at $ENGINE_OUT" >&2; exit 1; }
 

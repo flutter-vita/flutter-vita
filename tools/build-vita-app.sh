@@ -123,8 +123,9 @@ APP_DIR="$(cd "$APP_DIR" && pwd)"
 [ -f "$APP_DIR/pubspec.yaml" ] || { echo "No pubspec.yaml in $APP_DIR" >&2; exit 1; }
 [ -f "$APP_DIR/$ENTRY_POINT" ] || { echo "No $ENTRY_POINT in $APP_DIR" >&2; exit 1; }
 
-: "${VITASDK:?Define VITASDK. See docs/dev-environment.md}"
-export PATH="$VITASDK/bin:$PATH"
+# VITASDK, or the VitaSDK the tool finds or installs (tools/vitasdk.sh).
+VITASDK="$("$HERE/vitasdk.sh")" || exit 1
+export VITASDK PATH="$VITASDK/bin:$PATH"
 
 # The tools' own Flutter, downloaded the first time; FLUTTER_ROOT overrides it.
 # The revision check further down refuses one that does not match the engine.

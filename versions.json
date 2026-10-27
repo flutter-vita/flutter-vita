@@ -21,6 +21,29 @@
       }
     }
   },
+  "vitasdk": {
+    "_comment": "VitaSDK's own release archives, by host: the toolchain and the console's stub libraries. With the Khronos GLES headers in gles2/include, that is all an app build needs. tools/vitasdk.sh installs one to ~/.flutter-vita/vitasdk/<release> when no VitaSDK is found. Hashes from the release's asset digests. This release is the one every build was tested with since 2026-08-25.",
+    "release": "sdk-snapshot-20260825.611.1",
+    "base_url": "https://github.com/vitasdk/autobuilds/releases/download/sdk-snapshot-20260825.611.1/",
+    "hosts": {
+      "darwin-arm64": {
+        "archive": "vitasdk-arm64-apple-darwin-2026-08-25_12-50-52.tar.bz2",
+        "sha256": "2e7b4be17cadd0655a77f5201e50922061b3a50e7156e4d69d12b439af2c43aa"
+      },
+      "darwin-x64": {
+        "archive": "vitasdk-x86_64-apple-darwin-2026-08-25_12-51-28.tar.bz2",
+        "sha256": "fae123b6bc8e161327ffbfe7cfe2abc068913661bdfc24354bfbe35d698a4074"
+      },
+      "linux-x64": {
+        "archive": "vitasdk-x86_64-linux-gnu-2026-08-25_12-51-16.tar.bz2",
+        "sha256": "ff0e1aa1d968222a98836fcb90ed2cd3e6f5b53074e94d69f8057c718b607a06"
+      },
+      "linux-arm64": {
+        "archive": "vitasdk-aarch64-linux-gnu-2026-08-25_12-51-18.tar.bz2",
+        "sha256": "1e2e6054d024b1d76f73886a7df6a4f3307bf344132f06963ee34c376289099a"
+      }
+    }
+  },
   "engine": {
     "_comment": "The engine release on flutter-vita/flutter. Its tag is the engine commit's first eight characters. tools/publish-engine.sh publishes it and then writes release, url and sha256 here; after a Flutter upgrade they stay empty until it runs (docs/release.md).",
     "release": "059e1168",

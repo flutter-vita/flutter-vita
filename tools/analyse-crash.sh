@@ -108,7 +108,7 @@ if [ ! -x "$VENV/bin/python" ]; then
   "$VENV/bin/pip" -q install "pyelftools==$PYELFTOOLS"
 fi
 
-: "${VITASDK:=$HOME/vitasdk}"; export PATH="$VITASDK/bin:$PATH"
+VITASDK="$("$(dirname "$0")/vitasdk.sh" --find)"; export PATH="$VITASDK/bin:$PATH"
 echo "==> $(basename "$DUMP") against $(basename "$ELF")"
 echo
 "$VENV/bin/python" "$TOOL/main.py" "$DUMP" "$ELF"
