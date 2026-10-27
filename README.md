@@ -374,15 +374,28 @@ from other projects and their licenses.
 
 ## Credits
 
-Thank you to these projects and people:
-
-| Project | Thank you for |
-|---|---|
-| [VitaSDK](https://vitasdk.org), its creators and its contributors | The toolchain. Each app and the Bridge compile with it. |
-| [flutter-tizen](https://github.com/flutter-tizen/flutter-tizen), by Samsung | A good reference for a project like ours: Flutter on a new platform. |
-| [vitaGL](https://github.com/Rinnegatamante/vitaGL), by Rinnegatamante | The first GPU backend of this port. |
-| [Flutter](https://flutter.dev), its creators at Google and all its contributors | The engine and the framework that flutter-vita runs on the console. |
-| [Anthropic](https://www.anthropic.com) | Claude Code. Without it, this port would take three years of development. |
+<table>
+  <tr>
+    <td><a href="https://vitasdk.org">VitaSDK</a>, its creators and its contributors</td>
+    <td>The toolchain. Each app and the Bridge compile with it.</td>
+  </tr>
+  <tr>
+    <td><a href="https://github.com/flutter-tizen/flutter-tizen">flutter-tizen</a>, by Samsung</td>
+    <td>A good reference for a project like ours: Flutter on a new platform.</td>
+  </tr>
+  <tr>
+    <td><a href="https://github.com/Rinnegatamante/vitaGL">vitaGL</a>, by Rinnegatamante</td>
+    <td>The first GPU backend of this port.</td>
+  </tr>
+  <tr>
+    <td><a href="https://flutter.dev">Flutter</a>, its creators at Google and all its contributors</td>
+    <td>The engine and the framework that flutter-vita runs on the console.</td>
+  </tr>
+  <tr>
+    <td><a href="https://www.anthropic.com">Anthropic</a></td>
+    <td>Claude Code. Without it, this port would take three years of development.</td>
+  </tr>
+</table>
 
 *PlayStation and PS Vita are trademarks of Sony Interactive Entertainment.
 This project is not affiliated with or endorsed by Sony.*
