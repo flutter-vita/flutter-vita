@@ -1,8 +1,8 @@
 # Install the toolchain on Linux
 
-The same pieces as on macOS: VitaSDK, CMake, and
-this repository with the engine artifact. The tool downloads its own Flutter
-3.47.7. The maintainer
+The same pieces as on macOS: CMake and
+this repository with the engine artifact. The tool downloads its own VitaSDK
+and Flutter 3.47.7. The maintainer
 builds on macOS; the scripts are plain bash and CMake and have nothing
 macOS-specific in them, but a Linux run has not been done end to end. If a
 step fails for you, open an issue with the output.
@@ -10,17 +10,14 @@ step fails for you, open an issue with the output.
 ## 1. VitaSDK
 
 ```sh
-sudo apt install cmake git curl   # or your distribution's names
-git clone https://github.com/vitasdk/vdpm ~/vdpm
-cd ~/vdpm
-export VITASDK="$HOME/vitasdk"
-export PATH="$VITASDK/bin:$PATH"
-export CMAKE_POLICY_VERSION_MINIMUM=3.5
-./bootstrap-vitasdk.sh
-./install-all.sh
+sudo apt install cmake git curl bzip2   # or your distribution's names
 ```
 
-Add the `VITASDK` and `PATH` exports to your shell profile.
+Nothing else to install. The first `flutter-vita` build or `doctor`
+downloads VitaSDK's Linux archive (100 MB, one time), checks its sha256 and
+unpacks it to `~/.flutter-vita/vitasdk/<release>`
+([details](install-macos.md#1-vitasdk)). `VITASDK` names a VitaSDK that you
+have already; `~/vitasdk` is found without it.
 
 ## 2. Flutter 3.47.7
 

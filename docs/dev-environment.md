@@ -8,6 +8,13 @@ repo rather than in someone's head.
 **Install VitaSDK natively on macOS via `vdpm`.** It is supported, and it is all
 Track A needs. Do not reach for Docker yet.
 
+An app build does not need this section: since 2026-10-27 the tool finds
+VitaSDK or installs its base archive (`tools/vitasdk.sh`,
+[Install on macOS](install-macos.md#1-vitasdk)). This setup is for a
+maintainer. The bridge's installer needs vdpm's `zlib`
+(`vdpm install zlib`), and `tools/build-bridge.sh` says so when it is not
+there.
+
 ### Installed setup on this machine
 
 ```bash

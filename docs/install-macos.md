@@ -1,37 +1,30 @@
 # Install the toolchain on macOS
 
-What you need on the Mac: VitaSDK (the `arm-vita-eabi` compiler and the
-Vita's headers and stubs), CMake, and the tool. The Homebrew cask (step 3)
-installs CMake and the tool with one command. The tool needs no Python: its
-scripts are bash and Dart, and Dart comes with the Flutter SDK of step 2.
-Flutter 3.47.7 is not on the list: the tool downloads its own. Rebuilding the Flutter engine
-itself is not part of this page; the engine comes prebuilt.
+What you need on the Mac: CMake and the tool. The Homebrew cask (step 3)
+installs both with one command. VitaSDK and Flutter 3.47.7 are not on the
+list: the tool downloads its own. The tool needs no Python: its scripts are
+bash and Dart, and Dart comes with the Flutter SDK of step 2. Rebuilding the
+Flutter engine itself is not part of this page; the engine comes prebuilt.
 
 ## 1. VitaSDK
 
-Install with `vdpm`, into your home directory. A home install needs no
-`sudo`.
+Nothing to install. VitaSDK is the `arm-vita-eabi` compiler and the Vita's
+headers and stub libraries. When the tool finds no VitaSDK, the first
+`flutter-vita` build or `doctor` downloads VitaSDK's own release archive for
+this computer (100 MB, one time). It checks the archive against the sha256 in
+[`versions.json`](../versions.json) and unpacks it to
+`~/.flutter-vita/vitasdk/<release>`. `tools/vitasdk.sh` does this, and you
+can run it on its own.
 
-```sh
-brew install cmake
-git clone https://github.com/vitasdk/vdpm ~/vdpm
-cd ~/vdpm
-export VITASDK="$HOME/vitasdk"
-export PATH="$VITASDK/bin:$PATH"
-export CMAKE_POLICY_VERSION_MINIMUM=3.5
-./bootstrap-vitasdk.sh
-./install-all.sh
-```
+The tool uses the first VitaSDK that it finds:
 
-Add the two `export` lines for `VITASDK` and `PATH` to your shell profile.
-`CMAKE_POLICY_VERSION_MINIMUM` is for `install-all.sh` only: CMake 4 refuses
-several of the library ports without it.
+1. the folder in `VITASDK`, when you set it;
+2. the VitaSDK that the tool installed;
+3. `~/vitasdk` or `/usr/local/vitasdk`, where VitaSDK's own install puts it.
 
-Check:
-
-```sh
-arm-vita-eabi-gcc --version
-```
+An app build needs only the base archive: the compiler and the stub
+libraries. The vdpm packages (`install-all.sh`) are not necessary. The
+Khronos GLES 2.0 headers are in [`gles2/include`](../gles2/include).
 
 ## 2. Flutter 3.47.7
 
@@ -111,7 +104,7 @@ at an artifact somewhere else.
 ./cli/flutter-vita doctor
 ```
 
-`doctor` checks `VITASDK`, the engine artifact, the embedder submodule,
+`doctor` finds or installs VitaSDK, then checks the engine artifact, the embedder submodule,
 `gen_snapshot` for this host, the Flutter SDK and its patched product SDK,
 and then looks for a console on the network. Every line it prints as `--` comes with the fix.
 
