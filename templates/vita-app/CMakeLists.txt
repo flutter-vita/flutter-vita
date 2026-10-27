@@ -200,9 +200,15 @@ target_link_options(${PROJECT_NAME} PRIVATE
 
   # vita-elf-create appends ~32 KB of SCE metadata after the first LOAD segment
   # and fails if the next segment starts too soon. At 4 KiB pages the gap came
-  # to 2148 bytes; 64 KiB leaves a whole page of slack.
+  # to 2148 bytes. 64 KiB pages alone are not enough: VitaSDK's linker script
+  # can put the data on the next 64 KiB boundary after the code, and the gap is
+  # then anything from 0 to 64 KiB. A new app from `flutter create` got 12,784
+  # bytes on 2026-10-27, for 34,760 bytes of metadata. __sce_headroom is that
+  # script's own reserve between the two segments; 64 KiB of address space,
+  # nothing in the file.
   "-Wl,-z,max-page-size=0x10000"
   "-Wl,-z,common-page-size=0x10000"
+  "-Wl,--defsym,__sce_headroom=0x10000"
 
   # Nothing calls pthread_cancel. Do not remove this.
   #
