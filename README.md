@@ -376,20 +376,13 @@ from other projects and their licenses.
 
 Thank you to these projects and people:
 
-- **[VitaSDK](https://vitasdk.org)**, its creators and its contributors.
-  Each app and the Bridge compile with this toolchain.
-- **[flutter-tizen](https://github.com/flutter-tizen/flutter-tizen)**, by
-  Samsung. It was our model for the tool, the engine releases, the version
-  numbers and the plugins
-  ([ADR-0009](docs/adr/0009-plugins-via-non-endorsed-vita-implementations.md)).
-- **[vitaGL](https://github.com/Rinnegatamante/vitaGL)**, by Rinnegatamante.
-  It was the first GPU backend of this port
-  ([ADR-0014](docs/adr/0014-gpu-backend-via-vitagl.md)).
-- **[Flutter](https://flutter.dev)**, its creators at Google, and all its
-  contributors. flutter-vita runs their engine and their framework on the
-  console.
-- **[Anthropic](https://www.anthropic.com)**. Claude helped write the code
-  and the docs of this port.
+| Project | Thank you for |
+|---|---|
+| [VitaSDK](https://vitasdk.org), its creators and its contributors | The toolchain. Each app and the Bridge compile with it. |
+| [flutter-tizen](https://github.com/flutter-tizen/flutter-tizen), by Samsung | A good reference for a project like ours: Flutter on a new platform. |
+| [vitaGL](https://github.com/Rinnegatamante/vitaGL), by Rinnegatamante | The first GPU backend of this port. |
+| [Flutter](https://flutter.dev), its creators at Google and all its contributors | The engine and the framework that flutter-vita runs on the console. |
+| [Anthropic](https://www.anthropic.com) | Claude Code. Without it, this port would take three years of development. |
 
 *PlayStation and PS Vita are trademarks of Sony Interactive Entertainment.
 This project is not affiliated with or endorsed by Sony.*
