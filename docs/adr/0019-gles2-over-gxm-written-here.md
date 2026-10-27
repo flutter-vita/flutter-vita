@@ -50,6 +50,15 @@ References are the Khronos GLES 2.0 and GLSL ES 1.00 specifications, the
 Khronos `GLES2/gl2.h` header (MIT), and VitaSDK's `psp2/gxm.h` and
 `psp2/shacccg.h`. The GLES header is used from the SDK, not copied in.
 
+**Amended 2026-10-27: the GLES headers are now in `gles2/include`.** The tool
+now installs VitaSDK's base archive itself (`tools/vitasdk.sh`). That archive
+has no `GLES2/gl2.h`: the header came from the vdpm package `pib`, and the
+package release is rolling, so no sha256 can pin it. Thus `gles2/include` now
+holds `GLES2/gl2.h`, `GLES2/gl2platform.h` and `KHR/khrplatform.h`, copied
+unchanged from that package (Khronos, generated 2020-04-23). `fvita_gles2`
+gives the folder to everything that links it, and the template gives it to
+the embedder. The build needs nothing from VitaSDK except the base archive.
+
 **Both backends build until the last milestone.** `build-vita-app.sh --gl
 gles2|vitagl` selects the link, default `vitagl` until the gallery, the test
 apps and the bench show parity, then the default flips and vitaGL leaves the

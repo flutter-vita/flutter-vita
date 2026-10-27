@@ -101,9 +101,14 @@ fork of the project it changes, under the licence that fork already carries
 | Roboto (`Roboto.ttf`) | SIL Open Font License 1.1 |
 | Roboto Mono (`RobotoMono.ttf`) | SIL Open Font License 1.1 |
 | VitaSDK headers and stub libraries | see the VitaSDK distribution; not redistributed here |
+| Khronos GLES 2.0 headers (`gles2/include/GLES2/gl2.h`, `gles2/include/KHR/khrplatform.h`) | MIT-style Khronos licence, in each file |
+| Khronos `gles2/include/GLES2/gl2platform.h` | Apache-2.0, in the file |
 | This project's code: the embedder, `gles2/` (fvita_gles2), `templates/`, `plugins/`, the packages | zlib ([LICENSE](LICENSE)) |
 
-This project vendors no third-party source. `third_party/` is checked out by
+This project vendors no third-party source except the three Khronos headers
+above: declarations only, so no code from them goes into a `.vpk`. They are
+here because VitaSDK's base archive does not have them (ADR-0019, amended
+2026-10-27). `third_party/` is checked out by
 tooling and is not committed; the exact revisions are pinned in
 [docs/versions.md](docs/versions.md). The modifications are commits on a fork
 of each project, listed in [docs/engine.md](docs/engine.md), and each fork

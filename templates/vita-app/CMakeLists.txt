@@ -156,6 +156,9 @@ message(STATUS "GL: fvita_gles2 from ${GLES2_DIR}")
 
 set(FLUTTER_VITA_ENGINE_INCLUDE "${ENGINE_DIR}/include")
 add_subdirectory("${EMBEDDER_DIR}" flutter_vita_embedder)
+# The embedder calls GL directly in a few places (shader logs, the version
+# probe), so it needs the Khronos headers that fvita_gles2 carries.
+target_include_directories(flutter_vita_embedder PRIVATE "${GLES2_DIR}/include")
 message(STATUS "embedder: ${EMBEDDER_DIR}")
 
 add_executable(${PROJECT_NAME}
