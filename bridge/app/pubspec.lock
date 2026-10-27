@@ -389,7 +389,7 @@ packages:
       path: "../../packages/vita_file_browser"
       relative: true
     source: path
-    version: "0.1.0"
+    version: "0.1.1"
   web:
     dependency: transitive
     description:
