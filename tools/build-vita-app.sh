@@ -16,6 +16,7 @@
 #   --out DIR         default <app-dir>/build/vita
 #   --entry-point F   default lib/main.dart; real apps use flavors
 #   --extra-source F  extra C/C++ compiled into the app; repeatable
+#   --extra-lib L     extra library for the link (-lL); repeatable
 #   --no-supervisor   leave out eboot2.bin (the bridge; ADR-0016)
 #   --define K=V      preprocessor define for the extra sources; repeatable
 #   --link-option F   extra linker flag, for measurement builds; repeatable
@@ -66,6 +67,7 @@ ENTRY_POINT="lib/main.dart"
 # the bridge (ADR-0016), which is an ordinary app from this same script plus a
 # translation unit that owns its port and its commands.
 EXTRA_SOURCES=""
+EXTRA_LIBS=""
 NO_SUPERVISOR="OFF"
 EXTRA_DEFINES=""
 EXTRA_LINK_OPTIONS=
@@ -102,6 +104,7 @@ while [ $# -gt 0 ]; do
       src="$(cd "$(dirname "$2")" && pwd)/$(basename "$2")"
       [ -f "$src" ] || { echo "no such file: $2" >&2; exit 1; }
       EXTRA_SOURCES="${EXTRA_SOURCES:+$EXTRA_SOURCES;}$src"; shift 2 ;;
+    --extra-lib) EXTRA_LIBS="${EXTRA_LIBS:+$EXTRA_LIBS;}$2"; shift 2 ;;
     --no-supervisor) NO_SUPERVISOR="ON"; shift ;;
     # Implies --no-supervisor. The supervisor's whole job is relaunching the
     # development bridge when the app dies, and a release build is one that has
@@ -416,6 +419,7 @@ cmake -S "$TEMPLATE" -B "$OUT_DIR/cmake" \
   -DFLUTTER_ASSETS="$ASSETS" \
   -DENGINE_DIR="$ENGINE_DIR" \
   -DEXTRA_SOURCES="$EXTRA_SOURCES" \
+  -DEXTRA_LIBS="$EXTRA_LIBS" \
   -DNO_SUPERVISOR="$NO_SUPERVISOR" \
   -DRELEASE="$RELEASE" \
   -DEXTRA_DEFINES="$EXTRA_DEFINES" \

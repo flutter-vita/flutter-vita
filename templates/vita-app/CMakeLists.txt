@@ -11,6 +11,7 @@
 #
 # Optional:
 #   EXTRA_SOURCES   ;-list of extra C/C++ files to compile into the app
+#   EXTRA_LIBS      ;-list of extra libraries for the link, as for -l
 #   NO_SUPERVISOR   ON to leave out eboot2.bin and param2.sfo
 #   EXTRA_DEFINES   ;-list of K=V preprocessor defines
 #   EXTRA_LINK_OPTIONS  ;-list of extra linker flags
@@ -247,15 +248,13 @@ target_link_libraries(${PROJECT_NAME}
   # For the bridge's `promote`, the only route by which it can replace itself.
   # A stub archive costs nothing to an app that never calls into it.
   ScePromoterUtil_stub
-  # For the bridge's installer: a vpk is a zip, and VitaSDK's libz.a
-  # inflates it on the console. Ordinary archive semantics, so an app that
-  # never inflates links none of it.
-  z
   # For the bridge's timestamps. The clock is whatever the console was last
   # set to, so nothing sorts by it, but it still shows two lines an hour apart.
   SceRtc_stub
   ${HARDWARE_LIBS}
   ${PLUGIN_LIBS}
+  # What EXTRA_SOURCES need: z for the bridge's installer.
+  ${EXTRA_LIBS}
   pthread m
 )
 

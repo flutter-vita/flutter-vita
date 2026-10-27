@@ -136,6 +136,16 @@ const String kEngineRevision = '$(key engine)';
 const String kFrameworkRevision = '$(key framework_rev)';
 EOF
 
+# The installer (vpk.c) inflates the vpk with VitaSDK's zlib. Its libz.a comes
+# from the vdpm package, not from VitaSDK's base archive that tools/vitasdk.sh
+# installs; an app build never needs it.
+VITASDK="$("$HERE/vitasdk.sh")" || exit 1
+[ -f "$VITASDK/arm-vita-eabi/lib/libz.a" ] || {
+  echo "!! the bridge needs VitaSDK's zlib, and $VITASDK has no libz.a." >&2
+  echo "   Run: $VITASDK/bin/vdpm install zlib" >&2
+  exit 1
+}
+
 echo "==> $NAME [$TITLE_ID] on port $PORT"
 exec "$HERE/build-vita-app.sh" "$ROOT/bridge/app" \
   --engine "$ENGINE" \
@@ -144,6 +154,7 @@ exec "$HERE/build-vita-app.sh" "$ROOT/bridge/app" \
   --name "$NAME" \
   --extra-source "$ROOT/bridge/src/bridge_dev.c" \
   --extra-source "$ROOT/bridge/src/vpk.c" \
+  --extra-lib z \
   --no-supervisor \
   --define "BRIDGE_PORT=$PORT" \
   --define "SELF_TITLEID=\"$TITLE_ID\"" \
