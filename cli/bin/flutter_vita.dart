@@ -305,10 +305,12 @@ Future<int> _doctor(List<String> args, Map<String, String> opts) async {
               'flutter-vita build works without the console.');
     }
   } else {
-    final at =
-        where == address!.address ? where : '$where (${address.address})';
+    // The address goes on a line of its own: in the summary it would put
+    // brackets inside the brackets of the category line.
+    final named = where != address!.address;
     if (device.role == VitaRole.bridge) {
-      vita.summary = 'Flutter Bridge at $at';
+      vita.summary = 'Flutter Bridge at $where';
+      if (named) vita.info('$where is ${address.address}');
       vita.info(
           'The bridge answers on port ${VitaRole.bridge.port}: install and launch work.');
       // The shader compiler is the user's to install, and every app on the GPU
@@ -328,7 +330,8 @@ Future<int> _doctor(List<String> args, Map<String, String> opts) async {
         // No answer in time: say nothing rather than guess.
       }
     } else {
-      vita.summary = 'an app at $at';
+      vita.summary = 'an app at $where';
+      if (named) vita.info('$where is ${address.address}');
       vita.info(
           'The app answers on port ${VitaRole.app.port}: logs, screenshot and tap work.');
       vita.info('install and run give the console back to the bridge first.');
