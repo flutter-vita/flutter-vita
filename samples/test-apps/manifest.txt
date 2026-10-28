@@ -53,9 +53,10 @@ flutter-vita/keklist_flutter        90512a3827f672c4ebb0721d688905c77c4a0167  # 
 # --- tokio, hyper, reqwest, rustls and ring, and tokio's I/O driver wants
 # --- epoll, which this console does not have.
 # ---
-# --- Our fork: three commits on vita-3.47.7, on upstream's fd8140b6 (v1.15.4).
-# --- Two were patch files until 2026-09-23.
-flutter-vita/localsend              76b84ce642565d80ee2355dc54eb59bd473a71f9  # branch vita-3.47.7
+# --- Our fork: six commits on vita-3.47.7, on upstream's fd8140b6 (v1.15.4).
+# --- Two were patch files until 2026-09-23. Since 2026-10-28 it has its own
+# --- title id, LSND00001, and LiveArea art made from upstream's logo.
+flutter-vita/localsend              b3613913cf5d0949b3316381f4ea7e1467a1e1b6  # branch vita-3.47.7
     entry app/lib/main.dart
 
 # --- Remote content, code generation, and deferred FFI. Chosen over spotube
