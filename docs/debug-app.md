@@ -8,12 +8,12 @@ through them in the order you reach for them.
 
 ## The debug strip
 
-Every app built without `--release` draws this over the top 34 pixels of
-the screen:
+Every app built without `--release` can draw this over the top 34 pixels
+of the screen. It is hidden at the start:
 
 ![the debug strip](results/debug-strip-2026-09-16.png)
 
-Press **L + R + SELECT** to hide it and again to show it; `flutter-vita`
+Press **L + R + SELECT** to show it and again to hide it; `flutter-vita`
 does the same from the host with `overlay off` and `overlay on` on the
 app's port. Nothing in the app is involved: the engine composes the strip
 and copies it onto each finished frame after the GPU is done with it, so
@@ -41,9 +41,10 @@ Under the numbers: the strip is a fixed layout, so a column is always
 where it was. The values are averaged over twenty frames and update three
 times a second at 60 fps; on an idle screen they refresh once a second.
 
-An app that carries the Dart strip from `vita_debug_strip` (the gallery
-does) starts with the engine's strip hidden, so the two do not overlap.
-The chord brings the engine's up over it. A build that must never draw
+Until 2026-10-28 an app without `flutter_vita` showed the strip from the
+first frame. Now every app starts with it hidden. To show it from the first
+frame, call `FlutterVita.configure(debugStrip: DebugStrip.always)`. A build
+that must never draw
 the strip defines `int flutter_vita_debug_overlay = 0;` in any C file
 compiled into the app; `--release` does that for you.
 

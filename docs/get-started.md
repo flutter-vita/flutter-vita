@@ -84,7 +84,8 @@ flutter-vita logs                      # the log again, at any time
 
 A rebuild after a one-line change takes about six seconds plus the
 install. Every debug build carries a strip of live numbers over the top of
-the screen, hidden and shown with **L + R + SELECT**; [Debug an
+the screen. It is hidden at the start; **L + R + SELECT** shows and hides it.
+[Debug an
 app](debug-app.md) explains each column, the log, and what to do with a
 crash.
 
