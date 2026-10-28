@@ -99,7 +99,9 @@ class VitaDevice {
   Future<Uint8List> screenshot() =>
       _send('shot', timeout: const Duration(minutes: 3));
 
-  Future<String> tap(int x, int y) => _sendText('tap $x $y');
+  /// The dev server answers `OK tap x y` and keeps the connection open, so
+  /// this reads the first chunk: reading to EOF waited 30 s and then threw.
+  Future<String> tap(int x, int y) => ask('tap $x $y');
 
   /// The first chunk of the reply, for a command that answers one line and
   /// keeps the connection open (`stat`, `exist`): reading to EOF would wait
