@@ -291,8 +291,10 @@ downloads `flutter-vita-<tag>.tar.gz` from the tool release, and it links
 `flutter-vita/cli/flutter-vita` into Homebrew's `bin`. It depends on
 `cmake`. Release 3.47.7-vita.1.0.2 also needed `python@3.15`. The tool needs
 no Python since `99cc13a`, and the cask has no Python dependency since
-3.47.7-vita.1.0.3. VitaSDK is not in Homebrew, so the cask tells the user to
-install it.
+3.47.7-vita.1.0.3. VitaSDK is not in Homebrew. Until 3.47.7-vita.1.0.4 the
+cask told the user to install it. Since 3.47.7-vita.1.0.5 the tool installs
+VitaSDK itself on the first `doctor` or `build` (`tools/vitasdk.sh`), so the
+cask and the tap README do not mention it.
 
 Homebrew 7 loads a cask from a tap only when you trust the cask. An install by
 the full name `flutter-vita/tap/flutter-vita` adds the cask to the trusted
