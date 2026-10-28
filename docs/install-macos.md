@@ -104,9 +104,30 @@ at an artifact somewhere else.
 ./cli/flutter-vita doctor
 ```
 
-`doctor` finds or installs VitaSDK, then checks the engine artifact, the embedder submodule,
-`gen_snapshot` for this host, the Flutter SDK and its patched product SDK,
-and then looks for a console on the network. Every line it prints as `--` comes with the fix.
+`doctor` works as `flutter doctor` does. It shows one line for each part:
+the tool and its embedder, VitaSDK, Flutter, the engine, CMake and the
+console. It installs VitaSDK when it finds none.
+
+```text
+Doctor summary (to see all details, run flutter-vita doctor -v):
+[✓] flutter-vita (3.47.7-vita.1.0.4)
+[✓] VitaSDK (arm-vita-eabi-gcc 15.2.0)
+[✓] Flutter (3.47.7)
+[✓] Flutter engine for PS Vita (059e1168, for Flutter 3.47.7)
+[✓] CMake (4.4.4)
+[!] PS Vita
+    ! No console answers at fluttervita.local.
+      Power on the Vita and open Flutter Bridge, or pass --host <address>.
+      flutter-vita devices looks for it on the whole local network.
+      flutter-vita build works without the console.
+
+! Doctor found issues in 1 category.
+```
+
+`[✓]` is ready. `[!]` is a warning: a build works, a later step does not.
+`[✗]` stops a build. Each problem comes with its fix. `doctor -v` also shows
+what it found for each line that is ready: the folders, the revisions, the
+host of `gen_snapshot`. The exit code is 1 only when a line shows `[✗]`.
 
 In a clone, put `cli/` on your `PATH` to call it as `flutter-vita`. With
 Homebrew, it is on your `PATH` already. Installation with

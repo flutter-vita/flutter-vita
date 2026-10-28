@@ -60,7 +60,7 @@ the bridge or an app built with this toolchain runs, and no tool asks for
 an address again.
 
 ```sh
-flutter-vita doctor      # ends with the console it found
+flutter-vita doctor      # the last line, PS Vita, names the console it found
 ```
 
 **If the name does not resolve** while the bridge is on the screen, the Mac

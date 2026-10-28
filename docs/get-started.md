@@ -3,7 +3,7 @@
 Before this page: the toolchain is installed
 ([macOS](install-macos.md), [Linux](install-linux.md)) and the bridge is on
 the console ([Console setup](configure-console.md)). `flutter-vita doctor`
-prints `ok` on every line and names the console.
+shows `[✓]` on every line, and its PS Vita line names the console.
 
 ## 1. Run the gallery
 

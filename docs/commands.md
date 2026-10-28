@@ -7,7 +7,7 @@ as `fluttervita.local`; `--host IP` skips the lookup and `--subnet
 
 | Command | What it does |
 |---|---|
-| `doctor` | Finds or installs VitaSDK, then checks the engine artifact, the embedder submodule, `gen_snapshot` for this host, the Flutter SDK, and finds the console. Each failing line prints its fix. |
+| `doctor [-v]` | Checks the toolchain as `flutter doctor` does: the tool and its embedder, VitaSDK (installed when none is found), Flutter, the engine and `gen_snapshot` for this host, CMake, and the console at `fluttervita.local` (or `--host`). `[✓]` is ready, `[!]` is a warning, `[✗]` stops a build; each problem prints its fix. `-v` shows what it found for every line. |
 | `version`, `--version` | The tool's release from `versions.json`, git's description of the checkout when it has moved past the tag, and the Flutter, engine and embedder releases it builds against. The bridge's footer shows the same build string. |
 | `precache` | Downloads the engine release named in `versions.json` from the fork's releases, checks its sha256 and unpacks it to `out/artifacts/`. `--force` replaces one that is there. `build` runs it on its own when the artifact is missing. |
 | `devices` | Sweeps the subnet for consoles and says what each one is running: the bridge, or an app. |

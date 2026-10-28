@@ -101,6 +101,21 @@ class VitaDevice {
 
   Future<String> tap(int x, int y) => _sendText('tap $x $y');
 
+  /// The first chunk of the reply, for a command that answers one line and
+  /// keeps the connection open (`stat`, `exist`): reading to EOF would wait
+  /// for the whole timeout.
+  Future<String> ask(String command,
+      {Duration timeout = const Duration(seconds: 4)}) async {
+    final socket = await _connect(timeout: timeout);
+    try {
+      socket.add('$command\n'.codeUnits);
+      await socket.flush();
+      return String.fromCharCodes(await socket.first.timeout(timeout));
+    } finally {
+      socket.destroy();
+    }
+  }
+
   /// Exit the app and bring the bridge back up.
   ///
   /// The bridge can take longer than the reply to appear, so callers wait for
