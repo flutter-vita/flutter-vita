@@ -73,10 +73,14 @@ title on the console and install it again.
 ## 4. The splash
 
 From the start of the app to its first frame, the console shows a picture:
-the splash. Without it the screen stays black for that time, which is 1.6 s
-for localsend and 2.3 s for the gallery (measured 2026-10-29). Before that,
-the system loads the app and the screen is not the app's: no picture can
-cover that part.
+the splash. Without it the screen stays black for that time. The splash has
+two parts, and both show the same picture:
+
+1. While the system loads the app, before `main()`, the system shows the
+   app's `sce_sys/pic0.png` on the full screen.
+2. From the first lines of `main()` to the first frame, the embedder shows
+   `splash.bin`. That part is 1.6 s for localsend and 2.3 s for the gallery
+   (measured 2026-10-29).
 
 Every app shows the template's splash, `templates/vita-app/splash.png`: the
 flutter-vita logo on the dark gradient of the template's LiveArea art, and
@@ -90,8 +94,8 @@ vita:
   splash: vita/splash.png      # relative to the app; or none
 ```
 
-(or `--splash PNG|none` on `tools/build-vita-app.sh`). With `none` the app
-starts on a black screen.
+(or `--splash PNG|none` on `tools/build-vita-app.sh`). With `none` the
+package has neither file, and the app starts on a black screen.
 
 - The screen is 960 x 544. A smaller picture shows in the centre, on the
   colour of its top-left pixel. The build refuses a larger one.
@@ -105,9 +109,15 @@ starts on a black screen.
   gradient without dithering: the template's splash is 50 KB. A photo,
   noise or dithering packs to about 2 MB. The embedder reads the file in
   about 30 ms.
+- The same tool writes `pic0.png`: an 8-bit indexed PNG with 256 palette
+  entries and no transparency. On our console the installer did not copy a
+  `pic0.png` that had transparency, so the tool writes none.
 
-The splash is not part of the LiveArea. The shell does not keep it, so a new
-splash shows on the next install, with no delete first.
+The splash is not part of the LiveArea. The installer copies `pic0.png` to
+`ur0:appmeta/<title id>/` at each install, also over an installed title, so
+a new splash shows on the next install, with no delete first.
+`tools/install-vpk.sh --replace` and `tools/deploy.sh` do not install a
+package; they write the file to that folder themselves.
 
 ## 5. What the user needs
 

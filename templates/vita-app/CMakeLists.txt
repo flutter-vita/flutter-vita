@@ -60,10 +60,11 @@ if(LIVEAREA_ART_BAD)
 endif()
 set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
   "${LIVEAREA_DIR}/icon0.png" "${LIVEAREA_DIR}/bg0.png" "${LIVEAREA_DIR}/startup.png")
-# The picture on the panel from the first lines of main() to the first frame
+# The picture on the panel from launch to the first frame: pic0.png while the
+# system loads the app, then splash.bin from the first lines of main()
 # (ShowSplash in the embedder). The template's own is the flutter-vita logo and
 # the project's link; an app names its own with vita.splash, and an empty value
-# (`splash: none`) leaves the file out, so the app starts on a black panel.
+# (`splash: none`) leaves both files out, so the app starts on a black panel.
 set(SPLASH_PNG "${CMAKE_CURRENT_SOURCE_DIR}/splash.png" CACHE FILEPATH
     "PNG shown from launch to the first frame; empty for none")
 set(VITA_TITLEID  "${TITLE_ID}")
@@ -360,13 +361,20 @@ endif()
 # Packed at the panel's size and pixel format: the console has nothing that
 # decodes a PNG before the engine is up. The .vpk depends on the file, so a
 # new picture repacks on the next build.
+#
+# The same picture goes in as sce_sys/pic0.png, which the system shows while
+# it loads the app, before main(). Without it that time is black, even with a
+# splash. With `splash: none` neither file is in the package.
 if(SPLASH_PNG)
-  add_custom_command(OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/splash.bin"
+  add_custom_command(
+    OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/splash.bin" "${CMAKE_CURRENT_BINARY_DIR}/pic0.png"
     COMMAND "${DART}" "${TOOLS_DIR}/splash-pack.dart" "${SPLASH_PNG}"
-            "${CMAKE_CURRENT_BINARY_DIR}/splash.bin"
+            "${CMAKE_CURRENT_BINARY_DIR}/splash.bin" "${CMAKE_CURRENT_BINARY_DIR}/pic0.png"
     DEPENDS "${SPLASH_PNG}" "${TOOLS_DIR}/splash-pack.dart"
     VERBATIM)
-  list(APPEND VPK_FILES FILE "${CMAKE_CURRENT_BINARY_DIR}/splash.bin" splash.bin)
+  list(APPEND VPK_FILES
+    FILE "${CMAKE_CURRENT_BINARY_DIR}/splash.bin" splash.bin
+    FILE "${CMAKE_CURRENT_BINARY_DIR}/pic0.png" sce_sys/pic0.png)
 endif()
 
 foreach(asset ${APP_ASSETS})

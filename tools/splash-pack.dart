@@ -1,7 +1,8 @@
 // Pack a PNG into splash.bin, the picture the embedder puts on the panel from
-// the first lines of main() to the first frame.
+// the first lines of main() to the first frame, and into pic0.png, the one the
+// system shows before that.
 //
-//     dart tools/splash-pack.dart <splash.png> <splash.bin>
+//     dart tools/splash-pack.dart <splash.png> <splash.bin> [<pic0.png>]
 //
 // Nothing on the console decodes a PNG before the engine is up, so the picture
 // goes into the package at the panel's size and pixel format, as runs of equal
@@ -15,6 +16,14 @@
 // little-endian, then runs over 32-bit R,G,B,A pixels. A control byte c below
 // 128 is followed by c + 1 literal pixels; one of 128 or more by one pixel
 // that repeats c - 126 times.
+//
+// pic0.png goes into the package as sce_sys/pic0.png. The system shows it full
+// screen while it loads the app, which is the black time before main() that
+// splash.bin cannot cover; with the same picture in both, the two read as one.
+// The shell takes it only as an 8-bit indexed PNG: on 2026-10-29 the console
+// had one title whose pic0.png the installer had copied, with 256 palette
+// entries and no tRNS, and two whose pic0.png it had not, both with a tRNS.
+// So the file here has exactly that: 256 entries, no transparency.
 //
 // Runs at build time from templates/vita-app/CMakeLists.txt, with the Dart of
 // the Flutter SDK the build already uses, like check-livearea-art.dart.
@@ -216,9 +225,154 @@ Uint8List runs(Uint32List px) {
   return out.takeBytes();
 }
 
+/// At most 256 colours for the panel: its own when it has that few, a median
+/// cut of its histogram otherwise. No dithering, so a gradient keeps one colour
+/// per row and the file stays small.
+(List<int>, Uint8List) quantize(Uint32List px) {
+  final hist = <int, int>{};
+  for (final v in px) {
+    final c = v & 0xFFFFFF;
+    hist[c] = (hist[c] ?? 0) + 1;
+  }
+  final colours = hist.keys.toList();
+  final counts = [for (final c in colours) hist[c]!];
+  int channel(int c, int k) => (c >> (8 * k)) & 0xFF;
+
+  var boxes = [List<int>.generate(colours.length, (i) => i)];
+  if (colours.length > 256) {
+    // Split the box with the most pixels times the widest spread, at the
+    // pixel-weighted median of that channel, until there are 256.
+    while (boxes.length < 256) {
+      var best = -1, bestScore = 0, bestChannel = 0;
+      for (var b = 0; b < boxes.length; b++) {
+        if (boxes[b].length < 2) continue;
+        var population = 0;
+        final lo = [255, 255, 255], hi = [0, 0, 0];
+        for (final i in boxes[b]) {
+          population += counts[i];
+          for (var k = 0; k < 3; k++) {
+            final v = channel(colours[i], k);
+            if (v < lo[k]) lo[k] = v;
+            if (v > hi[k]) hi[k] = v;
+          }
+        }
+        var k = 0;
+        for (var j = 1; j < 3; j++) {
+          if (hi[j] - lo[j] > hi[k] - lo[k]) k = j;
+        }
+        final score = population * (hi[k] - lo[k]);
+        if (score > bestScore) {
+          best = b;
+          bestScore = score;
+          bestChannel = k;
+        }
+      }
+      if (best < 0) break;
+      final box = boxes[best]
+        ..sort((a, b) => channel(colours[a], bestChannel) - channel(colours[b], bestChannel));
+      final half = box.fold<int>(0, (s, i) => s + counts[i]) / 2;
+      var cut = 0, sum = 0;
+      while (cut < box.length - 1 && sum + counts[box[cut]] <= half) {
+        sum += counts[box[cut]];
+        cut++;
+      }
+      if (cut == 0) cut = 1;
+      boxes = [...boxes.sublist(0, best), box.sublist(0, cut), box.sublist(cut), ...boxes.sublist(best + 1)];
+    }
+  }
+
+  // Each box's pixel-weighted mean, then every colour to its nearest entry.
+  final palette = <int>[];
+  for (final box in boxes) {
+    final sum = [0, 0, 0];
+    var n = 0;
+    for (final i in box) {
+      for (var k = 0; k < 3; k++) {
+        sum[k] += channel(colours[i], k) * counts[i];
+      }
+      n += counts[i];
+    }
+    palette.add([for (var k = 0; k < 3; k++) (sum[k] / n).round()]
+        .reversed
+        .fold<int>(0, (c, v) => c << 8 | v));
+  }
+  final entry = <int, int>{};
+  for (final c in colours) {
+    var best = 0, bestDistance = 1 << 30;
+    for (var p = 0; p < palette.length; p++) {
+      var d = 0;
+      for (var k = 0; k < 3; k++) {
+        final e = channel(c, k) - channel(palette[p], k);
+        d += e * e;
+      }
+      if (d < bestDistance) {
+        best = p;
+        bestDistance = d;
+      }
+    }
+    entry[c] = best;
+  }
+  final index = Uint8List(px.length);
+  for (var i = 0; i < px.length; i++) {
+    index[i] = entry[px[i] & 0xFFFFFF]!;
+  }
+  return (palette, index);
+}
+
+final crcTable = List<int>.generate(256, (n) {
+  var c = n;
+  for (var k = 0; k < 8; k++) {
+    c = c & 1 != 0 ? 0xEDB88320 ^ (c >> 1) : c >> 1;
+  }
+  return c;
+});
+
+int crc32(List<int> bytes) {
+  var c = 0xFFFFFFFF;
+  for (final b in bytes) {
+    c = crcTable[(c ^ b) & 0xFF] ^ (c >> 8);
+  }
+  return c ^ 0xFFFFFFFF;
+}
+
+/// The panel as an 8-bit indexed PNG with a full 256-entry palette.
+Uint8List pic0Png(Uint32List panel) {
+  final (palette, index) = quantize(panel);
+  final out = BytesBuilder()..add(signature);
+  void chunk(String name, List<int> body) {
+    final head = ByteData(4)..setUint32(0, body.length);
+    final named = [...name.codeUnits, ...body];
+    final crc = ByteData(4)..setUint32(0, crc32(named));
+    out
+      ..add(head.buffer.asUint8List())
+      ..add(named)
+      ..add(crc.buffer.asUint8List());
+  }
+
+  final ihdr = ByteData(13)
+    ..setUint32(0, panelWidth)
+    ..setUint32(4, panelHeight)
+    ..setUint8(8, 8) // bits per index
+    ..setUint8(9, 3); // indexed; compression, filter and interlace stay 0
+  chunk('IHDR', ihdr.buffer.asUint8List());
+  final plte = Uint8List(256 * 3);
+  for (var p = 0; p < palette.length; p++) {
+    plte.setAll(p * 3, [palette[p] & 0xFF, palette[p] >> 8 & 0xFF, palette[p] >> 16 & 0xFF]);
+  }
+  chunk('PLTE', plte);
+  final rows = Uint8List(panelHeight * (panelWidth + 1));
+  for (var y = 0; y < panelHeight; y++) {
+    rows.setRange(y * (panelWidth + 1) + 1, (y + 1) * (panelWidth + 1),
+        index, y * panelWidth);
+  }
+  chunk('IDAT', ZLibEncoder(level: 9).convert(rows));
+  chunk('IEND', const []);
+  return out.takeBytes();
+}
+
 void main(List<String> args) {
-  if (args.length != 2) {
-    stderr.writeln('usage: dart tools/splash-pack.dart <splash.png> <splash.bin>');
+  if (args.length != 2 && args.length != 3) {
+    stderr.writeln('usage: dart tools/splash-pack.dart <splash.png> <splash.bin> [<pic0.png>]');
     exit(2);
   }
   final pic = decodePng(args[0]);
@@ -226,7 +380,13 @@ void main(List<String> args) {
     fail(args[0], 'is ${pic.width}x${pic.height}; the panel is '
         '${panelWidth}x$panelHeight, so make it that size or smaller');
   }
-  final payload = runs(compose(pic));
+  final panel = compose(pic);
+  if (args.length == 3) {
+    final png = pic0Png(panel);
+    File(args[2]).writeAsBytesSync(png);
+    stdout.writeln('pic0 ${args[2].split('/').last} -> ${(png.length + 1023) ~/ 1024} KB');
+  }
+  final payload = runs(panel);
   final header = ByteData(16);
   header.buffer.asUint8List().setAll(0, 'FVSPLSH1'.codeUnits);
   header.setUint16(8, panelWidth, Endian.little);

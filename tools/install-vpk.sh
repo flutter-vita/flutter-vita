@@ -125,6 +125,15 @@ if [ "$REPLACE" -eq 1 ]; then
       \( -not -path "./sce_sys/*" -o -path "./sce_sys/param2.sfo" \) \
       | sed 's|^\./||' ) \
   | while read -r rel; do put "$WORK/$rel" "ux0:app/$TITLE_ID/$rel"; done
+  # pic0.png, the picture the system shows while it loads the app, is read
+  # from ur0:appmeta/<id>. A promote copies it there, also over an installed
+  # title (measured 2026-10-29); this route does not promote. Without a splash
+  # the old one goes, or it would show.
+  if [ -f "$WORK/sce_sys/pic0.png" ]; then
+    put "$WORK/sce_sys/pic0.png" "ur0:appmeta/$TITLE_ID/pic0.png"
+  else
+    say "$PORT" "rm ur0:appmeta/$TITLE_ID/pic0.png" 10 >/dev/null || true
+  fi
 else
   echo "==> promoting $(basename "$VPK") as $TITLE_ID"
   # Generated per install rather than shipped, because the content id inside it
@@ -184,6 +193,10 @@ else
        exit 1 ;;
   esac
   say "$PORT" "exist $TITLE_ID" 30 | sed 's/^/    /'
+  # A package built with `splash: none` has no pic0.png. Whether a promote then
+  # removes the one an earlier install left is not measured; this makes sure.
+  [ -f "$WORK/sce_sys/pic0.png" ] \
+    || say "$PORT" "rm ur0:appmeta/$TITLE_ID/pic0.png" 10 >/dev/null || true
 fi
 
 if [ "$LAUNCH" -eq 1 ]; then

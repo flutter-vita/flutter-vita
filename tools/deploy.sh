@@ -219,6 +219,18 @@ while read -r rel; do
 done < "$LIST"
 printf '    %d pushed, %d already there\n' "$pushed" "$skipped"
 
+# pic0.png, the picture the system shows while it loads the app, is read from
+# ur0:appmeta/<id> and not from ux0:app. A promote copies it there, also over
+# an installed title (measured 2026-10-29); this route does not promote, so it
+# writes it there itself. Without a splash the old one goes, or it would show.
+if [ -f "$WORK/sce_sys/pic0.png" ]; then
+  fsize="$(wc -c < "$WORK/sce_sys/pic0.png" | tr -d ' ')"
+  { printf 'put %s ur0:appmeta/%s/pic0.png\n' "$fsize" "$TITLEID"; cat "$WORK/sce_sys/pic0.png"; } \
+    | nc -4 -w 60 "$HOST" "$LDR" | grep -q OK || echo "    !! push failed: pic0.png" >&2
+else
+  say "$LDR" "rm ur0:appmeta/$TITLEID/pic0.png" 10 >/dev/null || true
+fi
+
 # Files the console has and the build no longer does.
 #
 # Without this the deploy only ever adds and overwrites, and anything dropped
