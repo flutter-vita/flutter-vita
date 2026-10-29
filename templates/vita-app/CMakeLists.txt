@@ -61,8 +61,8 @@ endif()
 set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
   "${LIVEAREA_DIR}/icon0.png" "${LIVEAREA_DIR}/bg0.png" "${LIVEAREA_DIR}/startup.png")
 # The picture on the panel from the first lines of main() to the first frame
-# (ShowSplash in the embedder). The template's own says "Built with
-# flutter-vita"; an app names its own with vita.splash, and an empty value
+# (ShowSplash in the embedder). The template's own is the flutter-vita logo and
+# the project's link; an app names its own with vita.splash, and an empty value
 # (`splash: none`) leaves the file out, so the app starts on a black panel.
 set(SPLASH_PNG "${CMAKE_CURRENT_SOURCE_DIR}/splash.png" CACHE FILEPATH
     "PNG shown from launch to the first frame; empty for none")

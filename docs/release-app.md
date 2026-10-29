@@ -79,8 +79,9 @@ the system loads the app and the screen is not the app's: no picture can
 cover that part.
 
 Every app shows the template's splash, `templates/vita-app/splash.png`: the
-flutter-vita mark, "Built with flutter-vita" and the address of the project.
-Debug and release builds show it the same way. To show your own picture, or
+flutter-vita logo on the dark gradient of the template's LiveArea art, and
+the link `github.com/flutter-vita` in the bottom right corner. Debug and
+release builds show it the same way. To show your own picture, or
 none, name it in `pubspec.yaml`:
 
 ```yaml
@@ -100,8 +101,9 @@ starts on a black screen.
 - The splash goes away at the first frame. It never keeps the app waiting.
 - The build packs the picture into `splash.bin` with
   `tools/splash-pack.dart`, because the console cannot decode a PNG before
-  the engine starts. Large areas of one colour pack small: the template's
-  splash is 42 KB, and a photo is about 2 MB. The embedder reads the file in
+  the engine starts. Large areas of one colour pack small, and so does a
+  gradient without dithering: the template's splash is 50 KB. A photo,
+  noise or dithering packs to about 2 MB. The embedder reads the file in
   about 30 ms.
 
 The splash is not part of the LiveArea. The shell does not keep it, so a new
