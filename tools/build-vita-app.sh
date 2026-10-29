@@ -8,6 +8,8 @@
 #   --name "Name"     LiveArea display name
 #   --livearea DIR    icon0.png, bg0.png, startup.png, template.xml; default
 #                     the template's set (docs/release-app.md)
+#   --splash PNG      the picture from launch to the first frame, or none;
+#                     default the template's (docs/release-app.md)
 #   --engine DIR      unpacked flutter-engine-vita-<version>/
 #   --embedder DIR    the Vita embedder source; default embedder,
 #                     the flutter-vita-embedder submodule
@@ -31,6 +33,7 @@
 #     hardware_checks: true      # optional; the gallery's Hardware tab (hardware.c)
 #     name: My App               # optional; defaults to the package name
 #     livearea: vita/livearea    # optional; the app's own art, relative to the app
+#     splash: vita/splash.png    # optional; or none; relative to the app
 #
 # Title id resolution: --title-id, then pubspec vita.title_id, then a value
 # derived from the package name if a vita: block exists, then FVTA00002 -- the
@@ -50,6 +53,7 @@ FLUTTER_PIN="${FLUTTER_VITA_PIN:-$(sed -n 's/^[[:space:]]*"flutter":[[:space:]]*
 APP_DIR=""
 TITLE_ID=""
 APP_NAME=""
+SPLASH=""
 # Where precache puts the engine: beside a git checkout, else in the
 # flutter-vita home. The CLI passes FLUTTER_VITA_ENGINE; this is for a direct run.
 ENGINES="$ROOT/out/artifacts"
@@ -95,6 +99,10 @@ while [ $# -gt 0 ]; do
     --title-id) TITLE_ID="$2"; shift 2 ;;
     --name)     APP_NAME="$2"; shift 2 ;;
     --livearea) LIVEAREA_DIR="$(cd "$2" && pwd)"; shift 2 ;;
+    --splash)
+      SPLASH="$2"
+      [ "$2" = none ] || SPLASH="$(cd "$(dirname "$2")" && pwd)/$(basename "$2")"
+      shift 2 ;;
     --engine)   ENGINE_DIR="$2"; shift 2 ;;
     --embedder) EMBEDDER_DIR="$2"; shift 2 ;;
     --flutter)  FLUTTER_DIR="$2"; shift 2 ;;
@@ -195,6 +203,16 @@ HARDWARE_CHECKS="OFF"
 # The app's own LiveArea art, relative to the app; the template's set otherwise.
 if [ -z "${LIVEAREA_DIR:-}" ] && [ -n "$(vita_key livearea)" ]; then
   LIVEAREA_DIR="$(cd "$APP_DIR/$(vita_key livearea)" && pwd)"
+fi
+# The picture from launch to the first frame: --splash, then vita.splash
+# relative to the app, then the template's (empty here). `none` leaves it out.
+if [ -z "${SPLASH:-}" ] && [ -n "$(vita_key splash)" ]; then
+  SPLASH="$(vita_key splash)"
+  case "$SPLASH" in none|/*) ;; *) SPLASH="$APP_DIR/$SPLASH" ;; esac
+fi
+if [ -n "${SPLASH:-}" ] && [ "$SPLASH" != none ] && [ ! -f "$SPLASH" ]; then
+  echo "vita.splash: no such file: $SPLASH" >&2
+  exit 1
 fi
 
 # The package name and the display name are different things and only one of
@@ -408,8 +426,8 @@ fi
 
 echo "==> link and package"
 TEMPLATE="${FLUTTER_VITA_TEMPLATE:-$ROOT/templates/vita-app}"
-# LIVEAREA_DIR goes every time: a cached value from one --livearea build
-# would otherwise stay for each build after it.
+# LIVEAREA_DIR and SPLASH_PNG go every time: a cached value from one
+# --livearea or --splash build would otherwise stay for each build after it.
 cmake -S "$TEMPLATE" -B "$OUT_DIR/cmake" \
   -DCMAKE_BUILD_TYPE=Release \
   -DAPP_NAME="$APP_NAME" \
@@ -429,6 +447,7 @@ cmake -S "$TEMPLATE" -B "$OUT_DIR/cmake" \
   -DGLES2_DIR="$ROOT/gles2" \
   -DEMBEDDER_DIR="$EMBEDDER_DIR" \
   -DLIVEAREA_DIR="${LIVEAREA_DIR:-$TEMPLATE/livearea}" \
+  -DSPLASH_PNG="$([ "${SPLASH:-}" = none ] || echo "${SPLASH:-$TEMPLATE/splash.png}")" \
   -DFONTS_DIR="$ROOT/templates/fonts" \
   -DDART="$SDK/bin/dart" \
   -DTOOLS_DIR="$ROOT/tools" >/dev/null

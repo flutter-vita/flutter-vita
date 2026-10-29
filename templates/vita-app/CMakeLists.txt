@@ -60,6 +60,12 @@ if(LIVEAREA_ART_BAD)
 endif()
 set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
   "${LIVEAREA_DIR}/icon0.png" "${LIVEAREA_DIR}/bg0.png" "${LIVEAREA_DIR}/startup.png")
+# The picture on the panel from the first lines of main() to the first frame
+# (ShowSplash in the embedder). The template's own says "Built with
+# flutter-vita"; an app names its own with vita.splash, and an empty value
+# (`splash: none`) leaves the file out, so the app starts on a black panel.
+set(SPLASH_PNG "${CMAKE_CURRENT_SOURCE_DIR}/splash.png" CACHE FILEPATH
+    "PNG shown from launch to the first frame; empty for none")
 set(VITA_TITLEID  "${TITLE_ID}")
 set(VITA_VERSION  "01.00")
 
@@ -350,6 +356,17 @@ if(NOT NO_SUPERVISOR)
   list(APPEND VPK_FILES
     FILE "${CMAKE_CURRENT_BINARY_DIR}/fvita_supervisor.self" eboot2.bin
     FILE "${CMAKE_CURRENT_BINARY_DIR}/param2.sfo" sce_sys/param2.sfo)
+endif()
+# Packed at the panel's size and pixel format: the console has nothing that
+# decodes a PNG before the engine is up. The .vpk depends on the file, so a
+# new picture repacks on the next build.
+if(SPLASH_PNG)
+  add_custom_command(OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/splash.bin"
+    COMMAND "${DART}" "${TOOLS_DIR}/splash-pack.dart" "${SPLASH_PNG}"
+            "${CMAKE_CURRENT_BINARY_DIR}/splash.bin"
+    DEPENDS "${SPLASH_PNG}" "${TOOLS_DIR}/splash-pack.dart"
+    VERBATIM)
+  list(APPEND VPK_FILES FILE "${CMAKE_CURRENT_BINARY_DIR}/splash.bin" splash.bin)
 endif()
 
 foreach(asset ${APP_ASSETS})

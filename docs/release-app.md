@@ -70,7 +70,44 @@ The shell takes the three files out of the package at the first install of a
 title only. To see new art on a title that is already installed, delete the
 title on the console and install it again.
 
-## 4. What the user needs
+## 4. The splash
+
+From the start of the app to its first frame, the console shows a picture:
+the splash. Without it the screen stays black for that time, which is 1.6 s
+for localsend and 2.3 s for the gallery (measured 2026-10-29). Before that,
+the system loads the app and the screen is not the app's: no picture can
+cover that part.
+
+Every app shows the template's splash, `templates/vita-app/splash.png`: the
+flutter-vita mark, "Built with flutter-vita" and the address of the project.
+Debug and release builds show it the same way. To show your own picture, or
+none, name it in `pubspec.yaml`:
+
+```yaml
+vita:
+  title_id: MYAP00001
+  splash: vita/splash.png      # relative to the app; or none
+```
+
+(or `--splash PNG|none` on `tools/build-vita-app.sh`). With `none` the app
+starts on a black screen.
+
+- The screen is 960 x 544. A smaller picture shows in the centre, on the
+  colour of its top-left pixel. The build refuses a larger one.
+- Any 8-bit PNG works: RGB, RGBA, grey or indexed. Transparent pixels take
+  the colour of the top-left pixel, or black when that pixel is transparent
+  too. The build refuses 16-bit and interlaced PNGs.
+- The splash goes away at the first frame. It never keeps the app waiting.
+- The build packs the picture into `splash.bin` with
+  `tools/splash-pack.dart`, because the console cannot decode a PNG before
+  the engine starts. Large areas of one colour pack small: the template's
+  splash is 42 KB, and a photo is about 2 MB. The embedder reads the file in
+  about 30 ms.
+
+The splash is not part of the LiveArea. The shell does not keep it, so a new
+splash shows on the next install, with no delete first.
+
+## 5. What the user needs
 
 - A console with a homebrew enabler; the `.vpk` installs from VitaShell like
   any other.
@@ -79,7 +116,7 @@ title on the console and install it again.
   console without it starts and shows nothing.
 - Nothing else: no runtime, no plugin, no second title.
 
-## 5. Notices
+## 6. Notices
 
 The `.vpk` contains the Flutter engine, Skia, ICU, the Dart runtime and
 the libraries they bring. Their licenses are BSD, MIT, Apache 2.0 and the
@@ -92,7 +129,7 @@ LGPL: the GLES2 layer under Skia is this project's own
 ([ADR-0018](adr/0018-the-lgpl-obligation-in-every-vpk.md)), and the shader
 compiler is Sony's module on the console, not in your `.vpk`.
 
-## 6. Where to publish
+## 7. Where to publish
 
 VitaDB is where homebrew goes. Your entry wants the `.vpk`, the art, and a
 line about the shader compiler.
