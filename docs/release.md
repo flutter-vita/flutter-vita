@@ -156,10 +156,18 @@ Do these checks before a release. The scripts do not do them.
 | The shaders | Put `1` in `ux0:data/flutter-vita/gles2-capture.on`, open the gallery and the test apps, then pull `ux0:data/flutter-vita/gles2-shaders.glsl` | No shader is `refused`. Add the new shaders to `gles2/corpus` |
 | The GPU pixel test | `gles2/test/build.sh`, then install `gles2/test/build/fvita_gles2_test.vpk` and start it from the Bridge | M0 to M6 pass in `ux0:data/flutter-vita/gles2-test.txt` |
 | The benchmark | `tool/bench.sh` in [flutter-vita-bench](https://github.com/flutter-vita/flutter-vita-bench) | No regressions against the baseline |
+| A release build | `./cli/flutter-vita build samples/test-apps/localsend/app --release`, then `./tools/install-vpk.sh samples/test-apps/localsend/app/build/vita/localsend_app.vpk` | The app opens, and LocalSend on the Mac shows the Vita |
 | The Bridge | `echo ping \| nc -4 fluttervita.local 1341` | `pong bridge` |
 
 The Tests tab and the hardware checks do not draw. Only the shader capture
 and the GPU pixel test find a shader that does not compile.
+
+All the other checks use debug builds. A debug build has the dev server, and
+the dev server starts parts of the system that a release build must start
+itself. In 3.47.7-vita.1.0.6 only the dev server started the network, so every
+release build that used the network stopped at start, and all the other
+checks passed. A release build has no dev server and no `handoff`: after the
+check, open the Bridge on the console yourself.
 
 If the engine changed, take a new benchmark baseline after the release (three
 launches, see the baseline README in flutter-vita-bench). Before that, the
