@@ -129,7 +129,7 @@ int main(void) {
   np.size = sizeof g_net_pool;
   np.flags = 0;
   const int ni = sceNetInit(&np);
-  if (ni < 0 && ni != (int)0x80410103) {
+  if (ni < 0 && ni != (int)0x80410110 /* SCE_NET_ERROR_EBUSY */) {
     lg("FATAL sceNetInit 0x%08X\n", (unsigned)ni);
     sceKernelExitProcess(1);
   }
