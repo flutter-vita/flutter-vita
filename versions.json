@@ -1,6 +1,6 @@
 {
   "_comment": "What flutter-vita builds against, and its own release. Read by the CLI (precache, doctor, --version) and the build scripts. flutter and flutter_sdk are edited by hand at a Flutter upgrade; tools/publish-engine.sh writes engine, tools/publish-release.sh writes release and embedder (docs/release.md).",
-  "release": "3.47.7-vita.1.0.6",
+  "release": "3.47.7-vita.1.0.7",
   "flutter": "3.47.7",
   "framework_rev": "abaf9c523780a608bd46686fd5e53740a07077f8",
   "flutter_sdk": {
@@ -55,7 +55,7 @@
     ]
   },
   "embedder": {
-    "release": "3.47.7-vita.1.0.6",
+    "release": "3.47.7-vita.1.0.7",
     "repository": "https://github.com/flutter-vita/flutter-vita-embedder"
   }
 }
